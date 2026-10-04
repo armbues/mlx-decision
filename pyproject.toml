@@ -9,7 +9,16 @@ description = "Run and train decision models on Apple Silicon with MLX"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE", "LICENSES/*"]
-dependencies = []
+dependencies = [
+    "mlx>=0.32",
+    "tokenizers",
+    "huggingface_hub",
+    "pydantic>=2",
+    "typer",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+
+[project.scripts]
+mlx-decision = "mlx_decision.cli:app"
