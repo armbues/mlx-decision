@@ -16,13 +16,22 @@ class Family:
     name: str
     detect: Callable[[Path], bool]
     loader: str  # "module:function"; imported only when the family is used
+    converter: str | None = None  # same form; writes an MLX copy of a model
 
 
 _FAMILIES: dict[str, Family] = {}
 
 
-def register_family(name: str, detect: Callable[[Path], bool], loader: str) -> None:
-    _FAMILIES[name] = Family(name, detect, loader)
+def register_family(
+    name: str, detect: Callable[[Path], bool], loader: str, converter: str | None = None
+) -> None:
+    _FAMILIES[name] = Family(name, detect, loader, converter)
+
+
+def resolve(reference: str) -> Callable:
+    """Import ``module:function``."""
+    module, function = reference.split(":")
+    return getattr(import_module(module), function)
 
 
 def detect_family(path: Path) -> Family:
@@ -40,13 +49,12 @@ def detect_family(path: Path) -> Family:
 
 
 def load_backend(path: Path, **options) -> Backend:
-    family = detect_family(path)
-    module, function = family.loader.split(":")
-    return getattr(import_module(module), function)(path, **options)
+    return resolve(detect_family(path).loader)(path, **options)
 
 
 register_family(
     "clef",
     detect=lambda path: (path / "joint_head_config.json").exists(),
     loader="mlx_decision.models.clef.model:load",
+    converter="mlx_decision.models.clef.convert:convert",
 )

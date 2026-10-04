@@ -7,6 +7,7 @@
 """Clef's joint schema head: scores every option of every question together."""
 
 import math
+from collections.abc import Callable
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -125,7 +126,7 @@ class JointSchemaHead(nn.Module):
         hidden_states: mx.array,
         input_ids: mx.array,
         questions: tuple[EncodedQuestion, ...],
-        output_embeddings: mx.array,
+        output_embedding_rows: Callable[[mx.array], mx.array],
     ) -> list[mx.array]:
         """Logits per question, one per option, for one request.
 
@@ -145,7 +146,10 @@ class JointSchemaHead(nn.Module):
         for index, question in enumerate(questions):
             context = mx.stack([hidden[s:e].mean(axis=0) for s, e in question.option_spans])
             lexical = mx.stack(
-                [output_embeddings[input_ids[s:e]].mean(axis=0) for s, e in question.option_spans]
+                [
+                    output_embedding_rows(input_ids[s:e]).mean(axis=0)
+                    for s, e in question.option_spans
+                ]
             )
             lexical_options.append(lexical)
             option_queries.append(

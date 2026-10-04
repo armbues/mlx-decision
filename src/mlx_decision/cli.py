@@ -221,3 +221,104 @@ def server(
 
     typer.echo(f"loading {model} ...", err=True)
     uvicorn.run(create_app(lambda: load(model)), host=host, port=port, log_level="info")
+
+
+@app.command()
+def convert(
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+    ],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Folder to write.")],
+    quantize: Annotated[
+        bool, typer.Option("--quantize", "-q", help="Quantize the backbone.")
+    ] = False,
+    bits: Annotated[int, typer.Option(help="Bits per weight when quantizing.")] = 8,
+    group_size: Annotated[int, typer.Option(help="Weights per quantization group.")] = 64,
+    keep_output_embeddings: Annotated[
+        bool,
+        typer.Option(
+            "--keep-output-embeddings",
+            help="Leave the output embedding matrix (lm_head) unquantized.",
+        ),
+    ] = False,
+    target_bits: Annotated[
+        float | None,
+        typer.Option(
+            min=2,
+            max=8,
+            help="Mixed precision: average bits per weight, allocated by measured "
+            "sensitivity (implies --quantize; takes a few minutes).",
+        ),
+    ] = None,
+) -> None:
+    """Write an MLX copy of a model, optionally quantized."""
+    from .convert import convert as convert_model
+
+    if quantize and bits not in (2, 3, 4, 5, 6, 8):
+        raise typer.BadParameter("must be 2, 3, 4, 5, 6 or 8", param_hint="--bits")
+    options = {}
+    if target_bits is not None:
+
+        def progress(done, total, unit, value):
+            typer.echo(f"  sensitivity {done}/{total} {unit.name}: {value:.2e}", err=True)
+
+        options = {"target_bits": target_bits, "progress": progress}
+    typer.echo(f"converting {model} ...", err=True)
+    try:
+        convert_model(
+            model,
+            output,
+            bits=bits if quantize else None,
+            group_size=group_size,
+            quantize_output_embeddings=not keep_output_embeddings,
+            **options,
+        )
+    except (FileExistsError, FileNotFoundError, ValueError) as error:
+        fail(str(error))
+    typer.echo(f"wrote {output}")
+
+
+def int_list(value: str, flag: str) -> tuple[int, ...]:
+    try:
+        numbers = tuple(int(part) for part in value.split(","))
+    except ValueError:
+        raise typer.BadParameter(
+            f"expected numbers like 250,1000 but got {value!r}", param_hint=flag
+        ) from None
+    if not numbers or min(numbers) < 0:
+        raise typer.BadParameter("numbers must not be negative", param_hint=flag)
+    return numbers
+
+
+@app.command()
+def benchmark(
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+    ],
+    lengths: Annotated[
+        str, typer.Option(help="State lengths in tokens, comma-separated.")
+    ] = "250,1000,4000,15000",
+    questions: Annotated[
+        str, typer.Option(help="Numbers of questions, comma-separated.")
+    ] = "1,5,20",
+    repeats: Annotated[int, typer.Option(min=1, help="Timed runs per row.")] = 5,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the numbers as JSON.")] = False,
+) -> None:
+    """Measure load time and latency per request across state length and question count."""
+    from .benchmark import benchmark as run_benchmark
+    from .benchmark import format_report, to_dict
+
+    grid = {
+        "lengths": int_list(lengths, "--lengths"),
+        "question_counts": int_list(questions, "--questions"),
+    }
+    if min(grid["question_counts"]) < 1:
+        raise typer.BadParameter("at least one question per request", param_hint="--questions")
+    try:
+        report = run_benchmark(model, repeats=repeats, **grid)
+    except (DecisionError, FileNotFoundError, ValueError) as error:
+        fail(str(error))
+    if as_json:
+        typer.echo(json.dumps(to_dict(report), indent=2))
+    else:
+        typer.echo(format_report(report))

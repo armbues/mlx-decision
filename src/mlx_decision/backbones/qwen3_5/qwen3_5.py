@@ -7,7 +7,8 @@
 # Modified for mlx-decision: reduced to a text-only model that runs one full
 # pass over the input and returns the final hidden states. Removed: caches,
 # pipeline and distributed (sharding) support, and mixture-of-experts layers.
-# Added: optional per-axis position ids for image and video tokens.
+# Added: optional per-axis position ids for image and video tokens, and a row
+# lookup into the output embeddings that also works when they are quantized.
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
@@ -253,11 +254,20 @@ class TextModel(nn.Module):
     ) -> mx.array:
         return self.model(inputs, input_embeddings, position_ids)
 
-    @property
-    def output_embeddings(self) -> mx.array:
-        if self.args.tie_word_embeddings:
-            return self.model.embed_tokens.weight
-        return self.lm_head.weight
+    def output_embedding_rows(self, ids: mx.array) -> mx.array:
+        """Rows of the output embedding matrix for token ``ids``, dequantized if needed."""
+        layer = self.model.embed_tokens if self.args.tie_word_embeddings else self.lm_head
+        if "scales" not in layer:
+            return layer.weight[ids]
+        biases = layer.get("biases")
+        return mx.dequantize(
+            layer.weight[ids],
+            layer.scales[ids],
+            None if biases is None else biases[ids],
+            group_size=layer.group_size,
+            bits=layer.bits,
+            mode=layer.mode,
+        )
 
     def sanitize(self, weights):
         has_unsanitized_conv1d = any(

@@ -36,7 +36,7 @@ class ClefBackend:
             hidden,
             input_ids,
             encoded.questions,
-            self.backbone.language_model.output_embeddings,
+            self.backbone.language_model.output_embedding_rows,
         )
         probabilities = [mx.softmax(values.astype(mx.float32), axis=-1) for values in logits]
         mx.eval(probabilities)
