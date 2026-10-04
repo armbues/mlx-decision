@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+server = ["fastapi", "uvicorn"]
+dev = ["mlx-decision[server]", "pytest", "ruff", "httpx"]
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:app"
