@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "mlx-decision"
 version = "0.1.0"
 description = "Run and train decision models on Apple Silicon with MLX"
+readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE", "LICENSES/*"]
@@ -19,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["fastapi", "uvicorn"]
-dev = ["mlx-decision[server]", "pytest", "ruff", "httpx"]
+dev = ["mlx-decision[server]", "pytest", "ruff", "httpx", "build"]
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:app"
