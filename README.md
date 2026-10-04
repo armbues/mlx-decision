@@ -116,6 +116,14 @@ it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body.
 
+With `--interactive` (`-i`) the model loads once and answers one state
+after another: type or paste a state, finish it with a blank line, and
+quit with Ctrl-D.
+
+```bash
+mlx-decision run -m Cloudflare/clef-flash -i --choice "team=billing,technical,sales"
+```
+
 ## Server
 
 ```bash
@@ -131,23 +139,28 @@ TYPESAFE_BASE_URL=http://127.0.0.1:8000 TYPESAFE_API_KEY=unused python my_jev_sc
 ```
 
 The server binds to localhost by default (`--host` to change), ignores the
-`Authorization` header and the request's `model` field, answers one request
-at a time (others queue), returns `422` with Jev's error body for invalid
-requests, and sets `X-MLX-Decision-Truncated: true` when the state was
-truncated.
+request's `model` field, answers one request at a time (others queue),
+returns `422` with Jev's error body for invalid requests, and sets
+`X-MLX-Decision-Truncated: true` when the state was truncated.
+
+To require a key, start it with `--api-key KEY` (or set
+`MLX_DECISION_API_KEY`). Requests to `/v1/*` then need
+`Authorization: Bearer KEY`, which is what the Jev SDK sends from
+`TYPESAFE_API_KEY`; others get `401`. `/health` stays open.
 
 ## Smaller models: `convert`
 
 ```bash
 # 8-bit: half the memory, answers within the parity tolerance
-mlx-decision convert -m Cloudflare/clef-flash -o clef-flash-8bit -q
+mlx-decision convert -m Cloudflare/clef-flash -q                 # -> clef-flash-q8
 
 # mixed precision: bits go where the answers are most sensitive
-mlx-decision convert -m Cloudflare/clef-flash -o clef-flash-mixed-5 --target-bits 5
+mlx-decision convert -m Cloudflare/clef-flash --target-bits 5    # -> clef-flash-mq5
 ```
 
-A converted folder loads like the original
-(`mlx_decision.load("clef-flash-8bit")`). Only the backbone is quantized;
+Without `-o` the folder is named after the model plus `-q<bits>`,
+`-mq<target>` or `-mlx` (no quantization). A converted folder loads like
+the original (`mlx_decision.load("clef-flash-q8")`). Only the backbone is quantized;
 the decision head stays as released. With `--target-bits` the converter
 first measures, on a built-in calibration set, how far the answers move
 when each block of the model is quantized alone (about 6 minutes for
@@ -178,19 +191,20 @@ mlx-decision benchmark -m Cloudflare/clef-flash
 ```
 
 Reports load time, peak memory, and median / p95 latency per request across
-state lengths and numbers of questions. clef-flash in bf16 on an Apple
-Silicon Mac with 64 GB:
+state lengths and numbers of questions. Median latency per request for
+clef-flash on an Apple M5 Pro (20-core GPU) with 64 GB:
 
-| Input tokens | Questions | Median latency |
-|---|---|---|
-| 394 | 1 | 0.25 s |
-| 1,552 | 5 | 0.84 s |
-| 4,149 | 1 | 2.41 s |
-| 6,103 | 20 | 3.63 s |
-| 16,384 | 20 | 10.7 s |
+| Input tokens | Questions | bf16 | 8-bit | 4-bit |
+|---|---|---|---|---|
+| 394 | 1 | 0.25 s | 0.27 s | 0.25 s |
+| 1,552 | 5 | 0.84 s | 1.07 s | 1.03 s |
+| 4,149 | 1 | 2.41 s | 2.89 s | 2.76 s |
+| 6,103 | 20 | 3.63 s | 4.33 s | 4.13 s |
+| 16,384 | 20 | 10.7 s | 12.1 s | 11.4 s |
+| Peak memory | | 19.0 GB | 11.2 GB | 7.1 GB |
 
 Latency grows linearly with input length, at about 1,550-1,850 tokens per
-second.
+second. All numbers in this README were measured on that machine.
 
 ## Supported models
 
@@ -200,9 +214,30 @@ second.
 
 On a 50-request test set, clef-flash on MLX matches Cloudflare's PyTorch
 reference token for token and within 0.035 per probability (mean 0.001),
-with no changed answers. Compared with the hosted Jev service it gives the
-same choice answer 83% of the time and the same side of 0.5 for yes/no
-questions 91% of the time; they are different models.
+with no changed answers.
+
+### Accuracy (preliminary)
+
+Preliminary results: clef-flash (bf16, this package) and the hosted Jev
+service on five public benchmarks, 500 test examples each (fixed sample;
+larger runs and quantized models will follow), with the same questions
+and option descriptions for both. Accuracy / macro-F1 in percent; ECE is
+the expected calibration error of the top probability (lower is better).
+In brackets: macro-F1 published by Cloudflare (clef-flash / Jev), from
+their own, unpublished prompts.
+
+| Benchmark | Options | clef-flash acc / F1 / ECE | Jev acc / F1 / ECE | Published F1 or acc |
+|---|---|---|---|---|
+| AG News (topic) | 4 | **91.4** / **91.5** / 2.5 | 86.4 / 86.4 / 9.5 | - |
+| DAIR Emotion | 6 | 60.0 / 54.6 / 19.4 | **62.2** / **56.2** / 26.0 | - |
+| ANLI r1-r3 (entailment) | 3 | 58.2 / 57.9 / 14.1 | **71.6** / **71.9** / 11.5 | 59.1 / 74.8 |
+| BANKING77 (intent) | 77 | **96.0** / **95.8** / 3.5 | 80.2 / 79.4 / 8.2 | 90.9 / 79.7 |
+| MMLU (accuracy) | 4 | **93.0** / 93.0 / 6.0 | 91.6 / 91.6 / 3.7 | 91.8 / 91.7 |
+
+clef-flash is stronger at classification with many or well-described
+labels (BANKING77, AG News) and Jev at adversarial entailment (ANLI). Both
+are poorly calibrated on Emotion, whose labels overlap. Reproduce with
+`scripts/accuracy_benchmark.py` (datasets are downloaded separately).
 
 ## Development
 

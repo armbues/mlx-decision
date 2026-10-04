@@ -146,3 +146,50 @@ def test_concurrent_requests_queue_on_one_thread(client):
     assert not backend.overlapped
     assert backend.threads == {backend.loaded_on}
     assert sorted(backend.states) == sorted(body["state"] for body in bodies)
+
+
+@pytest.fixture
+def keyed_client():
+    app = create_app(lambda: DecisionModel(FakeBackend()), api_key="s3cret")
+    with TestClient(app) as client:
+        yield client
+
+
+def test_api_key_is_required_when_configured(keyed_client):
+    for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": "s3cret"}):
+        response = keyed_client.post("/v1/systemone", json=BODY, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {
+            "error": {
+                "message": "missing or invalid API key",
+                "type": "authentication_error",
+                "param": None,
+            }
+        }
+    assert keyed_client.get("/v1/models").status_code == 401
+
+
+def test_the_right_key_passes_and_health_stays_open(keyed_client):
+    ok = keyed_client.post("/v1/systemone", json=BODY, headers={"Authorization": "Bearer s3cret"})
+    assert ok.status_code == 200
+    assert keyed_client.get("/health").status_code == 200
+
+
+def test_server_command_reads_the_key_from_the_environment(monkeypatch, fake_model_path):
+    import uvicorn
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app as cli_app
+
+    seen = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: seen.update(app=app, **kw))
+    result = CliRunner().invoke(
+        cli_app,
+        ["server", "-m", str(fake_model_path)],
+        env={"MLX_DECISION_API_KEY": "from-env"},
+    )
+    assert result.exit_code == 0, result.output
+    with TestClient(seen["app"]) as client:
+        assert client.post("/v1/systemone", json=BODY).status_code == 401
+        headers = {"Authorization": "Bearer from-env"}
+        assert client.post("/v1/systemone", json=BODY, headers=headers).status_code == 200

@@ -1,6 +1,7 @@
 """Converting a Clef release into an MLX folder, on a tiny random Clef."""
 
 import json
+from pathlib import Path
 
 import mlx.nn as nn
 import pytest
@@ -185,3 +186,26 @@ def test_mixed_precision_cli(release, tmp_path):
     assert result.exit_code == 0, result.output
     assert "sensitivity 1/" in result.stderr
     assert json.loads((out / MARKER_FILE).read_text())["mixed"]["target_bits"] == 5
+
+
+@pytest.mark.parametrize(
+    ("model", "bits", "target", "name"),
+    [
+        ("Cloudflare/clef-flash", 8, None, "clef-flash-q8"),
+        ("models/clef-flash/", 4, None, "clef-flash-q4"),
+        ("clef-flash", None, 5.0, "clef-flash-mq5"),
+        ("clef-flash", None, 4.5, "clef-flash-mq4.5"),
+        ("clef-flash", None, None, "clef-flash-mlx"),
+    ],
+)
+def test_default_output_names(model, bits, target, name):
+    from mlx_decision.convert import default_output
+
+    assert default_output(model, bits, target) == Path(name)
+
+
+def test_cli_default_output(release, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, ["convert", "-m", str(release), "-q"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "tiny-clef-q8" / MARKER_FILE).exists()

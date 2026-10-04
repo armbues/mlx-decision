@@ -1,10 +1,12 @@
 """An HTTP server with the Jev API: ``POST /v1/systemone``.
 
 Needs the ``server`` extra (FastAPI, uvicorn). All model work, loading
-included, runs on one worker thread; requests wait their turn there.
+included, runs on one worker thread; requests wait their turn there. With
+an API key, ``/v1/*`` requires ``Authorization: Bearer <key>``.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 from collections.abc import Callable
@@ -32,7 +34,7 @@ def error_response(
     return JSONResponse({"error": error}, status_code=status)
 
 
-def create_app(load_model: Callable[[], DecisionModel]) -> FastAPI:
+def create_app(load_model: Callable[[], DecisionModel], api_key: str | None = None) -> FastAPI:
     """The app; ``load_model`` runs on the worker thread at startup."""
     worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision")
 
@@ -47,6 +49,17 @@ def create_app(load_model: Callable[[], DecisionModel]) -> FastAPI:
         worker.shutdown(wait=True)
 
     app = FastAPI(title="mlx-decision", lifespan=lifespan)
+
+    if api_key:
+        expected = f"Bearer {api_key}".encode()
+
+        @app.middleware("http")
+        async def check_api_key(request: Request, call_next):
+            if request.url.path.startswith("/v1/"):
+                given = request.headers.get("authorization", "").encode()
+                if not hmac.compare_digest(given, expected):
+                    return error_response(401, "missing or invalid API key", "authentication_error")
+            return await call_next(request)
 
     @app.post("/v1/systemone")
     async def systemone(request: Request):

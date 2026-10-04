@@ -1,11 +1,15 @@
 """Compare models (e.g. quantized copies) on the parity set; print a Markdown report.
 
 usage: python scripts/quantization_report.py BASELINE MODEL [MODEL ...] [--out FILE]
+                                            [--cache DIR [--rerun]]
 
 Each model runs in its own process, one after another, so only one is in
 memory at a time. Every model answers the parity set (after one warm-up
 request); its probabilities are compared with the baseline's (the first
-model) and with the PyTorch reference fixture.
+model) and with the PyTorch reference fixture. With ``--cache`` each model's
+raw results are kept in ``DIR/<model folder name>.json`` and reused on the
+next run, so adding a model only runs that model (``--rerun`` ignores the
+cache).
 """
 
 import argparse
@@ -48,6 +52,8 @@ def run_model(model: str, out: Path) -> None:
     out.write_text(
         json.dumps(
             {
+                "model": Path(model).name,
+                "disk_gb": folder_gb(model),
                 "load_seconds": load_seconds,
                 "active_gb": active_after_load / 2**30,
                 "peak_gb": mx.get_peak_memory() / 2**30,
@@ -91,6 +97,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("models", nargs="*", help="model folders; the first is the baseline")
     parser.add_argument("--out", type=Path, help="also write the report here")
+    parser.add_argument("--cache", type=Path, help="keep per-model results here and reuse them")
+    parser.add_argument("--rerun", action="store_true", help="run every model again")
     parser.add_argument("--worker", nargs=2, metavar=("MODEL", "OUT"), help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
@@ -108,9 +116,16 @@ def main() -> None:
         for case_id, entry in reference.items()
     }
     results = {}
+    if args.cache:
+        args.cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as scratch:
         for model in args.models:
-            out = Path(scratch) / "result.json"
+            cached = args.cache / f"{Path(model).name}.json" if args.cache else None
+            if cached and cached.exists() and not args.rerun:
+                print(f"cached {model}", file=sys.stderr, flush=True)
+                results[model] = json.loads(cached.read_text())
+                continue
+            out = cached or Path(scratch) / "result.json"
             print(f"running {model} ...", file=sys.stderr, flush=True)
             command = [sys.executable, __file__, "--worker", model, str(out)]
             subprocess.run(command, check=True)
@@ -132,8 +147,9 @@ def main() -> None:
         seconds = list(result["seconds"].values())
         vs_base = compare(result["probabilities"], results[baseline]["probabilities"], reference)
         vs_torch = compare(result["probabilities"], torch_probabilities, reference)
+        disk_gb = result.get("disk_gb") or folder_gb(model)
         lines.append(
-            f"| `{Path(model).name}` | {folder_gb(model):.1f} | {result['load_seconds']:.1f} "
+            f"| `{Path(model).name}` | {disk_gb:.1f} | {result['load_seconds']:.1f} "
             f"| {result['active_gb']:.1f} / {result['peak_gb']:.1f} | {sum(seconds):.1f} "
             f"| {statistics.median(seconds):.3f} "
             f"| {vs_base['max']:.4f} / {vs_base['mean']:.4f} "

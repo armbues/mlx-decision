@@ -3,6 +3,7 @@
 import json
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -61,13 +62,8 @@ def shorthand_questions(nouls: list[str], choices: list[str], scores: list[str])
     return questions
 
 
-def build_request(
-    questions_file: Path | None,
-    shorthand: dict,
-    state: str | None,
-    state_file: Path | None,
-    state_json: bool,
-) -> dict[str, Any]:
+def build_questions(questions_file: Path | None, shorthand: dict) -> dict[str, Any]:
+    """The request body from a questions file and shorthand flags, without a state."""
     body: dict[str, Any] = {}
     if questions_file is not None:
         try:
@@ -84,7 +80,26 @@ def build_request(
         questions.update(shorthand)
     if "questions" not in body:
         fail("no questions: give --questions FILE or --noul/--choice/--score")
+    return body
 
+
+def parse_state(state: str, state_json: bool) -> Any:
+    if not state_json:
+        return state
+    try:
+        return json.loads(state)
+    except json.JSONDecodeError as error:
+        raise DecisionError(f"the state is not valid JSON: {error}", param="state") from None
+
+
+def build_request(
+    questions_file: Path | None,
+    shorthand: dict,
+    state: str | None,
+    state_file: Path | None,
+    state_json: bool,
+) -> dict[str, Any]:
+    body = build_questions(questions_file, shorthand)
     if state is not None and state_file is not None:
         fail("give either --state or --state-file, not both")
     if state_file is not None:
@@ -97,13 +112,44 @@ def build_request(
             fail("no state: give --state, --state-file, or pipe it to stdin")
         state = sys.stdin.read()
     if state is not None:
-        if state_json:
-            try:
-                state = json.loads(state)
-            except json.JSONDecodeError as error:
-                fail(f"--state-json: the state is not valid JSON: {error}")
-        body["state"] = state
+        try:
+            body["state"] = parse_state(state, state_json)
+        except DecisionError as error:
+            fail(f"--state-json: {error.message}")
     return body
+
+
+def read_states(stream) -> Iterator[str]:
+    """States typed one after another: a blank line submits, end of input stops."""
+    lines: list[str] = []
+    typer.echo("state (blank line to answer, Ctrl-D to quit):", err=True)
+    while True:
+        line = stream.readline()
+        if not line:
+            if lines:
+                yield "\n".join(lines)
+            return
+        line = line.rstrip("\n")
+        if line.strip():
+            lines.append(line)
+        elif lines:
+            yield "\n".join(lines)
+            lines = []
+            typer.echo("state:", err=True)
+
+
+def interactive(model, body: dict[str, Any], state_json: bool, as_json: bool) -> None:
+    for state in read_states(sys.stdin):
+        try:
+            result = model.decide_request({**body, "state": parse_state(state, state_json)})
+        except DecisionError as error:
+            typer.echo(f"error: {error}", err=True)
+            continue
+        if as_json:
+            typer.echo(json.dumps(result.to_wire(), ensure_ascii=False))
+        else:
+            typer.echo(format_result(result))
+        typer.echo("", err=True)
 
 
 def bar(probability: float) -> str:
@@ -184,11 +230,33 @@ def run(
     as_json: Annotated[
         bool, typer.Option("--json", help="Print the response body as JSON.")
     ] = False,
+    interactive_mode: Annotated[
+        bool,
+        typer.Option(
+            "--interactive",
+            "-i",
+            help="Load the model once, then answer states typed one after another.",
+        ),
+    ] = False,
 ) -> None:
     """Answer questions about a state."""
     from .model import load
+    from .types import parse_request
 
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
+    if interactive_mode:
+        if state is not None or state_file is not None:
+            fail("--interactive reads the states from the terminal; drop --state/--state-file")
+        body = build_questions(questions, shorthand)
+        body.pop("state", None)
+        try:
+            parse_request({**body, "state": ""})  # catch question errors before loading
+            loaded = load(model)
+        except (DecisionError, FileNotFoundError, ValueError) as error:
+            fail(str(error))
+        typer.echo(f"{loaded.name} loaded, {len(body['questions'])} questions.", err=True)
+        interactive(loaded, body, state_json, as_json)
+        return
     body = build_request(questions, shorthand, state, state_file, state_json)
     try:
         result = load(model).decide_request(body)
@@ -209,6 +277,15 @@ def server(
     ],
     host: Annotated[str, typer.Option(help="Address to bind to.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+    api_key: Annotated[
+        str | None,
+        typer.Option(
+            envvar="MLX_DECISION_API_KEY",
+            help="Require 'Authorization: Bearer KEY' on /v1/* (the Jev SDK sends "
+            "TYPESAFE_API_KEY this way).",
+            show_envvar=True,
+        ),
+    ] = None,
 ) -> None:
     """Serve a model with the Jev API (POST /v1/systemone)."""
     try:
@@ -220,7 +297,10 @@ def server(
     from .model import load
 
     typer.echo(f"loading {model} ...", err=True)
-    uvicorn.run(create_app(lambda: load(model)), host=host, port=port, log_level="info")
+    if api_key:
+        typer.echo("API key required on /v1/*", err=True)
+    app = create_app(lambda: load(model), api_key=api_key)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 @app.command()
@@ -228,7 +308,14 @@ def convert(
     model: Annotated[
         str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
     ],
-    output: Annotated[Path, typer.Option("--output", "-o", help="Folder to write.")],
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Folder to write. Default: <model>-q<bits>, -mq<target> or -mlx.",
+        ),
+    ] = None,
     quantize: Annotated[
         bool, typer.Option("--quantize", "-q", help="Quantize the backbone.")
     ] = False,
@@ -253,6 +340,7 @@ def convert(
 ) -> None:
     """Write an MLX copy of a model, optionally quantized."""
     from .convert import convert as convert_model
+    from .convert import default_output
 
     if quantize and bits not in (2, 3, 4, 5, 6, 8):
         raise typer.BadParameter("must be 2, 3, 4, 5, 6 or 8", param_hint="--bits")
@@ -263,7 +351,9 @@ def convert(
             typer.echo(f"  sensitivity {done}/{total} {unit.name}: {value:.2e}", err=True)
 
         options = {"target_bits": target_bits, "progress": progress}
-    typer.echo(f"converting {model} ...", err=True)
+    if output is None:
+        output = default_output(model, bits if quantize else None, target_bits)
+    typer.echo(f"converting {model} to {output} ...", err=True)
     try:
         convert_model(
             model,

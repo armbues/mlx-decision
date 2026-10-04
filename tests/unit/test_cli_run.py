@@ -153,3 +153,38 @@ def test_unknown_model_folder(tmp_path):
     result = CliRunner().invoke(app, ["run", "-m", str(tmp_path), "-s", "x", "--noul", "q?"])
     assert result.exit_code == 1
     assert "not a supported decision model" in result.stderr
+
+
+def test_interactive_answers_each_state(cli, questions_file):
+    typed = "Stripe is down\n\nfirst line\nsecond line\n\n\n"
+    result = cli("-q", str(questions_file), "-i", "--json", input=typed)
+    assert result.exit_code == 0, result.output
+    bodies = [json.loads(line) for line in result.stdout.splitlines()]
+    assert [b["usage"]["input_tokens"] for b in bodies] == [3, 4]
+    assert "fake loaded, 3 questions" in result.stderr
+
+
+def test_interactive_last_state_without_blank_line_and_readable_output(cli, questions_file):
+    result = cli("-q", str(questions_file), "--interactive", input="only state")
+    assert result.exit_code == 0, result.output
+    assert result.stdout.count("department (choice)") == 1
+
+
+def test_interactive_keeps_going_after_a_bad_state(cli):
+    typed = "{not json\n\n[1, 2]\n\n"
+    result = cli("--noul", "q=Is it?", "-i", "--state-json", "--json", input=typed)
+    assert result.exit_code == 0, result.output
+    assert "error: state: the state is not valid JSON" in result.stderr
+    assert len(result.stdout.splitlines()) == 1
+
+
+def test_interactive_checks_questions_before_loading(cli):
+    result = cli("--score", "anger=calm", "-i", input="x\n\n")
+    assert result.exit_code == 1
+    assert "questions.anger.criteria" in result.stderr
+
+
+def test_interactive_refuses_a_state_flag(cli):
+    result = cli("--noul", "q=Is it?", "-i", "-s", "x")
+    assert result.exit_code == 1
+    assert "drop --state" in result.stderr
