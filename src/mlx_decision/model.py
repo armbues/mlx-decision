@@ -57,18 +57,24 @@ class DecisionModel:
                 )
             if caps.requires_instructions and question.instructions in (None, ""):
                 raise DecisionError("instructions are required", param=f"{where}.instructions")
-            if isinstance(question, Choice) and caps.max_choice_options is not None:
-                if len(question.criteria) > caps.max_choice_options:
-                    raise DecisionError(
-                        f"a choice can have at most {caps.max_choice_options} options",
-                        param=f"{where}.criteria",
-                    )
-            if isinstance(question, Score) and caps.max_score_levels is not None:
-                if len(question.criteria) > caps.max_score_levels:
-                    raise DecisionError(
-                        f"a score can have at most {caps.max_score_levels} levels",
-                        param=f"{where}.criteria",
-                    )
+            if (
+                isinstance(question, Choice)
+                and caps.max_choice_options is not None
+                and len(question.criteria) > caps.max_choice_options
+            ):
+                raise DecisionError(
+                    f"a choice can have at most {caps.max_choice_options} options",
+                    param=f"{where}.criteria",
+                )
+            if (
+                isinstance(question, Score)
+                and caps.max_score_levels is not None
+                and len(question.criteria) > caps.max_score_levels
+            ):
+                raise DecisionError(
+                    f"a score can have at most {caps.max_score_levels} levels",
+                    param=f"{where}.criteria",
+                )
 
 
 def load(model: str | Path, **options) -> DecisionModel:

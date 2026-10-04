@@ -42,8 +42,8 @@ class ClefBackend:
         mx.eval(probabilities)
         return BackendOutput(
             probabilities={
-                question.question_id: dict(zip(question.option_ids, values.tolist()))
-                for question, values in zip(encoded.questions, probabilities)
+                question.question_id: dict(zip(question.option_ids, values.tolist(), strict=True))
+                for question, values in zip(encoded.questions, probabilities, strict=True)
             },
             input_tokens=len(encoded.input_ids),
             truncated=encoded.truncated,

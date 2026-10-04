@@ -1,7 +1,14 @@
-.PHONY: setup clean
+.PHONY: setup test lint clean
 
 setup:
 	pip install -e ".[dev]"
+
+test:
+	pytest
+
+lint:
+	ruff check src tests
+	ruff format --check src tests
 
 clean:
 	rm -rf build dist *.egg-info .pytest_cache .ruff_cache

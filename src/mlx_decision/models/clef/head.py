@@ -165,7 +165,7 @@ class JointSchemaHead(nn.Module):
         # One vector per question, refined jointly across questions.
         base_fields = self.question_projection(question_vectors)
         summaries = []
-        for field, options in zip(base_fields, split_options):
+        for field, options in zip(base_fields, split_options, strict=True):
             weights = mx.softmax((options @ field) / math.sqrt(options.shape[-1]), axis=0)
             summaries.append((weights[:, None] * options).sum(axis=0))
         type_ids = mx.array([q.question_type for q in questions])
@@ -184,7 +184,7 @@ class JointSchemaHead(nn.Module):
         gate = mx.sigmoid(self.residual_gate)
         logits: list[mx.array] = []
         for index, (field, lexical, options) in enumerate(
-            zip(fields, lexical_options, split_options)
+            zip(fields, lexical_options, split_options, strict=True)
         ):
             anchor = _normalize(question_vectors[index] + global_vector, 1e-12)
             prior = prior_scale * (_normalize(lexical, 1e-12) @ anchor)

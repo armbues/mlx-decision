@@ -110,9 +110,49 @@ def parse_request(data: Any) -> Request:
     try:
         return Request.model_validate(data)
     except ValidationError as error:
-        first = error.errors()[0]
-        # Drop the union tag pydantic inserts after a question id.
-        loc = [str(part) for part in first["loc"]]
-        if len(loc) > 2 and loc[0] == "questions" and loc[2] in ("noul", "choice", "score"):
-            del loc[2]
-        raise DecisionError(first["msg"], param=".".join(loc) or None) from None
+        message, loc = _describe(error.errors()[0])
+        raise DecisionError(message, param=".".join(loc) or None) from None
+
+
+QUESTION_TYPES = "noul, choice or score"
+
+
+def _describe(error: dict[str, Any]) -> tuple[str, list[str]]:
+    """A readable message and the field path for one pydantic error."""
+    loc = [str(part) for part in error["loc"]]
+    # Drop the union tag pydantic inserts after a question id, and the marker
+    # it appends when a mapping key is at fault.
+    if len(loc) > 2 and loc[0] == "questions" and loc[2] in ("noul", "choice", "score"):
+        question_type = loc.pop(2)
+    else:
+        question_type = None
+    if loc and loc[-1] == "[key]":
+        loc.pop()
+    kind = error["type"]
+    field = loc[-1] if loc else "request"
+
+    if kind == "union_tag_invalid":
+        found = error["ctx"]["tag"]
+        return f"unknown question type {found!r}; expected {QUESTION_TYPES}", [*loc, "type"]
+    if kind == "union_tag_not_found":
+        return f"type is required: {QUESTION_TYPES}", [*loc, "type"]
+    if kind == "missing":
+        return f"{field} is required", loc
+    if kind == "too_short":
+        if loc == ["questions"]:
+            return "at least one question is required", loc
+        if question_type == "choice":
+            return "a choice needs at least one option", loc
+        if question_type == "score":
+            return "a score needs at least two levels", loc
+    if kind == "literal_error" and question_type == "noul":
+        return "noul criteria can only describe 'true' and 'false'", loc
+    if kind in ("model_type", "model_attributes_type", "dict_type") and not loc:
+        return "the request body must be a JSON object", loc
+    if kind in ("model_attributes_type", "dict_type") and len(loc) == 2 and loc[0] == "questions":
+        return "a question must be an object with a type", loc
+    if kind == "dict_type" and question_type == "choice":
+        return "choice criteria must map option ids to descriptions", loc
+    if kind == "list_type" and question_type == "score":
+        return "score criteria must be a list of level descriptions", loc
+    return error["msg"], loc

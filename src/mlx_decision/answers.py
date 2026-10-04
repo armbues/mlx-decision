@@ -45,6 +45,6 @@ def build_answer(question: Noul | Choice | Score, probabilities: Mapping[str, fl
     return ScoreAnswer(
         score=sum(index * p for index, p in enumerate(values)),
         confidence=score_confidence(values),
-        legend=dict(zip(levels, question.criteria)),
-        probabilities=dict(zip(levels, values)),
+        legend=dict(zip(levels, question.criteria, strict=True)),
+        probabilities=dict(zip(levels, values, strict=True)),
     )

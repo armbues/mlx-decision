@@ -22,3 +22,23 @@ dev = ["pytest", "ruff"]
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:app"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+# Copied from mlx-lm; kept close to upstream so they can be diffed.
+extend-exclude = [
+    "src/mlx_decision/backbones/qwen3_5/activations.py",
+    "src/mlx_decision/backbones/qwen3_5/base.py",
+    "src/mlx_decision/backbones/qwen3_5/gated_delta.py",
+    "src/mlx_decision/backbones/qwen3_5/qwen3_5.py",
+    "src/mlx_decision/backbones/qwen3_5/qwen3_next.py",
+    "src/mlx_decision/backbones/qwen3_5/rope_utils.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["weights: needs the model weights (skipped when they are absent)"]

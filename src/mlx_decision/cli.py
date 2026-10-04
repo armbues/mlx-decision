@@ -23,7 +23,9 @@ def main() -> None:
 
 @app.command()
 def run(
-    model: Annotated[str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")],
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+    ],
     questions: Annotated[
         Path,
         typer.Option(
@@ -33,7 +35,9 @@ def run(
     state: Annotated[
         str | None, typer.Option("--state", "-s", help="The state as text. Default: read stdin.")
     ] = None,
-    as_json: Annotated[bool, typer.Option("--json", help="Print the response body as JSON.")] = True,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print the response body as JSON.")
+    ] = True,
 ) -> None:
     """Answer questions about a state."""
     from .model import load

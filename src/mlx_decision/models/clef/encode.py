@@ -71,9 +71,7 @@ def encode_request(
     questions: list[EncodedQuestion] = []
     for index, (question_id, question) in enumerate(request.questions.items()):
         schema_ids.extend(
-            tokens(
-                f"\nFIELD {index + 1}\nID: {question_id}\nTYPE: {question.type}\nINSTRUCTION: "
-            )
+            tokens(f"\nFIELD {index + 1}\nID: {question_id}\nTYPE: {question.type}\nINSTRUCTION: ")
         )
         question_start = len(schema_ids)
         instructions = question.instructions
