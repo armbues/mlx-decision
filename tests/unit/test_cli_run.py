@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from fake_backend import write_model
+from mlx_decision import __version__
 from mlx_decision.cli import app
 
 QUESTIONS = {
@@ -188,3 +189,9 @@ def test_interactive_refuses_a_state_flag(cli):
     result = cli("--noul", "q=Is it?", "-i", "-s", "x")
     assert result.exit_code == 1
     assert "drop --state" in result.stderr
+
+
+def test_version():
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert result.stdout == f"mlx-decision {__version__}\n"

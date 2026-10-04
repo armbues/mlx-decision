@@ -22,8 +22,26 @@ BAR_WIDTH = 24
 LEGEND_WIDTH = 48
 
 
+def show_version(value: bool) -> None:
+    if value:
+        from . import __version__
+
+        typer.echo(f"mlx-decision {__version__}")
+        raise typer.Exit()
+
+
 @app.callback()
-def main() -> None:
+def main(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=show_version,
+            is_eager=True,
+            help="Show the version and exit.",
+        ),
+    ] = False,
+) -> None:
     pass
 
 
