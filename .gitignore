@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# Project specific
+# ---------------------------------------------------------------------------
+
+# Transitory project folders
+_*/
+
+# macOS
+.DS_Store
+
+# Secrets
+*.env
+.env.*
+!.env.example
+
+# Agentic coding
+CLAUDE.md
+AGENTS.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
