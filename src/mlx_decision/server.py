@@ -1,4 +1,4 @@
-"""An HTTP server with the Jev API: ``POST /v1/systemone``.
+"""An HTTP server with an API compatible with Jev's: ``POST /v1/systemone``.
 
 Needs the ``server`` extra (FastAPI, uvicorn). All model work, loading
 included, runs on one worker thread; requests wait their turn there. With
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def error_response(
     status: int, message: str, kind: str, param: str | None = None, code: str | None = None
 ) -> JSONResponse:
-    """An error in the body shape the Jev service uses."""
+    """An error in the API's error body shape."""
     error = {"message": message, "type": kind, "param": param}
     if code is not None:
         error["code"] = code

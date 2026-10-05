@@ -43,7 +43,7 @@ Question = Annotated[Noul | Choice | Score, Field(discriminator="type")]
 class Request(BaseModel):
     """A request body: a ``state`` (any JSON value), ``questions`` by id, optional ``images``.
 
-    ``model`` is accepted for compatibility with Jev clients and ignored;
+    ``model`` is accepted for compatibility with API clients and ignored;
     unknown fields are ignored too.
     """
 

@@ -23,7 +23,7 @@ First public release. Earlier versions were not published.
 
 - `mlx_decision.load()` takes a local folder or a Hugging Face repo id;
   `decide()` and `decide_request()` answer noul, choice and score questions
-  with Jev's answer and confidence formulas.
+  with the answer and confidence definitions of the Jev API.
 - Invalid requests raise `DecisionError` naming the offending field.
 
 ### Command line
@@ -33,8 +33,8 @@ First public release. Earlier versions were not published.
   answers a JSON lines file of request bodies with one model load.
 - `chat`: interactive session with a question builder, menus and commands
   to list, add, edit, remove and save questions.
-- `server`: HTTP server with Jev's `POST /v1/systemone` request and
-  response bodies, optional API key, one request at a time.
+- `server`: HTTP server compatible with the Jev API (`POST /v1/systemone`),
+  optional API key, one request at a time.
 - `convert`: quantized MLX copies (8 bits by default, also 2 to 6), or
   mixed precision allocated by measured sensitivity (`--target-bits`).
 - `benchmark`: load time, memory and latency across state length and

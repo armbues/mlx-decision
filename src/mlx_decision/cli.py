@@ -163,7 +163,7 @@ def answer_states(model, defaults: dict[str, Any], lines) -> None:
                 raise DecisionError('a line must be a request body: {"state": ...}')
             result = model.decide_request({**defaults, **request})
         except DecisionError as error:
-            # The Jev error body, plus the input line it belongs to.
+            # The API's error body, plus the input line it belongs to.
             detail = {"message": error.message, "type": "invalid_request_error"}
             detail["param"] = error.param
             if error.code:
@@ -525,13 +525,13 @@ def server(
         str | None,
         typer.Option(
             envvar="MLX_DECISION_API_KEY",
-            help="Require 'Authorization: Bearer KEY' on /v1/* (the Jev SDK sends "
+            help="Require 'Authorization: Bearer KEY' on /v1/* (API clients send "
             "TYPESAFE_API_KEY this way).",
             show_envvar=True,
         ),
     ] = None,
 ) -> None:
-    """Serve a model with the Jev API (POST /v1/systemone)."""
+    """Serve a model over HTTP (Jev-compatible API: POST /v1/systemone)."""
     try:
         import uvicorn
 

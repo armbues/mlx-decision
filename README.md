@@ -6,9 +6,8 @@ A decision model reads a *state* (a message, a document, any JSON) and a set
 of typed *questions*, and returns a probability for every allowed answer in
 a single forward pass, without generating text. mlx-decision is to decision
 models what `mlx-lm` is to LLMs: load a model, ask it questions from Python
-or the command line, serve it behind the same API as the hosted
-[Jev](https://typesafe.ai) service, and convert it to smaller quantized
-copies.
+or the command line, serve it over HTTP with an API compatible with
+[Jev's](https://typesafe.ai), and convert it to smaller quantized copies.
 
 The first supported model is Cloudflare's
 [clef-flash](https://huggingface.co/Cloudflare/clef-flash) (Qwen3.5-9B
@@ -23,9 +22,10 @@ Questions and bug reports go to the
 Requirements:
 - a Mac with Apple Silicon (M1 or later) and macOS 14 or newer
 - Python 3.12 or newer
-- memory for the model: clef-flash as released needs about 19 GB while it
-  answers, which suits Macs with 32 GB or more; an 8-bit copy needs 11 GB
-  and a mixed-precision 4-bit copy 7 GB (see [convert](#smaller-models-convert))
+- memory while answering (smaller copies with [convert](#smaller-models-convert)):
+  - clef-flash as released: about 19 GB, so a Mac with 32 GB or more
+  - 8-bit copy: 11 GB
+  - mixed-precision 4-bit copy: 7 GB
 
 ```bash
 pip install mlx-decision                    # library and the mlx-decision command
@@ -98,10 +98,10 @@ print(result.answers["department"].choice)      # technical
 print(result.answers["department"].confidence)  # 0.90
 print(result.answers["frustration"].score)      # 1.29 (expected level, 0-based)
 print(result.answers["is_urgent"].noul)         # 0.94 (probability of yes)
-print(result.to_wire())                         # the Jev response body
+print(result.to_wire())                         # the response body, as JSON data
 ```
 
-Questions can also be plain dicts in the Jev wire format
+Questions can also be plain dicts in the API's wire format
 (`{"type": "choice", "instructions": ..., "criteria": {...}}`), and
 `model.decide_request(body)` takes a whole request body. Invalid requests
 raise `mlx_decision.DecisionError`, whose `param` names the offending field
@@ -124,7 +124,7 @@ result = model.decide(
 
 See [Images](#images) for how images count against the input limit.
 
-`confidence` follows Jev's documented formulas (choice: how far the top
+`confidence` follows the definitions of the Jev API (choice: how far the top
 probability sits above an even split; score: how concentrated the
 probability is around the most likely level), not Clef's own top
 probability.
@@ -157,6 +157,9 @@ anger (score): 1.05 on 0-2, confidence 0.54
 
 clef-flash · 291 input tokens
 ```
+
+A score's answer is the expected level, weighted by the probabilities:
+0 × 0.128 + 1 × 0.695 + 2 × 0.177 = 1.05 on a scale of 0 to 2.
 
 The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
@@ -287,29 +290,30 @@ go to stdout and can be redirected while the prompts stay on screen.
 mlx-decision server -m Cloudflare/clef-flash --port 8000
 ```
 
-Serves `POST /v1/systemone` with Jev's request and response bodies, plus
-`GET /v1/models` and `GET /health`. Existing Jev clients work by changing
-the base URL, for example the official SDK:
+Serves `POST /v1/systemone`, compatible with the Jev API's request and
+response bodies, plus `GET /v1/models` and `GET /health`. Clients written
+for that API work by changing the base URL, for example with its Python
+SDK:
 
 ```bash
-TYPESAFE_BASE_URL=http://127.0.0.1:8000 TYPESAFE_API_KEY=unused python my_jev_script.py
+TYPESAFE_BASE_URL=http://127.0.0.1:8000 TYPESAFE_API_KEY=unused python my_script.py
 ```
 
 The server binds to localhost by default (`--host` to change), ignores the
 request's `model` field, answers one request at a time (others queue),
-returns `422` with Jev's error body for invalid requests, and sets
+returns `422` with the API's error body for invalid requests, and sets
 `X-MLX-Decision-Truncated: true` when the state was truncated. Request
 bodies larger than 64 MB get `413`.
 
 Images go in the request's `images` list as base64 data URLs
 (`data:image/png;base64,...`; PNG, JPEG or WebP). The server reads no files
 and fetches no URLs, so anything else is refused with `422` naming the
-image (`images.0`). With the Jev SDK, pass them as
+image (`images.0`). With the SDK, pass them as
 `extra_body={"images": [...]}`.
 
 To require a key, start it with `--api-key KEY` (or set
 `MLX_DECISION_API_KEY`). Requests to `/v1/*` then need
-`Authorization: Bearer KEY`, which is what the Jev SDK sends from
+`Authorization: Bearer KEY`, which is what the SDK sends from
 `TYPESAFE_API_KEY`; others get `401`. `/health` stays open.
 
 ## Smaller models: `convert`
@@ -396,8 +400,7 @@ a short state and three questions (text only: 0.23 s):
 | 256x256 or smaller | 64 | 0.27 s | 0.29 s |
 | 640x480 | 300 | 0.47 s | 0.51 s |
 | 1024x768 | 768 | 0.84 s | 1.03 s |
-| 1920x1080 | 2,040 | 2.3 s | 3.0 s |
-| larger (default cap) | about 2,048 | about 2.5 s | about 3 s |
+| 1920x1080, or larger (shrunk to 2 MP) | about 2,048 | 2.3 s | 3.0 s |
 | 4000x3000 with `--max-image-mp 0` | 11,750 | 36 s | 39 s |
 
 Images count against the 16,384-token input limit together with the
@@ -419,8 +422,8 @@ changed answers.
 
 ### Accuracy (preliminary)
 
-Preliminary results: clef-flash (bf16, this package) and the hosted Jev
-service on five public benchmarks, 500 test examples each (fixed sample;
+Preliminary results: clef-flash (bf16, this package) and Jev, TypeSafe
+AI's hosted model, on five public benchmarks, 500 test examples each (fixed sample;
 larger runs and quantized models will follow), with the same questions
 and option descriptions for both. Accuracy / macro-F1 in percent; ECE is
 the expected calibration error of the top probability (lower is better).
@@ -456,15 +459,13 @@ fixtures are rebuilt with `scripts/make_parity_set.py` and
 `scripts/make_parity_reference.py` (the latter runs Cloudflare's reference
 with PyTorch).
 
-## Jev, Clef and this project
+## Relation to Cloudflare and TypeSafe AI
 
-mlx-decision is an independent open-source project. It is not affiliated
-with, endorsed by or supported by Cloudflare or TypeSafe AI. Jev and
-System One are TypeSafe AI's; Jev compatibility here means the request and
-response bodies of Jev's public API, and the local server is not the Jev
-service. clef-flash is Cloudflare's model and is used under its Apache-2.0
-licence; this package downloads it from Hugging Face and does not ship its
-weights.
+mlx-decision is an independent open-source project, not affiliated with or
+endorsed by Cloudflare or TypeSafe AI. Its server speaks a request and
+response format compatible with TypeSafe AI's public Jev API. clef-flash
+is Cloudflare's model, used under its Apache-2.0 licence; this package
+downloads it from Hugging Face and does not ship its weights.
 
 ## Licence
 
