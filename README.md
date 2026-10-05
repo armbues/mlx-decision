@@ -116,12 +116,89 @@ it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body.
 
+`mlx-decision --version` prints the installed version.
+
+### Interactive
+
 With `--interactive` (`-i`) the model loads once and answers one state
 after another: type or paste a state, finish it with a blank line, and
-quit with Ctrl-D.
+quit with Ctrl-D. Lines can be edited, and Up recalls earlier states.
 
 ```bash
 mlx-decision run -m Cloudflare/clef-flash -i --choice "team=billing,technical,sales"
+```
+
+Without any questions, `-i` first asks for them: a type (choice, score or
+noul), an id (Enter takes the one suggested), the instructions, and then
+the options of a choice (`option` or `option: description`) or the levels
+of a score (lowest first), one per line, ending with a blank line. Each
+question is checked against the model as soon as it is complete.
+
+```
+$ mlx-decision run -m Cloudflare/clef-flash -i
+clef-flash loaded, 0 questions.
+No questions yet: build the first one (Ctrl-C cancels).
+type (choice, score, noul): choice
+id: team
+instructions (optional): Which team should handle this?
+options, one per line as 'option' or 'option: description' (blank line ends):
+  billing: payments, invoices, refunds
+  technical
+  sales
+
+added team
+Add another question? [y/N] y
+type (choice, score, noul): noul
+id: refund
+instructions: The customer wants money back
+added refund
+Add another question? [y/N]
+Type a state and finish it with a blank line. /help lists the commands, Ctrl-D quits.
+state> My card was charged twice this month.
+
+team (choice): billing, confidence 0.93
+  billing    0.951  ███████████████████████
+  technical  0.028  █
+  sales      0.021  █
+
+refund (noul): no, p(yes) 0.030
+  █
+
+clef-flash · 225 input tokens
+
+state> /save questions.json
+saved 2 questions to questions.json
+```
+
+Between states, commands change the questions, whether they came from the
+builder, flags or a file:
+
+| Command | |
+|---|---|
+| `/list` | show the questions |
+| `/add` | build another question |
+| `/edit ID` | change a question; the current values are filled in |
+| `/remove ID` | remove a question |
+| `/save FILE` | write the questions as a file that `-q` reads |
+| `/help`, `/quit` | |
+
+A state that itself starts with `/` is typed as `//`. Interactive mode
+needs a terminal; with piped input it reads blank-line-separated states
+without editing or commands.
+
+### Many states
+
+`--states FILE` answers a JSON lines file, one state per line (a JSON
+string for text, or any other JSON value), and prints one response body per
+line in the same order. `-` reads stdin. A line that cannot be answered
+yields an error body with its line number, and the run goes on:
+
+```bash
+mlx-decision run -m Cloudflare/clef-flash -q questions.json --states tickets.jsonl > answers.jsonl
+```
+
+```
+{"error": {"message": "not valid JSON: ...", "type": "invalid_request_error", "param": "state"}, "line": 3}
 ```
 
 ## Server

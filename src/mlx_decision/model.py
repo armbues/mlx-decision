@@ -26,8 +26,7 @@ class DecisionModel:
 
     def decide_request(self, request: Request | Mapping[str, Any]) -> Result:
         """Answer a whole request body in the wire format."""
-        request = parse_request(request)
-        self._check_supported(request)
+        request = self.check(request)
         output = self.backend.score(request)
         answers = {
             question_id: build_answer(question, output.probabilities[question_id])
@@ -39,6 +38,16 @@ class DecisionModel:
             usage=Usage(input_tokens=output.input_tokens),
             truncated=output.truncated,
         )
+
+    def check(self, request: Request | Mapping[str, Any]) -> Request:
+        """Validate a request for this model without answering it.
+
+        Raises ``DecisionError`` for an invalid body and for what the model
+        does not support (question types, limits, media).
+        """
+        request = parse_request(request)
+        self._check_supported(request)
+        return request
 
     def _check_supported(self, request: Request) -> None:
         caps = self.backend.capabilities

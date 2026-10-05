@@ -4,6 +4,7 @@ import json
 import re
 import sys
 from collections.abc import Iterator
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -156,7 +157,20 @@ def read_states(stream) -> Iterator[str]:
             typer.echo("state:", err=True)
 
 
+def interactive_terminal(model, body: dict[str, Any], state_json: bool, as_json: bool) -> None:
+    """The prompt_toolkit session: editing, history, the question builder and commands."""
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import create_output
+
+    from .interactive import Session
+
+    # Prompts go to the terminal even when stdout is redirected.
+    with create_app_session(output=create_output(always_prefer_tty=True)):
+        Session(model, body, state_json, as_json).run()
+
+
 def interactive(model, body: dict[str, Any], state_json: bool, as_json: bool) -> None:
+    """States from a pipe: plain lines, no editing or commands."""
     for state in read_states(sys.stdin):
         try:
             result = model.decide_request({**body, "state": parse_state(state, state_json)})
@@ -168,6 +182,30 @@ def interactive(model, body: dict[str, Any], state_json: bool, as_json: bool) ->
         else:
             typer.echo(format_result(result))
         typer.echo("", err=True)
+
+
+def answer_states(model, body: dict[str, Any], lines) -> None:
+    """One response body per JSON line, in order; a bad line gives an error body."""
+    for number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            try:
+                state = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise DecisionError(f"not valid JSON: {error}", param="state") from None
+            result = model.decide_request({**body, "state": state})
+        except DecisionError as error:
+            # The Jev error body, plus the input line it belongs to.
+            detail = {"message": error.message, "type": "invalid_request_error"}
+            detail["param"] = error.param
+            if error.code:
+                detail["code"] = error.code
+            typer.echo(json.dumps({"error": detail, "line": number}, ensure_ascii=False))
+            continue
+        if result.truncated:
+            typer.echo(f"note: line {number}: the state was truncated", err=True)
+        typer.echo(json.dumps(result.to_wire(), ensure_ascii=False))
 
 
 def bar(probability: float) -> str:
@@ -245,6 +283,14 @@ def run(
     state_json: Annotated[
         bool, typer.Option("--state-json", help="Parse the state as JSON (object, array, ...).")
     ] = False,
+    states: Annotated[
+        str | None,
+        typer.Option(
+            "--states",
+            help="Many states: a JSON lines file, one state per line ('-' for stdin). "
+            "Prints one response body per line.",
+        ),
+    ] = None,
     as_json: Annotated[
         bool, typer.Option("--json", help="Print the response body as JSON.")
     ] = False,
@@ -253,7 +299,8 @@ def run(
         typer.Option(
             "--interactive",
             "-i",
-            help="Load the model once, then answer states typed one after another.",
+            help="Load the model once, then answer states typed one after another. "
+            "Without questions, a builder asks for them; /help lists the commands.",
         ),
     ] = False,
 ) -> None:
@@ -262,18 +309,44 @@ def run(
     from .types import parse_request
 
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
-    if interactive_mode:
-        if state is not None or state_file is not None:
-            fail("--interactive reads the states from the terminal; drop --state/--state-file")
+    if states is not None:
+        if interactive_mode or state is not None or state_file is not None:
+            fail("--states reads all states from one file; drop --state/--state-file/-i")
         body = build_questions(questions, shorthand)
         body.pop("state", None)
         try:
-            parse_request({**body, "state": ""})  # catch question errors before loading
+            source = nullcontext(sys.stdin) if states == "-" else open(states, encoding="utf-8")  # noqa: SIM115
+        except OSError as error:
+            fail(f"cannot read the states: {error}")
+        with source as lines:
+            try:
+                parse_request({**body, "state": ""})
+                loaded = load(model)
+            except (DecisionError, FileNotFoundError, ValueError) as error:
+                fail(str(error))
+            answer_states(loaded, body, lines)
+        return
+    if interactive_mode:
+        if state is not None or state_file is not None:
+            fail("--interactive reads the states from the terminal; drop --state/--state-file")
+        building = questions is None and not shorthand
+        terminal = sys.stdin.isatty()
+        if building and not terminal:
+            fail("the question builder needs a terminal; give -q or --noul/--choice/--score")
+        body = {} if building else build_questions(questions, shorthand)
+        body.pop("state", None)
+        try:
+            if not building:
+                parse_request({**body, "state": ""})  # catch question errors before loading
             loaded = load(model)
         except (DecisionError, FileNotFoundError, ValueError) as error:
             fail(str(error))
-        typer.echo(f"{loaded.name} loaded, {len(body['questions'])} questions.", err=True)
-        interactive(loaded, body, state_json, as_json)
+        count = len(body.get("questions", {}))
+        typer.echo(f"{loaded.name} loaded, {count} questions.", err=True)
+        if terminal:
+            interactive_terminal(loaded, body, state_json, as_json)
+        else:
+            interactive(loaded, body, state_json, as_json)
         return
     body = build_request(questions, shorthand, state, state_file, state_json)
     try:

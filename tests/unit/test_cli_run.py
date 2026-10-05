@@ -191,6 +191,58 @@ def test_interactive_refuses_a_state_flag(cli):
     assert "drop --state" in result.stderr
 
 
+def test_interactive_builder_needs_a_terminal(cli):
+    result = cli("-i", input="x\n\n")
+    assert result.exit_code == 1
+    assert "the question builder needs a terminal" in result.stderr
+
+
+def test_states_one_body_per_line_in_order(cli, questions_file, tmp_path, fake_model):
+    path = tmp_path / "states.jsonl"
+    states = ["Stripe is down", {"ticket": 1}, "a b c d"]
+    path.write_text("".join(json.dumps(s) + "\n" for s in states) + "\n")
+    result = cli("-q", str(questions_file), "--states", str(path))
+    assert result.exit_code == 0, result.output
+    expected = [fake_model.decide(s, QUESTIONS).to_wire() for s in states]
+    assert [json.loads(line) for line in result.stdout.splitlines()] == expected
+
+
+def test_states_from_stdin_with_an_error_line(cli):
+    typed = '"one two"\n{broken\n\n"three"\n'
+    result = cli("--noul", "q=Is it?", "--states", "-", input=typed)
+    assert result.exit_code == 0, result.output
+    first, error, last = (json.loads(line) for line in result.stdout.splitlines())
+    assert first["usage"]["input_tokens"] == 2
+    assert error["line"] == 2
+    assert error["error"]["type"] == "invalid_request_error"
+    assert error["error"]["param"] == "state"
+    assert error["error"]["message"].startswith("not valid JSON")
+    assert last["usage"]["input_tokens"] == 1
+
+
+def test_states_note_truncation_on_stderr(fake_model_path, questions_file):
+    write_model(fake_model_path, max_input_tokens=2)
+    args = ["run", "-m", str(fake_model_path), "-q", str(questions_file), "--states", "-"]
+    result = CliRunner().invoke(app, args, input='"a b"\n"a b c"\n')
+    assert "line 2: the state was truncated" in result.stderr
+    assert "line 1" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--states", "missing.jsonl"], "cannot read the states"),
+        (["--states", "-", "-s", "x"], "drop --state"),
+        (["--states", "-", "-i"], "drop --state"),
+        (["--states", "-", "--score", "anger=calm"], "questions.anger.criteria"),
+    ],
+)
+def test_states_errors(cli, args, message):
+    result = cli("--noul", "q=Is it?", *args, input="")
+    assert result.exit_code == 1
+    assert message in result.stderr
+
+
 def test_version():
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
