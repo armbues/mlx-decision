@@ -2,6 +2,10 @@
 
 Text tokens have the same position on all three axes, which makes this equal
 to ordinary rotary positions. Image and video tokens differ per axis.
+
+The interleaved assignment of frequencies to axes follows the Qwen3.5 rotary
+embedding in transformers (Apache License 2.0, see
+LICENSES/transformers-Apache-2.0.txt); the code is written for MLX.
 """
 
 import mlx.core as mx

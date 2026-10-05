@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Run and train decision models on Apple Silicon with MLX"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
+license = "MIT AND Apache-2.0"
 license-files = ["LICENSE", "LICENSES/*"]
 dependencies = [
     "mlx>=0.32",
