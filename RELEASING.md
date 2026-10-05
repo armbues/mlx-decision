@@ -54,15 +54,17 @@ deleted, so the dry run uses a release candidate.
 2. `make publish-test` builds, checks the package and asks before
    uploading. Run it in your own shell: `conda run` does not pass the
    question through.
-3. Install it into a fresh environment. TestPyPI does not have the
-   dependencies, so they come from PyPI:
+3. Install it into a fresh environment: only the package itself from
+   TestPyPI, its dependencies from PyPI (anyone can upload packages under
+   the dependencies' names to TestPyPI, so it is not used as an index for
+   them):
 
    ```bash
    python3.12 -m venv /tmp/mlx-decision-rc
+   /tmp/mlx-decision-rc/bin/pip download --no-deps -d /tmp/mlx-decision-rc/dist \
+     --index-url https://test.pypi.org/simple/ "mlx-decision==0.3.0rc1"
    /tmp/mlx-decision-rc/bin/pip install \
-     --index-url https://test.pypi.org/simple/ \
-     --extra-index-url https://pypi.org/simple/ \
-     "mlx-decision[server,images]==0.3.0rc1"
+     "$(ls /tmp/mlx-decision-rc/dist/*.whl)[server,images]"
    ```
 
 4. Check it: `/tmp/mlx-decision-rc/bin/mlx-decision --version`, then the
