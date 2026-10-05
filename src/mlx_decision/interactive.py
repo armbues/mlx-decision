@@ -1,4 +1,4 @@
-"""The interactive ``run``: states typed one after another, questions built in between.
+"""The ``chat`` session: states typed one after another, questions built in between.
 
 A prompt_toolkit session reads each state with line editing and history; a
 blank line submits it. A single line starting with ``/`` is a command that
@@ -6,12 +6,13 @@ lists, adds, edits, removes or saves the questions.
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import typer
-from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import Completer, Completion, WordCompleter
+from prompt_toolkit import PromptSession, shortcuts
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.validation import ValidationError, Validator
@@ -19,7 +20,11 @@ from prompt_toolkit.validation import ValidationError, Validator
 from .cli import QUESTION_ID, format_result, parse_state
 from .errors import DecisionError
 
-TYPES = ("choice", "score", "noul")
+TYPES = {
+    "choice": "pick one of several options",
+    "score": "rate on ordered levels",
+    "noul": "a yes/no question",
+}
 COMMANDS = {
     "list": "show the questions",
     "add": "build a new question",
@@ -30,6 +35,7 @@ COMMANDS = {
     "quit": "end the session (or Ctrl-D)",
 }
 HINT = "Type a state and finish it with a blank line. /help lists the commands, Ctrl-D quits."
+NEXT_STEPS = [("start", "Start answering states"), ("add", "Add another question")]
 
 
 def say(message: str = "") -> None:
@@ -67,6 +73,15 @@ def block_bindings(commands: bool) -> KeyBindings:
             buffer.insert_text("\n")
 
     return bindings
+
+
+def cancel_menu(event) -> None:
+    event.app.exit(exception=EOFError())
+
+
+# Ctrl-D leaves a menu like any other prompt (Ctrl-C is built in).
+MENU_BINDINGS = KeyBindings()
+MENU_BINDINGS.add("c-d")(cancel_menu)
 
 
 def continuation(width: int, line_number: int, wrap_count: int) -> str:
@@ -109,17 +124,25 @@ class Session:
             key_bindings=block_bindings(commands=True),
             prompt_continuation=continuation,
             completer=CommandCompleter(self),
+            bottom_toolbar=self.toolbar,
         )
 
     @property
     def questions(self) -> dict[str, Any]:
         return self.body["questions"]
 
+    def toolbar(self) -> str:
+        count = len(self.questions)
+        return (
+            f" {count} question{'' if count == 1 else 's'} · blank line: answer"
+            " · /help: commands · Ctrl-D: quit"
+        )
+
     def run(self) -> None:
         if not self.questions:
             say("No questions yet: build the first one (Ctrl-C cancels).")
             self.build()
-            while self.questions and self.confirm("Add another question?"):
+            while self.questions and self.next_step() == "add":
                 self.build()
             if not self.questions:
                 return
@@ -141,11 +164,18 @@ class Session:
         if not self.questions:
             say("error: no questions; /add one")
             return
+        busy = sys.stderr.isatty()
+        if busy:
+            typer.echo("answering...", err=True, nl=False)
         try:
             state = parse_state(text, self.state_json)
             result = self.model.decide_request({**self.body, "state": state})
         except DecisionError as error:
-            say(f"error: {error}")
+            result, failure = None, error
+        if busy:
+            typer.echo("\r\033[K", err=True, nl=False)
+        if result is None:
+            say(f"error: {failure}")
             return
         if self.as_json:
             typer.echo(json.dumps(result.to_wire(), ensure_ascii=False))
@@ -171,11 +201,15 @@ class Session:
         elif name == "add":
             self.build()
         elif name in ("edit", "remove"):
-            if not arg and name == "edit" and len(self.questions) == 1:
-                arg = next(iter(self.questions))
+            if not self.questions:
+                say("no questions; /add one")
+                return True
+            if not arg:
+                arg = self.pick_question(f"Question to {name}:")
+                if arg is None:
+                    return True
             if arg not in self.questions:
-                known = ", ".join(self.questions) or "none"
-                say(f"error: /{name} needs a question id ({known})")
+                say(f"error: no question {arg!r} ({', '.join(self.questions)})")
             elif name == "edit":
                 self.build(arg)
             else:
@@ -227,18 +261,16 @@ class Session:
                 (draft_id if key == question_id else key): (draft if key == question_id else value)
                 for key, value in self.questions.items()
             }
-        say(f"{'updated' if question_id else 'added'} {draft_id}")
+        say(f"{'updated' if question_id else 'added'}:")
+        say(describe({draft_id: draft}, indent="  "))
 
     def ask_question(
         self, question_id: str | None, draft_id: str | None, current: dict[str, Any]
     ) -> tuple[str, dict[str, Any]]:
-        kind = self.ask(
-            "type (choice, score, noul): ",
-            default=current.get("type", ""),
-            completer=WordCompleter(list(TYPES)),
-            validator=Validator.from_callable(
-                lambda text: text in TYPES, error_message="choice, score or noul"
-            ),
+        kind = self.pick(
+            "Type:",
+            [(name, f"{name:<7} {description}") for name, description in TYPES.items()],
+            default=current.get("type"),
         )
         taken = set(self.questions) - {question_id}
         suggestion = self.free_id(kind)
@@ -313,9 +345,33 @@ class Session:
     def ask(self, message: str, **options) -> str:
         return PromptSession().prompt(message, **options).strip()
 
+    def pick(self, message: str, options: list[tuple[str, str]], default: str | None = None) -> str:
+        """A menu: arrow keys or the option's number, then Enter."""
+        if default not in dict(options):
+            default = None
+        return shortcuts.choice(
+            message, options=options, default=default, key_bindings=MENU_BINDINGS
+        )
+
+    def next_step(self) -> str:
+        try:
+            return self.pick("Next:", NEXT_STEPS)
+        except (KeyboardInterrupt, EOFError):
+            return "start"
+
+    def pick_question(self, message: str) -> str | None:
+        options = [
+            (question_id, describe({question_id: question}).splitlines()[0])
+            for question_id, question in self.questions.items()
+        ]
+        try:
+            return self.pick(message, options)
+        except (KeyboardInterrupt, EOFError):
+            return None
+
     def confirm(self, message: str) -> bool:
         try:
-            return self.ask(f"{message} [y/N] ").lower().startswith("y")
+            return shortcuts.confirm(message)
         except (KeyboardInterrupt, EOFError):
             return False
 
@@ -351,7 +407,7 @@ class OptionsValidator(Validator):
             seen.add(key)
 
 
-def describe(questions: dict[str, Any]) -> str:
+def describe(questions: dict[str, Any], indent: str = "") -> str:
     """The questions as the builder shows them."""
     lines = []
     for question_id, question in questions.items():
@@ -367,4 +423,4 @@ def describe(questions: dict[str, Any]) -> str:
         elif isinstance(criteria, list):
             for level, value in enumerate(criteria):
                 lines.append(f"  {level}  {as_text(value)}")
-    return "\n".join(lines)
+    return "\n".join(indent + line for line in lines)

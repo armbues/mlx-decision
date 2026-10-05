@@ -1,4 +1,4 @@
-"""The interactive ``run`` session, typed through prompt_toolkit's pipe input."""
+"""The ``chat`` session, typed through prompt_toolkit's pipe input."""
 
 import json
 
@@ -14,10 +14,15 @@ from mlx_decision import load
 from mlx_decision.interactive import OptionsValidator, Session
 
 ENTER = "\r"
+DOWN = "\x1b[B"
 CLEAR_LINE = "\x15"  # Ctrl-U
 BACKSPACE = "\x7f"
 CTRL_C = "\x03"
 CTRL_D = "\x04"
+
+# Menu entries are picked by their number, then Enter; Enter alone keeps the default.
+CHOICE, SCORE, NOUL = "1", "2", "3"
+START, ADD = "1", "2"
 
 QUESTIONS = {
     "team": {
@@ -49,10 +54,10 @@ def bodies(out: str) -> list[dict]:
 
 def test_builder_opens_without_questions(fake_model, capsys):
     typed = lines(
-        "choice", "team", "Which team?", "billing: payments and refunds", "technical", "",
-        "y",
-        "noul", "", "Is it urgent?",
-        "n",
+        CHOICE, "team", "Which team?", "billing: payments and refunds", "technical", "",
+        ADD,
+        NOUL, "", "Is it urgent?",
+        START,
         "Stripe is down", "",
     )  # fmt: skip
     session = drive(fake_model, typed)
@@ -65,27 +70,33 @@ def test_builder_opens_without_questions(fake_model, capsys):
         "noul_1": {"type": "noul", "instructions": "Is it urgent?"},
     }
     out, err = capsys.readouterr()
-    assert "added team" in err and "added noul_1" in err
+    assert "added:\n  team (choice): Which team?\n    billing: payments and refunds" in err
+    assert "added:\n  noul_1 (noul): Is it urgent?" in err
     assert [list(b["answers"]) for b in bodies(out)] == [["team", "noul_1"]]
 
 
+def test_the_type_menu_works_with_arrow_keys(fake_model):
+    session = drive(fake_model, DOWN + ENTER + lines("anger", "", "calm", "angry", "", ""))
+    assert session.questions == {"anger": {"type": "score", "criteria": ["calm", "angry"]}}
+
+
 def test_cancelling_the_first_question_ends_the_session(fake_model, capsys):
-    session = drive(fake_model, "choice" + ENTER + CTRL_C)
+    session = drive(fake_model, lines(CHOICE) + CTRL_C)
     assert session.questions == {}
     assert "cancelled" in capsys.readouterr().err
 
 
 def test_an_invalid_question_is_asked_again_with_what_was_typed(fake_model, capsys):
-    typed = lines("score", "anger", "", "calm", "") + lines("", "", "", "angry", "")
-    session = drive(fake_model, typed + lines("n"))
+    typed = lines(SCORE, "anger", "", "calm", "") + lines("", "", "", "angry", "")
+    session = drive(fake_model, typed + lines(START))
     assert session.questions == {"anger": {"type": "score", "criteria": ["calm", "angry"]}}
     assert "questions.anger.criteria: a score needs at least two levels" in capsys.readouterr().err
 
 
 def test_the_builder_checks_the_models_limits(tmp_path, capsys):
     model = load(write_model(tmp_path / "small", max_choice_options=2))
-    typed = lines("choice", "team", "", "a", "b", "c", "")
-    typed += lines("", "", "", BACKSPACE * 2, "n")  # the third option deleted
+    typed = lines(CHOICE, "team", "", "a", "b", "c", "")
+    typed += lines("", "", "", BACKSPACE * 2, START)  # the third option deleted
     session = drive(model, typed)
     assert "a choice can have at most 2 options" in capsys.readouterr().err
     assert list(session.questions["team"]["criteria"]) == ["a", "b"]
@@ -93,7 +104,7 @@ def test_the_builder_checks_the_models_limits(tmp_path, capsys):
 
 def test_a_noul_needs_its_text(fake_model):
     # The empty instructions are refused in place; the text typed next is taken.
-    session = drive(fake_model, lines("noul", "q", "", "Is it?", "n"))
+    session = drive(fake_model, lines(NOUL, "q", "", "Is it?", START))
     assert session.questions == {"q": {"type": "noul", "instructions": "Is it?"}}
 
 
@@ -105,6 +116,11 @@ def test_states_are_answered_and_kept_in_the_history(fake_model, capsys):
     assert "/help lists the commands" in err
     # Typed-ahead keys run before the history loads, so recall is not driven here.
     assert session.states.history.get_strings() == ["one two\nthree", "four"]
+
+
+def test_the_toolbar_counts_the_questions(fake_model):
+    session = drive(fake_model, "", body={"questions": dict(QUESTIONS)})
+    assert session.toolbar().startswith(" 2 questions · blank line: answer")
 
 
 def test_a_bad_state_is_reported_and_the_session_goes_on(fake_model, capsys):
@@ -125,6 +141,7 @@ def test_list_help_and_unknown_commands(fake_model, capsys):
 
 
 def test_edit_renames_in_place_and_keeps_untouched_values(fake_model):
+    # The type menu starts on the current type, so Enter keeps it.
     typed = lines("/edit team", "", CLEAR_LINE + "department", "", "sales", "")
     session = drive(fake_model, typed, body={"questions": dict(QUESTIONS)})
     assert list(session.questions) == ["department", "anger"]
@@ -135,21 +152,26 @@ def test_edit_renames_in_place_and_keeps_untouched_values(fake_model):
     }
 
 
-def test_edit_can_change_the_type(fake_model):
-    typed = lines("/edit anger", CLEAR_LINE + "noul", "", "Is the customer angry?")
+def test_edit_without_an_id_offers_a_menu(fake_model):
+    typed = lines("/edit", "2", NOUL, "", "Is the customer angry?")
     session = drive(fake_model, typed, body={"questions": dict(QUESTIONS)})
     assert session.questions["anger"] == {"type": "noul", "instructions": "Is the customer angry?"}
+    assert session.questions["team"] == QUESTIONS["team"]
 
 
-def test_remove_then_no_questions_left(fake_model, capsys):
-    typed = lines("/remove team", "/remove", "/remove anger", "a state", "")
+def test_remove_by_id_and_from_the_menu(fake_model, capsys):
+    typed = lines("/remove team", "/remove", "", "/remove", "/remove nope", "a state", "")
     session = drive(fake_model, typed, body={"questions": dict(QUESTIONS)})
     assert session.questions == {}
     out, err = capsys.readouterr()
     assert "removed team" in err and "removed anger" in err
-    assert "/remove needs a question id (anger)" in err
-    assert "no questions; /add one" in err
+    assert err.count("no questions; /add one") == 3
     assert out == ""
+
+
+def test_an_unknown_id_names_the_known_ones(fake_model, capsys):
+    drive(fake_model, lines("/edit nope"), body={"questions": dict(QUESTIONS)})
+    assert "no question 'nope' (team, anger)" in capsys.readouterr().err
 
 
 def test_save_writes_a_file_that_q_reads(fake_model, tmp_path, capsys):
@@ -157,7 +179,7 @@ def test_save_writes_a_file_that_q_reads(fake_model, tmp_path, capsys):
 
     path = tmp_path / "questions.json"
     path.write_text("{}")
-    typed = lines("/add", "noul", "urgent", "Urgent?", f"/save {path}", "y", "/save")
+    typed = lines("/add", NOUL, "urgent", "Urgent?", f"/save {path}") + "y" + lines("/save")
     session = drive(fake_model, typed, body={"questions": dict(QUESTIONS)})
     assert "/save needs a file name" in capsys.readouterr().err
     assert build_questions(path, {})["questions"] == session.questions
@@ -167,7 +189,7 @@ def test_save_writes_a_file_that_q_reads(fake_model, tmp_path, capsys):
 def test_save_keeps_an_existing_file_unless_confirmed(fake_model, tmp_path):
     path = tmp_path / "questions.json"
     path.write_text("{}")
-    drive(fake_model, lines(f"/save {path}", "n"), body={"questions": dict(QUESTIONS)})
+    drive(fake_model, lines(f"/save {path}") + "n", body={"questions": dict(QUESTIONS)})
     assert path.read_text() == "{}"
 
 
@@ -181,3 +203,11 @@ def test_a_state_starting_with_a_slash(fake_model, capsys):
 def test_options_given_twice_are_refused():
     with pytest.raises(ValidationError, match="given twice"):
         OptionsValidator().validate(Document("a: first\nb\na\n"))
+
+
+def test_ctrl_d_leaves_a_menu(fake_model, capsys):
+    session = drive(fake_model, lines("/edit") + CTRL_D + lines("/list"), body={
+        "questions": dict(QUESTIONS)
+    })  # fmt: skip
+    assert session.questions == QUESTIONS
+    assert "team (choice)" in capsys.readouterr().err

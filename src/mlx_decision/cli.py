@@ -3,7 +3,6 @@
 import json
 import re
 import sys
-from collections.abc import Iterator
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Annotated, Any
@@ -138,52 +137,6 @@ def build_request(
     return body
 
 
-def read_states(stream) -> Iterator[str]:
-    """States typed one after another: a blank line submits, end of input stops."""
-    lines: list[str] = []
-    typer.echo("state (blank line to answer, Ctrl-D to quit):", err=True)
-    while True:
-        line = stream.readline()
-        if not line:
-            if lines:
-                yield "\n".join(lines)
-            return
-        line = line.rstrip("\n")
-        if line.strip():
-            lines.append(line)
-        elif lines:
-            yield "\n".join(lines)
-            lines = []
-            typer.echo("state:", err=True)
-
-
-def interactive_terminal(model, body: dict[str, Any], state_json: bool, as_json: bool) -> None:
-    """The prompt_toolkit session: editing, history, the question builder and commands."""
-    from prompt_toolkit.application import create_app_session
-    from prompt_toolkit.output import create_output
-
-    from .interactive import Session
-
-    # Prompts go to the terminal even when stdout is redirected.
-    with create_app_session(output=create_output(always_prefer_tty=True)):
-        Session(model, body, state_json, as_json).run()
-
-
-def interactive(model, body: dict[str, Any], state_json: bool, as_json: bool) -> None:
-    """States from a pipe: plain lines, no editing or commands."""
-    for state in read_states(sys.stdin):
-        try:
-            result = model.decide_request({**body, "state": parse_state(state, state_json)})
-        except DecisionError as error:
-            typer.echo(f"error: {error}", err=True)
-            continue
-        if as_json:
-            typer.echo(json.dumps(result.to_wire(), ensure_ascii=False))
-        else:
-            typer.echo(format_result(result))
-        typer.echo("", err=True)
-
-
 def answer_states(model, body: dict[str, Any], lines) -> None:
     """One response body per JSON line, in order; a bad line gives an error body."""
     for number, line in enumerate(lines, 1):
@@ -250,29 +203,38 @@ def format_result(result) -> str:
     return "\n".join(lines)
 
 
+# Options shared by run and chat.
+ModelOption = Annotated[
+    str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+]
+QuestionsOption = Annotated[
+    Path | None,
+    typer.Option("--questions", "-q", help="JSON file: a questions map, or a whole request body."),
+]
+NoulOption = Annotated[
+    list[str] | None, typer.Option("--noul", help="A yes/no question: '[ID=]text'. Repeatable.")
+]
+ChoiceOption = Annotated[
+    list[str] | None,
+    typer.Option("--choice", help="A choice: 'ID=option,option,...'. Repeatable."),
+]
+ScoreOption = Annotated[
+    list[str] | None,
+    typer.Option("--score", help="A score: 'ID=lowest,...,highest'. Repeatable."),
+]
+StateJsonOption = Annotated[
+    bool, typer.Option("--state-json", help="Parse the state as JSON (object, array, ...).")
+]
+JsonOption = Annotated[bool, typer.Option("--json", help="Print the response body as JSON.")]
+
+
 @app.command()
 def run(
-    model: Annotated[
-        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
-    ],
-    questions: Annotated[
-        Path | None,
-        typer.Option(
-            "--questions", "-q", help="JSON file: a questions map, or a whole request body."
-        ),
-    ] = None,
-    noul: Annotated[
-        list[str] | None,
-        typer.Option("--noul", help="A yes/no question: '[ID=]text'. Repeatable."),
-    ] = None,
-    choice: Annotated[
-        list[str] | None,
-        typer.Option("--choice", help="A choice: 'ID=option,option,...'. Repeatable."),
-    ] = None,
-    score: Annotated[
-        list[str] | None,
-        typer.Option("--score", help="A score: 'ID=lowest,...,highest'. Repeatable."),
-    ] = None,
+    model: ModelOption,
+    questions: QuestionsOption = None,
+    noul: NoulOption = None,
+    choice: ChoiceOption = None,
+    score: ScoreOption = None,
     state: Annotated[
         str | None,
         typer.Option("--state", "-s", help="The state as text. Default: read stdin."),
@@ -280,9 +242,7 @@ def run(
     state_file: Annotated[
         Path | None, typer.Option("--state-file", help="Read the state from a file.")
     ] = None,
-    state_json: Annotated[
-        bool, typer.Option("--state-json", help="Parse the state as JSON (object, array, ...).")
-    ] = False,
+    state_json: StateJsonOption = False,
     states: Annotated[
         str | None,
         typer.Option(
@@ -291,18 +251,7 @@ def run(
             "Prints one response body per line.",
         ),
     ] = None,
-    as_json: Annotated[
-        bool, typer.Option("--json", help="Print the response body as JSON.")
-    ] = False,
-    interactive_mode: Annotated[
-        bool,
-        typer.Option(
-            "--interactive",
-            "-i",
-            help="Load the model once, then answer states typed one after another. "
-            "Without questions, a builder asks for them; /help lists the commands.",
-        ),
-    ] = False,
+    as_json: JsonOption = False,
 ) -> None:
     """Answer questions about a state."""
     from .model import load
@@ -310,8 +259,8 @@ def run(
 
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
     if states is not None:
-        if interactive_mode or state is not None or state_file is not None:
-            fail("--states reads all states from one file; drop --state/--state-file/-i")
+        if state is not None or state_file is not None:
+            fail("--states reads all states from one file; drop --state/--state-file")
         body = build_questions(questions, shorthand)
         body.pop("state", None)
         try:
@@ -326,28 +275,6 @@ def run(
                 fail(str(error))
             answer_states(loaded, body, lines)
         return
-    if interactive_mode:
-        if state is not None or state_file is not None:
-            fail("--interactive reads the states from the terminal; drop --state/--state-file")
-        building = questions is None and not shorthand
-        terminal = sys.stdin.isatty()
-        if building and not terminal:
-            fail("the question builder needs a terminal; give -q or --noul/--choice/--score")
-        body = {} if building else build_questions(questions, shorthand)
-        body.pop("state", None)
-        try:
-            if not building:
-                parse_request({**body, "state": ""})  # catch question errors before loading
-            loaded = load(model)
-        except (DecisionError, FileNotFoundError, ValueError) as error:
-            fail(str(error))
-        count = len(body.get("questions", {}))
-        typer.echo(f"{loaded.name} loaded, {count} questions.", err=True)
-        if terminal:
-            interactive_terminal(loaded, body, state_json, as_json)
-        else:
-            interactive(loaded, body, state_json, as_json)
-        return
     body = build_request(questions, shorthand, state, state_file, state_json)
     try:
         result = load(model).decide_request(body)
@@ -359,6 +286,52 @@ def run(
         typer.echo(json.dumps(result.to_wire(), indent=2, ensure_ascii=False))
     else:
         typer.echo(format_result(result))
+
+
+@app.command()
+def chat(
+    model: ModelOption,
+    questions: QuestionsOption = None,
+    noul: NoulOption = None,
+    choice: ChoiceOption = None,
+    score: ScoreOption = None,
+    state_json: StateJsonOption = False,
+    as_json: JsonOption = False,
+) -> None:
+    """Load a model once, then answer states typed one after another.
+
+    Without questions, a builder asks for them first. Between states, /help
+    lists the commands that show, add, edit, remove and save questions.
+    """
+    from .model import load
+    from .types import parse_request
+
+    if not sys.stdin.isatty():
+        fail("chat needs a terminal; for many states in a script use: run --states FILE")
+    shorthand = shorthand_questions(noul or [], choice or [], score or [])
+    body: dict[str, Any] = {}
+    if questions is not None or shorthand:
+        body = build_questions(questions, shorthand)
+        body.pop("state", None)
+    try:
+        if body:
+            parse_request({**body, "state": ""})  # catch question errors before loading
+        loaded = load(model)
+    except (DecisionError, FileNotFoundError, ValueError) as error:
+        fail(str(error))
+    typer.echo(f"{loaded.name} loaded, {len(body.get('questions', {}))} questions.", err=True)
+    start_chat(loaded, body, state_json, as_json)
+
+
+def start_chat(model, body: dict[str, Any], state_json: bool, as_json: bool) -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output import create_output
+
+    from .interactive import Session
+
+    # Prompts go to the terminal even when stdout is redirected.
+    with create_app_session(output=create_output(always_prefer_tty=True)):
+        Session(model, body, state_json, as_json).run()
 
 
 @app.command()
