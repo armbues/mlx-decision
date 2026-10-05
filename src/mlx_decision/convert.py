@@ -3,6 +3,7 @@
 import shutil
 from pathlib import Path
 
+from .errors import require_metal
 from .hub import is_repo_id, resolve_model_path
 from .registry import detect_family, resolve
 
@@ -27,6 +28,7 @@ def convert(model: str | Path, output: str | Path, **options) -> Path:
     ``options`` go to the family's converter: ``bits`` (None for no
     quantization), ``group_size`` and ``quantize_output_embeddings``.
     """
+    require_metal()
     output = Path(output)
     if output.exists() and any(output.iterdir()):
         raise FileExistsError(f"output folder is not empty: {output}")

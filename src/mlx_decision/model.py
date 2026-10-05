@@ -7,7 +7,7 @@ from typing import Any
 
 from .answers import build_answer
 from .backend import Backend
-from .errors import DecisionError
+from .errors import DecisionError, require_metal
 from .hub import is_repo_id, resolve_model_path
 from .registry import load_backend
 from .types import Choice, Request, Result, Score, Usage, parse_request
@@ -118,6 +118,7 @@ def load(model: str | Path, **options) -> DecisionModel:
     ``max_image_pixels`` (default 2**21; larger images are shrunk, None keeps
     only the processor's own maximum).
     """
+    require_metal()
     backend = load_backend(resolve_model_path(model), **options)
     if is_repo_id(model):
         # Named after the repo, not the cache's snapshot folder.

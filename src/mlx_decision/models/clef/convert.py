@@ -18,7 +18,9 @@ from ...backbones.qwen3_5.load import (
     output_embeddings_path,
     quantizable_layers,
     quantize_text_model,
+    read_vision_weights,
     save_text_model,
+    write_vision_weights,
 )
 from ...calibration import calibration_requests
 from ...mixed import (
@@ -80,9 +82,8 @@ def convert(
         config.pop("vision_config", None)
     save_text_model(backbone, output, config)
     if vision:
-        from ...backbones.qwen3_5.vision import load_vision_model, save_vision_model
-
-        save_vision_model(load_vision_model(path), output)
+        # Copied as stored, without building the tower (which needs NumPy).
+        write_vision_weights(read_vision_weights(path), output)
     for name in COPIED:
         if (path / name).exists():
             shutil.copy2(path / name, output / name)

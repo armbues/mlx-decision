@@ -6,7 +6,7 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from mlx_decision.backbones.qwen3_5.load import has_vision_weights
+from mlx_decision.backbones.qwen3_5.load import has_vision_weights, sanitize_vision_weights
 from mlx_decision.backbones.qwen3_5.vision import VisionArgs, VisionModel, load_vision_model
 
 TINY = {
@@ -55,7 +55,7 @@ def test_equal_to_the_reference(reference):
     import torch
 
     model = VisionModel(VisionArgs.from_config({"vision_config": TINY}))
-    model.load_weights(list(model.sanitize(weights_of(reference)).items()), strict=True)
+    model.load_weights(list(sanitize_vision_weights(weights_of(reference)).items()), strict=True)
     pixels = patches(GRIDS)
     with torch.inference_mode():
         expected = reference(torch.tensor(pixels), grid_thw=torch.tensor(GRIDS)).pooler_output
@@ -69,7 +69,7 @@ def test_equal_to_the_reference(reference):
 
 def test_images_do_not_attend_to_each_other(reference):
     model = VisionModel(VisionArgs.from_config({"vision_config": TINY}))
-    model.load_weights(list(model.sanitize(weights_of(reference)).items()), strict=True)
+    model.load_weights(list(sanitize_vision_weights(weights_of(reference)).items()), strict=True)
     pixels = patches(GRIDS)
     with mx.stream(mx.cpu):
         together = model(mx.array(pixels), GRIDS)

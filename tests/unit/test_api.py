@@ -114,3 +114,18 @@ def test_truncation_is_reported(fake_model_path):
     result = model.decide("one two three", TRIAGE)
     assert result.truncated is True
     assert result.usage.input_tokens == 2
+
+
+def test_without_a_metal_gpu_loading_says_why(fake_model_path, monkeypatch):
+    import mlx.core as mx
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+    from mlx_decision.errors import PlatformError
+
+    monkeypatch.setattr(mx.metal, "is_available", lambda: False)
+    with pytest.raises(PlatformError, match="Apple Silicon"):
+        mlx_decision.load(fake_model_path)
+    result = CliRunner().invoke(app, ["run", "-m", str(fake_model_path), "-s", "x", "--noul", "q?"])
+    assert result.exit_code == 1
+    assert "error: mlx-decision runs models on Apple Silicon Macs" in result.stderr

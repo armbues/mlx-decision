@@ -42,6 +42,62 @@ def load_text_model(path: str | Path) -> Model:
     return model
 
 
+VISION_SHARD = "model-vision.safetensors"
+
+
+def sanitize_vision_weights(weights: Mapping[str, mx.array]) -> dict[str, mx.array]:
+    """The vision weights among ``weights``, under the vision model's own names.
+
+    The release's prefixes are removed and the 3-D patch kernel is flattened
+    to the linear layer that replaces it; other weights are dropped.
+    """
+    sanitized = {}
+    for key, value in weights.items():
+        prefix = next((p for p in VISION_PREFIXES if key.startswith(p)), None)
+        if prefix is None:
+            continue
+        key = key[len(prefix) :]
+        if key == "patch_embed.proj.weight" and value.ndim == 5:
+            value = value.reshape(value.shape[0], -1)
+        sanitized[key] = value
+    return sanitized
+
+
+def read_vision_weights(path: str | Path) -> dict[str, mx.array]:
+    """The vision tower's weights of a folder (see ``sanitize_vision_weights``); no NumPy."""
+    path = Path(path)
+    index = path / "model.safetensors.index.json"
+    if index.exists():
+        weight_map = json.loads(index.read_text())["weight_map"]
+        files = sorted({f for name, f in weight_map.items() if name.startswith(VISION_PREFIXES)})
+    else:
+        files = [file.name for file in sorted(path.glob("model*.safetensors"))]
+    weights = {}
+    for file in files:
+        weights.update(sanitize_vision_weights(mx.load(str(path / file))))
+    if not weights:
+        raise FileNotFoundError(f"no vision weights in {path}")
+    return weights
+
+
+def write_vision_weights(weights: Mapping[str, mx.array], path: str | Path) -> None:
+    """Add vision weights to a folder written by ``save_text_model``.
+
+    They go into their own shard, listed in ``model.safetensors.index.json``
+    under the release's ``model.visual.`` names.
+    """
+    path = Path(path)
+    named = {f"{VISION_PREFIXES[0]}{k}": v for k, v in weights.items()}
+    mx.save_safetensors(str(path / VISION_SHARD), named, metadata={"format": "mlx"})
+    index_file = path / "model.safetensors.index.json"
+    index = json.loads(index_file.read_text())
+    index["weight_map"] = dict(
+        sorted({**index["weight_map"], **dict.fromkeys(named, VISION_SHARD)}.items())
+    )
+    index["metadata"]["total_size"] += sum(v.nbytes for v in named.values())
+    index_file.write_text(json.dumps(index, indent=2) + "\n")
+
+
 def has_vision_weights(path: str | Path) -> bool:
     """Whether the folder's weight index lists vision tower weights."""
     index = Path(path) / "model.safetensors.index.json"

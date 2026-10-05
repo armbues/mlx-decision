@@ -5,24 +5,53 @@ build-backend = "hatchling.build"
 [project]
 name = "mlx-decision"
 version = "0.3.0"
-description = "Run and train decision models on Apple Silicon with MLX"
+description = "Run decision models such as Cloudflare's Clef locally on Apple Silicon with MLX"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT AND Apache-2.0"
 license-files = ["LICENSE", "LICENSES/*"]
+authors = [{ name = "Armin Buescher" }]
+keywords = [
+    "mlx",
+    "apple-silicon",
+    "decision-model",
+    "classification",
+    "clef",
+    "jev",
+    "qwen",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: GPU",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "mlx>=0.32",
-    "tokenizers",
-    "huggingface_hub",
+    "tokenizers>=0.21",
+    "huggingface_hub>=1.0",
+    "httpx>=0.27",
     "prompt_toolkit>=3.0.52",
-    "pydantic>=2",
-    "typer",
+    "pydantic>=2.7",
+    "typer>=0.12",
 ]
 
 [project.optional-dependencies]
-server = ["fastapi", "uvicorn"]
-images = ["pillow", "numpy"]
-dev = ["mlx-decision[server,images]", "pytest", "ruff", "httpx", "build", "twine"]
+server = ["fastapi>=0.110", "uvicorn>=0.29"]
+images = ["pillow>=10", "numpy>=1.26"]
+dev = ["mlx-decision[server,images]", "pytest", "ruff", "build", "twine"]
+
+[project.urls]
+Homepage = "https://github.com/armbues/mlx-decision"
+Repository = "https://github.com/armbues/mlx-decision"
+Issues = "https://github.com/armbues/mlx-decision/issues"
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:app"

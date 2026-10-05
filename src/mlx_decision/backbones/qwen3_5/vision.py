@@ -21,7 +21,7 @@ import mlx.nn as nn
 import numpy as np
 from mlx.utils import tree_flatten
 
-from .load import VISION_PREFIXES as PREFIXES
+from .load import read_vision_weights, write_vision_weights
 
 
 @dataclass
@@ -180,19 +180,6 @@ class VisionModel(nn.Module):
         freqs = mx.array(np.concatenate([freqs, freqs], axis=-1).astype(np.float32))
         return mx.cos(freqs)[:, None, :], mx.sin(freqs)[:, None, :]
 
-    def sanitize(self, weights: dict[str, mx.array]) -> dict[str, mx.array]:
-        """Vision weights with the release's prefixes removed and the patch kernel flattened."""
-        sanitized = {}
-        for key, value in weights.items():
-            prefix = next((p for p in PREFIXES if key.startswith(p)), None)
-            if prefix is None:
-                continue
-            key = key[len(prefix) :]
-            if key == "patch_embed.proj.weight" and value.ndim == 5:
-                value = value.reshape(value.shape[0], -1)
-            sanitized[key] = value
-        return sanitized
-
 
 def patch_coordinates(grids, merge: int) -> tuple[np.ndarray, np.ndarray]:
     """Row and column of every patch, in the merge-block order of the pixel values."""
@@ -218,40 +205,12 @@ def load_vision_model(path: str | Path) -> VisionModel:
     path = Path(path)
     config = json.loads((path / "config.json").read_text())
     model = VisionModel(VisionArgs.from_config(config))
-    index = path / "model.safetensors.index.json"
-    if index.exists():
-        weight_map = json.loads(index.read_text())["weight_map"]
-        files = sorted({file for name, file in weight_map.items() if name.startswith(PREFIXES)})
-    else:
-        files = [file.name for file in sorted(path.glob("model*.safetensors"))]
-    weights = {}
-    for file in files:
-        weights.update(mx.load(str(path / file)))
-    weights = model.sanitize(weights)
-    if not weights:
-        raise FileNotFoundError(f"no vision weights in {path}")
-    model.load_weights(list(weights.items()), strict=True)
+    model.load_weights(list(read_vision_weights(path).items()), strict=True)
     model.eval()
     mx.eval(model.parameters())
     return model
 
 
-VISION_SHARD = "model-vision.safetensors"
-
-
 def save_vision_model(model: VisionModel, path: str | Path) -> None:
-    """Add the vision weights to a folder written by ``save_text_model``.
-
-    They go into their own shard, listed in ``model.safetensors.index.json``
-    under the release's ``model.visual.`` names.
-    """
-    path = Path(path)
-    weights = {f"{PREFIXES[0]}{k}": v for k, v in tree_flatten(model.parameters())}
-    mx.save_safetensors(str(path / VISION_SHARD), weights, metadata={"format": "mlx"})
-    index_file = path / "model.safetensors.index.json"
-    index = json.loads(index_file.read_text())
-    index["weight_map"] = dict(
-        sorted({**index["weight_map"], **dict.fromkeys(weights, VISION_SHARD)}.items())
-    )
-    index["metadata"]["total_size"] += sum(v.nbytes for v in weights.values())
-    index_file.write_text(json.dumps(index, indent=2) + "\n")
+    """Add the vision tower's weights to a folder written by ``save_text_model``."""
+    write_vision_weights(dict(tree_flatten(model.parameters())), path)

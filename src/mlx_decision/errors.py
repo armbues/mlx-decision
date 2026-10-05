@@ -16,3 +16,16 @@ class DecisionError(ValueError):
 
     def __str__(self) -> str:
         return f"{self.param}: {self.message}" if self.param else self.message
+
+
+class PlatformError(RuntimeError):
+    """MLX cannot run the models here: they need an Apple Silicon Mac (a Metal GPU)."""
+
+
+def require_metal() -> None:
+    import mlx.core as mx
+
+    if not mx.metal.is_available():
+        raise PlatformError(
+            "mlx-decision runs models on Apple Silicon Macs; MLX finds no Metal GPU here"
+        )

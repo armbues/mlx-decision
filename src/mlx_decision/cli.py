@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 import typer
 
-from .errors import DecisionError
+from .errors import DecisionError, PlatformError
 
 app = typer.Typer(
     help="Run decision models on Apple Silicon.",
@@ -273,6 +273,12 @@ def image_options(max_image_mp: float | None) -> dict[str, Any]:
 def add_images(body: dict[str, Any], images: list[Path] | None) -> dict[str, Any]:
     """Append ``--image`` files to the body's images, checking that they exist."""
     if images:
+        from .images import require_pillow
+
+        try:
+            require_pillow()  # before the model loads, not with the first state
+        except DecisionError as error:
+            fail(f"--image: {error.message}")
         for path in images:
             if not path.is_file():
                 fail(f"--image: no such file: {path}")
@@ -336,7 +342,7 @@ def run(
                 if "questions" in body:
                     parse_request({**body, "state": ""})
                 loaded = load(model, **image_options(max_image_mp))
-            except (DecisionError, FileNotFoundError, ValueError) as error:
+            except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
                 fail(str(error))
             answer_states(loaded, body, lines)
         return
@@ -344,7 +350,7 @@ def run(
     try:
         parse_request(body)  # catch request errors before loading
         result = load(model, **image_options(max_image_mp)).decide_request(body)
-    except (DecisionError, FileNotFoundError, ValueError) as error:
+    except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
     if as_json:
         if result.truncated:
@@ -388,7 +394,7 @@ def chat(
         loaded = load(model, **image_options(max_image_mp))
         if body.get("images"):
             loaded.check({"state": "", "questions": {"q": {"type": "noul"}}, **body})
-    except (DecisionError, FileNotFoundError, ValueError) as error:
+    except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
     count = len(body.get("questions", {}))
     typer.echo(f"{loaded.name} loaded, {count} question{'s' * (count != 1)}.", err=True)
@@ -624,7 +630,7 @@ def convert(
             quantize_output_embeddings=not keep_output_embeddings,
             **options,
         )
-    except (FileExistsError, FileNotFoundError, ValueError) as error:
+    except (FileExistsError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
     typer.echo(f"wrote {output}")
 
@@ -667,7 +673,7 @@ def benchmark(
         raise typer.BadParameter("at least one question per request", param_hint="--questions")
     try:
         report = run_benchmark(model, repeats=repeats, **grid)
-    except (DecisionError, FileNotFoundError, ValueError) as error:
+    except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
     if as_json:
         typer.echo(json.dumps(to_dict(report), indent=2))
