@@ -110,20 +110,22 @@ def quantize_text_model(
     if not output_embeddings:
         layer_bits[output_embeddings_path(model)] = None
     quantization: dict = {"group_size": group_size, "bits": bits, "mode": mode}
+    quantized = []
 
     def predicate(path: str, module: nn.Module) -> bool | dict:
         if not hasattr(module, "to_quantized") or module.weight.shape[-1] % group_size:
             return False
-        if path not in layer_bits:
-            return True
-        if layer_bits[path] is None:
+        if path in layer_bits and layer_bits[path] is None:
             return False
-        if layer_bits[path] == bits:
+        quantized.append(path)
+        if path not in layer_bits or layer_bits[path] == bits:
             return True
         quantization[path] = {"group_size": group_size, "bits": layer_bits[path], "mode": mode}
         return quantization[path]
 
     nn.quantize(model, group_size=group_size, bits=bits, mode=mode, class_predicate=predicate)
+    if not quantized:
+        raise ValueError(f"no layer can be quantized with group size {group_size}")
     return quantization
 
 

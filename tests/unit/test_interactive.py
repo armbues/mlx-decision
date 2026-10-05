@@ -211,3 +211,21 @@ def test_ctrl_d_leaves_a_menu(fake_model, capsys):
     })  # fmt: skip
     assert session.questions == QUESTIONS
     assert "team (choice)" in capsys.readouterr().err
+
+
+def test_ctrl_c_while_answering_keeps_the_session(fake_model, capsys, monkeypatch):
+    calls = []
+
+    def decide_request(body):
+        calls.append(body["state"])
+        if len(calls) == 1:
+            raise KeyboardInterrupt
+        return load_decide(body)
+
+    load_decide = fake_model.decide_request
+    monkeypatch.setattr(fake_model, "decide_request", decide_request)
+    drive(fake_model, lines("first", "", "second", ""), body={"questions": QUESTIONS})
+    out, err = capsys.readouterr()
+    assert calls == ["first", "second"]
+    assert "cancelled" in err
+    assert len(bodies(out)) == 1  # the second state was still answered

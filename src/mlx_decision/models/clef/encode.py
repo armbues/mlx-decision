@@ -8,6 +8,7 @@
 """Render a request into the token sequence Clef was trained on."""
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,7 +66,7 @@ def encode_request(
     tokenizer: Tokenizer,
     request: Request,
     max_length: int = DEFAULT_MAX_LENGTH,
-    image_tokens: list[int] = (),
+    image_tokens: Sequence[int] = (),
 ) -> EncodedRequest:
     """The token ids and spans for ``request``.
 
@@ -125,8 +126,21 @@ def encode_request(
             f"the questions alone need {fixed_length} tokens; the limit is {max_length}",
             param="questions",
         )
+    state_ids = tokens(render(request.state))
     if image_tokens:
         start, pad, end = (tokenizer.token_to_id(t) for t in (VISION_START, IMAGE_PAD, VISION_END))
+        # The tokenizer turns these markers into special tokens even in user
+        # text, where they would be taken for image slots.
+        for ids, param, subject in (
+            (state_ids, "state", "the state contains"),
+            (schema_ids, "questions", "the questions contain"),
+        ):
+            if {start, pad, end} & set(ids):
+                raise DecisionError(
+                    f"{subject} image markers ({VISION_START}, {IMAGE_PAD} or "
+                    f"{VISION_END}), which cannot be used in a request with images",
+                    param=param,
+                )
         media_ids = [i for count in image_tokens for i in (start, *[pad] * count, end)]
         prefix_ids = prefix_ids + media_ids + tokens("\n")
         fixed_length = len(prefix_ids) + len(schema_ids) + len(suffix_ids)
@@ -135,7 +149,6 @@ def encode_request(
                 f"the images and questions need {fixed_length} tokens; the limit is {max_length}",
                 param="images",
             )
-    state_ids = tokens(render(request.state))
     room = max_length - fixed_length
     truncated = len(state_ids) > room
     state_ids = state_ids[:room]

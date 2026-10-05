@@ -48,6 +48,22 @@ def body(**questions):
             "'true' and 'false'",
         ),
         (body(), "questions", "at least one question"),
+        ({"state": "x", "questions": []}, "questions", "an object mapping question ids"),
+        (body(**{"": {"type": "noul"}}), "questions", "question ids must not be empty"),
+        (body(q={"type": "noul", "criteria": "x"}), "questions.q.criteria", "must be an object"),
+        ({**body(q={"type": "noul"}), "images": "data:x"}, "images", "images must be a list"),
+        ({**body(q={"type": "noul"}), "state": "a\ud800"}, "state", "not valid text"),
+        ({**body(q={"type": "noul"}), "state": {1: "a", "b": 2}}, "state", "mixes key types"),
+        (
+            body(q={"type": "choice", "criteria": {"a": {1, 2}}}),
+            "questions.q.criteria",
+            "not JSON data",
+        ),
+        (
+            body(q={"type": "noul", "instructions": b"bytes"}),
+            "questions.q.instructions",
+            "not JSON data",
+        ),
         ({"state": "text"}, "questions", "questions is required"),
         ({"questions": {"q": {"type": "noul"}}}, "state", "state is required"),
         (body(q="Is it urgent?"), "questions.q", "must be an object"),
@@ -162,3 +178,9 @@ def test_media_is_rejected_when_not_supported(media, capabilities, message):
 def test_empty_media_lists_are_fine():
     model = DecisionModel(FakeBackend())
     model.decide_request({**body(q={"type": "noul"}), "images": [], "videos": None})
+
+
+def test_non_finite_probabilities_never_become_answers():
+    model = DecisionModel(FakeBackend(fixed={"q": {"true": float("nan"), "false": 0.5}}))
+    with pytest.raises(RuntimeError, match="non-finite"):
+        model.decide("text", {"q": {"type": "noul"}})

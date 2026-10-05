@@ -185,10 +185,13 @@ class Session:
             result = self.model.decide_request(body)
         except DecisionError as error:
             result, failure = None, error
+        except KeyboardInterrupt:
+            # Stops this answer only; the session and its questions stay.
+            result, failure = None, None
         if busy:
             typer.echo("\r\033[K", err=True, nl=False)
         if result is None:
-            say(f"error: {failure}")
+            say("cancelled" if failure is None else f"error: {failure}")
             return
         if self.as_json:
             typer.echo(json.dumps(result.to_wire(), ensure_ascii=False))

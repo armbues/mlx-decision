@@ -14,7 +14,7 @@ dependencies = [
     "mlx>=0.32",
     "tokenizers",
     "huggingface_hub",
-    "prompt_toolkit>=3",
+    "prompt_toolkit>=3.0.52",
     "pydantic>=2",
     "typer",
 ]

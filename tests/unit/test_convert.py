@@ -43,7 +43,7 @@ def test_unquantized_copy_answers_like_the_release(release, tmp_path):
     assert marker == {
         "family": "clef",
         "format": 1,
-        "source": str(release),
+        "source": release.name,  # a local folder by name only, never its full path
         "quantization": None,
         "quantized_output_embeddings": False,
         "vision": False,
@@ -240,3 +240,39 @@ def test_cli_default_output(release, tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["convert", "-m", str(release), "-q"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "tiny-clef-q8" / MARKER_FILE).exists()
+
+
+def test_bits_imply_quantize_and_flags_are_checked(release, tmp_path):
+    runner = CliRunner()
+    out = tmp_path / "q4"
+    result = runner.invoke(app, ["convert", "-m", str(release), "-o", str(out), "--bits", "4"])
+    assert result.exit_code == 0, result.output
+    assert json.loads((out / MARKER_FILE).read_text())["quantization"]["bits"] == 4
+    for extra, message in [
+        (["--group-size", "100"], "must be 32, 64 or 128"),
+        (["--keep-output-embeddings"], "only applies when quantizing"),
+        (["--bits", "4", "--target-bits", "4.5"], "either --bits or --target-bits"),
+    ]:
+        bad = runner.invoke(app, ["convert", "-m", str(release), "-o", str(tmp_path / "x"), *extra])
+        assert bad.exit_code == 2, extra
+        assert message in bad.output
+
+
+def test_a_failed_conversion_leaves_nothing_behind(release, tmp_path, monkeypatch):
+    from mlx_decision.models.clef import convert as clef_convert
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+
+    # Fails after the weights are written, while copying the release's files.
+    monkeypatch.setattr(clef_convert.shutil, "copy2", broken)
+    with pytest.raises(OSError, match="disk full"):
+        convert(release, tmp_path / "out")
+    assert [p.name for p in tmp_path.iterdir()] == [release.name]
+
+
+def test_no_quantizable_layer_is_an_error(release):
+    from mlx_decision.backbones.qwen3_5.load import load_text_model, quantize_text_model
+
+    with pytest.raises(ValueError, match="no layer can be quantized with group size 100"):
+        quantize_text_model(load_text_model(release), bits=4, group_size=100)

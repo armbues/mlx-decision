@@ -82,7 +82,11 @@ print(result.to_wire())                         # the Jev response body
 Questions can also be plain dicts in the Jev wire format
 (`{"type": "choice", "instructions": ..., "criteria": {...}}`), and
 `model.decide_request(body)` takes a whole request body. Invalid requests
-raise `mlx_decision.DecisionError`, whose `param` names the offending field.
+raise `mlx_decision.DecisionError`, whose `param` names the offending field
+(building an invalid `Choice`, `Score` or `Noul` object directly raises
+pydantic's `ValidationError` instead). The answer types (`ChoiceAnswer`,
+`ScoreAnswer`, `NoulAnswer`) and `Usage` are importable from
+`mlx_decision`.
 `result.truncated` tells you whether the state was cut to fit the model's
 input limit (16,384 tokens for clef-flash).
 
@@ -273,7 +277,8 @@ TYPESAFE_BASE_URL=http://127.0.0.1:8000 TYPESAFE_API_KEY=unused python my_jev_sc
 The server binds to localhost by default (`--host` to change), ignores the
 request's `model` field, answers one request at a time (others queue),
 returns `422` with Jev's error body for invalid requests, and sets
-`X-MLX-Decision-Truncated: true` when the state was truncated.
+`X-MLX-Decision-Truncated: true` when the state was truncated. Request
+bodies larger than 64 MB get `413`.
 
 Images go in the request's `images` list as base64 data URLs
 (`data:image/png;base64,...`; PNG, JPEG or WebP). The server reads no files
@@ -306,8 +311,8 @@ when each block of the model is quantized alone (about 6 minutes for
 clef-flash), then gives the sensitive blocks more bits within the average
 you asked for.
 
-Measured on a 50-request test set against the unquantized model (139
-questions):
+Measured on the 50 text requests of the parity set (139 questions)
+against the unquantized model:
 
 | Model | Disk | Peak memory | Mean / max probability difference | Changed answers |
 |---|---|---|---|---|
@@ -349,7 +354,9 @@ second. All numbers in this README were measured on that machine.
 
 Images need the `images` extra. The Python API takes file paths, bytes,
 PIL images or data URLs; `run` and `chat` take files (`--image`,
-`/image`); the server takes data URLs only. Each image is resized the way
+`/image`); the server takes data URLs only. Files, bytes and data URLs
+must be PNG, JPEG or WebP, at most about 89 million pixels (Pillow's
+decompression-bomb limit). Each image is resized the way
 Cloudflare's processor does it (sides rounded to multiples of 32, at least
 256x256 worth of pixels) and costs one token per 32x32 pixels.
 
@@ -360,7 +367,7 @@ of up to 18 MP, this changed no answer, while 0.5 MP and below misread
 small text. `--max-image-mp` on `run`, `chat` and `server` (or
 `load(..., max_image_pixels=...)` in Python) sets another cap; `0` lifts it
 to the processor's own maximum (16.7 MP), which is what Cloudflare's
-reference does. Time per request with a short state and three questions
+reference does (in Python, `max_image_pixels=None`). Time per request with a short state and three questions
 (text only: 0.23 s):
 
 | Image | Tokens | bf16 | 8-bit |
@@ -374,7 +381,8 @@ reference does. Time per request with a short state and three questions
 
 Images count against the 16,384-token input limit together with the
 questions: the state is cut first, and a request whose images and
-questions alone do not fit fails with an error on `images`. The vision
+questions alone do not fit fails with an error on `images`, before any
+image is decoded. The vision
 tower (0.85 GB) loads on the first image request, so text-only use costs
 no extra memory.
 
@@ -409,8 +417,10 @@ their own, unpublished prompts.
 
 clef-flash is stronger at classification with many or well-described
 labels (BANKING77, AG News) and Jev at adversarial entailment (ANLI). Both
-are poorly calibrated on Emotion, whose labels overlap. Reproduce with
-`scripts/accuracy_benchmark.py` (datasets are downloaded separately).
+are poorly calibrated on Emotion, whose labels overlap. Reproduce the
+local numbers with `scripts/accuracy_benchmark.py local` (its docstring
+shows how to save the datasets); the Jev column needs a Jev account and is
+not reproducible with this repository alone.
 
 ## Development
 

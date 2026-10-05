@@ -105,3 +105,9 @@ def test_sensitivity_sweep_restores_the_model():
     assert len(seen) == len(units) and seen[-1][0] == len(units)
     assert mx.array_equal(model(IDS), before)
     assert not any(isinstance(m, nn.QuantizedLinear) for _, m in model.named_modules())
+
+
+def test_units_without_sensitivity_still_take_leftover_budget():
+    units = [Unit("a", ("a",), 100), Unit("b", ("b",), 100)]
+    bits = allocate(units, {"a": 0.0, "b": 1e-3}, base=6, target=8)
+    assert bits == {"a": 8, "b": 8}

@@ -173,3 +173,18 @@ def test_local_dir_skips_the_question(hub, terminal, tmp_path):
     assert result.exit_code == 0, result.output
     assert terminal.asked == []
     assert hub[-1][2] == tmp_path / "here"
+
+
+def test_an_invalid_repo_id(hub, monkeypatch):
+    from huggingface_hub.errors import HFValidationError
+
+    class Api:
+        def model_info(self, repo_id, files_metadata=False):
+            raise HFValidationError(
+                "Repo id must be in the form 'repo_name' or 'namespace/repo_name'"
+            )
+
+    monkeypatch.setattr(download, "HfApi", Api)
+    result = invoke("not a valid/id")
+    assert result.exit_code == 1
+    assert "error: not a valid/id: Repo id must be" in result.stderr

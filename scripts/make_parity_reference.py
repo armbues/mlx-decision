@@ -114,6 +114,9 @@ def main() -> None:
     results = {}
     if args.out.exists():
         results = json.loads(args.out.read_text())["results"]
+    if not args.only:
+        # A full run drops results of requests that no longer exist.
+        results = {k: v for k, v in results.items() if k in {case["id"] for case in cases}}
     meta = {
         "device": args.device,
         "dtype": "bfloat16",

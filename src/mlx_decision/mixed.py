@@ -137,7 +137,9 @@ def allocate(
         return higher[0] if higher else None
 
     while True:
-        best, best_gain = None, 0.0
+        # Units whose quantization changes nothing (gain 0) still take
+        # leftover budget, after every unit that gains.
+        best, best_gain = None, -1.0
         for unit in units:
             level = next_level(bits[unit.name])
             if level is None:

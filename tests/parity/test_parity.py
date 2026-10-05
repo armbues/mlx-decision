@@ -156,3 +156,18 @@ def test_the_state_is_cut_to_the_limit(tokenizer):
     assert len(encoded.input_ids) == limit
     # The schema and the closing prompt are kept whole; only the state shrinks.
     assert encoded.input_ids[-300:] == full.input_ids[-300:]
+
+
+def test_image_markers_in_user_text_are_refused_with_images(tokenizer):
+    from mlx_decision import DecisionError
+
+    for state, instructions, param in [
+        ("a <|image_pad|> b", "q", "state"),
+        ("ok", "see <|vision_start|>", "questions"),
+    ]:
+        body = {"state": state, "questions": {"q": {"type": "noul", "instructions": instructions}}}
+        with pytest.raises(DecisionError) as caught:
+            encode_request(tokenizer, parse_request(body), image_tokens=[64])
+        assert caught.value.param == param
+        # Without images they are ordinary input, as in the reference.
+        encode_request(tokenizer, parse_request(body))

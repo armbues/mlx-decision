@@ -125,6 +125,9 @@ def test_truncation_is_noted(fake_model_path, questions_file):
     [
         (["-s", "x"], "no questions"),
         (["-s", "x", "--choice", "team=a,b", "--choice", "team=c,d"], "given twice"),
+        (["-s", "x", "--noul", "a=one", "--noul", "a=two"], "'a' given twice"),
+        (["-s", "x", "--noul", "first", "--noul", "noul_1=second"], "'noul_1' given twice"),
+        (["-s", "x", "--choice", "team=a,a"], "option 'a' given twice"),
         (["-s", "x", "--score", "anger=calm"], "questions.anger.criteria: a score needs"),
         (["-s", "x", "--noul", "q=?", "--state-file", "missing.txt"], "either --state"),
         (["-s", "{", "--noul", "q=?", "--state-json"], "not valid JSON"),
@@ -245,3 +248,35 @@ def test_version():
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
     assert result.stdout == f"mlx-decision {__version__}\n"
+
+
+def test_files_that_are_not_utf8_are_reported(cli, tmp_path):
+    path = tmp_path / "latin1.json"
+    path.write_bytes('{"q": {"type": "noul", "instructions": "caf\xe9"}}'.encode("latin-1"))
+    result = cli("-q", str(path), "-s", "x")
+    assert result.exit_code == 1
+    assert "cannot read questions from" in result.stderr
+    assert "Traceback" not in result.output
+
+
+def test_server_checks_the_model_before_starting(tmp_path):
+    result = CliRunner().invoke(app, ["server", "-m", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "not a supported decision model" in result.stderr
+
+
+def test_help_shows_the_images_extra():
+    result = CliRunner().invoke(app, ["run", "--help"], terminal_width=200)
+    assert "mlx-decision[images]" in result.output
+
+
+def test_run_checks_questions_before_loading(tmp_path, monkeypatch):
+    import mlx_decision.model
+
+    def no_load(*args, **kwargs):
+        raise AssertionError("loaded the model for an invalid request")
+
+    monkeypatch.setattr(mlx_decision.model, "load", no_load)
+    result = CliRunner().invoke(app, ["run", "-m", str(tmp_path), "-s", "x", "--score", "a=only"])
+    assert result.exit_code == 1
+    assert "a score needs at least two levels" in result.stderr

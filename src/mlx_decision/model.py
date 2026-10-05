@@ -1,5 +1,6 @@
 """The public entry points: ``load`` a model and ask it to ``decide``."""
 
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -7,12 +8,18 @@ from typing import Any
 from .answers import build_answer
 from .backend import Backend
 from .errors import DecisionError
-from .hub import resolve_model_path
+from .hub import is_repo_id, resolve_model_path
 from .registry import load_backend
 from .types import Choice, Request, Result, Score, Usage, parse_request
 
 
 class DecisionModel:
+    """A loaded decision model; ``load()`` returns one.
+
+    ``decide`` and ``decide_request`` answer questions; ``check`` validates a
+    request without answering it. Not thread-safe: answer from one thread.
+    """
+
     def __init__(self, backend: Backend):
         self.backend = backend
 
@@ -37,6 +44,9 @@ class DecisionModel:
         """Answer a whole request body in the wire format."""
         request = self.check(request)
         output = self.backend.score(request)
+        for question_id, probabilities in output.probabilities.items():
+            if not all(math.isfinite(p) for p in probabilities.values()):
+                raise RuntimeError(f"{self.name} gave non-finite probabilities for {question_id!r}")
         answers = {
             question_id: build_answer(question, output.probabilities[question_id])
             for question_id, question in request.questions.items()
@@ -100,5 +110,16 @@ class DecisionModel:
 
 
 def load(model: str | Path, **options) -> DecisionModel:
-    """Load a decision model from a local folder or a Hugging Face repo id."""
-    return DecisionModel(load_backend(resolve_model_path(model), **options))
+    """Load a decision model from a local folder or a Hugging Face repo id.
+
+    ``options`` go to the model family's loader. For Clef: ``max_input_tokens``
+    (default 16,384; longer states are truncated), ``vision=True`` to load the
+    vision tower now rather than with the first image request, and
+    ``max_image_pixels`` (default 2**21; larger images are shrunk, None keeps
+    only the processor's own maximum).
+    """
+    backend = load_backend(resolve_model_path(model), **options)
+    if is_repo_id(model):
+        # Named after the repo, not the cache's snapshot folder.
+        backend.name = str(model).rstrip("/").rsplit("/", 1)[-1]
+    return DecisionModel(backend)

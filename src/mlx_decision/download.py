@@ -20,8 +20,8 @@ class RepoCheck:
 def check_repo(repo_id: str) -> RepoCheck:
     """The download size, and the family that would load the model.
 
-    Only the repository's top-level JSON files are fetched for this (configs,
-    the marker of a converted model); the weights are not touched.
+    Only the repository's JSON files are fetched for this (configs, the
+    marker of a converted model); the weights are not touched.
     """
     info = HfApi().model_info(repo_id, files_metadata=True)
     size = sum(sibling.size or 0 for sibling in info.siblings or [])

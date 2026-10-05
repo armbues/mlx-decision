@@ -1,36 +1,35 @@
-"""Accuracy on established classification benchmarks, for local models and Jev.
+"""Accuracy of local models on established classification benchmarks.
 
 usage:
-  python scripts/accuracy_benchmark.py estimate --datasets DIR
   python scripts/accuracy_benchmark.py local --datasets DIR --model MODEL --out FILE
-  python scripts/accuracy_benchmark.py jev --datasets DIR --out FILE
   python scripts/accuracy_benchmark.py report RESULTS [RESULTS ...]
 
-DIR holds the test splits saved with ``datasets.save_to_disk`` as
-``<org>/<name>``: fancyzhx/ag_news, dair-ai/emotion, facebook/anli,
-mteb/banking77, cais/mmlu. Each benchmark is sampled to ``--samples``
-examples (default 500) with a fixed seed. Questions and option descriptions
-are written here; results are therefore comparable between the models run
-with this script, and only roughly with published numbers.
+DIR holds the test splits saved with the ``datasets`` library (not a
+dependency of this package; ``pip install datasets``) as ``DIR/<org>/<name>``:
 
-``jev`` needs TYPESAFE_BASE_URL and TYPESAFE_API_KEY, costs credits, and
-resumes: examples already in FILE are not sent again.
+  from datasets import load_dataset
+  load_dataset("fancyzhx/ag_news", split="test").save_to_disk("DIR/fancyzhx/ag_news")
+  load_dataset("dair-ai/emotion", split="test").save_to_disk("DIR/dair-ai/emotion")
+  load_dataset("mteb/banking77", split="test").save_to_disk("DIR/mteb/banking77")
+  load_dataset("cais/mmlu", "all", split="test").save_to_disk("DIR/cais/mmlu")
+  load_dataset("facebook/anli").save_to_disk("DIR/facebook/anli")  # all splits
+
+Each benchmark is sampled to ``--samples`` examples (default 500) with a
+fixed seed. Questions and option descriptions are written here; results are
+therefore comparable between models run with this script, and only roughly
+with published numbers. ``report`` prints a Markdown table of one or more
+result files.
 """
 
 import argparse
 import json
-import os
 import random
 import statistics
 import sys
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 SEED = 1234
-PRICE_PER_MILLION = 0.042
-JEV_TOKEN_FACTOR = 1.2  # Jev counts about this many more input tokens than Clef
 
 AG_NEWS = {
     "world": "World news, politics and international affairs",
@@ -192,30 +191,6 @@ def record(answer: dict, gold: str) -> dict:
     }
 
 
-def estimate(args) -> None:
-    from tokenizers import Tokenizer
-
-    from mlx_decision.models.clef.encode import encode_request
-    from mlx_decision.types import parse_request
-
-    tokenizer = Tokenizer.from_file(str(Path(args.tokenizer)))
-    total = 0
-    for name, examples in build(args.datasets, args.samples).items():
-        tokens = [
-            len(encode_request(tokenizer, parse_request(wire(e))).input_ids) for e in examples
-        ]
-        total += sum(tokens)
-        print(
-            f"{name:10s} {len(examples):5d} examples {sum(tokens):9d} tokens "
-            f"(mean {statistics.mean(tokens):.0f})"
-        )
-    jev_tokens = total * JEV_TOKEN_FACTOR
-    print(
-        f"total {total} tokens; Jev about {jev_tokens:.0f} tokens, "
-        f"${jev_tokens * PRICE_PER_MILLION / 1e6:.3f}; Clef about {total / 1700 / 60:.0f} min"
-    )
-
-
 def local(args) -> None:
     import mlx_decision
 
@@ -230,51 +205,6 @@ def local(args) -> None:
         results["benchmarks"][name] = records
         print(f"{name:10s} {time.perf_counter() - start:6.1f}s", file=sys.stderr, flush=True)
     args.out.write_text(json.dumps(results))
-
-
-def jev(args) -> None:
-    import httpx
-
-    base_url = os.environ["TYPESAFE_BASE_URL"].rstrip("/")
-    headers = {"Authorization": f"Bearer {os.environ['TYPESAFE_API_KEY']}"}
-    done = json.loads(args.out.read_text()) if args.out.exists() else {"model": "jev"}
-    done.setdefault("benchmarks", {})
-    raw = done.setdefault("raw", {})
-    lock = threading.Lock()
-    usage = {"tokens": 0, "errors": 0}
-
-    def send(client, key, example):
-        body = {"model": "jev-latest", **wire(example)}
-        for attempt in range(3):
-            response = client.post(f"{base_url}/v1/systemone", json=body, headers=headers)
-            if response.status_code not in (429, 500, 502, 503):
-                break
-            time.sleep(2 * (attempt + 1))
-        with lock:
-            raw[key] = {"status": response.status_code, "body": response.json()}
-            if response.status_code == 200:
-                usage["tokens"] += response.json()["usage"]["input_tokens"]
-            else:
-                usage["errors"] += 1
-
-    with httpx.Client(timeout=120) as client, ThreadPoolExecutor(args.concurrency) as pool:
-        for name, examples in build(args.datasets, args.samples).items():
-            todo = [(f"{name}/{i}", e) for i, e in enumerate(examples) if f"{name}/{i}" not in raw]
-            list(pool.map(lambda item: send(client, *item), todo))
-            records = []
-            for i, example in enumerate(examples):
-                response = raw.get(f"{name}/{i}")
-                if response and response["status"] == 200:
-                    answer = next(iter(response["body"]["answers"].values()))
-                    records.append(record(answer, example["gold"]))
-            done["benchmarks"][name] = records
-            args.out.write_text(json.dumps(done))
-            print(
-                f"{name:10s} sent {len(todo)}, answered {len(records)}/{len(examples)}",
-                file=sys.stderr,
-                flush=True,
-            )
-    print(f"Jev input tokens this run: {usage['tokens']}, errors: {usage['errors']}")
 
 
 def macro_f1(records: list[dict]) -> float:
@@ -325,25 +255,24 @@ def report(args) -> None:
     print("\n".join(lines))
 
 
+def add_dataset_options(parser) -> None:
+    parser.add_argument("--datasets", type=Path, required=True, help="folder of saved datasets")
+    parser.add_argument("--samples", type=int, default=500, help="examples per benchmark")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("estimate", "local", "jev"):
-        sub = commands.add_parser(name)
-        sub.add_argument("--datasets", type=Path, required=True)
-        sub.add_argument("--samples", type=int, default=500)
-        if name == "estimate":
-            sub.add_argument("--tokenizer", required=True, help="a model's tokenizer.json")
-        if name == "local":
-            sub.add_argument("--model", required=True)
-        if name in ("local", "jev"):
-            sub.add_argument("--out", type=Path, required=True)
-        if name == "jev":
-            sub.add_argument("--concurrency", type=int, default=4)
-    report_parser = commands.add_parser("report")
-    report_parser.add_argument("results", nargs="+")
+    local_parser = commands.add_parser("local", help="answer the benchmarks with a local model")
+    add_dataset_options(local_parser)
+    local_parser.add_argument("--model", required=True, help="model folder or Hub repo id")
+    local_parser.add_argument("--out", type=Path, required=True, help="results file (JSON)")
+    report_parser = commands.add_parser("report", help="Markdown table of result files")
+    report_parser.add_argument("results", nargs="+", help="result files from local")
     args = parser.parse_args()
-    {"estimate": estimate, "local": local, "jev": jev, "report": report}[args.command](args)
+    {"local": local, "report": report}[args.command](args)
 
 
 if __name__ == "__main__":

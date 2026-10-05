@@ -130,3 +130,43 @@ def test_the_default_cap_is_two_megapixels(folder):
 
     assert DEFAULT_MAX_IMAGE_PIXELS == 2**21
     assert mlx_decision.load(folder).backend.max_image_pixels == 2**21
+
+
+def test_images_over_the_limit_are_never_decoded(folder, monkeypatch):
+    import mlx_decision.images
+
+    def decode(*args):
+        raise AssertionError("decoded an image of a request that cannot fit")
+
+    monkeypatch.setattr(mlx_decision.images, "decode_image", decode)
+    model = mlx_decision.load(folder, max_input_tokens=120)
+    with pytest.raises(DecisionError) as caught:
+        model.decide_request({"state": "x", "questions": QUESTIONS, "images": [png(64, 64)] * 3})
+    assert caught.value.param == "images"
+
+
+def test_a_cap_below_the_minimum_lowers_the_minimum(tmp_path):
+    from mlx_decision.models.clef.model import image_config
+
+    assert image_config(tmp_path, None).min_pixels == 65536  # the processor's default
+    config = image_config(tmp_path, 1024)
+    assert (config.min_pixels, config.max_pixels) == (1024, 1024)
+
+
+def test_other_formats_are_refused_naming_the_image(model):
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 16)).save(buffer, format="TIFF")
+    url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    with pytest.raises(DecisionError) as caught:
+        model.decide_request({"state": "x", "questions": QUESTIONS, "images": [png(16, 16), url]})
+    assert caught.value.param == "images.1"
+    assert "PNG, JPEG or WebP" in caught.value.message
+
+
+def test_missing_files_are_named_before_the_backbone_loads(folder, tmp_path):
+    import shutil
+
+    copy = shutil.copytree(folder, tmp_path / "copy")
+    (copy / "tokenizer.json").unlink()
+    with pytest.raises(FileNotFoundError, match="tokenizer.json is missing"):
+        mlx_decision.load(copy)

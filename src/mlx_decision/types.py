@@ -3,6 +3,7 @@
 These models mirror the JSON bodies of ``POST /v1/systemone``.
 """
 
+import json
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -40,6 +41,12 @@ Question = Annotated[Noul | Choice | Score, Field(discriminator="type")]
 
 
 class Request(BaseModel):
+    """A request body: a ``state`` (any JSON value), ``questions`` by id, optional ``images``.
+
+    ``model`` is accepted for compatibility with Jev clients and ignored;
+    unknown fields are ignored too.
+    """
+
     model_config = ConfigDict(extra="ignore")
 
     state: Any
@@ -50,11 +57,15 @@ class Request(BaseModel):
 
 
 class NoulAnswer(BaseModel):
+    """``noul``: the probability that the answer is yes."""
+
     type: Literal["noul"] = "noul"
     noul: float
 
 
 class ChoiceAnswer(BaseModel):
+    """The most likely option, its confidence, and every option's probability."""
+
     type: Literal["choice"] = "choice"
     choice: str
     confidence: float
@@ -62,6 +73,8 @@ class ChoiceAnswer(BaseModel):
 
 
 class ScoreAnswer(BaseModel):
+    """``score``: the expected level (0-based); ``legend`` maps levels to their descriptions."""
+
     type: Literal["score"] = "score"
     score: float
     confidence: float
@@ -73,6 +86,8 @@ Answer = Annotated[NoulAnswer | ChoiceAnswer | ScoreAnswer, Field(discriminator=
 
 
 class Usage(BaseModel):
+    """Tokens the model read; decision models write none."""
+
     input_tokens: int
     output_tokens: int = 0
 
@@ -108,10 +123,35 @@ def parse_request(data: Any) -> Request:
     if isinstance(data, Request):
         return data
     try:
-        return Request.model_validate(data)
+        request = Request.model_validate(data)
     except ValidationError as error:
         message, loc = _describe(error.errors()[0])
         raise DecisionError(message, param=".".join(loc) or None) from None
+    _check_text(request.state, "state")
+    for question_id, question in request.questions.items():
+        if not question_id.strip():
+            raise DecisionError("question ids must not be empty", param="questions")
+        where = f"questions.{question_id}"
+        _check_text(question.instructions, f"{where}.instructions")
+        _check_text(question.criteria, f"{where}.criteria")
+    return request
+
+
+def _check_text(value: Any, param: str) -> None:
+    """Fail unless ``value`` can be written as JSON text (models read it as text)."""
+    try:
+        json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        # TypeError: not JSON data (a date, a set, mixed key types);
+        # UnicodeEncodeError (a ValueError): a lone surrogate in a string.
+        field = param.rsplit(".", 1)[-1]
+        if isinstance(error, UnicodeError):
+            message = f"{field} is not valid text: {error.reason} ({error.object[error.start]!r})"
+        elif "not supported between instances" in str(error):
+            message = f"{field} mixes key types (keys must be strings)"
+        else:
+            message = f"{field} is not JSON data: {error}"
+        raise DecisionError(message, param=param) from None
 
 
 QUESTION_TYPES = "noul, choice or score"
@@ -149,10 +189,16 @@ def _describe(error: dict[str, Any]) -> tuple[str, list[str]]:
         return "noul criteria can only describe 'true' and 'false'", loc
     if kind in ("model_type", "model_attributes_type", "dict_type") and not loc:
         return "the request body must be a JSON object", loc
+    if kind == "dict_type" and loc == ["questions"]:
+        return "questions must be an object mapping question ids to questions", loc
+    if kind == "list_type" and loc in (["images"], ["videos"]):
+        return f"{field} must be a list", loc
     if kind in ("model_attributes_type", "dict_type") and len(loc) == 2 and loc[0] == "questions":
         return "a question must be an object with a type", loc
     if kind == "dict_type" and question_type == "choice":
         return "choice criteria must map option ids to descriptions", loc
+    if kind == "dict_type" and question_type == "noul":
+        return "noul criteria must be an object describing 'true' and/or 'false'", loc
     if kind == "list_type" and question_type == "score":
         return "score criteria must be a list of level descriptions", loc
     return error["msg"], loc

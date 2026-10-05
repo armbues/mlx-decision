@@ -7,12 +7,13 @@ Each model runs in its own process, one after another, so only one is in
 memory at a time. Every model answers the parity set (after one warm-up
 request); its probabilities are compared with the baseline's (the first
 model) and with the PyTorch reference fixture. With ``--cache`` each model's
-raw results are kept in ``DIR/<model folder name>.json`` and reused on the
-next run, so adding a model only runs that model (``--rerun`` ignores the
-cache).
+raw results are kept in ``DIR/<model folder name>.json`` and reused while
+the parity set is unchanged, so adding a model only runs that model
+(``--rerun`` ignores the cache).
 """
 
 import argparse
+import hashlib
 import json
 import statistics
 import subprocess
@@ -26,6 +27,11 @@ PARITY = ROOT / "tests" / "parity"
 MARGIN = 0.04
 
 
+def requests_digest() -> str:
+    """Identifies the parity set a cached result was computed on."""
+    return hashlib.sha256((PARITY / "requests.json").read_bytes()).hexdigest()[:16]
+
+
 def run_model(model: str, out: Path) -> None:
     """Worker: answer the parity set with one model and write the numbers."""
     import mlx.core as mx
@@ -33,13 +39,24 @@ def run_model(model: str, out: Path) -> None:
     import mlx_decision
     from mlx_decision.types import parse_request
 
+    sys.path.insert(0, str(PARITY))
+    from parity_images import open_image
+
     cases = json.loads((PARITY / "requests.json").read_text())
     start = time.perf_counter()
     loaded = mlx_decision.load(model)
     load_seconds = time.perf_counter() - start
     active_after_load = mx.get_active_memory()
+    # Image requests carry their images, as when the reference was computed.
     requests = {
-        c["id"]: parse_request({"state": c["state"], "questions": c["questions"]}) for c in cases
+        c["id"]: parse_request(
+            {
+                "state": c["state"],
+                "questions": c["questions"],
+                **({"images": [open_image(s) for s in c["images"]]} if c.get("images") else {}),
+            }
+        )
+        for c in cases
     }
     loaded.backend.score(requests[cases[0]["id"]])  # warm-up
     mx.reset_peak_memory()
@@ -53,6 +70,7 @@ def run_model(model: str, out: Path) -> None:
         json.dumps(
             {
                 "model": Path(model).name,
+                "requests": requests_digest(),
                 "disk_gb": folder_gb(model),
                 "load_seconds": load_seconds,
                 "active_gb": active_after_load / 2**30,
@@ -65,8 +83,10 @@ def run_model(model: str, out: Path) -> None:
 
 
 def folder_gb(model: str) -> float:
-    path = Path(model)
-    return sum(f.stat().st_size for f in path.resolve().rglob("*") if f.is_file()) / 2**30
+    from mlx_decision.hub import resolve_model_path
+
+    path = resolve_model_path(model).resolve()
+    return sum(f.resolve().stat().st_size for f in path.rglob("*") if f.is_file()) / 2**30
 
 
 def compare(ours: dict, theirs: dict, reference: dict) -> dict:
@@ -121,7 +141,12 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as scratch:
         for model in args.models:
             cached = args.cache / f"{Path(model).name}.json" if args.cache else None
-            if cached and cached.exists() and not args.rerun:
+            if (
+                cached
+                and cached.exists()
+                and not args.rerun
+                and json.loads(cached.read_text()).get("requests") == requests_digest()
+            ):
                 print(f"cached {model}", file=sys.stderr, flush=True)
                 results[model] = json.loads(cached.read_text())
                 continue

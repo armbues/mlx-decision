@@ -21,6 +21,8 @@ from .images import is_data_url
 from .model import DecisionModel
 
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
+# Room for several large images as data URLs.
+MAX_BODY_BYTES = 64 * 2**20
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,25 @@ def check_data_urls(body) -> None:
             )
 
 
-def create_app(load_model: Callable[[], DecisionModel], api_key: str | None = None) -> FastAPI:
+async def read_body(request: Request, limit: int) -> bytes | None:
+    """The request body, or None when it is larger than ``limit`` bytes."""
+    length = request.headers.get("content-length", "")
+    if length.isdigit() and int(length) > limit:
+        return None
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def create_app(
+    load_model: Callable[[], DecisionModel],
+    api_key: str | None = None,
+    max_body_bytes: int = MAX_BODY_BYTES,
+) -> FastAPI:
     """The app; ``load_model`` runs on the worker thread at startup."""
     worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision")
 
@@ -78,12 +98,21 @@ def create_app(load_model: Callable[[], DecisionModel], api_key: str | None = No
 
     @app.post("/v1/systemone")
     async def systemone(request: Request):
+        raw = await read_body(request, max_body_bytes)
+        if raw is None:
+            return error_response(
+                413,
+                f"the request body is larger than {max_body_bytes / 2**20:.0f} MB",
+                "invalid_request_error",
+            )
         try:
-            body = json.loads(await request.body())
+            body = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             return error_response(
                 400, f"the body is not valid JSON: {error}", "invalid_request_error"
             )
+        except RecursionError:
+            return error_response(400, "the body is nested too deeply", "invalid_request_error")
         model: DecisionModel = request.app.state.model
         try:
             check_data_urls(body)

@@ -16,6 +16,12 @@ from .head import JointSchemaHead
 # Larger images are shrunk to about this many pixels (2,048 tokens): measured
 # to keep answers while bounding time and room in the input limit.
 DEFAULT_MAX_IMAGE_PIXELS = 2**21
+REQUIRED_FILES = (
+    "config.json",
+    "tokenizer.json",
+    "joint_head_config.json",
+    "joint_head.safetensors",
+)
 
 
 class ClefBackend:
@@ -54,15 +60,19 @@ class ClefBackend:
         return self.vision
 
     def score(self, request: Request) -> BackendOutput:
-        images = []
+        # Image sizes come from the file headers, so the input limit is checked
+        # before any image is decoded or cut into patches.
+        opened, config = [], None
         if request.images:
-            images = prepare_images(request.images, self.path, self.max_image_pixels)
+            config = image_config(self.path, self.max_image_pixels)
+            opened = open_images(request.images)
         encoded = encode_request(
             self.tokenizer,
             request,
             max_length=self.capabilities.max_input_tokens,
-            image_tokens=[image.tokens for image in images],
+            image_tokens=[count_image_tokens(image, index, config) for index, image in opened],
         )
+        images = [prepare(image, index, config) for index, image in opened]
         input_ids = mx.array(encoded.input_ids)
         if images:
             embeddings, positions = self._image_inputs(encoded.input_ids, images)
@@ -105,27 +115,57 @@ class ClefBackend:
         return embeddings, positions
 
 
+def image_config(path, max_pixels: int | None):
+    """The release's image settings; ``max_pixels`` lowers its maximum (None keeps it)."""
+    from dataclasses import replace
+
+    from ...images import require_pillow
+
+    require_pillow()  # before the preprocessing module imports NumPy
+    from ...backbones.qwen3_5.preprocess import ImageConfig
+
+    config = ImageConfig.from_folder(path)
+    if max_pixels is not None and max_pixels < config.max_pixels:
+        config = replace(
+            config, max_pixels=max_pixels, min_pixels=min(config.min_pixels, max_pixels)
+        )
+    return config
+
+
+def open_images(values) -> list[tuple[int, object]]:
+    """Each image opened (header read, not decoded), with its index."""
+    from ...images import open_image
+
+    return [(index, open_image(value, index)) for index, value in enumerate(values)]
+
+
+def count_image_tokens(image, index: int, config) -> int:
+    from ...backbones.qwen3_5.preprocess import image_tokens
+
+    try:
+        return image_tokens(image.height, image.width, config)
+    except ValueError as error:
+        raise DecisionError(str(error), param=f"images.{index}") from None
+
+
+def prepare(image, index: int, config):
+    """Decode one opened image and cut it into the vision tower's patches."""
+    from ...backbones.qwen3_5.preprocess import prepare_image
+    from ...images import decode_image
+
+    return prepare_image(decode_image(image, index), config)
+
+
 def prepare_images(values, path, max_pixels: int | None):
     """Each image read and cut into patches; errors name ``images.<index>``.
 
     ``max_pixels`` lowers the processor's own maximum (None keeps it).
     """
-    from dataclasses import replace
-
-    from ...backbones.qwen3_5.preprocess import ImageConfig, prepare_image
-    from ...images import load_image
-
-    config = ImageConfig.from_folder(path)
-    if max_pixels is not None and max_pixels < config.max_pixels:
-        config = replace(config, max_pixels=max_pixels)
-    prepared = []
-    for index, value in enumerate(values):
-        image = load_image(value, index)
-        try:
-            prepared.append(prepare_image(image, config))
-        except ValueError as error:
-            raise DecisionError(str(error), param=f"images.{index}") from None
-    return prepared
+    config = image_config(path, max_pixels)
+    opened = open_images(values)
+    for index, image in opened:
+        count_image_tokens(image, index, config)
+    return [prepare(image, index, config) for index, image in opened]
 
 
 def load(
@@ -142,6 +182,12 @@ def load(
     """
     if max_image_pixels is not None and max_image_pixels < 32 * 32:
         raise ValueError("max_image_pixels must be at least 1024 (one image token)")
+    # Checked before the backbone, which takes a while to load.
+    for name in REQUIRED_FILES:
+        if not (path / name).exists():
+            raise FileNotFoundError(f"{path}: {name} is missing")
+    if not any(path.glob("model*.safetensors")):
+        raise FileNotFoundError(f"{path}: no model*.safetensors weights")
     backbone = load_text_model(path)
     head = JointSchemaHead(**json.loads((path / "joint_head_config.json").read_text()))
     head.load_weights(str(path / "joint_head.safetensors"), strict=True)

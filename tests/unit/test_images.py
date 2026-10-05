@@ -54,8 +54,8 @@ def test_exif_orientation_is_applied():
     [
         ("data:image/gif;base64,R0lG", "a data URL must look like"),
         ("data:image/png;base64,***", "not valid base64"),
-        ("data:image/png;base64," + base64.b64encode(b"hello").decode(), "not a readable image"),
-        (b"not an image", "not a readable image"),
+        ("data:image/png;base64," + base64.b64encode(b"hello").decode(), "not a readable PNG"),
+        (b"not an image", "not a readable PNG"),
         ("missing.png", "missing.png: No such file or directory"),
         (base64.b64encode(encoded(RED)).decode() * 3, "needs the data:image/...;base64, prefix"),
         (42, "expected a data URL"),
@@ -82,3 +82,32 @@ def test_without_pillow_there_is_an_install_hint(monkeypatch):
         load_image(b"", 0)
     assert caught.value.code == "unsupported_media"
     assert "mlx-decision[images]" in caught.value.message
+
+
+def test_only_png_jpeg_and_webp_are_decoded():
+    # A TIFF behind a PNG data URL never reaches Pillow's TIFF decoder.
+    for fmt in ("TIFF", "BMP", "GIF"):
+        url = "data:image/png;base64," + base64.b64encode(encoded(RED, fmt)).decode()
+        with pytest.raises(DecisionError, match="not a readable PNG, JPEG or WebP"):
+            load_image(url, 0)
+
+
+def test_data_url_media_types_ignore_case_and_take_parameters():
+    payload = base64.b64encode(encoded(RED)).decode()
+    for prefix in ("data:image/PNG;base64,", "data:image/png;name=red.png;base64,"):
+        assert load_image(prefix + payload, 0).size == (8, 4)
+
+
+def test_oversized_images_are_refused_before_decoding(monkeypatch):
+    import PIL.Image
+
+    monkeypatch.setattr(PIL.Image, "MAX_IMAGE_PIXELS", 16)
+    with pytest.raises(DecisionError, match="too large: 8x4 pixels"):
+        load_image(data_url(RED), 0)
+
+
+def test_without_numpy_there_is_the_same_hint(monkeypatch):
+    monkeypatch.setitem(sys.modules, "numpy", None)
+    with pytest.raises(DecisionError) as caught:
+        load_image(b"", 0)
+    assert "Pillow and NumPy" in caught.value.message

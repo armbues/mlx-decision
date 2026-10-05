@@ -211,3 +211,20 @@ def test_server_command_reads_the_key_from_the_environment(monkeypatch, fake_mod
         assert client.post("/v1/systemone", json=BODY).status_code == 401
         headers = {"Authorization": "Bearer from-env"}
         assert client.post("/v1/systemone", json=BODY, headers=headers).status_code == 200
+
+
+def test_oversized_bodies_get_413():
+    def load():
+        return DecisionModel(RecordingBackend())
+
+    with TestClient(create_app(load, max_body_bytes=1000)) as small:
+        response = small.post("/v1/systemone", json={**BODY, "state": "x" * 2000})
+        assert response.status_code == 413
+        assert response.json()["error"]["type"] == "invalid_request_error"
+        assert small.post("/v1/systemone", json=BODY).status_code == 200
+
+
+def test_deeply_nested_json_is_a_400(client):
+    response = client.post("/v1/systemone", content=b"[" * 100_000 + b"]" * 100_000)
+    assert response.status_code == 400
+    assert "nested too deeply" in response.json()["error"]["message"]

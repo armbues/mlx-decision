@@ -1,8 +1,9 @@
 """Write an MLX copy of a model, optionally quantized."""
 
+import shutil
 from pathlib import Path
 
-from .hub import resolve_model_path
+from .hub import is_repo_id, resolve_model_path
 from .registry import detect_family, resolve
 
 
@@ -33,5 +34,19 @@ def convert(model: str | Path, output: str | Path, **options) -> Path:
     family = detect_family(path)
     if family.converter is None:
         raise ValueError(f"{family.name} models cannot be converted")
-    resolve(family.converter)(path, output, source=str(model), **options)
+    # A Hub id, or only the folder name: a local path would put the user's
+    # directories into a folder that may be shared.
+    source = str(model) if is_repo_id(model) else path.resolve().name
+    # Written next to the output and renamed when complete, so a failed
+    # conversion leaves no half-written model behind.
+    partial = output.with_name(f".{output.name}.partial")
+    shutil.rmtree(partial, ignore_errors=True)
+    try:
+        resolve(family.converter)(path, partial, source=source, **options)
+    except BaseException:
+        shutil.rmtree(partial, ignore_errors=True)
+        raise
+    if output.exists():
+        output.rmdir()  # empty, checked above
+    partial.rename(output)
     return output

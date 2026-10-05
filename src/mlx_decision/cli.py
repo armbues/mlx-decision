@@ -64,19 +64,27 @@ def split_id(value: str, flag: str, required: bool) -> tuple[str | None, str]:
 
 def shorthand_questions(nouls: list[str], choices: list[str], scores: list[str]) -> dict:
     questions: dict[str, dict] = {}
+
+    def add(question_id: str, question: dict, flag: str) -> None:
+        if question_id in questions:
+            raise typer.BadParameter(f"question id {question_id!r} given twice", param_hint=flag)
+        questions[question_id] = question
+
     for index, value in enumerate(nouls, 1):
         question_id, text = split_id(value, "--noul", required=False)
-        questions[question_id or f"noul_{index}"] = {"type": "noul", "instructions": text}
+        add(question_id or f"noul_{index}", {"type": "noul", "instructions": text}, "--noul")
     for flag, kind, values in (("--choice", "choice", choices), ("--score", "score", scores)):
         for value in values:
             question_id, rest = split_id(value, flag, required=True)
             options = [option.strip() for option in rest.split(",") if option.strip()]
-            criteria = {option: None for option in options} if kind == "choice" else options
-            if question_id in questions:
-                raise typer.BadParameter(
-                    f"question id {question_id!r} given twice", param_hint=flag
-                )
-            questions[question_id] = {"type": kind, "criteria": criteria}
+            if kind == "choice":
+                if repeated := sorted({o for o in options if options.count(o) > 1}):
+                    raise typer.BadParameter(
+                        f"option {repeated[0]!r} given twice in {question_id!r}", param_hint=flag
+                    )
+                add(question_id, {"type": kind, "criteria": dict.fromkeys(options)}, flag)
+            else:
+                add(question_id, {"type": kind, "criteria": options}, flag)
     return questions
 
 
@@ -85,8 +93,8 @@ def build_questions(questions_file: Path | None, shorthand: dict) -> dict[str, A
     body: dict[str, Any] = {}
     if questions_file is not None:
         try:
-            data = json.loads(questions_file.read_text())
-        except (OSError, json.JSONDecodeError) as error:
+            data = json.loads(questions_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:  # ValueError: not UTF-8 or not JSON
             fail(f"cannot read questions from {questions_file}: {error}")
         body = dict(data) if isinstance(data, dict) and "questions" in data else {"questions": data}
     if shorthand:
@@ -122,8 +130,8 @@ def build_request(
         fail("give either --state or --state-file, not both")
     if state_file is not None:
         try:
-            state = state_file.read_text()
-        except OSError as error:
+            state = state_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
             fail(f"cannot read the state: {error}")
     if state is None and "state" not in body:
         if sys.stdin.isatty():
@@ -231,13 +239,16 @@ ScoreOption = Annotated[
 StateJsonOption = Annotated[
     bool, typer.Option("--state-json", help="Parse the state as JSON (object, array, ...).")
 ]
-JsonOption = Annotated[bool, typer.Option("--json", help="Print the response body as JSON.")]
+JsonOption = Annotated[
+    bool,
+    typer.Option("--json", help="Print the response body as JSON (always on with run --states)."),
+]
 ImageOption = Annotated[
     list[Path] | None,
     typer.Option(
         "--image",
         help="An image file to ask about, with every state. Repeatable. "
-        "Needs the images extra: pip install 'mlx-decision[images]'.",
+        "Needs the images extra: pip install 'mlx-decision\\[images]'.",
     ),
 ]
 
@@ -247,7 +258,7 @@ MaxImageOption = Annotated[
         "--max-image-mp",
         min=0,
         help="Shrink larger images to this many megapixels (1 MP = 2^20 pixels = 1,024 "
-        "tokens). Default: 2. 0 = no cap beyond the model's own, as Cloudflare's reference.",
+        "tokens). Default: 2. 0 = no cap beyond the model's own, as in Cloudflare's reference.",
     ),
 ]
 
@@ -313,7 +324,11 @@ def run(
         body.pop("state", None)
         add_images(body, image)
         try:
-            source = nullcontext(sys.stdin) if states == "-" else open(states, encoding="utf-8")  # noqa: SIM115
+            source = (
+                nullcontext(sys.stdin)
+                if states == "-"
+                else open(states, encoding="utf-8", errors="replace")  # noqa: SIM115
+            )
         except OSError as error:
             fail(f"cannot read the states: {error}")
         with source as lines:
@@ -327,6 +342,7 @@ def run(
         return
     body = add_images(build_request(questions, shorthand, state, state_file, state_json), image)
     try:
+        parse_request(body)  # catch request errors before loading
         result = load(model, **image_options(max_image_mp)).decide_request(body)
     except (DecisionError, FileNotFoundError, ValueError) as error:
         fail(str(error))
@@ -370,9 +386,12 @@ def chat(
         if "questions" in body:
             parse_request({**body, "state": ""})  # catch question errors before loading
         loaded = load(model, **image_options(max_image_mp))
+        if body.get("images"):
+            loaded.check({"state": "", "questions": {"q": {"type": "noul"}}, **body})
     except (DecisionError, FileNotFoundError, ValueError) as error:
         fail(str(error))
-    typer.echo(f"{loaded.name} loaded, {len(body.get('questions', {}))} questions.", err=True)
+    count = len(body.get("questions", {}))
+    typer.echo(f"{loaded.name} loaded, {count} question{'s' * (count != 1)}.", err=True)
     start_chat(loaded, body, state_json, as_json)
 
 
@@ -481,7 +500,7 @@ def download(
         path = fetch(repo_id, local_dir)
     except RepositoryNotFoundError:
         fail(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
-    except (HfHubHTTPError, httpx.HTTPError, OSError) as error:
+    except (HfHubHTTPError, httpx.HTTPError, OSError, ValueError) as error:
         fail(f"{repo_id}: {str(error).splitlines()[0]}")
     typer.echo(f"downloaded {repo_id} to {path}", err=True)
     model = str(local_dir) if local_dir else repo_id
@@ -513,9 +532,15 @@ def server(
         from .server import create_app
     except ImportError:
         fail("the server needs extra packages: pip install 'mlx-decision[server]'")
+    from .hub import resolve_model_path
     from .model import load
+    from .registry import detect_family
 
     typer.echo(f"loading {model} ...", err=True)
+    try:
+        detect_family(resolve_model_path(model))  # fail here, not inside the server
+    except (FileNotFoundError, ValueError) as error:
+        fail(str(error))
     if api_key:
         typer.echo("API key required on /v1/*", err=True)
     app = create_app(lambda: load(model, **image_options(max_image_mp)), api_key=api_key)
@@ -538,8 +563,13 @@ def convert(
     quantize: Annotated[
         bool, typer.Option("--quantize", "-q", help="Quantize the backbone.")
     ] = False,
-    bits: Annotated[int, typer.Option(help="Bits per weight when quantizing.")] = 8,
-    group_size: Annotated[int, typer.Option(help="Weights per quantization group.")] = 64,
+    bits: Annotated[
+        int | None,
+        typer.Option(help="Bits per weight (implies --quantize). Default with -q: 8."),
+    ] = None,
+    group_size: Annotated[
+        int, typer.Option(help="Weights per quantization group: 32, 64 or 128.")
+    ] = 64,
     keep_output_embeddings: Annotated[
         bool,
         typer.Option(
@@ -561,8 +591,20 @@ def convert(
     from .convert import convert as convert_model
     from .convert import default_output
 
-    if quantize and bits not in (2, 3, 4, 5, 6, 8):
+    if bits is not None and target_bits is not None:
+        raise typer.BadParameter("give either --bits or --target-bits", param_hint="--bits")
+    if bits is not None and bits not in (2, 3, 4, 5, 6, 8):
         raise typer.BadParameter("must be 2, 3, 4, 5, 6 or 8", param_hint="--bits")
+    if group_size not in (32, 64, 128):
+        raise typer.BadParameter("must be 32, 64 or 128", param_hint="--group-size")
+    quantize = quantize or bits is not None or target_bits is not None
+    if keep_output_embeddings and not quantize:
+        raise typer.BadParameter(
+            "only applies when quantizing (-q, --bits or --target-bits)",
+            param_hint="--keep-output-embeddings",
+        )
+    if quantize and bits is None:
+        bits = 8
     options = {}
     if target_bits is not None:
 

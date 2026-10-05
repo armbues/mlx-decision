@@ -1,6 +1,6 @@
 """What a model family implements to take part in the framework."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 from .types import Request
@@ -27,7 +27,6 @@ class BackendOutput:
     probabilities: dict[str, dict[str, float]]
     input_tokens: int
     truncated: bool = False
-    extra: dict = field(default_factory=dict)
 
 
 class Backend(Protocol):
