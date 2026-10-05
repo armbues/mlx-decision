@@ -14,28 +14,50 @@ The first supported model is Cloudflare's
 [clef-flash](https://huggingface.co/Cloudflare/clef-flash) (Qwen3.5-9B
 backbone plus a joint schema head), with text and image input.
 
+0.3 is the first public release (alpha): the interface may still change.
+Questions and bug reports go to the
+[issue tracker](https://github.com/armbues/mlx-decision/issues).
+
 ## Install
 
-Requires an Apple Silicon Mac and Python 3.12 or newer.
-
-From a clone of this repository:
+Requirements:
+- a Mac with Apple Silicon (M1 or later) and macOS 14 or newer
+- Python 3.12 or newer
+- memory for the model: clef-flash as released needs about 19 GB while it
+  answers, which suits Macs with 32 GB or more; an 8-bit copy needs 11 GB
+  and a mixed-precision 4-bit copy 7 GB (see [convert](#smaller-models-convert))
 
 ```bash
-pip install .            # library and the mlx-decision command
-pip install ".[server]"  # plus the HTTP server (FastAPI, uvicorn)
-pip install ".[images]"  # plus image input (Pillow, NumPy)
+pip install mlx-decision                    # library and the mlx-decision command
+pip install "mlx-decision[images]"          # plus image input (Pillow, NumPy)
+pip install "mlx-decision[server]"          # plus the HTTP server (FastAPI, uvicorn)
+pip install "mlx-decision[server,images]"   # both
 ```
 
-Models load from a local folder or a Hugging Face repo id; repo ids are
-downloaded through the normal Hugging Face cache (clef-flash: 19 GB) on
-first use. To fetch one ahead of time, `mlx-decision download` shows a menu
-of the supported models (or takes a repo id); for any other id it reads
-the repository's config files first and warns before downloading something
-no supported family can load. In a terminal it first asks for a folder
-to download into instead of the Hugging Face cache; the model goes into a
-folder named after the repo inside it (e.g. `~/Models/clef-flash`), and
-an empty answer keeps the cache. `--local-dir` names the model's folder
-directly and skips the question; private or gated repos need `HF_TOKEN`.
+From source: clone the [repository](https://github.com/armbues/mlx-decision)
+and run `pip install -e ".[server,images]"` in it. MLX also has builds for
+Linux and Windows, so pip may install mlx-decision there, but loading a
+model stops with an error: the models run on Apple Silicon only.
+
+### Getting a model
+
+Models load from a local folder or a Hugging Face repo id. A repo id is
+downloaded into the Hugging Face cache on first use (clef-flash: 19 GB),
+so this is enough to start:
+
+```bash
+mlx-decision run -m Cloudflare/clef-flash -s "My card was charged twice." --noul "Is it a billing problem?"
+```
+
+To fetch a model ahead of time, `mlx-decision download` shows a menu of
+the supported models (or takes a repo id). In a terminal it first asks for
+a folder to download into instead of the Hugging Face cache; the model
+goes into a folder named after the repo inside it (e.g.
+`~/Models/clef-flash`), which you then pass to `-m`, and an empty answer
+keeps the cache. `--local-dir` names the model's folder directly and skips
+the question. For other repo ids it reads the repository's config files
+first and warns before downloading something no supported family can
+load; private or gated repos need `HF_TOKEN`.
 
 ## Python
 
@@ -84,11 +106,10 @@ Questions can also be plain dicts in the Jev wire format
 `model.decide_request(body)` takes a whole request body. Invalid requests
 raise `mlx_decision.DecisionError`, whose `param` names the offending field
 (building an invalid `Choice`, `Score` or `Noul` object directly raises
-pydantic's `ValidationError` instead). The answer types (`ChoiceAnswer`,
-`ScoreAnswer`, `NoulAnswer`) and `Usage` are importable from
-`mlx_decision`.
-`result.truncated` tells you whether the state was cut to fit the model's
-input limit (16,384 tokens for clef-flash).
+pydantic's `ValidationError` instead). `result.truncated` tells you whether
+the state was cut to fit the model's input limit (16,384 tokens for
+clef-flash). The answer types (`ChoiceAnswer`, `ScoreAnswer`,
+`NoulAnswer`) and `Usage` can be imported from `mlx_decision`.
 
 With the `images` extra, images go along as file paths, bytes, PIL images
 or data URLs:
@@ -338,7 +359,7 @@ Reports load time, peak memory, and median / p95 latency per request across
 state lengths and numbers of questions. Median latency per request for
 clef-flash on an Apple M5 Pro (20-core GPU) with 64 GB:
 
-| Input tokens | Questions | bf16 | 8-bit | 4-bit |
+| Input tokens | Questions | bf16 | 8-bit | uniform 4-bit |
 |---|---|---|---|---|
 | 394 | 1 | 0.25 s | 0.27 s | 0.25 s |
 | 1,552 | 5 | 0.84 s | 1.07 s | 1.03 s |
@@ -367,8 +388,8 @@ of up to 18 MP, this changed no answer, while 0.5 MP and below misread
 small text. `--max-image-mp` on `run`, `chat` and `server` (or
 `load(..., max_image_pixels=...)` in Python) sets another cap; `0` lifts it
 to the processor's own maximum (16.7 MP), which is what Cloudflare's
-reference does (in Python, `max_image_pixels=None`). Time per request with a short state and three questions
-(text only: 0.23 s):
+reference does (in Python, `max_image_pixels=None`). Time per request with
+a short state and three questions (text only: 0.23 s):
 
 | Image | Tokens | bf16 | 8-bit |
 |---|---|---|---|
@@ -382,9 +403,8 @@ reference does (in Python, `max_image_pixels=None`). Time per request with a sho
 Images count against the 16,384-token input limit together with the
 questions: the state is cut first, and a request whose images and
 questions alone do not fit fails with an error on `images`, before any
-image is decoded. The vision
-tower (0.85 GB) loads on the first image request, so text-only use costs
-no extra memory.
+image is decoded. The vision tower (0.85 GB) loads on the first image
+request, so text-only use costs no extra memory.
 
 ## Supported models
 
@@ -435,6 +455,16 @@ then in the Hugging Face cache, and are skipped otherwise. The parity
 fixtures are rebuilt with `scripts/make_parity_set.py` and
 `scripts/make_parity_reference.py` (the latter runs Cloudflare's reference
 with PyTorch).
+
+## Jev, Clef and this project
+
+mlx-decision is an independent open-source project. It is not affiliated
+with, endorsed by or supported by Cloudflare or TypeSafe AI. Jev and
+System One are TypeSafe AI's; Jev compatibility here means the request and
+response bodies of Jev's public API, and the local server is not the Jev
+service. clef-flash is Cloudflare's model and is used under its Apache-2.0
+licence; this package downloads it from Hugging Face and does not ship its
+weights.
 
 ## Licence
 
