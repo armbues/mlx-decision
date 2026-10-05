@@ -2,7 +2,7 @@ from .errors import DecisionError
 from .model import DecisionModel, load
 from .types import Choice, Noul, Request, Response, Result, Score
 
-__version__ = "0.3.0.dev0"
+__version__ = "0.3.0"
 
 __all__ = [
     "Choice",
