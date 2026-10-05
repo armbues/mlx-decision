@@ -22,7 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 server = ["fastapi", "uvicorn"]
 images = ["pillow", "numpy"]
-dev = ["mlx-decision[server,images]", "pytest", "ruff", "httpx", "build"]
+dev = ["mlx-decision[server,images]", "pytest", "ruff", "httpx", "build", "twine"]
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:app"
