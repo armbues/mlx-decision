@@ -46,7 +46,38 @@ def test_unquantized_copy_answers_like_the_release(release, tmp_path):
         "source": str(release),
         "quantization": None,
         "quantized_output_embeddings": False,
+        "vision": False,
     }
+
+
+def picture(color) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 24), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_the_vision_tower_is_kept_unquantized(tmp_path):
+    release = write_clef(tmp_path / "tiny-vision", vision=True)
+    body = {"state": "billing", "questions": QUESTIONS, "images": [picture((9, 99, 199))]}
+    original = mlx_decision.load(release).decide_request(body)
+
+    copy = mlx_decision.load(convert(release, tmp_path / "copy")).decide_request(body)
+    assert copy.answers == original.answers
+
+    out = convert(release, tmp_path / "q8", bits=8)
+    assert {"model-vision.safetensors", "processor_config.json"} <= {p.name for p in out.iterdir()}
+    assert json.loads((out / MARKER_FILE).read_text())["vision"] is True
+    model = mlx_decision.load(out, vision=True)
+    tower = {
+        p for p, m in model.backend.vision.named_modules() if isinstance(m, nn.QuantizedLinear)
+    }
+    assert tower == set()
+    assert quantized(model)  # the text model is quantized
+    assert model.decide_request(body).usage.input_tokens == original.usage.input_tokens
 
 
 def test_folder_layout(release, tmp_path):

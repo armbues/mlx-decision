@@ -11,6 +11,7 @@ from mlx.utils import tree_flatten
 from .qwen3_5 import Model, ModelArgs
 
 SHARD_BYTES = 5 * 2**30
+VISION_PREFIXES = ("model.visual.", "visual.")
 
 
 def load_text_model(path: str | Path) -> Model:
@@ -39,6 +40,15 @@ def load_text_model(path: str | Path) -> Model:
     model.eval()
     mx.eval(model.parameters())
     return model
+
+
+def has_vision_weights(path: str | Path) -> bool:
+    """Whether the folder's weight index lists vision tower weights."""
+    index = Path(path) / "model.safetensors.index.json"
+    if not index.exists():
+        return False
+    names = json.loads(index.read_text())["weight_map"]
+    return any(name.startswith(VISION_PREFIXES) for name in names)
 
 
 def quantize_like(model: nn.Module, quantization: dict, weights: dict) -> None:

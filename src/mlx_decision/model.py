@@ -1,6 +1,6 @@
 """The public entry points: ``load`` a model and ask it to ``decide``."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +20,18 @@ class DecisionModel:
     def name(self) -> str:
         return self.backend.name
 
-    def decide(self, state: Any, questions: Mapping[str, Any]) -> Result:
-        """Answer ``questions`` (dicts or ``Choice``/``Score``/``Noul``) about ``state``."""
-        return self.decide_request({"state": state, "questions": dict(questions)})
+    def decide(
+        self, state: Any, questions: Mapping[str, Any], images: Sequence[Any] | None = None
+    ) -> Result:
+        """Answer ``questions`` (dicts or ``Choice``/``Score``/``Noul``) about ``state``.
+
+        ``images`` may hold file paths, image bytes, PIL images or data URLs
+        (``data:image/png;base64,...``); they need the ``images`` extra.
+        """
+        request = {"state": state, "questions": dict(questions)}
+        if images:
+            request["images"] = list(images)
+        return self.decide_request(request)
 
     def decide_request(self, request: Request | Mapping[str, Any]) -> Result:
         """Answer a whole request body in the wire format."""
@@ -51,10 +60,14 @@ class DecisionModel:
 
     def _check_supported(self, request: Request) -> None:
         caps = self.backend.capabilities
-        if (request.images or request.videos) and not caps.supports_media:
+        if request.videos:
             raise DecisionError(
-                "images and videos are not supported yet",
-                param="images" if request.images else "videos",
+                "videos are not supported yet", param="videos", code="unsupported_media"
+            )
+        if request.images and not caps.supports_images:
+            raise DecisionError(
+                f"{self.backend.name} does not support images",
+                param="images",
                 code="unsupported_media",
             )
         for question_id, question in request.questions.items():

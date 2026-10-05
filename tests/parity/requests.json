@@ -7717,5 +7717,437 @@
     }
    }
   }
+ },
+ {
+  "id": "image_dog_claim",
+  "state": "Photo attached to a pet insurance claim.",
+  "questions": {
+   "animal": {
+    "type": "choice",
+    "instructions": "Which animal is shown?",
+    "criteria": {
+     "dog": null,
+     "cat": null,
+     "bird": null,
+     "horse": null,
+     "none": "No animal"
+    }
+   },
+   "injured": {
+    "type": "noul",
+    "instructions": "The animal looks injured."
+   }
+  },
+  "images": [
+   "dog.jpg"
+  ]
+ },
+ {
+  "id": "image_lake",
+  "state": "Describe the attached picture.",
+  "questions": {
+   "kind": {
+    "type": "choice",
+    "instructions": "What kind of picture is this?",
+    "criteria": {
+     "photo": "A photograph",
+     "painting": "A painting or drawing",
+     "chart": "A chart or diagram",
+     "screenshot": "A screenshot of software"
+    }
+   },
+   "outdoors": {
+    "type": "noul",
+    "instructions": "The picture shows an outdoor scene."
+   },
+   "quality": {
+    "type": "score",
+    "instructions": "How clear and well exposed is the picture?",
+    "criteria": [
+     "Unusable",
+     "Poor",
+     "Acceptable",
+     "Good",
+     "Excellent"
+    ]
+   }
+  },
+  "images": [
+   "lake.jpg"
+  ]
+ },
+ {
+  "id": "image_kitchen_painting",
+  "state": "Describe the attached picture.",
+  "questions": {
+   "kind": {
+    "type": "choice",
+    "instructions": "What kind of picture is this?",
+    "criteria": {
+     "photo": "A photograph",
+     "painting": "A painting or drawing",
+     "chart": "A chart or diagram",
+     "screenshot": "A screenshot of software"
+    }
+   },
+   "outdoors": {
+    "type": "noul",
+    "instructions": "The picture shows an outdoor scene."
+   },
+   "quality": {
+    "type": "score",
+    "instructions": "How clear and well exposed is the picture?",
+    "criteria": [
+     "Unusable",
+     "Poor",
+     "Acceptable",
+     "Good",
+     "Excellent"
+    ]
+   }
+  },
+  "images": [
+   "kitchen-painting.jpg"
+  ]
+ },
+ {
+  "id": "image_tall_painting",
+  "state": {
+   "source": "museum archive",
+   "item": 1980
+  },
+  "questions": {
+   "kind": {
+    "type": "choice",
+    "instructions": "What kind of picture is this?",
+    "criteria": {
+     "photo": "A photograph",
+     "painting": "A painting or drawing",
+     "chart": "A chart or diagram",
+     "screenshot": "A screenshot of software"
+    }
+   },
+   "outdoors": {
+    "type": "noul",
+    "instructions": "The picture shows an outdoor scene."
+   },
+   "quality": {
+    "type": "score",
+    "instructions": "How clear and well exposed is the picture?",
+    "criteria": [
+     "Unusable",
+     "Poor",
+     "Acceptable",
+     "Good",
+     "Excellent"
+    ]
+   }
+  },
+  "images": [
+   "mountain-painting.jpg"
+  ]
+ },
+ {
+  "id": "image_chart",
+  "state": "Report attached.",
+  "questions": {
+   "trend": {
+    "type": "choice",
+    "instructions": "How do the values develop from left to right?",
+    "criteria": {
+     "rising": null,
+     "falling": null,
+     "flat": null,
+     "mixed": null
+    }
+   },
+   "bars": {
+    "type": "score",
+    "instructions": "How many bars does the chart have?",
+    "criteria": [
+     "one or two",
+     "three or four",
+     "five or six",
+     "seven or more"
+    ]
+   }
+  },
+  "images": [
+   "chart.png"
+  ]
+ },
+ {
+  "id": "image_error_ticket",
+  "state": "I keep getting this when I try to pay. What is going on?",
+  "questions": {
+   "department": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "technical": "Bugs, outages or integration problems",
+     "billing": "Payments, invoices or subscriptions",
+     "sales": "Pricing, plans or new accounts"
+    }
+   },
+   "frustration": {
+    "type": "score",
+    "instructions": "How frustrated does the customer appear?",
+    "criteria": [
+     "Calm, just stating facts",
+     "Frustrated but civil",
+     "Very angry"
+    ]
+   },
+   "is_urgent": {
+    "type": "noul",
+    "instructions": "The message asks for help right away."
+   },
+   "shows_error": {
+    "type": "noul",
+    "instructions": "An attached picture shows an error."
+   }
+  },
+  "images": [
+   "error-dialog.png"
+  ]
+ },
+ {
+  "id": "image_laptop_ticket",
+  "state": "My laptop screen flickers since the update.",
+  "questions": {
+   "department": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "technical": "Bugs, outages or integration problems",
+     "billing": "Payments, invoices or subscriptions",
+     "sales": "Pricing, plans or new accounts"
+    }
+   },
+   "frustration": {
+    "type": "score",
+    "instructions": "How frustrated does the customer appear?",
+    "criteria": [
+     "Calm, just stating facts",
+     "Frustrated but civil",
+     "Very angry"
+    ]
+   },
+   "is_urgent": {
+    "type": "noul",
+    "instructions": "The message asks for help right away."
+   },
+   "shows_error": {
+    "type": "noul",
+    "instructions": "An attached picture shows an error."
+   }
+  },
+  "images": [
+   "laptop.jpg"
+  ]
+ },
+ {
+  "id": "image_two",
+  "state": "Two photos from the same customer.",
+  "questions": {
+   "animal": {
+    "type": "choice",
+    "instructions": "Which animal is shown?",
+    "criteria": {
+     "dog": null,
+     "cat": null,
+     "bird": null,
+     "horse": null,
+     "none": "No animal"
+    }
+   },
+   "injured": {
+    "type": "noul",
+    "instructions": "The animal looks injured."
+   },
+   "outdoors": {
+    "type": "noul",
+    "instructions": "The picture shows an outdoor scene."
+   }
+  },
+  "images": [
+   "dog.jpg",
+   "lake.jpg"
+  ]
+ },
+ {
+  "id": "image_three",
+  "state": "Screenshots and a photo attached to the ticket.",
+  "questions": {
+   "department": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "technical": "Bugs, outages or integration problems",
+     "billing": "Payments, invoices or subscriptions",
+     "sales": "Pricing, plans or new accounts"
+    }
+   },
+   "frustration": {
+    "type": "score",
+    "instructions": "How frustrated does the customer appear?",
+    "criteria": [
+     "Calm, just stating facts",
+     "Frustrated but civil",
+     "Very angry"
+    ]
+   },
+   "is_urgent": {
+    "type": "noul",
+    "instructions": "The message asks for help right away."
+   },
+   "shows_error": {
+    "type": "noul",
+    "instructions": "An attached picture shows an error."
+   }
+  },
+  "images": [
+   "error-dialog.png",
+   "chart.png",
+   "laptop.jpg"
+  ]
+ },
+ {
+  "id": "image_no_state_text",
+  "state": "",
+  "questions": {
+   "kind": {
+    "type": "choice",
+    "instructions": "What kind of picture is this?",
+    "criteria": {
+     "photo": "A photograph",
+     "painting": "A painting or drawing",
+     "chart": "A chart or diagram",
+     "screenshot": "A screenshot of software"
+    }
+   }
+  },
+  "images": [
+   "chart.png"
+  ]
+ },
+ {
+  "id": "image_enlarged",
+  "state": "Describe the attached picture.",
+  "questions": {
+   "kind": {
+    "type": "choice",
+    "instructions": "What kind of picture is this?",
+    "criteria": {
+     "photo": "A photograph",
+     "painting": "A painting or drawing",
+     "chart": "A chart or diagram",
+     "screenshot": "A screenshot of software"
+    }
+   },
+   "outdoors": {
+    "type": "noul",
+    "instructions": "The picture shows an outdoor scene."
+   },
+   "quality": {
+    "type": "score",
+    "instructions": "How clear and well exposed is the picture?",
+    "criteria": [
+     "Unusable",
+     "Poor",
+     "Acceptable",
+     "Good",
+     "Excellent"
+    ]
+   }
+  },
+  "images": [
+   {
+    "file": "lake.jpg",
+    "size": [
+     2048,
+     1364
+    ]
+   }
+  ]
+ },
+ {
+  "id": "image_tiny",
+  "state": "Describe the attached picture.",
+  "questions": {
+   "kind": {
+    "type": "choice",
+    "instructions": "What kind of picture is this?",
+    "criteria": {
+     "photo": "A photograph",
+     "painting": "A painting or drawing",
+     "chart": "A chart or diagram",
+     "screenshot": "A screenshot of software"
+    }
+   },
+   "outdoors": {
+    "type": "noul",
+    "instructions": "The picture shows an outdoor scene."
+   },
+   "quality": {
+    "type": "score",
+    "instructions": "How clear and well exposed is the picture?",
+    "criteria": [
+     "Unusable",
+     "Poor",
+     "Acceptable",
+     "Good",
+     "Excellent"
+    ]
+   }
+  },
+  "images": [
+   {
+    "file": "chart.png",
+    "size": [
+     80,
+     50
+    ]
+   }
+  ]
+ },
+ {
+  "id": "image_log_16k_truncated",
+  "state": "2026-03-14T08:00:00Z INFO  search-indexer req=c78f3ef0 PUT /v1/invoices 200 108ms\n2026-03-14T08:00:07Z INFO  api-gateway req=3658cadf PUT /v1/login 200 234ms\n2026-03-14T08:00:14Z INFO  api-gateway req=dd5cf18c GET /v1/users/me 304 161ms\n2026-03-14T08:00:21Z INFO  payments-api req=1a4dd644 GET /v1/orders 201 26ms\n2026-03-14T08:00:28Z INFO  search-indexer req=c5ff2364 GET /v1/invoices 304 224ms\n2026-03-14T08:00:35Z INFO  mailer req=18626afd GET /v1/users/me 200 233ms\n2026-03-14T08:00:42Z INFO  auth-service req=fec094b3 POST /v1/search 204 106ms\n2026-03-14T08:00:49Z INFO  api-gateway req=fa5bc780 PUT /v1/search 200 238ms\n2026-03-14T08:00:56Z INFO  api-gateway req=d6fbb1e0 PUT /v1/login 304 45ms\n2026-03-14T08:01:03Z INFO  search-indexer req=3c54530e POST /v1/search 204 41ms\n2026-03-14T08:01:10Z INFO  search-indexer req=cb4c65c2 GET /v1/users/me 200 74ms\n2026-03-14T08:01:17Z INFO  mailer req=1f8f2f30 PUT /v1/login 304 103ms\n2026-03-14T08:01:24Z INFO  api-gateway req=6d2f06cf POST /v1/login 304 201ms\n2026-03-14T08:01:31Z INFO  mailer req=d9c7bc2f GET /v1/search 200 156ms\n2026-03-14T08:01:38Z INFO  api-gateway req=edafdb16 GET /v1/orders 200 104ms\n2026-03-14T08:01:45Z INFO  payments-api req=581715e4 GET /v1/orders 200 66ms\n2026-03-14T08:01:52Z INFO  auth-service req=ad7b6070 GET /healthz 200 151ms\n2026-03-14T08:01:59Z INFO  api-gateway req=0dff9461 GET /v1/login 204 154ms\n2026-03-14T08:02:06Z INFO  payments-api req=77d124bf PUT /healthz 204 86ms\n2026-03-14T08:02:13Z INFO  search-indexer req=032eabb3 POST /healthz 204 166ms\n2026-03-14T08:02:20Z INFO  api-gateway req=e1cc987f GET /v1/login 200 227ms\n2026-03-14T08:02:27Z INFO  payments-api req=1aa4361a GET /v1/login 404 180ms\n2026-03-14T08:02:34Z INFO  mailer req=808cd053 GET /healthz 200 50ms\n2026-03-14T08:02:41Z INFO  auth-service req=20dc2bd3 POST /v1/login 200 178ms\n2026-03-14T08:02:48Z INFO  search-indexer req=f4d9e04b GET /v1/search 200 176ms\n2026-03-14T08:02:55Z INFO  search-indexer req=a43d602f GET /healthz 201 213ms\n2026-03-14T08:03:02Z INFO  payments-api req=ef409635 GET /healthz 201 162ms\n2026-03-14T08:03:09Z INFO  auth-service req=a1d749c5 GET /v1/login 200 6ms\n2026-03-14T08:03:16Z INFO  api-gateway req=5b8ceac1 GET /v1/orders 304 87ms\n2026-03-14T08:03:23Z INFO  auth-service req=f8002b79 PUT /v1/users/me 200 136ms\n2026-03-14T08:03:30Z INFO  mailer req=6855edb3 PUT /v1/login 201 50ms\n2026-03-14T08:03:37Z INFO  api-gateway req=128bdfe0 PUT /v1/search 204 30ms\n2026-03-14T08:03:44Z INFO  api-gateway req=e9088eed POST /v1/users/me 201 85ms\n2026-03-14T08:03:51Z INFO  api-gateway req=5fda7832 PUT /healthz 304 142ms\n2026-03-14T08:03:58Z ERROR auth-service req=55731c8a upstream timeout after 30000ms\n2026-03-14T08:04:05Z INFO  mailer req=45386ee6 GET /v1/orders 201 99ms\n2026-03-14T08:04:12Z INFO  payments-api req=0d5d1894 PUT /v1/search 204 114ms\n2026-03-14T08:04:19Z INFO  auth-service req=b8f4d182 GET /v1/users/me 304 85ms\n2026-03-14T08:04:26Z INFO  mailer req=bf2f60a1 PUT /healthz 200 51ms\n2026-03-14T08:04:33Z WARN  payments-api slow response 1606ms\n2026-03-14T08:04:40Z INFO  payments-api req=b26e23e9 PUT /v1/orders 204 220ms\n2026-03-14T08:04:47Z INFO  api-gateway req=d84baf4a GET /v1/login 304 47ms\n2026-03-14T08:04:54Z INFO  api-gateway req=f4b4c898 PUT /v1/orders 304 196ms\n2026-03-14T08:05:01Z INFO  payments-api req=da645761 POST /v1/search 204 18ms\n2026-03-14T08:05:08Z INFO  payments-api req=e84c3581 GET /v1/login 404 121ms\n2026-03-14T08:05:15Z INFO  mailer req=3031f1d8 GET /v1/login 200 49ms\n2026-03-14T08:05:22Z INFO  api-gateway req=89f5131f POST /v1/orders 204 92ms\n2026-03-14T08:05:29Z INFO  auth-service req=e589b8a5 GET /v1/orders 304 6ms\n2026-03-14T08:05:36Z INFO  auth-service req=bc6f86f8 GET /healthz 201 81ms\n2026-03-14T08:05:43Z INFO  mailer req=bc758115 GET /v1/invoices 200 222ms\n2026-03-14T08:05:50Z ERROR search-indexer req=2b18f8ec rate limit exceeded for tenant\n2026-03-14T08:05:57Z INFO  payments-api req=9c834ee6 POST /v1/search 200 37ms\n2026-03-14T08:06:04Z INFO  api-gateway req=c0ccbf12 PUT /v1/invoices 404 76ms\n2026-03-14T08:06:11Z INFO  mailer req=084baaab PUT /healthz 200 229ms\n2026-03-14T08:06:18Z INFO  search-indexer req=05efe7c6 POST /v1/search 201 19ms\n2026-03-14T08:06:25Z INFO  payments-api req=9c984a36 POST /v1/invoices 304 83ms\n2026-03-14T08:06:32Z INFO  auth-service req=82016a6b GET /v1/search 200 96ms\n2026-03-14T08:06:39Z WARN  search-indexer slow response 3934ms\n2026-03-14T08:06:46Z WARN  search-indexer slow response 3277ms\n2026-03-14T08:06:53Z INFO  payments-api req=e9abee57 POST /healthz 200 101ms\n2026-03-14T08:07:00Z INFO  search-indexer req=ce8613e7 GET /v1/orders 200 160ms\n2026-03-14T08:07:07Z INFO  auth-service req=d548ea9e POST /v1/search 200 232ms\n2026-03-14T08:07:14Z INFO  payments-api req=f5ccb7b6 GET /v1/search 304 135ms\n2026-03-14T08:07:21Z INFO  search-indexer req=6670c960 GET /v1/orders 200 91ms\n2026-03-14T08:07:28Z INFO  api-gateway req=200d6c89 GET /v1/login 204 212ms\n2026-03-14T08:07:35Z INFO  mailer req=bf5db536 POST /v1/search 200 220ms\n2026-03-14T08:07:42Z WARN  auth-service slow response 3056ms\n2026-03-14T08:07:49Z WARN  api-gateway slow response 2553ms\n2026-03-14T08:07:56Z INFO  search-indexer req=11bce730 GET /v1/orders 204 219ms\n2026-03-14T08:08:03Z INFO  auth-service req=9f5cebc8 GET /v1/search 204 140ms\n2026-03-14T08:08:10Z INFO  api-gateway req=d1e88382 GET /v1/users/me 200 146ms\n2026-03-14T08:08:17Z INFO  mailer req=6d89059f POST /v1/login 200 93ms\n2026-03-14T08:08:24Z INFO  api-gateway req=7d7356fb GET /v1/login 204 179ms\n2026-03-14T08:08:31Z INFO  auth-service req=d0387c4d GET /v1/login 200 97ms\n2026-03-14T08:08:38Z INFO  search-indexer req=d0a13a79 GET /v1/login 404 46ms\n2026-03-14T08:08:45Z INFO  mailer req=c2f2a6e6 GET /v1/search 200 194ms\n2026-03-14T08:08:52Z INFO  payments-api req=2355725c PUT /v1/invoices 201 159ms\n2026-03-14T08:08:59Z INFO  auth-service req=25314e70 POST /healthz 404 58ms\n2026-03-14T08:09:06Z INFO  api-gateway req=3b348e8b GET /v1/users/me 204 135ms\n2026-03-14T08:09:13Z INFO  auth-service req=36748c00 GET /healthz 200 173ms\n2026-03-14T08:09:20Z INFO  auth-service req=073c3dd5 POST /v1/users/me 304 236ms\n2026-03-14T08:09:27Z INFO  mailer req=422f4e98 PUT /v1/login 200 236ms\n2026-03-14T08:09:34Z INFO  search-indexer req=c25a0f6e PUT /healthz 201 176ms\n2026-03-14T08:09:41Z INFO  mailer req=03dc5567 GET /v1/users/me 200 55ms\n2026-03-14T08:09:48Z INFO  mailer req=f9803fbf GET /healthz 200 130ms\n2026-03-14T08:09:55Z INFO  mailer req=c196bec8 GET /v1/login 200 94ms\n2026-03-14T08:10:02Z INFO  auth-service req=6c2a1dbd POST /v1/login 201 166ms\n2026-03-14T08:10:09Z INFO  mailer req=49686f4e POST /v1/orders 204 169ms\n2026-03-14T08:10:16Z INFO  payments-api req=78337936 GET /v1/login 304 133ms\n2026-03-14T08:10:23Z INFO  api-gateway req=2e5392cb GET /v1/orders 200 31ms\n2026-03-14T08:10:30Z INFO  payments-api req=66f907f3 GET /v1/search 404 93ms\n2026-03-14T08:10:37Z INFO  api-gateway req=d96b6920 GET /healthz 200 69ms\n2026-03-14T08:10:44Z INFO  search-indexer req=9593f8da GET /v1/login 200 10ms\n2026-03-14T08:10:51Z INFO  mailer req=5fbb672e GET /v1/orders 200 212ms\n2026-03-14T08:10:58Z INFO  mailer req=65b1f1de PUT /v1/search 200 102ms\n2026-03-14T08:11:05Z INFO  payments-api req=3c5fd1d0 GET /v1/search 201 148ms\n2026-03-14T08:11:12Z INFO  api-gateway req=0aa0c107 GET /v1/search 304 186ms\n2026-03-14T08:11:19Z INFO  auth-service req=f86539ad POST /v1/search 200 225ms\n2026-03-14T08:11:26Z INFO  mailer req=5c9468e1 POST /v1/users/me 200 98ms\n2026-03-14T08:11:33Z INFO  mailer req=7e409a91 GET /v1/users/me 200 192ms\n2026-03-14T08:11:40Z WARN  auth-service slow response 2126ms\n2026-03-14T08:11:47Z INFO  mailer req=e8d9e3eb GET /v1/orders 201 95ms\n2026-03-14T08:11:54Z INFO  auth-service req=53971d4a GET /v1/orders 200 95ms\n2026-03-14T08:12:01Z INFO  api-gateway req=24184a37 PUT /v1/users/me 304 51ms\n2026-03-14T08:12:08Z INFO  search-indexer req=eac63bb1 POST /v1/login 404 61ms\n2026-03-14T08:12:15Z INFO  payments-api req=782bfc5d PUT /v1/invoices 204 209ms\n2026-03-14T08:12:22Z INFO  api-gateway req=4f1eae11 GET /v1/orders 200 195ms\n2026-03-14T08:12:29Z WARN  auth-service slow response 1253ms\n2026-03-14T08:12:36Z INFO  mailer req=925dca76 GET /v1/users/me 304 145ms\n2026-03-14T08:12:43Z INFO  api-gateway req=b641ff34 POST /healthz 404 138ms\n2026-03-14T08:12:50Z INFO  mailer req=00b71bde POST /v1/search 204 86ms\n2026-03-14T08:12:57Z INFO  search-indexer req=017b11ce PUT /v1/search 204 115ms\n2026-03-14T08:13:04Z INFO  auth-service req=4116f091 PUT /v1/orders 304 237ms\n2026-03-14T08:13:11Z INFO  payments-api req=5efd98a6 GET /v1/users/me 304 167ms\n2026-03-14T08:13:18Z INFO  auth-service req=f402e690 GET /v1/search 204 29ms\n2026-03-14T08:13:25Z INFO  payments-api req=de79de6a GET /v1/search 404 189ms\n2026-03-14T08:13:32Z INFO  payments-api req=33a0973f POST /v1/users/me 404 82ms\n2026-03-14T08:13:39Z INFO  search-indexer req=a125693c GET /healthz 200 141ms\n2026-03-14T08:13:46Z INFO  api-gateway req=a9ec6c9c PUT /v1/login 204 178ms\n2026-03-14T08:13:53Z INFO  payments-api req=36d87845 GET /v1/users/me 404 136ms\n2026-03-14T08:14:00Z INFO  auth-service req=aa93067b PUT /v1/orders 201 167ms\n2026-03-14T08:14:07Z INFO  auth-service req=bde92f44 GET /v1/search 304 42ms\n2026-03-14T08:14:14Z INFO  search-indexer req=d5985480 PUT /v1/invoices 304 96ms\n2026-03-14T08:14:21Z INFO  payments-api req=89b4205f POST /v1/users/me 200 64ms\n2026-03-14T08:14:28Z INFO  search-indexer req=85a6cc5a PUT /healthz 204 28ms\n2026-03-14T08:14:35Z WARN  auth-service slow response 3648ms\n2026-03-14T08:14:42Z WARN  payments-api slow response 3767ms\n2026-03-14T08:14:49Z INFO  payments-api req=df975289 GET /healthz 204 170ms\n2026-03-14T08:14:56Z INFO  search-indexer req=5b62ab5e GET /v1/login 204 102ms\n2026-03-14T08:15:03Z WARN  api-gateway slow response 1022ms\n2026-03-14T08:15:10Z INFO  api-gateway req=8535846c POST /v1/invoices 200 132ms\n2026-03-14T08:15:17Z INFO  search-indexer req=e8ee52df PUT /v1/invoices 204 189ms\n2026-03-14T08:15:24Z INFO  api-gateway req=5bf4d77c PUT /v1/login 200 142ms\n2026-03-14T08:15:31Z INFO  mailer req=a543d4a7 POST /v1/login 200 143ms\n2026-03-14T08:15:38Z INFO  api-gateway req=8cacfad3 GET /v1/users/me 200 176ms\n2026-03-14T08:15:45Z WARN  auth-service slow response 2856ms\n2026-03-14T08:15:52Z INFO  auth-service req=831f1ed2 POST /v1/search 204 21ms\n2026-03-14T08:15:59Z INFO  api-gateway req=65c80a61 GET /healthz 200 63ms\n2026-03-14T08:16:06Z INFO  api-gateway req=3f937656 PUT /healthz 200 7ms\n2026-03-14T08:16:13Z INFO  search-indexer req=7b0ff06f POST /v1/search 200 18ms\n2026-03-14T08:16:20Z INFO  mailer req=4740694b GET /v1/login 200 71ms\n2026-03-14T08:16:27Z ERROR mailer req=2fb02f97 database pool exhausted (max=50)\n2026-03-14T08:16:34Z INFO  api-gateway req=277e24cd GET /v1/users/me 200 151ms\n2026-03-14T08:16:41Z INFO  auth-service req=459f21a5 POST /v1/login 404 20ms\n2026-03-14T08:16:48Z INFO  auth-service req=2bf1b2e9 GET /v1/login 200 87ms\n2026-03-14T08:16:55Z INFO  payments-api req=9a7ac446 POST /v1/search 200 28ms\n2026-03-14T08:17:02Z INFO  mailer req=6344581b POST /v1/login 200 212ms\n2026-03-14T08:17:09Z INFO  mailer req=ff4822c6 GET /v1/orders 200 46ms\n2026-03-14T08:17:16Z INFO  payments-api req=0aad69c9 GET /v1/login 200 48ms\n2026-03-14T08:17:23Z INFO  api-gateway req=e260e230 GET /v1/users/me 200 41ms\n2026-03-14T08:17:30Z INFO  payments-api req=efc28338 PUT /v1/users/me 200 144ms\n2026-03-14T08:17:37Z INFO  payments-api req=4425657e GET /v1/users/me 200 28ms\n2026-03-14T08:17:44Z INFO  payments-api req=91484bff GET /v1/login 304 213ms\n2026-03-14T08:17:51Z INFO  search-indexer req=eed5133a GET /v1/search 200 209ms\n2026-03-14T08:17:58Z INFO  auth-service req=93fe910e GET /v1/users/me 304 176ms\n2026-03-14T08:18:05Z INFO  api-gateway req=8213ed43 GET /v1/invoices 201 15ms\n2026-03-14T08:18:12Z INFO  api-gateway req=fd50bc34 PUT /v1/search 404 210ms\n2026-03-14T08:18:19Z INFO  api-gateway req=c5a9d133 PUT /v1/login 200 192ms\n2026-03-14T08:18:26Z INFO  auth-service req=b1516249 PUT /v1/login 200 198ms\n2026-03-14T08:18:33Z INFO  auth-service req=ea443615 POST /healthz 404 178ms\n2026-03-14T08:18:40Z INFO  mailer req=0a9b83cd GET /v1/users/me 200 95ms\n2026-03-14T08:18:47Z INFO  auth-service req=86d21c65 POST /v1/login 404 24ms\n2026-03-14T08:18:54Z INFO  payments-api req=741b6371 POST /v1/search 200 164ms\n2026-03-14T08:19:01Z INFO  mailer req=17469c26 PUT /v1/orders 304 130ms\n2026-03-14T08:19:08Z INFO  api-gateway req=4d2c157a POST /v1/users/me 204 86ms\n2026-03-14T08:19:15Z INFO  auth-service req=785bc60f GET /v1/invoices 201 119ms\n2026-03-14T08:19:22Z INFO  mailer req=8639689b GET /v1/login 204 128ms\n2026-03-14T08:19:29Z INFO  mailer req=7defcc1b PUT /v1/users/me 304 91ms\n2026-03-14T08:19:36Z INFO  mailer req=05a0abc3 POST /v1/orders 200 98ms\n2026-03-14T08:19:43Z INFO  mailer req=3b3b82af POST /v1/orders 404 44ms\n2026-03-14T08:19:50Z INFO  payments-api req=386bf713 GET /v1/login 200 185ms\n2026-03-14T08:19:57Z INFO  mailer req=3b6f797b GET /v1/login 200 153ms\n2026-03-14T08:20:04Z INFO  api-gateway req=47712a8c GET /healthz 200 123ms\n2026-03-14T08:20:11Z INFO  payments-api req=2000a7fe POST /healthz 204 224ms\n2026-03-14T08:20:18Z INFO  auth-service req=af969156 POST /v1/users/me 204 45ms\n2026-03-14T08:20:25Z INFO  payments-api req=640164ed PUT /v1/search 201 78ms\n2026-03-14T08:20:32Z INFO  payments-api req=951ba88f GET /healthz 200 14ms\n2026-03-14T08:20:39Z INFO  api-gateway req=ee51aa6a GET /v1/search 304 91ms\n2026-03-14T08:20:46Z INFO  mailer req=1ba2b2b1 GET /v1/search 200 59ms\n2026-03-14T08:20:53Z INFO  payments-api req=748b1645 PUT /v1/orders 201 221ms\n2026-03-14T08:21:00Z INFO  payments-api req=fa09cb33 GET /v1/invoices 200 102ms\n2026-03-14T08:21:07Z INFO  payments-api req=f7f0354f GET /v1/search 200 45ms\n2026-03-14T08:21:14Z INFO  api-gateway req=e6dd5c7c GET /v1/orders 404 111ms\n2026-03-14T08:21:21Z INFO  mailer req=eb55ecbe GET /v1/invoices 200 163ms\n2026-03-14T08:21:28Z INFO  api-gateway req=42f3c186 PUT /healthz 204 72ms\n2026-03-14T08:21:35Z INFO  auth-service req=3ef0989a POST /healthz 200 144ms\n2026-03-14T08:21:42Z INFO  mailer req=0bd24a11 PUT /v1/login 200 109ms\n2026-03-14T08:21:49Z INFO  auth-service req=5476170c GET /v1/login 304 118ms\n2026-03-14T08:21:56Z INFO  search-indexer req=69d8a14a PUT /healthz 201 52ms\n2026-03-14T08:22:03Z INFO  search-indexer req=1571d232 GET /v1/search 204 176ms\n2026-03-14T08:22:10Z INFO  auth-service req=1a08e9e0 PUT /v1/login 304 58ms\n2026-03-14T08:22:17Z INFO  search-indexer req=2cb88ffc GET /v1/orders 200 188ms\n2026-03-14T08:22:24Z INFO  mailer req=16718de6 GET /v1/login 200 74ms\n2026-03-14T08:22:31Z INFO  search-indexer req=1a54ed61 GET /healthz 200 152ms\n2026-03-14T08:22:38Z INFO  mailer req=35e6b364 POST /v1/orders 201 216ms\n2026-03-14T08:22:45Z INFO  api-gateway req=18c7a507 GET /v1/orders 304 148ms\n2026-03-14T08:22:52Z ERROR mailer req=e331c357 invalid token signature\n2026-03-14T08:22:59Z INFO  mailer req=66417f85 POST /v1/login 404 110ms\n2026-03-14T08:23:06Z INFO  auth-service req=64919171 POST /v1/orders 304 221ms\n2026-03-14T08:23:13Z INFO  api-gateway req=c70366cf GET /v1/users/me 304 125ms\n2026-03-14T08:23:20Z INFO  auth-service req=bfe0d75b GET /v1/invoices 200 64ms\n2026-03-14T08:23:27Z INFO  auth-service req=6457a9b4 GET /v1/orders 200 107ms\n2026-03-14T08:23:34Z INFO  api-gateway req=0214b9ae GET /v1/login 204 231ms\n2026-03-14T08:23:41Z INFO  auth-service req=becd2466 PUT /v1/login 304 145ms\n2026-03-14T08:23:48Z INFO  payments-api req=d3ee5cd9 GET /healthz 200 140ms\n2026-03-14T08:23:55Z INFO  mailer req=1458c842 PUT /v1/users/me 304 231ms\n2026-03-14T08:24:02Z INFO  mailer req=d1326d4f POST /v1/orders 201 130ms\n2026-03-14T08:24:09Z INFO  search-indexer req=619ddbbf PUT /v1/login 200 133ms\n2026-03-14T08:24:16Z INFO  api-gateway req=b7f57d75 POST /healthz 200 66ms\n2026-03-14T08:24:23Z INFO  auth-service req=f5d5734a GET /v1/search 200 62ms\n2026-03-14T08:24:30Z INFO  search-indexer req=9981a277 PUT /v1/orders 200 8ms\n2026-03-14T08:24:37Z INFO  api-gateway req=31c71639 GET /v1/search 404 23ms\n2026-03-14T08:24:44Z INFO  api-gateway req=b594e1b0 PUT /v1/users/me 200 112ms\n2026-03-14T08:24:51Z INFO  auth-service req=36c25b1d PUT /v1/users/me 200 191ms\n2026-03-14T08:24:58Z INFO  api-gateway req=e641fe49 PUT /healthz 200 165ms\n2026-03-14T08:25:05Z INFO  payments-api req=3fca1a2e GET /v1/search 200 70ms\n2026-03-14T08:25:12Z INFO  auth-service req=f251ae18 GET /v1/search 200 85ms\n2026-03-14T08:25:19Z INFO  api-gateway req=3cab8b2b PUT /v1/search 200 41ms\n2026-03-14T08:25:26Z INFO  api-gateway req=c0a95928 POST /v1/users/me 404 7ms\n2026-03-14T08:25:33Z INFO  payments-api req=1f7e92b9 PUT /v1/orders 201 205ms\n2026-03-14T08:25:40Z INFO  search-indexer req=e0847587 POST /v1/users/me 304 146ms\n2026-03-14T08:25:47Z INFO  search-indexer req=b346e7ff GET /v1/search 204 208ms\n2026-03-14T08:25:54Z INFO  auth-service req=b8164234 POST /v1/search 304 177ms\n2026-03-14T08:26:01Z WARN  api-gateway slow response 1109ms\n2026-03-14T08:26:08Z INFO  auth-service req=8d257a5c GET /healthz 404 27ms\n2026-03-14T08:26:15Z INFO  mailer req=e5f83e07 GET /v1/login 201 47ms\n2026-03-14T08:26:22Z INFO  mailer req=bdc47aed POST /v1/login 200 184ms\n2026-03-14T08:26:29Z INFO  payments-api req=fa5c8e17 GET /v1/search 200 174ms\n2026-03-14T08:26:36Z INFO  search-indexer req=df913925 PUT /v1/search 201 177ms\n2026-03-14T08:26:43Z INFO  mailer req=96146aec GET /v1/login 200 227ms\n2026-03-14T08:26:50Z INFO  auth-service req=b0524327 GET /v1/login 200 200ms\n2026-03-14T08:26:57Z INFO  search-indexer req=ae3eea4e GET /v1/login 200 86ms\n2026-03-14T08:27:04Z INFO  payments-api req=3c84fd1e GET /v1/orders 200 21ms\n2026-03-14T08:27:11Z INFO  api-gateway req=c90214b2 GET /v1/invoices 201 151ms\n2026-03-14T08:27:18Z INFO  api-gateway req=ae8904c8 PUT /v1/orders 200 36ms\n2026-03-14T08:27:25Z INFO  payments-api req=9fa2ed0f GET /v1/invoices 201 18ms\n2026-03-14T08:27:32Z INFO  api-gateway req=c97ecc8f PUT /healthz 304 156ms\n2026-03-14T08:27:39Z INFO  api-gateway req=c94b9acf POST /v1/orders 200 44ms\n2026-03-14T08:27:46Z INFO  api-gateway req=1cf2fc91 PUT /healthz 304 170ms\n2026-03-14T08:27:53Z INFO  search-indexer req=17123114 PUT /v1/invoices 200 65ms\n2026-03-14T08:28:00Z INFO  auth-service req=07711e67 GET /healthz 200 171ms\n2026-03-14T08:28:07Z INFO  auth-service req=edcc9e5d PUT /v1/invoices 200 41ms\n2026-03-14T08:28:14Z INFO  auth-service req=a83b349e GET /v1/users/me 304 26ms\n2026-03-14T08:28:21Z INFO  payments-api req=bc239438 PUT /v1/search 204 32ms\n2026-03-14T08:28:28Z INFO  auth-service req=c84202ca GET /v1/login 204 134ms\n2026-03-14T08:28:35Z WARN  search-indexer slow response 3840ms\n2026-03-14T08:28:42Z INFO  payments-api req=d52ef744 GET /v1/users/me 304 118ms\n2026-03-14T08:28:49Z INFO  api-gateway req=276d8102 PUT /v1/orders 201 147ms\n2026-03-14T08:28:56Z INFO  search-indexer req=f9eabecd GET /healthz 200 15ms\n2026-03-14T08:29:03Z INFO  payments-api req=a2e662f1 GET /healthz 200 204ms\n2026-03-14T08:29:10Z INFO  search-indexer req=c8e43514 PUT /v1/login 304 30ms\n2026-03-14T08:29:17Z INFO  auth-service req=58091695 GET /healthz 201 137ms\n2026-03-14T08:29:24Z INFO  search-indexer req=b0ff99fe POST /v1/login 200 26ms\n2026-03-14T08:29:31Z INFO  search-indexer req=147d07a0 POST /healthz 200 75ms\n2026-03-14T08:29:38Z INFO  search-indexer req=aaa8c209 PUT /v1/users/me 201 121ms\n2026-03-14T08:29:45Z INFO  payments-api req=47f62ef2 POST /v1/login 201 3ms\n2026-03-14T08:29:52Z INFO  api-gateway req=ee3ad36e GET /v1/search 404 141ms\n2026-03-14T08:29:59Z INFO  payments-api req=84885230 POST /v1/search 304 60ms\n2026-03-14T08:30:06Z INFO  search-indexer req=0297d16a GET /v1/users/me 204 102ms\n2026-03-14T08:30:13Z INFO  mailer req=25c4c554 PUT /v1/login 201 152ms\n2026-03-14T08:30:20Z INFO  auth-service req=7b8e8f24 POST /v1/users/me 200 52ms\n2026-03-14T08:30:27Z INFO  api-gateway req=3734f1ea PUT /v1/invoices 304 50ms\n2026-03-14T08:30:34Z INFO  auth-service req=d2f41077 PUT /v1/invoices 404 29ms\n2026-03-14T08:30:41Z WARN  payments-api slow response 3757ms\n2026-03-14T08:30:48Z INFO  api-gateway req=5ba1faff GET /v1/search 404 36ms\n2026-03-14T08:30:55Z INFO  api-gateway req=3e7de535 GET /v1/invoices 204 223ms\n2026-03-14T08:31:02Z INFO  api-gateway req=87197111 GET /v1/search 200 118ms\n2026-03-14T08:31:09Z INFO  payments-api req=c5ab5aa0 GET /v1/login 200 175ms\n2026-03-14T08:31:16Z INFO  search-indexer req=e849f97f PUT /v1/orders 201 168ms\n2026-03-14T08:31:23Z INFO  payments-api req=ff8ad670 GET /v1/login 200 80ms\n2026-03-14T08:31:30Z INFO  auth-service req=a9f0979f GET /healthz 304 58ms\n2026-03-14T08:31:37Z INFO  search-indexer req=4b6dd955 PUT /v1/search 404 129ms\n2026-03-14T08:31:44Z INFO  search-indexer req=89bf61a8 GET /v1/invoices 404 16ms\n2026-03-14T08:31:51Z INFO  search-indexer req=c45d1a3f POST /healthz 200 119ms\n2026-03-14T08:31:58Z INFO  mailer req=4f68f7b9 PUT /v1/orders 404 174ms\n2026-03-14T08:32:05Z INFO  search-indexer req=b413698b POST /v1/orders 200 107ms\n2026-03-14T08:32:12Z WARN  auth-service slow response 1882ms\n2026-03-14T08:32:19Z INFO  mailer req=1c4c0942 PUT /v1/search 201 210ms\n2026-03-14T08:32:26Z INFO  api-gateway req=c39c1e5e PUT /v1/login 200 23ms\n2026-03-14T08:32:33Z INFO  mailer req=6284ff21 POST /v1/orders 200 81ms\n2026-03-14T08:32:40Z INFO  mailer req=0522a551 GET /v1/users/me 304 162ms\n2026-03-14T08:32:47Z INFO  auth-service req=ffb88fa3 GET /healthz 404 131ms\n2026-03-14T08:32:54Z INFO  auth-service req=7212534a PUT /v1/login 200 122ms\n2026-03-14T08:33:01Z INFO  search-indexer req=f03fe854 POST /v1/orders 200 180ms\n2026-03-14T08:33:08Z INFO  auth-service req=b92638d0 GET /healthz 304 142ms\n2026-03-14T08:33:15Z INFO  api-gateway req=e5917c5c GET /healthz 200 121ms\n2026-03-14T08:33:22Z INFO  payments-api req=4185518a GET /v1/login 200 227ms\n2026-03-14T08:33:29Z INFO  payments-api req=68ee7a51 PUT /healthz 200 17ms\n2026-03-14T08:33:36Z INFO  api-gateway req=b30ce632 GET /v1/orders 304 44ms\n2026-03-14T08:33:43Z INFO  payments-api req=32a273c3 POST /v1/users/me 200 161ms\n2026-03-14T08:33:50Z INFO  auth-service req=9ee961ca GET /v1/login 201 151ms\n2026-03-14T08:33:57Z INFO  search-indexer req=190fc4ac GET /v1/invoices 200 21ms\n2026-03-14T08:34:04Z INFO  mailer req=93149ffc PUT /v1/search 204 76ms\n2026-03-14T08:34:11Z INFO  payments-api req=96cbb245 GET /v1/invoices 200 83ms\n2026-03-14T08:34:18Z INFO  search-indexer req=26937612 GET /v1/orders 201 114ms\n2026-03-14T08:34:25Z INFO  payments-api req=82eacea1 PUT /v1/users/me 304 112ms\n2026-03-14T08:34:32Z INFO  auth-service req=eb7a88f9 GET /v1/orders 200 35ms\n2026-03-14T08:34:39Z INFO  search-indexer req=1043ccde POST /healthz 201 107ms\n2026-03-14T08:34:46Z INFO  auth-service req=6c0d12ff GET /v1/login 404 223ms\n2026-03-14T08:34:53Z INFO  mailer req=96aaaab8 POST /v1/users/me 200 186ms\n2026-03-14T08:35:00Z INFO  mailer req=59055777 GET /v1/search 200 116ms\n2026-03-14T08:35:07Z INFO  mailer req=6a08ee53 GET /v1/login 201 154ms\n2026-03-14T08:35:14Z INFO  api-gateway req=a0b55391 POST /v1/login 201 18ms\n2026-03-14T08:35:21Z INFO  search-indexer req=031eff92 GET /v1/orders 201 63ms\n2026-03-14T08:35:28Z INFO  auth-service req=c65d001c GET /v1/search 200 199ms\n2026-03-14T08:35:35Z INFO  search-indexer req=657656c4 PUT /v1/users/me 304 190ms\n2026-03-14T08:35:42Z INFO  api-gateway req=2db3ad2c PUT /v1/users/me 200 194ms\n2026-03-14T08:35:49Z WARN  search-indexer slow response 1646ms\n2026-03-14T08:35:56Z INFO  search-indexer req=7a16e5b9 GET /v1/orders 200 133ms\n2026-03-14T08:36:03Z INFO  payments-api req=a202d0a4 GET /v1/invoices 200 71ms\n2026-03-14T08:36:10Z INFO  mailer req=732a38e4 POST /v1/search 200 101ms\n2026-03-14T08:36:17Z INFO  mailer req=019ce8eb GET /v1/orders 200 160ms\n2026-03-14T08:36:24Z INFO  mailer req=75aee5e4 POST /v1/orders 200 10ms\n2026-03-14T08:36:31Z INFO  search-indexer req=8bfb8642 POST /healthz 200 178ms\n2026-03-14T08:36:38Z INFO  mailer req=181d2121 GET /v1/search 304 128ms\n2026-03-14T08:36:45Z INFO  mailer req=b7854538 PUT /v1/orders 201 75ms\n2026-03-14T08:36:52Z INFO  auth-service req=35353cbd POST /v1/orders 204 186ms\n2026-03-14T08:36:59Z INFO  auth-service req=4e67b3d7 GET /v1/orders 304 212ms\n2026-03-14T08:37:06Z INFO  mailer req=01b83869 GET /v1/users/me 200 162ms\n2026-03-14T08:37:13Z INFO  mailer req=0035da11 GET /v1/orders 201 84ms\n2026-03-14T08:37:20Z INFO  mailer req=1208de6f PUT /v1/orders 304 104ms\n2026-03-14T08:37:27Z INFO  payments-api req=94108356 GET /v1/invoices 200 54ms\n2026-03-14T08:37:34Z INFO  auth-service req=c20dfe8e PUT /v1/orders 200 226ms\n2026-03-14T08:37:41Z INFO  search-indexer req=a1e93cdf GET /healthz 204 91ms\n2026-03-14T08:37:48Z INFO  auth-service req=60a2afc1 GET /v1/users/me 204 235ms\n2026-03-14T08:37:55Z INFO  mailer req=5870c161 PUT /v1/invoices 200 231ms\n2026-03-14T08:38:02Z INFO  search-indexer req=e1e8ada6 GET /v1/users/me 200 86ms\n2026-03-14T08:38:09Z INFO  mailer req=80e1574c POST /v1/users/me 404 195ms\n2026-03-14T08:38:16Z INFO  search-indexer req=db908f47 GET /v1/invoices 304 169ms\n2026-03-14T08:38:23Z INFO  search-indexer req=f8a9d895 PUT /v1/orders 304 121ms\n2026-03-14T08:38:30Z INFO  payments-api req=233237c1 GET /v1/login 200 134ms\n2026-03-14T08:38:37Z INFO  search-indexer req=8bab6152 GET /v1/orders 200 217ms\n2026-03-14T08:38:44Z INFO  search-indexer req=692e787e GET /v1/orders 404 198ms\n2026-03-14T08:38:51Z INFO  mailer req=19a1b4ce PUT /healthz 200 101ms\n2026-03-14T08:38:58Z INFO  api-gateway req=9ccdf306 GET /v1/search 204 104ms\n2026-03-14T08:39:05Z INFO  api-gateway req=581a670d GET /v1/invoices 204 164ms\n2026-03-14T08:39:12Z INFO  mailer req=7a6c27bc PUT /v1/search 304 206ms\n2026-03-14T08:39:19Z INFO  search-indexer req=5d57f414 GET /v1/users/me 200 192ms\n2026-03-14T08:39:26Z INFO  api-gateway req=eb25b29a POST /v1/orders 204 111ms\n2026-03-14T08:39:33Z INFO  mailer req=cd9878f0 GET /v1/login 201 32ms",
+  "questions": {
+   "outage": {
+    "type": "noul",
+    "instructions": "The log shows a service outage (a run of failed requests).",
+    "criteria": {
+     "true": "Several consecutive errors from the same service",
+     "false": "Only isolated errors or none"
+    }
+   },
+   "worst_service": {
+    "type": "choice",
+    "instructions": "Which service logs the most errors?",
+    "criteria": {
+     "payments": "payments-api",
+     "auth": "auth-service",
+     "search": "search-indexer",
+     "gateway": "api-gateway",
+     "mailer": "mailer"
+    }
+   },
+   "severity": {
+    "type": "score",
+    "instructions": "How severe is the overall situation in the log?",
+    "criteria": [
+     "Normal operation",
+     "Minor warnings",
+     "Degraded service",
+     "Partial outage",
+     "Full outage"
+    ]
+   }
+  },
+  "images": [
+   "error-dialog.png"
+  ]
  }
 ]

@@ -1,12 +1,14 @@
 """Clef on MLX against Cloudflare's PyTorch reference, on the parity set.
 
-``reference.json`` is written by ``scripts/make_parity_reference.py``.
+``reference.json`` is written by ``scripts/make_parity_reference.py``. Requests
+with images open them through ``parity_images.py``, as the reference did.
 """
 
 import json
 from pathlib import Path
 
 import pytest
+from parity_images import open_image
 
 from mlx_decision.models.clef.encode import encode_request
 from mlx_decision.types import parse_request
@@ -29,7 +31,18 @@ pytestmark = pytest.mark.weights
 
 def request(case_id: str):
     case = REQUESTS[case_id]
-    return parse_request({"state": case["state"], "questions": case["questions"]})
+    body = {"state": case["state"], "questions": case["questions"]}
+    if case.get("images"):
+        body["images"] = [open_image(spec) for spec in case["images"]]
+    return parse_request(body)
+
+
+def image_tokens(case_id: str, clef_path: Path) -> list[int]:
+    from mlx_decision.models.clef.model import prepare_images
+
+    if not REQUESTS[case_id].get("images"):
+        return []
+    return [image.tokens for image in prepare_images(request(case_id).images, clef_path)]
 
 
 def test_every_request_has_a_reference():
@@ -44,8 +57,10 @@ def tokenizer(clef_path: Path):
 
 
 @pytest.mark.parametrize("case_id", CASE_IDS)
-def test_tokens_and_spans_match(tokenizer, case_id):
-    encoded = encode_request(tokenizer, request(case_id))
+def test_tokens_and_spans_match(tokenizer, clef_path, case_id):
+    encoded = encode_request(
+        tokenizer, request(case_id), image_tokens=image_tokens(case_id, clef_path)
+    )
     reference = REFERENCE[case_id]
     assert list(encoded.input_ids) == reference["input_ids"]
     assert encoded.truncated == reference["truncated"]
@@ -66,6 +81,13 @@ def test_tokens_and_spans_match(tokenizer, case_id):
 def test_the_set_covers_truncation():
     assert any(reference["truncated"] for reference in REFERENCE.values())
     assert not all(reference["truncated"] for reference in REFERENCE.values())
+    assert any(REFERENCE[c]["truncated"] for c in CASE_IDS if REQUESTS[c].get("images"))
+
+
+def test_the_set_covers_images():
+    with_images = [case for case in REQUESTS.values() if case.get("images")]
+    assert any(len(case["images"]) > 1 for case in with_images)
+    assert any(isinstance(spec, dict) for case in with_images for spec in case["images"])
 
 
 @pytest.fixture(scope="session")

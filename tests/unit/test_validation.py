@@ -144,12 +144,19 @@ def test_score_level_limit():
     assert "at most 10 levels" in error.message
 
 
-@pytest.mark.parametrize("media", ["images", "videos"])
-def test_media_is_rejected_when_not_supported(media):
-    error = decide_with({**body(q={"type": "noul"}), media: ["data:..."]})
+@pytest.mark.parametrize(
+    ("media", "capabilities", "message"),
+    [
+        ("images", {}, "fake does not support images"),
+        ("videos", {}, "videos are not supported yet"),
+        ("videos", {"supports_images": True}, "videos are not supported yet"),
+    ],
+)
+def test_media_is_rejected_when_not_supported(media, capabilities, message):
+    error = decide_with({**body(q={"type": "noul"}), media: ["data:..."]}, **capabilities)
     assert error.param == media
     assert error.code == "unsupported_media"
-    assert "not supported yet" in error.message
+    assert error.message == message
 
 
 def test_empty_media_lists_are_fine():

@@ -12,20 +12,38 @@ MARKER_FILE = "mlx_decision.json"
 
 
 @dataclass(frozen=True)
+class KnownModel:
+    """A model on the Hugging Face Hub that a family loads, offered by ``download``."""
+
+    repo_id: str
+    description: str
+    size: str  # approximate download size, for the menu
+
+
+@dataclass(frozen=True)
 class Family:
     name: str
     detect: Callable[[Path], bool]
     loader: str  # "module:function"; imported only when the family is used
     converter: str | None = None  # same form; writes an MLX copy of a model
+    known_models: tuple[KnownModel, ...] = ()
 
 
 _FAMILIES: dict[str, Family] = {}
 
 
 def register_family(
-    name: str, detect: Callable[[Path], bool], loader: str, converter: str | None = None
+    name: str,
+    detect: Callable[[Path], bool],
+    loader: str,
+    converter: str | None = None,
+    known_models: tuple[KnownModel, ...] = (),
 ) -> None:
-    _FAMILIES[name] = Family(name, detect, loader, converter)
+    _FAMILIES[name] = Family(name, detect, loader, converter, known_models)
+
+
+def known_models() -> list[KnownModel]:
+    return [model for family in _FAMILIES.values() for model in family.known_models]
 
 
 def resolve(reference: str) -> Callable:
@@ -57,4 +75,11 @@ register_family(
     detect=lambda path: (path / "joint_head_config.json").exists(),
     loader="mlx_decision.models.clef.model:load",
     converter="mlx_decision.models.clef.convert:convert",
+    known_models=(
+        KnownModel(
+            "Cloudflare/clef-flash",
+            "Clef flash: Cloudflare's 9B decision model (Qwen3.5), text and images",
+            "19 GB",
+        ),
+    ),
 )

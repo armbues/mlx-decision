@@ -2,8 +2,9 @@
 # (https://huggingface.co/Cloudflare/clef-flash), Apache License 2.0.
 # See LICENSES/clef-Apache-2.0.txt.
 #
-# Modified for mlx-decision: text only, tokenizes with the `tokenizers`
-# library, reports truncation of the state.
+# Modified for mlx-decision: tokenizes with the `tokenizers` library, takes
+# each image's token count instead of running the processor, reports
+# truncation of the state; no video.
 """Render a request into the token sequence Clef was trained on."""
 
 import json
@@ -21,6 +22,7 @@ SYSTEM_PROMPT = (
 )
 QUESTION_TYPES = {"noul": 0, "choice": 1, "score": 2}
 DEFAULT_MAX_LENGTH = 16384
+VISION_START, IMAGE_PAD, VISION_END = "<|vision_start|>", "<|image_pad|>", "<|vision_end|>"
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,14 @@ def encode_request(
     tokenizer: Tokenizer,
     request: Request,
     max_length: int = DEFAULT_MAX_LENGTH,
+    image_tokens: list[int] = (),
 ) -> EncodedRequest:
+    """The token ids and spans for ``request``.
+
+    ``image_tokens`` holds each image's token count; the images are placed
+    after ``STATE:`` and count with the questions, so the state is cut first.
+    """
+
     def tokens(text: str) -> list[int]:
         return tokenizer.encode(text, add_special_tokens=False).ids
 
@@ -116,6 +125,16 @@ def encode_request(
             f"the questions alone need {fixed_length} tokens; the limit is {max_length}",
             param="questions",
         )
+    if image_tokens:
+        start, pad, end = (tokenizer.token_to_id(t) for t in (VISION_START, IMAGE_PAD, VISION_END))
+        media_ids = [i for count in image_tokens for i in (start, *[pad] * count, end)]
+        prefix_ids = prefix_ids + media_ids + tokens("\n")
+        fixed_length = len(prefix_ids) + len(schema_ids) + len(suffix_ids)
+        if fixed_length > max_length:
+            raise DecisionError(
+                f"the images and questions need {fixed_length} tokens; the limit is {max_length}",
+                param="images",
+            )
     state_ids = tokens(render(request.state))
     room = max_length - fixed_length
     truncated = len(state_ids) > room

@@ -13,7 +13,7 @@ class Capabilities:
     max_choice_options: int | None = None
     max_score_levels: int | None = None
     requires_instructions: bool = False
-    supports_media: bool = False
+    supports_images: bool = False
 
 
 @dataclass

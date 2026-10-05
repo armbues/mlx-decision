@@ -2,7 +2,8 @@
 
 A prompt_toolkit session reads each state with line editing and history; a
 blank line submits it. A single line starting with ``/`` is a command that
-lists, adds, edits, removes or saves the questions.
+lists, adds, edits, removes or saves the questions, or attaches images that
+go with every following state.
 """
 
 import json
@@ -12,7 +13,8 @@ from typing import Any
 
 import typer
 from prompt_toolkit import PromptSession, shortcuts
-from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.completion import Completer, Completion, PathCompleter
+from prompt_toolkit.document import Document
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.validation import ValidationError, Validator
@@ -31,6 +33,7 @@ COMMANDS = {
     "edit": "edit a question: /edit ID",
     "remove": "remove a question: /remove ID",
     "save": "write the questions to a file that -q reads: /save FILE",
+    "image": "attach an image to the following states: /image FILE; /image clear",
     "help": "show this help",
     "quit": "end the session (or Ctrl-D)",
 }
@@ -93,6 +96,7 @@ class CommandCompleter(Completer):
 
     def __init__(self, session: "Session"):
         self.session = session
+        self.paths = PathCompleter(expanduser=True)
 
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
@@ -107,6 +111,8 @@ class CommandCompleter(Completer):
             for question_id in self.session.questions:
                 if question_id.startswith(arg):
                     yield Completion(question_id, start_position=-len(arg))
+        elif name in ("image", "save"):
+            yield from self.paths.get_completions(Document(arg), complete_event)
 
 
 class Session:
@@ -131,12 +137,16 @@ class Session:
     def questions(self) -> dict[str, Any]:
         return self.body["questions"]
 
+    @property
+    def images(self) -> list[Any]:
+        return self.body.setdefault("images", [])
+
     def toolbar(self) -> str:
         count = len(self.questions)
-        return (
-            f" {count} question{'' if count == 1 else 's'} · blank line: answer"
-            " · /help: commands · Ctrl-D: quit"
-        )
+        text = f" {count} question{'' if count == 1 else 's'}"
+        if self.images:
+            text += f", {len(self.images)} image{'' if len(self.images) == 1 else 's'}"
+        return text + " · blank line: answer · /help: commands · Ctrl-D: quit"
 
     def run(self) -> None:
         if not self.questions:
@@ -169,7 +179,10 @@ class Session:
             typer.echo("answering...", err=True, nl=False)
         try:
             state = parse_state(text, self.state_json)
-            result = self.model.decide_request({**self.body, "state": state})
+            body = {**self.body, "state": state}
+            if not body.get("images"):
+                body.pop("images", None)
+            result = self.model.decide_request(body)
         except DecisionError as error:
             result, failure = None, error
         if busy:
@@ -198,6 +211,10 @@ class Session:
             say("  A state that starts with / is typed as //.")
         elif name == "list":
             say(describe(self.questions) if self.questions else "no questions; /add one")
+            if self.images:
+                say("images: " + ", ".join(_short(image) for image in self.images))
+        elif name == "image":
+            self.attach(arg)
         elif name == "add":
             self.build()
         elif name in ("edit", "remove"):
@@ -220,6 +237,30 @@ class Session:
         else:
             say(f"error: unknown command /{name}; /help lists the commands")
         return True
+
+    def attach(self, arg: str) -> None:
+        """``/image FILE`` adds an image for the following states; ``/image clear`` drops them."""
+        if arg == "clear":
+            self.images.clear()
+            say("images cleared")
+            return
+        if not arg:
+            say("error: /image needs a file name (or clear)")
+            return
+        if not self.model.backend.capabilities.supports_images:
+            say(f"error: {self.model.name} does not support images")
+            return
+        from .images import load_image
+
+        path = Path(arg).expanduser()
+        try:
+            load_image(path, len(self.images))  # check it now, not with the next state
+        except DecisionError as error:
+            say(f"error: {error.message}")
+            return
+        self.images.append(str(path))
+        count = len(self.images)
+        say(f"attached {path} ({count} image{'' if count == 1 else 's'})")
 
     def save(self, arg: str) -> None:
         if not arg:
@@ -424,3 +465,11 @@ def describe(questions: dict[str, Any], indent: str = "") -> str:
             for level, value in enumerate(criteria):
                 lines.append(f"  {level}  {as_text(value)}")
     return "\n".join(indent + line for line in lines)
+
+
+def _short(value: Any) -> str:
+    """A path or data URL cut to 60 characters; a path keeps its end (the file name)."""
+    text = str(value)
+    if len(text) <= 60:
+        return text
+    return text[:57] + "..." if text.startswith("data:") else "..." + text[-57:]

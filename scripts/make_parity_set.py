@@ -6,6 +6,10 @@ All texts are written for this project. Long states are assembled from
 templates with a fixed seed, sized with the model's tokenizer so that they
 reach given token counts, some of them beyond the input limit. The tokenizer
 is only used for sizing; the output does not depend on it beyond that.
+
+Image requests use the photos in tests/parity/images (public domain or CC0,
+see SOURCES.md there) and two pictures drawn here, a chart and an error
+dialog, which are written once if missing.
 """
 
 import argparse
@@ -276,6 +280,173 @@ def grow(
         count += len(tokenizer.encode(text, add_special_tokens=False).ids) + 1
         items.append(value)
     return join.join(items) if join is not None else items
+
+
+# ---------------------------------------------------------------------------
+# Image cases
+
+IMAGES = ROOT / "tests" / "parity" / "images"
+
+PICTURE = {
+    "kind": {
+        "type": "choice",
+        "instructions": "What kind of picture is this?",
+        "criteria": {
+            "photo": "A photograph",
+            "painting": "A painting or drawing",
+            "chart": "A chart or diagram",
+            "screenshot": "A screenshot of software",
+        },
+    },
+    "outdoors": {"type": "noul", "instructions": "The picture shows an outdoor scene."},
+    "quality": {
+        "type": "score",
+        "instructions": "How clear and well exposed is the picture?",
+        "criteria": ["Unusable", "Poor", "Acceptable", "Good", "Excellent"],
+    },
+}
+
+CLAIM = {
+    "animal": {
+        "type": "choice",
+        "instructions": "Which animal is shown?",
+        "criteria": {"dog": None, "cat": None, "bird": None, "horse": None, "none": "No animal"},
+    },
+    "injured": {"type": "noul", "instructions": "The animal looks injured."},
+}
+
+CHART = {
+    "trend": {
+        "type": "choice",
+        "instructions": "How do the values develop from left to right?",
+        "criteria": {"rising": None, "falling": None, "flat": None, "mixed": None},
+    },
+    "bars": {
+        "type": "score",
+        "instructions": "How many bars does the chart have?",
+        "criteria": ["one or two", "three or four", "five or six", "seven or more"],
+    },
+}
+
+
+def draw_pictures() -> None:
+    """The self-drawn pictures: a bar chart and an error dialog (written once)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    chart = IMAGES / "chart.png"
+    if not chart.exists():
+        image = Image.new("RGB", (800, 500), "white")
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.load_default(size=22)
+        draw.text((40, 20), "Monthly signups 2026", fill="black", font=font)
+        draw.line((60, 440, 760, 440), fill="black", width=3)
+        draw.line((60, 440, 60, 70), fill="black", width=3)
+        for index, value in enumerate([80, 120, 150, 210, 260, 330]):
+            left = 90 + index * 110
+            draw.rectangle((left, 440 - value, left + 70, 440), fill=(52, 101, 164))
+            draw.text(
+                (left + 10, 450),
+                ["Jan", "Feb", "Mar", "Apr", "May", "Jun"][index],
+                fill="black",
+                font=font,
+            )
+        image.save(chart)
+    dialog = IMAGES / "error-dialog.png"
+    if not dialog.exists():
+        image = Image.new("RGB", (900, 420), (236, 236, 236))
+        draw = ImageDraw.Draw(image)
+        title, body = ImageFont.load_default(size=30), ImageFont.load_default(size=22)
+        draw.rectangle((40, 40, 860, 380), fill="white", outline=(160, 160, 160), width=2)
+        draw.rectangle((40, 40, 860, 90), fill=(200, 40, 40))
+        draw.text((60, 50), "Payment failed", fill="white", font=title)
+        lines = [
+            "Your card was declined (code 402: insufficient funds).",
+            "Order #48213 could not be completed.",
+            "Please use another card or contact your bank.",
+        ]
+        for index, line in enumerate(lines):
+            draw.text((60, 120 + index * 40), line, fill="black", font=body)
+        draw.rectangle((680, 300, 830, 350), fill=(52, 101, 164))
+        draw.text((725, 312), "Retry", fill="white", font=body)
+        image.save(dialog)
+
+
+def image_cases(tokenizer: Tokenizer) -> list[dict]:
+    """Requests with images: all question types, one and several images, truncation,
+    an image enlarged when opened (resize path) and one below the minimum size."""
+    draw_pictures()
+    triage_with_picture = {
+        **TRIAGE,
+        "shows_error": {"type": "noul", "instructions": "An attached picture shows an error."},
+    }
+    cases = [
+        ("image_dog_claim", "Photo attached to a pet insurance claim.", ["dog.jpg"], CLAIM),
+        ("image_lake", "Describe the attached picture.", ["lake.jpg"], PICTURE),
+        (
+            "image_kitchen_painting",
+            "Describe the attached picture.",
+            ["kitchen-painting.jpg"],
+            PICTURE,
+        ),
+        (
+            "image_tall_painting",
+            {"source": "museum archive", "item": 1980},
+            ["mountain-painting.jpg"],
+            PICTURE,
+        ),
+        ("image_chart", "Report attached.", ["chart.png"], CHART),
+        (
+            "image_error_ticket",
+            "I keep getting this when I try to pay. What is going on?",
+            ["error-dialog.png"],
+            triage_with_picture,
+        ),
+        (
+            "image_laptop_ticket",
+            "My laptop screen flickers since the update.",
+            ["laptop.jpg"],
+            triage_with_picture,
+        ),
+        (
+            "image_two",
+            "Two photos from the same customer.",
+            ["dog.jpg", "lake.jpg"],
+            {**CLAIM, "outdoors": PICTURE["outdoors"]},
+        ),
+        (
+            "image_three",
+            "Screenshots and a photo attached to the ticket.",
+            ["error-dialog.png", "chart.png", "laptop.jpg"],
+            triage_with_picture,
+        ),
+        ("image_no_state_text", "", ["chart.png"], {"kind": PICTURE["kind"]}),
+        (
+            "image_enlarged",
+            "Describe the attached picture.",
+            [{"file": "lake.jpg", "size": [2048, 1364]}],
+            PICTURE,
+        ),
+        (
+            "image_tiny",
+            "Describe the attached picture.",
+            [{"file": "chart.png", "size": [80, 50]}],
+            PICTURE,
+        ),
+    ]
+    out = [
+        {"id": case_id, "state": state, "questions": questions, "images": images}
+        for case_id, state, images, questions in cases
+    ]
+    # A long log with a screenshot: the images count first, the state is cut.
+    out.append(
+        {
+            "id": "image_log_16k_truncated",
+            "state": grow(tokenizer, log_line, 16_000, seed=400, join="\n"),
+            "questions": LOG_QUESTIONS,
+            "images": ["error-dialog.png"],
+        }
+    )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -818,6 +989,7 @@ def main() -> None:
     tokenizer = Tokenizer.from_file(str(args.model / "tokenizer.json"))
 
     cases = short_cases() + many_questions() + big_choices() + long_cases(tokenizer)
+    cases += image_cases(tokenizer)
     ids = [case["id"] for case in cases]
     assert len(ids) == len(set(ids)), "duplicate case ids"
     args.out.parent.mkdir(parents=True, exist_ok=True)

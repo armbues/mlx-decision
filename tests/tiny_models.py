@@ -46,6 +46,32 @@ CLEF_HEAD = {
     "feedforward": 64,
 }
 WORDS = ["[UNK]", "yes", "no", "billing", "technical", "sales", "STATE:", "OPTION"]
+WORDS += ["<|vision_start|>", "<|image_pad|>", "<|vision_end|>"]
+VISION = {
+    "depth": 2,
+    "hidden_size": 32,
+    "intermediate_size": 48,
+    "num_heads": 4,
+    "in_channels": 3,
+    "patch_size": 4,
+    "temporal_patch_size": 2,
+    "spatial_merge_size": 2,
+    "out_hidden_size": 64,
+    "num_position_embeddings": 36,
+    "hidden_act": "gelu_pytorch_tanh",
+}
+# Patches of 4 x 4 merged 2 x 2: an image costs (H/8) x (W/8) tokens, 1 to 64.
+PROCESSOR = {
+    "image_processor": {
+        "patch_size": 4,
+        "merge_size": 2,
+        "temporal_patch_size": 2,
+        "size": {"shortest_edge": 64, "longest_edge": 4096},
+        "image_mean": [0.5, 0.5, 0.5],
+        "image_std": [0.5, 0.5, 0.5],
+        "rescale_factor": 1 / 255,
+    }
+}
 
 
 def qwen3_5(seed: int = 0) -> Model:
@@ -55,9 +81,16 @@ def qwen3_5(seed: int = 0) -> Model:
     return model
 
 
-def write_clef(folder: Path, seed: int = 0) -> Path:
-    """A Clef release folder: tiny backbone, head and a word-level tokenizer."""
-    save_text_model(qwen3_5(seed), folder, QWEN3_5)
+def write_clef(folder: Path, seed: int = 0, vision: bool = False) -> Path:
+    """A Clef release folder: tiny backbone, head and a word-level tokenizer.
+
+    With ``vision``, the folder also has a tiny vision tower in its own
+    shard and a ``processor_config.json``, as the release does.
+    """
+    config = {**QWEN3_5, "vision_config": VISION} if vision else QWEN3_5
+    save_text_model(qwen3_5(seed), folder, config)
+    if vision:
+        write_vision(folder, seed)
     head = JointSchemaHead(**CLEF_HEAD)
     mx.eval(head.parameters())
     head.save_weights(str(folder / "joint_head.safetensors"))
@@ -69,3 +102,13 @@ def write_clef(folder: Path, seed: int = 0) -> Path:
     tokenizer.save(str(folder / "tokenizer.json"))
     (folder / "LICENSE").write_text("test licence\n")
     return folder
+
+
+def write_vision(folder: Path, seed: int) -> None:
+    from mlx_decision.backbones.qwen3_5.vision import VisionArgs, VisionModel, save_vision_model
+
+    mx.random.seed(seed + 1)
+    model = VisionModel(VisionArgs.from_config({"vision_config": VISION}))
+    mx.eval(model.parameters())
+    save_vision_model(model, folder)
+    (folder / "processor_config.json").write_text(json.dumps(PROCESSOR))

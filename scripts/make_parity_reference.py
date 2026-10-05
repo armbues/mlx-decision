@@ -6,6 +6,9 @@ Needs torch, transformers and safetensors (not dependencies of the package)
 and imports ``joint_schema_model.py`` from the model folder. Writes, per
 request: token ids, question and option spans, whether the state was
 truncated, and the probabilities per question, computed in bf16 as shipped.
+Images go through the release's processor in its Pillow mode
+(``use_fast=False``), which the package's preprocessing reproduces exactly;
+they are opened by ``tests/parity/parity_images.py``.
 Existing entries in the output are kept, so long requests can be run one at
 a time with ``--only``.
 """
@@ -52,7 +55,7 @@ class PeakMemory:
 def load_reference(model_path: Path, device: str):
     import torch
     from safetensors.torch import load_file
-    from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
+    from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
 
     sys.path.insert(0, str(model_path))
     from joint_schema_model import ClefModel, JointSchemaHead
@@ -64,7 +67,7 @@ def load_reference(model_path: Path, device: str):
     head = JointSchemaHead(**json.loads((model_path / "joint_head_config.json").read_text()))
     head.load_state_dict(load_file(model_path / "joint_head.safetensors"), strict=True)
     model = ClefModel(backbone, head.to(device=device, dtype=torch.bfloat16)).eval()
-    return model, AutoTokenizer.from_pretrained(model_path)
+    return model, AutoProcessor.from_pretrained(model_path, use_fast=False)
 
 
 def write(path: Path, meta: dict, results: dict) -> None:
@@ -94,9 +97,12 @@ def main() -> None:
 
     if args.device == "mps":
         torch.mps.set_per_process_memory_fraction(args.memory_fraction)
-    model, tokenizer = load_reference(args.model, args.device)
+    model, processor = load_reference(args.model, args.device)
+    tokenizer = processor.tokenizer
     sys.path.insert(0, str(args.model))
+    sys.path.insert(0, str(PARITY))
     from joint_schema_model import collate_records, encode_record
+    from parity_images import open_image
 
     cases = json.loads(args.requests.read_text())
     if args.only:
@@ -111,6 +117,7 @@ def main() -> None:
     meta = {
         "device": args.device,
         "dtype": "bfloat16",
+        "image_processor": "pil",
         "max_length": 16384,
         "torch": torch.__version__,
         "transformers": transformers.__version__,
@@ -124,8 +131,10 @@ def main() -> None:
 
     for case in cases:
         record = {"id": case["id"], "state": case["state"], "questions": case["questions"]}
-        encoded = encode_record(tokenizer, record)
-        untruncated = encode_record(tokenizer, record, max_length=10**9)
+        if case.get("images"):
+            record["images"] = [open_image(spec) for spec in case["images"]]
+        encoded = encode_record(tokenizer, record, processor=processor)
+        untruncated = encode_record(tokenizer, record, max_length=10**9, processor=processor)
         batch = collate_records([encoded], tokenizer.pad_token_id, torch.device(args.device))
         start = time.time()
         with PeakMemory(torch) as memory, torch.inference_mode():

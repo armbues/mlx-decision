@@ -1,6 +1,8 @@
 """Write a Clef model as an MLX folder, with the backbone optionally quantized.
 
 The joint schema head stays as released: it is small and makes the decision.
+The vision tower, when the release has one, is kept in its stored precision
+(bf16): it is small next to the text model and not worth the risk.
 """
 
 import json
@@ -11,6 +13,7 @@ from pathlib import Path
 import mlx.core as mx
 
 from ...backbones.qwen3_5.load import (
+    has_vision_weights,
     load_text_model,
     output_embeddings_path,
     quantizable_layers,
@@ -29,7 +32,13 @@ from ...registry import MARKER_FILE
 from ...types import parse_request
 
 FORMAT_VERSION = 1
-COPIED = ("joint_head.safetensors", "joint_head_config.json", "tokenizer.json", "LICENSE")
+COPIED = (
+    "joint_head.safetensors",
+    "joint_head_config.json",
+    "tokenizer.json",
+    "processor_config.json",
+    "LICENSE",
+)
 SENSITIVITY_FILE = "quantization_sensitivity.json"
 CALIBRATION = "builtin-1"
 
@@ -66,7 +75,14 @@ def convert(
             layer_bits=layer_bits,
         )
         mx.eval(backbone.parameters())
+    vision = has_vision_weights(path)
+    if not vision:
+        config.pop("vision_config", None)
     save_text_model(backbone, output, config)
+    if vision:
+        from ...backbones.qwen3_5.vision import load_vision_model, save_vision_model
+
+        save_vision_model(load_vision_model(path), output)
     for name in COPIED:
         if (path / name).exists():
             shutil.copy2(path / name, output / name)
@@ -80,6 +96,7 @@ def convert(
             else None
         ),
         "quantized_output_embeddings": bits is not None and quantize_output_embeddings,
+        "vision": vision,
     }
     if mixed:
         marker["mixed"] = {

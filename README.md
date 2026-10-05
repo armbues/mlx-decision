@@ -12,7 +12,7 @@ copies.
 
 The first supported model is Cloudflare's
 [clef-flash](https://huggingface.co/Cloudflare/clef-flash) (Qwen3.5-9B
-backbone plus a joint schema head), text input only.
+backbone plus a joint schema head), with text and image input.
 
 ## Install
 
@@ -23,10 +23,16 @@ From a clone of this repository:
 ```bash
 pip install .            # library and the mlx-decision command
 pip install ".[server]"  # plus the HTTP server (FastAPI, uvicorn)
+pip install ".[images]"  # plus image input (Pillow, NumPy)
 ```
 
 Models load from a local folder or a Hugging Face repo id; repo ids are
-downloaded through the normal Hugging Face cache (clef-flash: 18 GB).
+downloaded through the normal Hugging Face cache (clef-flash: 19 GB) on
+first use. To fetch one ahead of time, `mlx-decision download` shows a menu
+of the supported models (or takes a repo id); for any other id it reads
+the repository's config files first and warns before downloading something
+no supported family can load. `--local-dir` downloads into a folder
+instead of the cache; private or gated repos need `HF_TOKEN`.
 
 ## Python
 
@@ -77,6 +83,19 @@ raise `mlx_decision.DecisionError`, whose `param` names the offending field.
 `result.truncated` tells you whether the state was cut to fit the model's
 input limit (16,384 tokens for clef-flash).
 
+With the `images` extra, images go along as file paths, bytes, PIL images
+or data URLs:
+
+```python
+result = model.decide(
+    "Customer says checkout fails; screenshot attached.",
+    {"shows_error": Noul(instructions="The screenshot shows an error message")},
+    images=["screenshot.png"],
+)
+```
+
+See [Images](#images) for how images count against the input limit.
+
 `confidence` follows Jev's documented formulas (choice: how far the top
 probability sits above an even split; score: how concentrated the
 probability is around the most likely level), not Clef's own top
@@ -114,7 +133,8 @@ clef-flash · 291 input tokens
 The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
-response body.
+response body. `--image FILE` (repeatable) sends images along with the
+state.
 
 `mlx-decision --version` prints the installed version.
 
@@ -136,8 +156,10 @@ mlx-decision run -m Cloudflare/clef-flash -q questions.json --states tickets.jso
 {"state": "Is this spam?", "questions": {"spam": {"type": "noul", "instructions": "Is it spam?"}}}
 ```
 
-A line that cannot be answered yields an error body with its line number,
-and the run goes on:
+Lines can carry images as file paths or data URLs
+(`{"state": "...", "images": ["shots/4711.png"]}`); `--image` flags apply
+to lines without their own. A line that cannot be answered yields an
+error body with its line number, and the run goes on:
 
 ```
 {"error": {"message": "state is required", "type": "invalid_request_error", "param": "state"}, "line": 3}
@@ -224,6 +246,7 @@ of the questions.
 | `/edit [ID]` | change a question; the current values are filled in |
 | `/remove [ID]` | remove a question |
 | `/save FILE` | write the questions as a file that `-q` reads |
+| `/image FILE`, `/image clear` | attach an image to the following states, or drop them (`--image` attaches at start) |
 | `/help`, `/quit` | |
 
 A state that itself starts with `/` is typed as `//`. `chat` needs a
@@ -249,6 +272,12 @@ request's `model` field, answers one request at a time (others queue),
 returns `422` with Jev's error body for invalid requests, and sets
 `X-MLX-Decision-Truncated: true` when the state was truncated.
 
+Images go in the request's `images` list as base64 data URLs
+(`data:image/png;base64,...`; PNG, JPEG or WebP). The server reads no files
+and fetches no URLs, so anything else is refused with `422` naming the
+image (`images.0`). With the Jev SDK, pass them as
+`extra_body={"images": [...]}`.
+
 To require a key, start it with `--api-key KEY` (or set
 `MLX_DECISION_API_KEY`). Requests to `/v1/*` then need
 `Authorization: Bearer KEY`, which is what the Jev SDK sends from
@@ -266,8 +295,9 @@ mlx-decision convert -m Cloudflare/clef-flash --target-bits 5    # -> clef-flash
 
 Without `-o` the folder is named after the model plus `-q<bits>`,
 `-mq<target>` or `-mlx` (no quantization). A converted folder loads like
-the original (`mlx_decision.load("clef-flash-q8")`). Only the backbone is quantized;
-the decision head stays as released. With `--target-bits` the converter
+the original (`mlx_decision.load("clef-flash-q8")`). Only the text
+backbone is quantized; the decision head and the vision tower (0.85 GB)
+stay as released. With `--target-bits` the converter
 first measures, on a built-in calibration set, how far the answers move
 when each block of the model is quantized alone (about 6 minutes for
 clef-flash), then gives the sensitive blocks more bits within the average
@@ -312,15 +342,43 @@ clef-flash on an Apple M5 Pro (20-core GPU) with 64 GB:
 Latency grows linearly with input length, at about 1,550-1,850 tokens per
 second. All numbers in this README were measured on that machine.
 
+## Images
+
+Images need the `images` extra. The Python API takes file paths, bytes,
+PIL images or data URLs; `run` and `chat` take files (`--image`,
+`/image`); the server takes data URLs only. Each image is resized the way
+Cloudflare's processor does it (sides rounded to multiples of 32, at least
+256x256 and at most 4096x4096 worth of pixels) and costs one token per
+32x32 pixels:
+
+| Image | Tokens | bf16 | 8-bit |
+|---|---|---|---|
+| 256x256 or smaller | 64 | 0.27 s | 0.29 s |
+| 640x480 | 300 | 0.47 s | 0.51 s |
+| 1024x768 | 768 | 0.84 s | 1.03 s |
+| 1920x1080 | 2,040 | 2.3 s | 3.0 s |
+| 3000x2000 | 5,828 | 10.4 s | 12.3 s |
+| 4000x3000 | 11,750 | 36 s | 39 s |
+
+Times are per request with a short state and three questions (text only:
+0.23 s). Images count against the 16,384-token input limit together with
+the questions: the state is cut first, and a request whose images and
+questions alone do not fit fails with an error on `images`. Large images
+are slow, mostly in the vision tower, whose attention grows with the
+square of the image size; downscaling to about 1-2 megapixels before
+sending keeps requests in the low seconds. The vision tower (0.85 GB) loads
+on the first image request, so text-only use costs no extra memory.
+
 ## Supported models
 
 | Family | Models | Input | Notes |
 |---|---|---|---|
-| Clef | `Cloudflare/clef-flash` | text | images and videos are rejected for now |
+| Clef | `Cloudflare/clef-flash` | text, images | videos are rejected |
 
-On a 50-request test set, clef-flash on MLX matches Cloudflare's PyTorch
-reference token for token and within 0.035 per probability (mean 0.001),
-with no changed answers.
+On a 63-request test set (13 of them with one to three images), clef-flash
+on MLX matches Cloudflare's PyTorch reference token for token and within
+0.035 per probability (mean 0.001; with images 0.015, mean 0.002), with no
+changed answers.
 
 ### Accuracy (preliminary)
 
@@ -363,6 +421,9 @@ with PyTorch).
 
 MIT, see `LICENSE`. The Qwen3.5 model code is adapted from
 [mlx-lm](https://github.com/ml-explore/mlx-lm) (MIT, Apple Inc.); the Clef
-input encoding and head are ported from Cloudflare's release (Apache-2.0).
-Their licence texts are in `LICENSES/`. Model weights keep their own
+input encoding and head are ported from Cloudflare's release (Apache-2.0);
+the image preprocessing, vision tower and image positions are ported from
+[transformers](https://github.com/huggingface/transformers) (Apache-2.0).
+Their licence texts are in `LICENSES/`. The test photos are public domain
+or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep their own
 licence (clef-flash: Apache-2.0).

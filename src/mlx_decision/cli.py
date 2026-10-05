@@ -232,6 +232,24 @@ StateJsonOption = Annotated[
     bool, typer.Option("--state-json", help="Parse the state as JSON (object, array, ...).")
 ]
 JsonOption = Annotated[bool, typer.Option("--json", help="Print the response body as JSON.")]
+ImageOption = Annotated[
+    list[Path] | None,
+    typer.Option(
+        "--image",
+        help="An image file to ask about, with every state. Repeatable. "
+        "Needs the images extra: pip install 'mlx-decision[images]'.",
+    ),
+]
+
+
+def add_images(body: dict[str, Any], images: list[Path] | None) -> dict[str, Any]:
+    """Append ``--image`` files to the body's images, checking that they exist."""
+    if images:
+        for path in images:
+            if not path.is_file():
+                fail(f"--image: no such file: {path}")
+        body["images"] = list(body.get("images") or []) + [str(path) for path in images]
+    return body
 
 
 @app.command()
@@ -249,6 +267,7 @@ def run(
         Path | None, typer.Option("--state-file", help="Read the state from a file.")
     ] = None,
     state_json: StateJsonOption = False,
+    image: ImageOption = None,
     states: Annotated[
         str | None,
         typer.Option(
@@ -271,23 +290,24 @@ def run(
                 "--states reads whole requests from one file; "
                 "drop --state/--state-file/--state-json"
             )
-        # Questions from flags are defaults; lines may bring their own.
+        # Questions and images from flags are defaults; lines may bring their own.
         body = build_questions(questions, shorthand) if questions or shorthand else {}
         body.pop("state", None)
+        add_images(body, image)
         try:
             source = nullcontext(sys.stdin) if states == "-" else open(states, encoding="utf-8")  # noqa: SIM115
         except OSError as error:
             fail(f"cannot read the states: {error}")
         with source as lines:
             try:
-                if body:
+                if "questions" in body:
                     parse_request({**body, "state": ""})
                 loaded = load(model)
             except (DecisionError, FileNotFoundError, ValueError) as error:
                 fail(str(error))
             answer_states(loaded, body, lines)
         return
-    body = build_request(questions, shorthand, state, state_file, state_json)
+    body = add_images(build_request(questions, shorthand, state, state_file, state_json), image)
     try:
         result = load(model).decide_request(body)
     except (DecisionError, FileNotFoundError, ValueError) as error:
@@ -309,6 +329,7 @@ def chat(
     score: ScoreOption = None,
     state_json: StateJsonOption = False,
     as_json: JsonOption = False,
+    image: ImageOption = None,
 ) -> None:
     """Load a model once, then answer states typed one after another.
 
@@ -325,8 +346,9 @@ def chat(
     if questions is not None or shorthand:
         body = build_questions(questions, shorthand)
         body.pop("state", None)
+    add_images(body, image)
     try:
-        if body:
+        if "questions" in body:
             parse_request({**body, "state": ""})  # catch question errors before loading
         loaded = load(model)
     except (DecisionError, FileNotFoundError, ValueError) as error:
@@ -344,6 +366,77 @@ def start_chat(model, body: dict[str, Any], state_json: bool, as_json: bool) -> 
     # Prompts go to the terminal even when stdout is redirected.
     with create_app_session(output=create_output(always_prefer_tty=True)):
         Session(model, body, state_json, as_json).run()
+
+
+def pick_repo() -> str | None:
+    """A menu of the known models plus "Other...", where an id is typed."""
+    from prompt_toolkit import prompt
+    from prompt_toolkit.shortcuts import choice
+
+    from .interactive import MENU_BINDINGS
+    from .registry import known_models
+
+    models = known_models()
+    width = max(len(model.repo_id) for model in models)
+    options = [
+        (model.repo_id, f"{model.repo_id:<{width}}  {model.size:>6}  {model.description}")
+        for model in models
+    ]
+    try:
+        picked = choice(
+            "Model to download:", options=[*options, ("", "Other...")], key_bindings=MENU_BINDINGS
+        )
+        return picked or prompt("Hugging Face repo id (org/name): ").strip() or None
+    except (KeyboardInterrupt, EOFError):
+        return None
+
+
+@app.command()
+def download(
+    repo_id: Annotated[
+        str | None,
+        typer.Argument(help="Hugging Face repo id, e.g. Cloudflare/clef-flash. Default: a menu."),
+    ] = None,
+    local_dir: Annotated[
+        Path | None,
+        typer.Option(help="Download into this folder instead of the Hugging Face cache."),
+    ] = None,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Download even if no model family can load it.")
+    ] = False,
+) -> None:
+    """Download a model from the Hugging Face Hub (HF_TOKEN for private or gated ones)."""
+    import httpx
+    from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
+
+    from .download import check_repo, format_size
+    from .download import download as fetch
+
+    terminal = sys.stdin.isatty()
+    if repo_id is None:
+        if not terminal:
+            fail("give a repo id, e.g. mlx-decision download Cloudflare/clef-flash")
+        repo_id = pick_repo()
+        if repo_id is None:
+            raise typer.Exit(1)
+    try:
+        check = check_repo(repo_id)
+        if check.family is None:
+            typer.echo(f"warning: {repo_id}: {check.reason}", err=True)
+            if not yes:
+                from prompt_toolkit.shortcuts import confirm
+
+                if not terminal or not confirm("Download it anyway?"):
+                    fail("not downloaded (use --yes to download anyway)")
+        typer.echo(f"downloading {repo_id} ({format_size(check.size_bytes)}) ...", err=True)
+        path = fetch(repo_id, local_dir)
+    except RepositoryNotFoundError:
+        fail(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
+    except (HfHubHTTPError, httpx.HTTPError, OSError) as error:
+        fail(f"{repo_id}: {str(error).splitlines()[0]}")
+    typer.echo(f"downloaded {repo_id} to {path}", err=True)
+    model = str(local_dir) if local_dir else repo_id
+    typer.echo(f"try it: mlx-decision chat -m {model}", err=True)
 
 
 @app.command()

@@ -108,6 +108,24 @@ def test_images_are_rejected_with_a_code(client):
     assert error["code"] == "unsupported_media"
 
 
+@pytest.mark.parametrize("backend_options", [{"supports_images": True}])
+def test_data_urls_are_accepted(client):
+    body = {**BODY, "images": ["data:image/png;base64,iVBORw0KGgo="]}
+    assert client.post("/v1/systemone", json=body).status_code == 200
+
+
+@pytest.mark.parametrize("backend_options", [{"supports_images": True}])
+@pytest.mark.parametrize("image", ["/etc/hosts", "https://example.com/cat.png", {"path": "x"}, 1])
+def test_anything_but_a_data_url_is_refused(client, image):
+    body = {**BODY, "images": ["data:image/png;base64,iVBORw0KGgo=", image]}
+    response = client.post("/v1/systemone", json=body)
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["param"] == "images.1"
+    assert "does not read files or fetch URLs" in error["message"]
+    assert client.backend.states == []
+
+
 def test_malformed_json(client):
     response = client.post(
         "/v1/systemone", content=b"{not json", headers={"Content-Type": "application/json"}
