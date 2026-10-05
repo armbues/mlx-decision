@@ -52,6 +52,7 @@ dev = ["mlx-decision[server,images]", "pytest", "ruff", "build", "twine"]
 Homepage = "https://github.com/armbues/mlx-decision"
 Repository = "https://github.com/armbues/mlx-decision"
 Issues = "https://github.com/armbues/mlx-decision/issues"
+Changelog = "https://github.com/armbues/mlx-decision/blob/main/CHANGELOG.md"
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:app"
