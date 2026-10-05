@@ -5,7 +5,15 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may
 change the interface).
 
-## [0.3.0] - Unreleased
+## [Unreleased]
+
+### Added
+
+- `scripts/reference_speed.py` compares the speed of mlx-decision with
+  Cloudflare's PyTorch reference on the same requests; the README shows
+  the result (about 3.5x faster in bf16 on an M5 Pro).
+
+## [0.3.0] - 2026-10-05
 
 First public release. Earlier versions were not published.
 

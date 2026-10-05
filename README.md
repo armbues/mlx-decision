@@ -13,6 +13,22 @@ The first supported model is Cloudflare's
 [clef-flash](https://huggingface.co/Cloudflare/clef-flash) (Qwen3.5-9B
 backbone plus a joint schema head), with text and image input.
 
+On a Mac it answers about 3.5 times faster than Cloudflare's PyTorch
+reference running on the GPU (MPS), with the same answers. Median
+latency per request for clef-flash in bf16, as released:
+
+| Request | PyTorch reference | mlx-decision | Speedup |
+|---|---|---|---|
+| 394 tokens, 1 question | 0.88 s | 0.25 s | 3.5x |
+| 1,551 tokens, 5 questions | 3.24 s | 0.89 s | 3.6x |
+| 6,099 tokens, 20 questions | 12.96 s | 3.80 s | 3.4x |
+| 16,384 tokens, 20 questions | 36.12 s | 11.39 s | 3.2x |
+| 1024x768 image, 3 questions | 2.73 s | 1.01 s | 2.7x |
+| Peak memory | 23.9 GB | 19.0 GB | |
+
+Apple M5 Pro (20-core GPU), 64 GB. Details and the 8-bit copy in
+[Speed](#speed-compared-with-pytorch).
+
 0.3 is the first public release (alpha): the interface may still change.
 Questions and bug reports go to the
 [issue tracker](https://github.com/armbues/mlx-decision/issues).
@@ -352,6 +368,48 @@ on smaller Macs `--target-bits 5`, then `--target-bits 4`. Uniform 4-bit
 loses noticeably more than mixed precision of the same size. Quantization
 saves memory, not time: a decision is one compute-bound pass, and quantized
 models are 10-20% slower.
+
+## Speed compared with PyTorch
+
+`scripts/reference_speed.py` times mlx-decision and Cloudflare's reference
+code (`joint_schema_model.py` from the release, run with transformers and
+PyTorch on MPS) on the same requests, end to end from the request to the
+probabilities, input encoding and image preprocessing included. Median of
+3 runs after a warm-up, Apple M5 Pro (20-core GPU), 64 GB, torch 2.14.1,
+transformers 5.18.0:
+
+| Input tokens | Questions | Image | PyTorch bf16 | mlx-decision bf16 | mlx-decision 8-bit |
+|---|---|---|---|---|---|
+| 394 | 1 | - | 0.88 s | 0.25 s (3.5x) | 0.28 s (3.2x) |
+| 801 | 5 | - | 1.70 s | 0.47 s (3.6x) | 0.57 s (3.0x) |
+| 2,348 | 20 | - | 4.87 s | 1.29 s (3.8x) | 1.68 s (2.9x) |
+| 1,144 | 1 | - | 2.35 s | 0.64 s (3.7x) | 0.82 s (2.9x) |
+| 1,551 | 5 | - | 3.24 s | 0.89 s (3.6x) | 1.11 s (2.9x) |
+| 3,098 | 20 | - | 6.49 s | 1.83 s (3.6x) | 2.25 s (2.9x) |
+| 4,145 | 1 | - | 8.65 s | 2.54 s (3.4x) | 3.00 s (2.9x) |
+| 4,552 | 5 | - | 9.63 s | 2.81 s (3.4x) | 3.32 s (2.9x) |
+| 6,099 | 20 | - | 12.96 s | 3.80 s (3.4x) | 4.46 s (2.9x) |
+| 15,151 | 1 | - | 33.34 s | 9.86 s (3.4x) | 11.53 s (2.9x) |
+| 15,558 | 5 | - | 34.48 s | 10.47 s (3.3x) | 11.89 s (2.9x) |
+| 16,384 | 20 | - | 36.12 s | 11.39 s (3.2x) | 12.47 s (2.9x) |
+| 682 | 3 | 640x480 | 1.58 s | 0.55 s (2.9x) | 0.60 s (2.6x) |
+| 1,150 | 3 | 1024x768 | 2.73 s | 1.01 s (2.7x) | 1.08 s (2.5x) |
+| 2,422 | 3 | 1920x1080 | 6.71 s | 2.52 s (2.7x) | 2.89 s (2.3x) |
+| Peak memory | | | 23.9 GB | 19.0 GB | 11.2 GB |
+
+On these requests the largest difference of any probability to the
+reference is 0.013 in bf16 and 0.035 for the 8-bit copy. The reference
+runs as released, in bf16 with PyTorch's SDPA attention. On a Mac the
+optional fused kernels for the linear-attention layers (flash-linear-attention,
+causal-conv1d) are not available, so transformers uses its plain PyTorch
+code for them, as it does for anyone running the reference there. To
+reproduce, with torch, transformers, Pillow and torchvision installed:
+
+```bash
+python scripts/reference_speed.py torch --model PATH --out torch.json
+python scripts/reference_speed.py mlx --model PATH --out mlx.json
+python scripts/reference_speed.py report torch.json mlx.json
+```
 
 ## Speed: `benchmark`
 
