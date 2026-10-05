@@ -241,6 +241,23 @@ ImageOption = Annotated[
     ),
 ]
 
+MaxImageOption = Annotated[
+    float | None,
+    typer.Option(
+        "--max-image-mp",
+        min=0,
+        help="Shrink larger images to this many megapixels (1 MP = 2^20 pixels = 1,024 "
+        "tokens). Default: 2. 0 = no cap beyond the model's own, as Cloudflare's reference.",
+    ),
+]
+
+
+def image_options(max_image_mp: float | None) -> dict[str, Any]:
+    """Load options for ``--max-image-mp``; none when the flag is not given."""
+    if max_image_mp is None:
+        return {}
+    return {"max_image_pixels": round(max_image_mp * 2**20) if max_image_mp else None}
+
 
 def add_images(body: dict[str, Any], images: list[Path] | None) -> dict[str, Any]:
     """Append ``--image`` files to the body's images, checking that they exist."""
@@ -268,6 +285,7 @@ def run(
     ] = None,
     state_json: StateJsonOption = False,
     image: ImageOption = None,
+    max_image_mp: MaxImageOption = None,
     states: Annotated[
         str | None,
         typer.Option(
@@ -302,14 +320,14 @@ def run(
             try:
                 if "questions" in body:
                     parse_request({**body, "state": ""})
-                loaded = load(model)
+                loaded = load(model, **image_options(max_image_mp))
             except (DecisionError, FileNotFoundError, ValueError) as error:
                 fail(str(error))
             answer_states(loaded, body, lines)
         return
     body = add_images(build_request(questions, shorthand, state, state_file, state_json), image)
     try:
-        result = load(model).decide_request(body)
+        result = load(model, **image_options(max_image_mp)).decide_request(body)
     except (DecisionError, FileNotFoundError, ValueError) as error:
         fail(str(error))
     if as_json:
@@ -330,6 +348,7 @@ def chat(
     state_json: StateJsonOption = False,
     as_json: JsonOption = False,
     image: ImageOption = None,
+    max_image_mp: MaxImageOption = None,
 ) -> None:
     """Load a model once, then answer states typed one after another.
 
@@ -350,7 +369,7 @@ def chat(
     try:
         if "questions" in body:
             parse_request({**body, "state": ""})  # catch question errors before loading
-        loaded = load(model)
+        loaded = load(model, **image_options(max_image_mp))
     except (DecisionError, FileNotFoundError, ValueError) as error:
         fail(str(error))
     typer.echo(f"{loaded.name} loaded, {len(body.get('questions', {}))} questions.", err=True)
@@ -446,6 +465,7 @@ def server(
     ],
     host: Annotated[str, typer.Option(help="Address to bind to.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+    max_image_mp: MaxImageOption = None,
     api_key: Annotated[
         str | None,
         typer.Option(
@@ -468,7 +488,7 @@ def server(
     typer.echo(f"loading {model} ...", err=True)
     if api_key:
         typer.echo("API key required on /v1/*", err=True)
-    app = create_app(lambda: load(model), api_key=api_key)
+    app = create_app(lambda: load(model, **image_options(max_image_mp)), api_key=api_key)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 

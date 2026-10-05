@@ -13,6 +13,10 @@ from ...types import Request
 from .encode import DEFAULT_MAX_LENGTH, IMAGE_PAD, encode_request
 from .head import JointSchemaHead
 
+# Larger images are shrunk to about this many pixels (2,048 tokens): measured
+# to keep answers while bounding time and room in the input limit.
+DEFAULT_MAX_IMAGE_PIXELS = 2**21
+
 
 class ClefBackend:
     def __init__(
@@ -23,12 +27,14 @@ class ClefBackend:
         tokenizer,
         max_input_tokens=DEFAULT_MAX_LENGTH,
         path: Path | None = None,
+        max_image_pixels: int | None = DEFAULT_MAX_IMAGE_PIXELS,
     ):
         self.name = name
         self.backbone = backbone
         self.head = head
         self.tokenizer = tokenizer
         self.path = path
+        self.max_image_pixels = max_image_pixels
         self.vision = None
         self.capabilities = Capabilities(
             max_input_tokens=max_input_tokens,
@@ -48,7 +54,9 @@ class ClefBackend:
         return self.vision
 
     def score(self, request: Request) -> BackendOutput:
-        images = prepare_images(request.images, self.path) if request.images else []
+        images = []
+        if request.images:
+            images = prepare_images(request.images, self.path, self.max_image_pixels)
         encoded = encode_request(
             self.tokenizer,
             request,
@@ -97,12 +105,19 @@ class ClefBackend:
         return embeddings, positions
 
 
-def prepare_images(values, path):
-    """Each image read and cut into patches; errors name ``images.<index>``."""
+def prepare_images(values, path, max_pixels: int | None):
+    """Each image read and cut into patches; errors name ``images.<index>``.
+
+    ``max_pixels`` lowers the processor's own maximum (None keeps it).
+    """
+    from dataclasses import replace
+
     from ...backbones.qwen3_5.preprocess import ImageConfig, prepare_image
     from ...images import load_image
 
     config = ImageConfig.from_folder(path)
+    if max_pixels is not None and max_pixels < config.max_pixels:
+        config = replace(config, max_pixels=max_pixels)
     prepared = []
     for index, value in enumerate(values):
         image = load_image(value, index)
@@ -114,16 +129,28 @@ def prepare_images(values, path):
 
 
 def load(
-    path: Path, max_input_tokens: int = DEFAULT_MAX_LENGTH, vision: bool = False
+    path: Path,
+    max_input_tokens: int = DEFAULT_MAX_LENGTH,
+    vision: bool = False,
+    max_image_pixels: int | None = DEFAULT_MAX_IMAGE_PIXELS,
 ) -> ClefBackend:
-    """Load Clef from ``path``; ``vision=True`` loads the vision tower now, not on first use."""
+    """Load Clef from ``path``.
+
+    ``vision=True`` loads the vision tower now, not on first use. Images
+    larger than ``max_image_pixels`` are shrunk (keeping their aspect
+    ratio); None leaves only the processor's own maximum, as the reference.
+    """
+    if max_image_pixels is not None and max_image_pixels < 32 * 32:
+        raise ValueError("max_image_pixels must be at least 1024 (one image token)")
     backbone = load_text_model(path)
     head = JointSchemaHead(**json.loads((path / "joint_head_config.json").read_text()))
     head.load_weights(str(path / "joint_head.safetensors"), strict=True)
     head.eval()
     mx.eval(head.parameters())
     tokenizer = Tokenizer.from_file(str(path / "tokenizer.json"))
-    backend = ClefBackend(path.resolve().name, backbone, head, tokenizer, max_input_tokens, path)
+    backend = ClefBackend(
+        path.resolve().name, backbone, head, tokenizer, max_input_tokens, path, max_image_pixels
+    )
     if vision:
         if not backend.capabilities.supports_images:
             raise ValueError(f"{path} has no vision weights")

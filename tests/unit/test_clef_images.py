@@ -113,3 +113,20 @@ def test_text_only_use_needs_neither_numpy_nor_pillow(tmp_path):
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_large_images_are_shrunk_to_the_cap(folder):
+    body = {"state": "billing", "questions": QUESTIONS, "images": [png(64, 64)]}
+    # The tiny processor's own maximum is 4,096 pixels: 64 tokens of 8 x 8 pixels.
+    uncapped = mlx_decision.load(folder, max_image_pixels=None).decide_request(body)
+    capped = mlx_decision.load(folder, max_image_pixels=1024).decide_request(body)
+    assert uncapped.usage.input_tokens - capped.usage.input_tokens == 64 - 16
+    with pytest.raises(ValueError, match="at least 1024"):
+        mlx_decision.load(folder, max_image_pixels=100)
+
+
+def test_the_default_cap_is_two_megapixels(folder):
+    from mlx_decision.models.clef.model import DEFAULT_MAX_IMAGE_PIXELS
+
+    assert DEFAULT_MAX_IMAGE_PIXELS == 2**21
+    assert mlx_decision.load(folder).backend.max_image_pixels == 2**21

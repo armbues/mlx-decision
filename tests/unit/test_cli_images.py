@@ -104,3 +104,14 @@ def test_chat_attaches_and_clears_images(folder, pictures, capsys):
 def test_chat_refuses_images_for_a_text_model(fake_model, pictures, capsys):
     drive(fake_model, lines(f"/image {pictures[0]}"), body={"questions": json.loads(QUESTIONS)})
     assert "fake does not support images" in capsys.readouterr().err
+
+
+def test_max_image_mp_maps_to_load_options(run, pictures):
+    from mlx_decision.cli import image_options
+
+    assert image_options(None) == {}
+    assert image_options(0) == {"max_image_pixels": None}
+    assert image_options(2) == {"max_image_pixels": 2**21}
+    result = run("-s", "billing", "--image", str(pictures[1]), "--max-image-mp", "0.0002")
+    assert result.exit_code == 1
+    assert "max_image_pixels must be at least 1024" in result.stderr

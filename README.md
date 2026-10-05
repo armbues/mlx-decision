@@ -348,8 +348,17 @@ Images need the `images` extra. The Python API takes file paths, bytes,
 PIL images or data URLs; `run` and `chat` take files (`--image`,
 `/image`); the server takes data URLs only. Each image is resized the way
 Cloudflare's processor does it (sides rounded to multiples of 32, at least
-256x256 and at most 4096x4096 worth of pixels) and costs one token per
-32x32 pixels:
+256x256 worth of pixels) and costs one token per 32x32 pixels.
+
+Images larger than 2 megapixels (2^21 pixels, about 2,048 tokens) are
+shrunk to that size, keeping their aspect ratio. On test pictures with
+small text (a log window, an A4 invoice scan, a settings page) and photos
+of up to 18 MP, this changed no answer, while 0.5 MP and below misread
+small text. `--max-image-mp` on `run`, `chat` and `server` (or
+`load(..., max_image_pixels=...)` in Python) sets another cap; `0` lifts it
+to the processor's own maximum (16.7 MP), which is what Cloudflare's
+reference does. Time per request with a short state and three questions
+(text only: 0.23 s):
 
 | Image | Tokens | bf16 | 8-bit |
 |---|---|---|---|
@@ -357,17 +366,14 @@ Cloudflare's processor does it (sides rounded to multiples of 32, at least
 | 640x480 | 300 | 0.47 s | 0.51 s |
 | 1024x768 | 768 | 0.84 s | 1.03 s |
 | 1920x1080 | 2,040 | 2.3 s | 3.0 s |
-| 3000x2000 | 5,828 | 10.4 s | 12.3 s |
-| 4000x3000 | 11,750 | 36 s | 39 s |
+| larger (default cap) | about 2,048 | about 2.5 s | about 3 s |
+| 4000x3000 with `--max-image-mp 0` | 11,750 | 36 s | 39 s |
 
-Times are per request with a short state and three questions (text only:
-0.23 s). Images count against the 16,384-token input limit together with
-the questions: the state is cut first, and a request whose images and
-questions alone do not fit fails with an error on `images`. Large images
-are slow, mostly in the vision tower, whose attention grows with the
-square of the image size; downscaling to about 1-2 megapixels before
-sending keeps requests in the low seconds. The vision tower (0.85 GB) loads
-on the first image request, so text-only use costs no extra memory.
+Images count against the 16,384-token input limit together with the
+questions: the state is cut first, and a request whose images and
+questions alone do not fit fails with an error on `images`. The vision
+tower (0.85 GB) loads on the first image request, so text-only use costs
+no extra memory.
 
 ## Supported models
 

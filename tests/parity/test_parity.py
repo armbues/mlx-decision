@@ -42,7 +42,8 @@ def image_tokens(case_id: str, clef_path: Path) -> list[int]:
 
     if not REQUESTS[case_id].get("images"):
         return []
-    return [image.tokens for image in prepare_images(request(case_id).images, clef_path)]
+    images = prepare_images(request(case_id).images, clef_path, None)
+    return [image.tokens for image in images]
 
 
 def test_every_request_has_a_reference():
@@ -94,7 +95,8 @@ def test_the_set_covers_images():
 def clef(clef_path: Path):
     import mlx_decision
 
-    return mlx_decision.load(clef_path)
+    # The reference has no cap beyond the processor's own.
+    return mlx_decision.load(clef_path, max_image_pixels=None)
 
 
 @pytest.fixture(scope="session")
