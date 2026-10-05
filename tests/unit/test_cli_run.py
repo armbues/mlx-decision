@@ -168,33 +168,60 @@ def test_run_has_no_interactive_flag(cli):
     assert result.exit_code == 2
 
 
+def lines_of(*requests) -> str:
+    return "".join(json.dumps(request) + "\n" for request in requests)
+
+
 def test_states_one_body_per_line_in_order(cli, questions_file, tmp_path, fake_model):
-    path = tmp_path / "states.jsonl"
+    path = tmp_path / "requests.jsonl"
     states = ["Stripe is down", {"ticket": 1}, "a b c d"]
-    path.write_text("".join(json.dumps(s) + "\n" for s in states) + "\n")
+    path.write_text(lines_of(*({"state": s} for s in states)) + "\n")
     result = cli("-q", str(questions_file), "--states", str(path))
     assert result.exit_code == 0, result.output
     expected = [fake_model.decide(s, QUESTIONS).to_wire() for s in states]
     assert [json.loads(line) for line in result.stdout.splitlines()] == expected
 
 
-def test_states_from_stdin_with_an_error_line(cli):
-    typed = '"one two"\n{broken\n\n"three"\n'
+def test_states_lines_may_bring_their_own_questions(cli, fake_model):
+    own = {"spam": {"type": "noul", "instructions": "Spam?"}}
+    typed = lines_of({"state": "x", "questions": own}, {"state": "y"})
+    result = cli("--noul", "q=Is it?", "--states", "-", input=typed)
+    first, second = (json.loads(line) for line in result.stdout.splitlines())
+    assert list(first["answers"]) == ["spam"]
+    assert list(second["answers"]) == ["q"]
+
+
+def test_states_without_question_flags(cli):
+    own = {"q": {"type": "noul", "instructions": "Is it?"}}
+    typed = lines_of({"state": "x", "questions": own}, {"state": "y"})
+    result = cli("--states", "-", input=typed)
+    assert result.exit_code == 0, result.output
+    answered, missing = (json.loads(line) for line in result.stdout.splitlines())
+    assert list(answered["answers"]) == ["q"]
+    assert missing["error"]["param"] == "questions"
+
+
+def test_states_error_lines(cli):
+    typed = lines_of({"state": "one two"}) + '{broken\n\n"three"\n' + lines_of({"text": 1})
+    typed += lines_of({"state": "three"})
     result = cli("--noul", "q=Is it?", "--states", "-", input=typed)
     assert result.exit_code == 0, result.output
-    first, error, last = (json.loads(line) for line in result.stdout.splitlines())
+    first, broken, bare, no_state, last = (json.loads(line) for line in result.stdout.splitlines())
     assert first["usage"]["input_tokens"] == 2
-    assert error["line"] == 2
-    assert error["error"]["type"] == "invalid_request_error"
-    assert error["error"]["param"] == "state"
-    assert error["error"]["message"].startswith("not valid JSON")
+    assert broken["line"] == 2
+    assert broken["error"]["type"] == "invalid_request_error"
+    assert broken["error"]["message"].startswith("not valid JSON")
+    assert bare["line"] == 4 and "a line must be a request body" in bare["error"]["message"]
+    assert no_state["error"]["param"] == "state"
+    assert no_state["error"]["message"] == "state is required"
     assert last["usage"]["input_tokens"] == 1
 
 
 def test_states_note_truncation_on_stderr(fake_model_path, questions_file):
     write_model(fake_model_path, max_input_tokens=2)
     args = ["run", "-m", str(fake_model_path), "-q", str(questions_file), "--states", "-"]
-    result = CliRunner().invoke(app, args, input='"a b"\n"a b c"\n')
+    typed = lines_of({"state": "a b"}, {"state": "a b c"})
+    result = CliRunner().invoke(app, args, input=typed)
     assert "line 2: the state was truncated" in result.stderr
     assert "line 1" not in result.stderr
 
@@ -204,6 +231,7 @@ def test_states_note_truncation_on_stderr(fake_model_path, questions_file):
     [
         (["--states", "missing.jsonl"], "cannot read the states"),
         (["--states", "-", "-s", "x"], "drop --state"),
+        (["--states", "-", "--state-json"], "drop --state"),
         (["--states", "-", "--score", "anger=calm"], "questions.anger.criteria"),
     ],
 )

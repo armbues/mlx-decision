@@ -137,17 +137,23 @@ def build_request(
     return body
 
 
-def answer_states(model, body: dict[str, Any], lines) -> None:
-    """One response body per JSON line, in order; a bad line gives an error body."""
+def answer_states(model, defaults: dict[str, Any], lines) -> None:
+    """One response body per request line, in order; a bad line gives an error body.
+
+    Each line is a request body; fields it leaves out (usually the questions)
+    come from ``defaults``.
+    """
     for number, line in enumerate(lines, 1):
         if not line.strip():
             continue
         try:
             try:
-                state = json.loads(line)
+                request = json.loads(line)
             except json.JSONDecodeError as error:
-                raise DecisionError(f"not valid JSON: {error}", param="state") from None
-            result = model.decide_request({**body, "state": state})
+                raise DecisionError(f"not valid JSON: {error}") from None
+            if not isinstance(request, dict):
+                raise DecisionError('a line must be a request body: {"state": ...}')
+            result = model.decide_request({**defaults, **request})
         except DecisionError as error:
             # The Jev error body, plus the input line it belongs to.
             detail = {"message": error.message, "type": "invalid_request_error"}
@@ -247,8 +253,9 @@ def run(
         str | None,
         typer.Option(
             "--states",
-            help="Many states: a JSON lines file, one state per line ('-' for stdin). "
-            "Prints one response body per line.",
+            help="Many requests: a JSON lines file ('-' for stdin), one request body per "
+            'line, e.g. {"state": "..."}; questions from -q or flags apply where a '
+            "line has none. Prints one response body per line.",
         ),
     ] = None,
     as_json: JsonOption = False,
@@ -259,9 +266,13 @@ def run(
 
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
     if states is not None:
-        if state is not None or state_file is not None:
-            fail("--states reads all states from one file; drop --state/--state-file")
-        body = build_questions(questions, shorthand)
+        if state is not None or state_file is not None or state_json:
+            fail(
+                "--states reads whole requests from one file; "
+                "drop --state/--state-file/--state-json"
+            )
+        # Questions from flags are defaults; lines may bring their own.
+        body = build_questions(questions, shorthand) if questions or shorthand else {}
         body.pop("state", None)
         try:
             source = nullcontext(sys.stdin) if states == "-" else open(states, encoding="utf-8")  # noqa: SIM115
@@ -269,7 +280,8 @@ def run(
             fail(f"cannot read the states: {error}")
         with source as lines:
             try:
-                parse_request({**body, "state": ""})
+                if body:
+                    parse_request({**body, "state": ""})
                 loaded = load(model)
             except (DecisionError, FileNotFoundError, ValueError) as error:
                 fail(str(error))

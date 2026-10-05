@@ -120,17 +120,27 @@ response body.
 
 ### Many states
 
-`--states FILE` answers a JSON lines file, one state per line (a JSON
-string for text, or any other JSON value), and prints one response body per
-line in the same order. `-` reads stdin. A line that cannot be answered
-yields an error body with its line number, and the run goes on:
+`--states FILE` answers a JSON lines file with one request body per line
+and prints one response body per line, in the same order. `-` reads
+stdin. A line is the same body the server takes, so it can bring its own
+questions; questions from `-q` or the shorthand flags apply to lines
+without them:
 
 ```bash
 mlx-decision run -m Cloudflare/clef-flash -q questions.json --states tickets.jsonl > answers.jsonl
 ```
 
 ```
-{"error": {"message": "not valid JSON: ...", "type": "invalid_request_error", "param": "state"}, "line": 3}
+{"state": "My card was charged twice this month."}
+{"state": {"ticket": 4711, "text": "The app crashes on login."}}
+{"state": "Is this spam?", "questions": {"spam": {"type": "noul", "instructions": "Is it spam?"}}}
+```
+
+A line that cannot be answered yields an error body with its line number,
+and the run goes on:
+
+```
+{"error": {"message": "state is required", "type": "invalid_request_error", "param": "state"}, "line": 3}
 ```
 
 ## Interactive: `chat`
