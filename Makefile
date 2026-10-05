@@ -1,6 +1,6 @@
 .PHONY: setup test lint build publish-test publish clean
 
-VERSION := $(shell python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+VERSION := $(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' src/mlx_decision/__init__.py)
 
 setup:
 	pip install -e ".[dev]"
@@ -22,6 +22,7 @@ publish-test: build
 	twine upload --repository testpypi dist/*
 
 publish: build
+	@git diff --quiet HEAD || { echo "uncommitted changes: commit them before publishing"; exit 1; }
 	@read -p "Upload mlx-decision $(VERSION) to PyPI? This cannot be undone. [y/N] " answer && [ "$$answer" = y ]
 	twine upload --repository pypi dist/*
 

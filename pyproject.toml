@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mlx-decision"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Run decision models such as Cloudflare's Clef locally on Apple Silicon with MLX"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -52,6 +52,9 @@ Homepage = "https://github.com/armbues/mlx-decision"
 Repository = "https://github.com/armbues/mlx-decision"
 Issues = "https://github.com/armbues/mlx-decision/issues"
 Changelog = "https://github.com/armbues/mlx-decision/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "src/mlx_decision/__init__.py"
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:app"
