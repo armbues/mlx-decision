@@ -31,8 +31,11 @@ downloaded through the normal Hugging Face cache (clef-flash: 19 GB) on
 first use. To fetch one ahead of time, `mlx-decision download` shows a menu
 of the supported models (or takes a repo id); for any other id it reads
 the repository's config files first and warns before downloading something
-no supported family can load. `--local-dir` downloads into a folder
-instead of the cache; private or gated repos need `HF_TOKEN`.
+no supported family can load. In a terminal it first asks for a folder
+to download into instead of the Hugging Face cache; the model goes into a
+folder named after the repo inside it (e.g. `~/Models/clef-flash`), and
+an empty answer keeps the cache. `--local-dir` names the model's folder
+directly and skips the question; private or gated repos need `HF_TOKEN`.
 
 ## Python
 

@@ -410,6 +410,28 @@ def pick_repo() -> str | None:
         return None
 
 
+def ask_models_dir() -> Path | None:
+    """The folder that gets the model's own folder, or None for the Hub cache.
+
+    Raises ``typer.Exit`` when the prompt is cancelled.
+    """
+    from prompt_toolkit import prompt
+    from prompt_toolkit.completion import PathCompleter
+
+    try:
+        parent = prompt(
+            "Download into this folder instead of the Hugging Face cache (empty: the cache): ",
+            completer=PathCompleter(only_directories=True, expanduser=True),
+        ).strip()
+    except (KeyboardInterrupt, EOFError):
+        raise typer.Exit(1) from None
+    return Path(parent).expanduser() if parent else None
+
+
+def stdin_is_terminal() -> bool:
+    return sys.stdin.isatty()
+
+
 @app.command()
 def download(
     repo_id: Annotated[
@@ -418,7 +440,11 @@ def download(
     ] = None,
     local_dir: Annotated[
         Path | None,
-        typer.Option(help="Download into this folder instead of the Hugging Face cache."),
+        typer.Option(
+            help="Download into this folder instead of the Hugging Face cache. "
+            "Default in a terminal: asks for a folder, and the model goes into a "
+            "folder named after the repo inside it."
+        ),
     ] = None,
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Download even if no model family can load it.")
@@ -431,7 +457,8 @@ def download(
     from .download import check_repo, format_size
     from .download import download as fetch
 
-    terminal = sys.stdin.isatty()
+    terminal = stdin_is_terminal()
+    parent = ask_models_dir() if local_dir is None and terminal else None
     if repo_id is None:
         if not terminal:
             fail("give a repo id, e.g. mlx-decision download Cloudflare/clef-flash")
@@ -447,7 +474,10 @@ def download(
 
                 if not terminal or not confirm("Download it anyway?"):
                     fail("not downloaded (use --yes to download anyway)")
-        typer.echo(f"downloading {repo_id} ({format_size(check.size_bytes)}) ...", err=True)
+        if parent is not None:
+            local_dir = parent / repo_id.rsplit("/", 1)[-1]
+        target = f" to {local_dir}" if local_dir else ""
+        typer.echo(f"downloading {repo_id} ({format_size(check.size_bytes)}){target} ...", err=True)
         path = fetch(repo_id, local_dir)
     except RepositoryNotFoundError:
         fail(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")

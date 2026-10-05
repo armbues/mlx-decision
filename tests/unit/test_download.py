@@ -100,3 +100,76 @@ def test_the_menu_lists_known_models_and_other():
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         pipe.send_text("\x03")
         assert pick_repo() is None
+
+
+def ask(typed):
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    from mlx_decision.cli import ask_models_dir
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        pipe.send_text(typed)
+        return ask_models_dir()
+
+
+def test_the_folder_prompt(tmp_path):
+    from pathlib import Path
+
+    import typer
+
+    assert ask(f"{tmp_path}\r") == tmp_path
+    assert ask("~/Models\r") == Path.home() / "Models"
+    assert ask("\r") is None  # the Hub cache
+    with pytest.raises(typer.Exit):
+        ask("\x03")
+
+
+@pytest.fixture
+def terminal(monkeypatch):
+    """A terminal whose folder answers and picked repo are given; records the order of questions."""
+    import mlx_decision.cli as cli
+
+    state = SimpleNamespace(folders=[], asked=[])
+
+    def ask_models_dir():
+        state.asked.append("folder")
+        return state.folders.pop(0)
+
+    def pick_repo():
+        state.asked.append("model")
+        return "Cloudflare/clef-flash"
+
+    monkeypatch.setattr(cli, "stdin_is_terminal", lambda: True)
+    monkeypatch.setattr(cli, "ask_models_dir", ask_models_dir)
+    monkeypatch.setattr(cli, "pick_repo", pick_repo)
+    return state
+
+
+def test_a_terminal_asks_for_the_folder_before_the_model(hub, terminal, tmp_path):
+    terminal.folders.append(tmp_path / "models")
+    result = invoke()
+    assert result.exit_code == 0, result.output
+    assert terminal.asked == ["folder", "model"]
+    target = tmp_path / "models" / "clef-flash"
+    assert hub[-1][2] == target
+    assert f"(19.1 GB) to {target} ..." in result.stderr
+    assert f"chat -m {target}" in result.stderr
+
+
+def test_an_empty_folder_keeps_the_cache(hub, terminal):
+    terminal.folders.append(None)
+    result = invoke("Cloudflare/clef-flash")
+    assert result.exit_code == 0, result.output
+    assert terminal.asked == ["folder"]
+    assert hub[-1][2] is None
+    assert "(19.1 GB) ..." in result.stderr
+    assert "chat -m Cloudflare/clef-flash" in result.stderr
+
+
+def test_local_dir_skips_the_question(hub, terminal, tmp_path):
+    result = invoke("Cloudflare/clef-flash", "--local-dir", str(tmp_path / "here"))
+    assert result.exit_code == 0, result.output
+    assert terminal.asked == []
+    assert hub[-1][2] == tmp_path / "here"
