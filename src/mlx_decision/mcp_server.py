@@ -1,0 +1,252 @@
+"""An MCP server with two tools: ``decide`` and ``model_info``.
+
+Needs the ``mcp`` extra. Built on the SDK's low-level server so the tools
+have schemas and descriptions written for agents, and arguments are checked
+by the same validation as the Python API, ``run`` and ``server``. All model
+work runs on the one worker thread the model was loaded on.
+"""
+
+import asyncio
+import json
+import logging
+from collections.abc import Callable
+from concurrent.futures import Executor, ThreadPoolExecutor
+from typing import Any
+
+from mcp import types
+from mcp.server.lowlevel import Server
+from mcp.server.stdio import stdio_server
+
+from . import __version__
+from .errors import DecisionError
+from .images import check_data_urls
+from .model import DecisionModel
+
+logger = logging.getLogger(__name__)
+
+READ_ONLY = types.ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
+
+DECIDE = """\
+Answer typed questions about a text (the state) with {name}, a local \
+decision model. It generates no text: for each question it returns a \
+probability for every allowed answer, in one pass. Use it to classify, \
+route, triage, rate or check text: which team should handle a ticket, how \
+angry a message is, whether a document mentions a person.
+
+Question types, keyed by an id of your choice in `questions`:
+- noul: a yes/no question. Answer: `noul`, the probability of yes.
+- choice: pick one option of `criteria` (option id -> short description). \
+Answer: `choice` (the most likely id), `confidence`, `probabilities` per option.
+- score: rate on ordered levels; `criteria` lists their descriptions from \
+lowest to highest. Answer: `score` (the expected level, 0-based, may be \
+fractional), `confidence`, `legend`, `probabilities` per level.
+
+Example arguments:
+{{"state": "I was charged twice for my subscription this month.", \
+"questions": {{"team": {{"type": "choice", "instructions": "Which team should \
+handle this ticket?", "criteria": {{"billing": "Payments, invoices, refunds", \
+"technical": "Bugs and outages", "sales": "Pricing and plans"}}}}, \
+"urgent": {{"type": "noul", "instructions": "Does this need a reply today?"}}}}}}
+
+Ask all questions about one state in one call. `confidence` runs from 0 \
+to 1; a low value means the model hesitates between answers."""
+
+MODEL_INFO = """\
+Describe the loaded decision model: name, family, precision, input limit \
+in tokens, question types, option and level limits, and whether it reads \
+images. Call it when a request might hit a limit."""
+
+INSTRUCTIONS = """\
+Local decision model ({name}): `decide` answers yes/no, choice and score \
+questions about a text with probabilities, fast and without generating \
+text. `model_info` lists its limits."""
+
+
+def family_hints(info: dict[str, Any], allow_image_paths: bool) -> list[str]:
+    """What an agent should know about this model beyond the general description."""
+    hints = []
+    if info["max_input_tokens"] and info["truncates_input"]:
+        hints.append(
+            f"States longer than {info['max_input_tokens']:,} tokens are cut; "
+            "the result then has `truncated: true`."
+        )
+    elif info["max_input_tokens"]:
+        hints.append(
+            f"Requests longer than {info['max_input_tokens']:,} tokens are refused; "
+            "split long texts."
+        )
+    if info["max_choice_options"]:
+        hints.append(f"A choice takes at most {info['max_choice_options']} options.")
+    if info["family"] == "julia":
+        hints.append(
+            "Give every choice option a description in `criteria`: with bare ids "
+            "this model answers much worse."
+        )
+    if info["supports_images"]:
+        where = "data URLs (data:image/png;base64,...)"
+        if allow_image_paths:
+            where += " or absolute file paths"
+        hints.append(f"`images` attaches images the state refers to, as {where}.")
+    return hints
+
+
+def decide_schema(info: dict[str, Any], allow_image_paths: bool) -> dict[str, Any]:
+    text = {"type": "string", "description": "The question or option in plain words."}
+    question = {
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "type": {"const": "noul"},
+                    "instructions": {**text, "description": "The yes/no question."},
+                    "criteria": {
+                        "type": "object",
+                        "description": "Optional: what yes and no mean.",
+                        "properties": {"true": text, "false": text},
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["type", "instructions"],
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "type": {"const": "choice"},
+                    "instructions": {**text, "description": "What to choose."},
+                    "criteria": {
+                        "type": "object",
+                        "description": "Option id -> short description of the option.",
+                        "additionalProperties": text,
+                        "minProperties": 1,
+                    },
+                },
+                "required": ["type", "instructions", "criteria"],
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "type": {"const": "score"},
+                    "instructions": {**text, "description": "What to rate."},
+                    "criteria": {
+                        "type": "array",
+                        "description": "Level descriptions, lowest first.",
+                        "items": text,
+                        "minItems": 2,
+                    },
+                },
+                "required": ["type", "instructions", "criteria"],
+            },
+        ]
+    }
+    properties: dict[str, Any] = {
+        "state": {
+            "description": "The text to decide about (or any JSON value).",
+            "anyOf": [{"type": "string"}, {"type": "object"}, {"type": "array"}],
+        },
+        "questions": {
+            "type": "object",
+            "description": "Questions by an id of your choice.",
+            "additionalProperties": question,
+            "minProperties": 1,
+        },
+    }
+    if info["supports_images"]:
+        kind = "data URL or absolute file path" if allow_image_paths else "data URL"
+        properties["images"] = {
+            "type": "array",
+            "description": f"Optional images the state refers to, each a {kind}.",
+            "items": {"type": "string"},
+        }
+    return {"type": "object", "properties": properties, "required": ["state", "questions"]}
+
+
+def tool_list(model: DecisionModel, allow_image_paths: bool) -> list[types.Tool]:
+    info = model.info()
+    hints = family_hints(info, allow_image_paths)
+    description = DECIDE.format(name=model.name)
+    if hints:
+        description += "\n\nThis model: " + " ".join(hints)
+    return [
+        types.Tool(
+            name="decide",
+            title="Decide",
+            description=description,
+            input_schema=decide_schema(info, allow_image_paths),
+            annotations=READ_ONLY,
+        ),
+        types.Tool(
+            name="model_info",
+            title="Decision model info",
+            description=MODEL_INFO,
+            input_schema={"type": "object", "properties": {}},
+            annotations=READ_ONLY,
+        ),
+    ]
+
+
+def json_result(body: dict[str, Any]) -> types.CallToolResult:
+    """``body`` as structured content and, for clients that read only text, as JSON text."""
+    text = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    return types.CallToolResult(content=[types.TextContent(text=text)], structured_content=body)
+
+
+def error_result(message: str) -> types.CallToolResult:
+    return types.CallToolResult(content=[types.TextContent(text=message)], is_error=True)
+
+
+def create_server(
+    model: DecisionModel, worker: Executor, allow_image_paths: bool = False
+) -> Server:
+    """The MCP server for ``model``; tool calls run one at a time on ``worker``.
+
+    ``allow_image_paths`` lets ``decide`` read image files named in a call:
+    only for stdio, where the client already has the server's file access.
+    """
+    tools = tool_list(model, allow_image_paths)
+
+    async def on_worker(function: Callable, *args):
+        return await asyncio.get_running_loop().run_in_executor(worker, function, *args)
+
+    async def list_tools(ctx, params) -> types.ListToolsResult:
+        return types.ListToolsResult(tools=tools)
+
+    async def call_tool(ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
+        if params.name == "model_info":
+            return json_result(model.info())
+        if params.name != "decide":
+            return error_result(f"unknown tool {params.name!r}")
+        body = dict(params.arguments or {})
+        body.pop("model", None)
+        try:
+            if not allow_image_paths:
+                check_data_urls(body)
+            result = await on_worker(model.decide_request, body)
+        except DecisionError as error:
+            return error_result(str(error))
+        except Exception:
+            logger.exception("tool call failed")
+            return error_result("the model failed to answer the request")
+        return json_result({**result.to_wire(), "truncated": result.truncated})
+
+    return Server(
+        "mlx-decision",
+        version=__version__,
+        instructions=INSTRUCTIONS.format(name=model.name),
+        on_list_tools=list_tools,
+        on_call_tool=call_tool,
+    )
+
+
+async def serve_stdio(load_model: Callable[[], DecisionModel]) -> None:
+    """Serve over stdin/stdout until the client closes stdin.
+
+    The transport is opened first: it moves anything else written to stdout
+    over to stderr, so output during the load cannot corrupt the protocol.
+    The client's handshake waits until the model is loaded.
+    """
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision") as worker:
+        async with stdio_server() as (read_stream, write_stream):
+            model = await asyncio.get_running_loop().run_in_executor(worker, load_model)
+            logger.info("model %s loaded", model.name)
+            server = create_server(model, worker, allow_image_paths=True)
+            await server.run(read_stream, write_stream, server.create_initialization_options())

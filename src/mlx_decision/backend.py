@@ -14,6 +14,8 @@ class Capabilities:
     max_score_levels: int | None = None
     requires_instructions: bool = False
     supports_images: bool = False
+    # False when inputs over max_input_tokens are refused instead of cut.
+    truncates_input: bool = True
 
 
 @dataclass

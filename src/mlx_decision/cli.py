@@ -579,6 +579,49 @@ def server(
 
 
 @app.command()
+def mcp(
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+    ],
+    max_image_mp: MaxImageOption = None,
+    max_input_tokens: MaxInputOption = None,
+) -> None:
+    """Serve a model to agents over MCP on stdin/stdout (tools: decide, model_info)."""
+    try:
+        import anyio
+
+        from .mcp_server import serve_stdio
+    except ImportError:
+        fail("the MCP server needs extra packages: pip install 'mlx-decision[mcp]'")
+    import logging
+
+    from .hub import resolve_model_path
+    from .model import load
+    from .registry import check_options, detect_family
+
+    # stdout carries the protocol: everything else goes to stderr.
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(message)s")
+    options = load_options(max_image_mp, max_input_tokens)
+    try:
+        # Fail here, before a client is waiting for the handshake.
+        check_options(detect_family(resolve_model_path(model)), options)
+    except (FileNotFoundError, ValueError) as error:
+        fail(str(error))
+    typer.echo(f"loading {model} ...", err=True)
+    try:
+        anyio.run(serve_stdio, lambda: load(model, **options))
+    except KeyboardInterrupt:
+        pass
+    except Exception as error:
+        # The transport's task group wraps a failed load in exception groups.
+        while isinstance(error, ExceptionGroup) and len(error.exceptions) == 1:
+            error = error.exceptions[0]
+        if isinstance(error, DecisionError | FileNotFoundError | ValueError | PlatformError):
+            fail(str(error))
+        raise
+
+
+@app.command()
 def convert(
     model: Annotated[
         str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")

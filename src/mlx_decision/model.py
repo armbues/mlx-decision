@@ -35,6 +35,7 @@ class DecisionModel:
             "family": getattr(self.backend, "family", None),
             "precision": getattr(self.backend, "precision", None),
             "max_input_tokens": caps.max_input_tokens,
+            "truncates_input": caps.truncates_input,
             "question_types": sorted(caps.question_types),
             "max_choice_options": caps.max_choice_options,
             "max_score_levels": caps.max_score_levels,

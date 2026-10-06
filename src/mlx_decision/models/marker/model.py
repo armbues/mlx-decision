@@ -223,6 +223,7 @@ def load_julia(
         max_input_tokens=settings.max_length,
         max_choice_options=20,
         max_score_levels=20,
+        truncates_input=not settings.strict,
     )
     return MarkerBackend(
         path.resolve().name, encoder, head, tokenizer, special, settings, capabilities, precision
