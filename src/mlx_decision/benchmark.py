@@ -71,6 +71,20 @@ def make_state(words: int) -> str:
     return " ".join(filler[i % len(filler)] for i in range(words))
 
 
+def default_lengths(limit: int | None) -> tuple[int, ...]:
+    """The default state lengths that fit the model's input limit.
+
+    When those all stay below half the limit (Laya's 512 or 1,024 tokens), a
+    length near the limit is added, so that the longest inputs are measured.
+    """
+    if limit is None:
+        return DEFAULT_LENGTHS
+    lengths = [length for length in DEFAULT_LENGTHS if length < limit]
+    if not lengths or lengths[-1] < limit / 2:
+        lengths.append(int(limit * 0.9) // 50 * 50)
+    return tuple(lengths)
+
+
 def percentile(values: list[float], fraction: float) -> float:
     """Nearest-rank percentile."""
     ordered = sorted(values)
@@ -86,11 +100,14 @@ def tokens_per_word(model: DecisionModel) -> float:
 
 def run(
     model: DecisionModel,
-    lengths: tuple[int, ...] = DEFAULT_LENGTHS,
+    lengths: tuple[int, ...] | None = None,
     question_counts: tuple[int, ...] = DEFAULT_QUESTIONS,
     repeats: int = 5,
     load_s: float = 0.0,
 ) -> Report:
+    """Time every cell; ``lengths`` default to ``default_lengths`` for the model's limit."""
+    if lengths is None:
+        lengths = default_lengths(model.backend.capabilities.max_input_tokens)
     rate = tokens_per_word(model)
     mx.reset_peak_memory()
     cells = []

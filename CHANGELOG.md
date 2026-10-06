@@ -7,11 +7,45 @@ change the interface).
 
 ## [Unreleased]
 
+### Models
+
+- Laya ([laya](https://huggingface.co/convaiinnovations/laya),
+  [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual),
+  [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions))
+  and Supersonic Labs' [Julia 1](https://huggingface.co/SupersonicLabs/Julia-1):
+  ModernBERT and mmBERT encoders with a decision head, matching each
+  family's own PyTorch code token for token and within 0.004 (Laya) and
+  0.018 (Julia) per probability on an 84-request test set, 1.4 to 6 times
+  faster than that code on MPS. They run in float16 by default (`dtype=`
+  changes it).
+- Laya cuts long states and option lists as its package does and applies
+  its calibrated temperatures (clamped to 0.5-5); Julia refuses what it
+  would have to cut (`strict_encoding=False` cuts instead). Questions
+  without instructions, and for Julia options without a description, get
+  their ids instead, since both models need them.
+
 ### Added
 
+- `--max-input-tokens` on `run`, `chat` and `server` (`max_input_tokens=`
+  in Python) changes a model's input limit, e.g. Laya's 512 tokens up to
+  8,192.
+- `download` lists the Laya and Julia models and fetches only the files a
+  model needs; the size shown counts only those. Loading by repo id does
+  the same.
+- `benchmark` picks state lengths that fit the model's input limit by
+  default.
+- `scripts/marker_reference_speed.py` compares the speed with Laya's and
+  Julia's own code; `scripts/accuracy_benchmark.py` reports benchmarks a
+  model cannot answer (too many options) as n/a and counts refused
+  examples as wrong.
 - `scripts/reference_speed.py` compares the speed of mlx-decision with
   Cloudflare's PyTorch reference on the same requests; the README shows
   the result (about 3.5x faster in bf16 on an M5 Pro).
+
+### Changed
+
+- A load option a model family does not take (e.g. `max_image_pixels` for
+  Laya) is an error naming the option, also before `server` starts.
 
 ## [0.3.0] - 2026-10-05
 

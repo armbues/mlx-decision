@@ -678,8 +678,12 @@ def benchmark(
         str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
     ],
     lengths: Annotated[
-        str, typer.Option(help="State lengths in tokens, comma-separated.")
-    ] = "250,1000,4000,15000",
+        str | None,
+        typer.Option(
+            help="State lengths in tokens, comma-separated. Default: 250,1000,4000,15000, "
+            "those below the model's input limit (plus one near it for small limits)."
+        ),
+    ] = None,
     questions: Annotated[
         str, typer.Option(help="Numbers of questions, comma-separated.")
     ] = "1,5,20",
@@ -691,7 +695,7 @@ def benchmark(
     from .benchmark import format_report, to_dict
 
     grid = {
-        "lengths": int_list(lengths, "--lengths"),
+        "lengths": int_list(lengths, "--lengths") if lengths else None,
         "question_counts": int_list(questions, "--questions"),
     }
     if min(grid["question_counts"]) < 1:

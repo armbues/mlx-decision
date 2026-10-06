@@ -9,11 +9,21 @@ models what `mlx-lm` is to LLMs: load a model, ask it questions from Python
 or the command line, serve it over HTTP with an API compatible with
 [Jev's](https://typesafe.ai), and convert it to smaller quantized copies.
 
-The first supported model is Cloudflare's
-[clef-flash](https://huggingface.co/Cloudflare/clef-flash) (Qwen3.5-9B
-backbone plus a joint schema head), with text and image input.
+Supported models:
+- Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash)
+  (Qwen3.5-9B backbone plus a joint schema head), with text and image input
+- [Laya](https://huggingface.co/convaiinnovations/laya) (ModernBERT-large,
+  421M, English) and
+  [Laya multilingual](https://huggingface.co/convaiinnovations/laya-multilingual)
+  (mmBERT-base, 322M), calibrated encoder models
+- Supersonic Labs' [Julia 1](https://huggingface.co/SupersonicLabs/Julia-1)
+  (mmBERT-small, 144M, multilingual)
 
-On a Mac it answers about 3.5 times faster than Cloudflare's PyTorch
+The encoder models are small and fast (a request with one question in
+5-20 ms); clef-flash is the strongest at harder questions. See
+[Supported models](#supported-models).
+
+On a Mac, clef-flash answers about 3.5 times faster than Cloudflare's PyTorch
 reference running on the GPU (MPS), with the same answers. Median
 latency per request for clef-flash in bf16, as released:
 
@@ -28,6 +38,9 @@ latency per request for clef-flash in bf16, as released:
 
 Apple M5 Pro (20-core GPU), 64 GB. Details and the 8-bit copy in
 [Speed](#speed-compared-with-pytorch).
+
+The Laya and Julia encoders answer 1.4 to 6 times faster than their own
+PyTorch code on MPS ([details](#laya-and-julia)).
 
 0.3 is the first public release (alpha): the interface may still change.
 Questions and bug reports go to the
@@ -73,7 +86,9 @@ goes into a folder named after the repo inside it (e.g.
 keeps the cache. `--local-dir` names the model's folder directly and skips
 the question. For other repo ids it reads the repository's config files
 first and warns before downloading something no supported family can
-load; private or gated repos need `HF_TOKEN`.
+load; private or gated repos need `HF_TOKEN`. For Laya and Julia only the
+files the model needs are fetched (the `convaiinnovations/laya` repository
+also holds two more checkpoints, Julia's its PyTorch code).
 
 ## Python
 
@@ -124,7 +139,7 @@ raise `mlx_decision.DecisionError`, whose `param` names the offending field
 (building an invalid `Choice`, `Score` or `Noul` object directly raises
 pydantic's `ValidationError` instead). `result.truncated` tells you whether
 the state was cut to fit the model's input limit (16,384 tokens for
-clef-flash). The answer types (`ChoiceAnswer`, `ScoreAnswer`,
+clef-flash; for the others see [Supported models](#supported-models)). The answer types (`ChoiceAnswer`, `ScoreAnswer`,
 `NoulAnswer`) and `Usage` can be imported from `mlx_decision`.
 
 With the `images` extra, images go along as file paths, bytes, PIL images
@@ -181,7 +196,8 @@ The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body. `--image FILE` (repeatable) sends images along with the
-state.
+state. `--max-input-tokens N` (also on `chat` and `server`) changes the
+model's input limit, e.g. to give Laya up to 8,192 tokens.
 
 `mlx-decision --version` prints the installed version.
 
@@ -363,6 +379,9 @@ against the unquantized model:
 | mixed 4 (`--target-bits 4`) | 4.9 GB | 7.1 GB | 0.006 / 0.084 | 1 |
 | uniform 4-bit (`-q --bits 4`) | 4.9 GB | 7.1 GB | 0.014 / 0.212 | 9 |
 
+`convert` is for clef-flash; Laya and Julia load as they are (0.3 to
+0.85 GB).
+
 Recommendation: use the released bf16 model if 19 GB fit; otherwise 8-bit;
 on smaller Macs `--target-bits 5`, then `--target-bits 4`. Uniform 4-bit
 loses noticeably more than mixed precision of the same size. Quantization
@@ -411,6 +430,34 @@ python scripts/reference_speed.py mlx --model PATH --out mlx.json
 python scripts/reference_speed.py report torch.json mlx.json
 ```
 
+### Laya and Julia
+
+`scripts/marker_reference_speed.py` does the same for Laya and Julia
+against their own code on MPS, run as it runs there: Laya through the
+`laya` package (0.3.28; float32, float16 autocast from 5 questions per
+request), Julia through its `TransformerEngine` (float32; it autocasts only
+on CUDA). mlx-decision runs them in float16. Median per request, on the
+`benchmark` grid:
+
+| Model | State x questions | PyTorch (MPS) | mlx-decision | Speedup |
+|---|---|---|---|---|
+| laya | 250 x 1 | 46 ms | 15 ms | 3.0x |
+| laya | 450 x 20 | 543 ms | 386 ms | 1.4x |
+| laya-multilingual | 250 x 1 | 20 ms | 8 ms | 2.5x |
+| laya-multilingual | 1,000 x 20 | 558 ms | 337 ms | 1.7x |
+| Julia-1 | 250 x 1 | 11 ms | 5 ms | 2.0x |
+| Julia-1 | 1,000 x 20 | 557 ms | 182 ms | 3.1x |
+| Julia-1 | 7,350 x 20 | 12.4 s | 2.0 s | 6.1x |
+
+The largest probability difference to the PyTorch runs is 0.001 for Laya
+and 0.007 for Julia.
+
+```bash
+python scripts/marker_reference_speed.py torch --model PATH --out torch.json
+python scripts/marker_reference_speed.py mlx --model PATH --out mlx.json
+python scripts/marker_reference_speed.py report torch.json mlx.json
+```
+
 ## Speed: `benchmark`
 
 ```bash
@@ -432,6 +479,18 @@ clef-flash on an Apple M5 Pro (20-core GPU) with 64 GB:
 
 Latency grows linearly with input length, at about 1,550-1,850 tokens per
 second. All numbers in this README were measured on that machine.
+
+The encoder models run each question as its own sequence (state included),
+so time grows with state length times questions. The default grid keeps
+the state lengths that fit the model's limit:
+
+| Model | State x questions | Median | Tokens per second |
+|---|---|---|---|
+| laya | 250 x 1 / 450 x 20 | 16 ms / 387 ms | about 26,000 |
+| laya-multilingual | 250 x 1 / 1,000 x 20 | 8 ms / 339 ms | about 60,000 |
+| Julia-1 | 250 x 1 / 1,000 x 20 / 7,350 x 20 | 6 ms / 196 ms / 1.7 s | about 100,000 |
+
+Peak memory is 1.4 to 1.8 GB.
 
 ## Images
 
@@ -469,14 +528,33 @@ request, so text-only use costs no extra memory.
 
 ## Supported models
 
-| Family | Models | Input | Notes |
+| Family | Models | Input limit | Notes |
 |---|---|---|---|
-| Clef | `Cloudflare/clef-flash` | text, images | videos are rejected |
+| Clef | `Cloudflare/clef-flash` | 16,384 tokens | text and images; videos are rejected |
+| Laya | `convaiinnovations/laya`, `convaiinnovations/laya-typed-decisions` | 512 tokens per question | English (non-Latin scripts fail, per Laya's README) |
+| Laya | `convaiinnovations/laya-multilingual` | 1,024 tokens per question | 100+ languages |
+| Julia | `SupersonicLabs/Julia-1` | 8,192 tokens per question | multilingual; 2 to 20 options per question |
+
+Laya and Julia read one question at a time, each with the whole state, so
+their limit applies per question. Laya cuts a long state to fit (keeping
+the end of a list, e.g. a conversation) and shortens long option lists;
+`--max-input-tokens` (`max_input_tokens=` in Python) raises its limit up
+to 8,192. Julia, as its release recommends, refuses rather than cuts: a
+state that does not fit, an option over 48 tokens, its marker token in the
+text (`strict_encoding=False` in Python cuts instead). Laya's probabilities
+use its calibrated temperatures as the `laya` package applies them (clamped
+to 0.5-5). Questions without instructions get the question id as their
+instruction, and for Julia options without a description the option id,
+as both models need them. Both run in float16, which on the test set was
+closer to their float32 reference than float32 on the GPU (TF32) or
+bfloat16.
 
 On a 63-request test set (13 of them with one to three images), clef-flash
 on MLX matches Cloudflare's PyTorch reference token for token and within
 0.035 per probability (mean 0.001; with images 0.015, mean 0.002), with no
-changed answers.
+changed answers. Laya and Julia match their own PyTorch code token for
+token on 84 text requests (22 languages, long states, refusals), within
+0.004 (Laya) and 0.018 (Julia) per probability.
 
 ### Accuracy (preliminary)
 
@@ -503,6 +581,23 @@ local numbers with `scripts/accuracy_benchmark.py local` (its docstring
 shows how to save the datasets); the Jev column needs a Jev account and is
 not reproducible with this repository alone.
 
+The encoder models on the same examples and questions, accuracy / macro-F1
+/ ECE:
+
+| Benchmark | laya | laya-multilingual | Julia-1 |
+|---|---|---|---|
+| AG News | **94.6** / **94.7** / 6.8 | 93.8 / 93.8 / 3.0 | 83.0 / 83.4 / 6.3 |
+| DAIR Emotion | 59.8 / 50.5 / 25.0 | 49.0 / 40.9 / 29.8 | **73.8** / **74.4** / 20.3 |
+| ANLI r1-r3 | 48.6 / 48.5 / 34.6 | 39.2 / 38.7 / 48.7 | 33.0 / 31.0 / 52.2 |
+| BANKING77 | 36.0 / 31.5 / 51.9 | 35.0 / 32.7 / 44.7 | n/a (77 options) |
+| MMLU | 35.2 / 34.5 / 11.1 | 30.2 / 29.9 / 16.2 | 32.2 / 32.2 / 51.2 |
+
+They do well on topic and emotion (Laya beats clef-flash and Jev on AG
+News, Julia both on Emotion) and are near chance on knowledge and
+entailment (MMLU, ANLI), as their model cards say. On BANKING77, Laya cuts
+77 options to fit its question budget, which costs most of the accuracy.
+Julia refused 4 MMLU examples (an option over 48 tokens), counted as wrong.
+
 ## Development
 
 ```bash
@@ -511,27 +606,36 @@ make test    # unit tests; parity tests run when the weights are found
 make lint
 ```
 
-Tests that need clef-flash look for it in `$MLX_DECISION_MODELS/clef-flash`,
-then in the Hugging Face cache, and are skipped otherwise. The parity
-fixtures are rebuilt with `scripts/make_parity_set.py` and
+Tests that need weights look for them in `$MLX_DECISION_MODELS/<name>`
+(`clef-flash`, `laya`, `laya-multilingual`, `Julia-1`), then in the
+Hugging Face cache, and are skipped otherwise. The parity fixtures are
+rebuilt with `scripts/make_parity_set.py` and
 `scripts/make_parity_reference.py` (the latter runs Cloudflare's reference
-with PyTorch).
+with PyTorch); for Laya and Julia with `scripts/make_marker_parity_set.py`
+and `scripts/make_marker_reference.py` (runs the `laya` package or Julia's
+code from its release folder).
 
 ## Relation to Cloudflare and TypeSafe AI
 
 mlx-decision is an independent open-source project, not affiliated with or
-endorsed by Cloudflare or TypeSafe AI. Its server speaks a request and
+endorsed by Cloudflare, TypeSafe AI, Convai Innovations (Laya) or
+Supersonic Labs (Julia). Its server speaks a request and
 response format compatible with TypeSafe AI's public Jev API. clef-flash
-is Cloudflare's model, used under its Apache-2.0 licence; this package
-downloads it from Hugging Face and does not ship its weights.
+is Cloudflare's model, Laya Convai Innovations', Julia 1 Supersonic Labs',
+all used under their Apache-2.0 licences; this package downloads them from
+Hugging Face and does not ship their weights.
 
 ## Licence
 
 MIT, see `LICENSE`. The Qwen3.5 model code is adapted from
 [mlx-lm](https://github.com/ml-explore/mlx-lm) (MIT, Apple Inc.); the Clef
 input encoding and head are ported from Cloudflare's release (Apache-2.0);
-the image preprocessing, vision tower and image positions are ported from
-[transformers](https://github.com/huggingface/transformers) (Apache-2.0).
+the image preprocessing, vision tower, image positions and the ModernBERT
+encoder are ported from
+[transformers](https://github.com/huggingface/transformers) (Apache-2.0);
+the Laya and Julia head and input encoding are ported from the
+[laya](https://pypi.org/project/laya/) package and Julia 1's release
+(Apache-2.0).
 Their licence texts are in `LICENSES/`. The test photos are public domain
 or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep their own
-licence (clef-flash: Apache-2.0).
+licence (clef-flash, Laya, Julia 1: Apache-2.0).

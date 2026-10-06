@@ -193,14 +193,28 @@ def record(answer: dict, gold: str) -> dict:
 
 def local(args) -> None:
     import mlx_decision
+    from mlx_decision.errors import DecisionError
 
     model = mlx_decision.load(args.model)
-    results = {"model": model.name, "benchmarks": {}}
+    results = {"model": model.name, "benchmarks": {}, "not_applicable": {}}
     for name, examples in build(args.datasets, args.samples).items():
+        try:
+            model.check(wire(examples[0]))
+        except DecisionError as error:
+            # e.g. more options than the model answers (BANKING77's 77 for Julia)
+            results["not_applicable"][name] = str(error)
+            print(f"{name:10s} not applicable: {error}", file=sys.stderr, flush=True)
+            continue
         start = time.perf_counter()
         records = []
         for example in examples:
-            answer = model.decide_request(wire(example)).to_wire()["answers"]
+            try:
+                answer = model.decide_request(wire(example)).to_wire()["answers"]
+            except DecisionError as error:
+                # Refused (e.g. an option too long for strict encoding): counted as wrong,
+                # left out of the calibration error.
+                records.append({"gold": example["gold"], "predicted": None, "refused": str(error)})
+                continue
             records.append(record(next(iter(answer.values())), example["gold"]))
         results["benchmarks"][name] = records
         print(f"{name:10s} {time.perf_counter() - start:6.1f}s", file=sys.stderr, flush=True)
@@ -223,11 +237,16 @@ def ece(records: list[dict], bins: int = 10) -> float:
     total = 0.0
     for b in range(bins):
         low, high = b / bins, (b + 1) / bins
-        group = [r for r in records if low < r["p_max"] <= high or (b == 0 and r["p_max"] == 0)]
+        group = [
+            r
+            for r in records
+            if "p_max" in r and (low < r["p_max"] <= high or (b == 0 and r["p_max"] == 0))
+        ]
         if group:
             accuracy = sum(r["predicted"] == r["gold"] for r in group) / len(group)
             mean_p = statistics.mean(r["p_max"] for r in group)
-            total += len(group) / len(records) * abs(accuracy - mean_p)
+            answered = sum("p_max" in r for r in records)
+            total += len(group) / answered * abs(accuracy - mean_p)
     return total
 
 
@@ -243,13 +262,18 @@ def report(args) -> None:
         cells = []
         for run in runs:
             records = run["benchmarks"].get(name, [])
+            if name in run.get("not_applicable", {}):
+                cells.append("n/a")
+                continue
             if not records:
                 cells.append("-")
                 continue
             accuracy = sum(r["predicted"] == r["gold"] for r in records) / len(records)
+            refused = sum("refused" in r for r in records)
+            count = f"{len(records)}, {refused} refused" if refused else f"{len(records)}"
             cells.append(
                 f"{100 * accuracy:.1f} / {100 * macro_f1(records):.1f} / "
-                f"{100 * ece(records):.1f} ({len(records)})"
+                f"{100 * ece(records):.1f} ({count})"
             )
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     print("\n".join(lines))

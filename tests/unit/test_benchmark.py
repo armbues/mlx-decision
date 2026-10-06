@@ -55,3 +55,14 @@ def test_cli_rejects_bad_lists(fake_model_path):
     assert result.exit_code == 2
     result = runner.invoke(app, ["benchmark", "-m", str(fake_model_path), "--questions", "0"])
     assert result.exit_code == 2
+
+
+def test_default_lengths_fit_the_input_limit():
+    from mlx_decision.benchmark import DEFAULT_LENGTHS, default_lengths
+
+    assert default_lengths(16384) == DEFAULT_LENGTHS
+    assert default_lengths(None) == DEFAULT_LENGTHS
+    assert default_lengths(8192) == (250, 1000, 4000, 7350)
+    assert default_lengths(1024) == (250, 1000)
+    assert default_lengths(512) == (250, 450)
+    assert default_lengths(128) == (100,)
