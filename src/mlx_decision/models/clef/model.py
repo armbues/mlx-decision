@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 
 import mlx.core as mx
+from mlx.utils import tree_flatten
 from tokenizers import Tokenizer
 
 from ...backbones.qwen3_5.load import has_vision_weights, load_text_model
 from ...backend import BackendOutput, Capabilities
 from ...errors import DecisionError
+from ...registry import MARKER_FILE
 from ...types import Request
 from .encode import DEFAULT_MAX_LENGTH, IMAGE_PAD, encode_request
 from .head import JointSchemaHead
@@ -168,6 +170,18 @@ def prepare_images(values, path, max_pixels: int | None):
     return [prepare(image, index, config) for index, image in opened]
 
 
+def precision(path: Path, backbone) -> str:
+    """How the backbone's weights are stored: "mixed 4-bit", "8-bit" or the dtype."""
+    marker = path / MARKER_FILE
+    mixed = json.loads(marker.read_text()).get("mixed") if marker.exists() else None
+    if mixed:
+        return f"mixed {mixed['target_bits']:g}-bit"
+    quantization = json.loads((path / "config.json").read_text()).get("quantization")
+    if quantization:
+        return f"{quantization['bits']}-bit"
+    return str(tree_flatten(backbone.parameters())[0][1].dtype).rsplit(".", 1)[-1]
+
+
 def load(
     path: Path,
     max_input_tokens: int = DEFAULT_MAX_LENGTH,
@@ -197,6 +211,7 @@ def load(
     backend = ClefBackend(
         path.resolve().name, backbone, head, tokenizer, max_input_tokens, path, max_image_pixels
     )
+    backend.precision = precision(path, backbone)
     if vision:
         if not backend.capabilities.supports_images:
             raise ValueError(f"{path} has no vision weights")

@@ -30,6 +30,13 @@ class BackendOutput:
 
 
 class Backend(Protocol):
+    """A loaded model of one family.
+
+    ``load`` also sets ``family`` (the registry's name for it). A backend may
+    set ``precision``, a short description of how its weights are stored
+    (``"bfloat16"``, ``"8-bit"``, ...), shown by ``DecisionModel.info``.
+    """
+
     name: str
     capabilities: Capabilities
 

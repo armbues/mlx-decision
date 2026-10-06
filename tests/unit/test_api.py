@@ -35,6 +35,22 @@ def test_load_passes_options_to_the_backend(fake_model_path):
     assert model.backend.capabilities.max_input_tokens == 3
 
 
+def test_info_describes_the_model_and_its_limits(fake_model_path):
+    model = mlx_decision.load(fake_model_path, max_input_tokens=3)
+    assert model.info() == {
+        "name": "fake",
+        "family": "fake",
+        "precision": None,
+        "max_input_tokens": 3,
+        "question_types": ["choice", "noul", "score"],
+        "max_choice_options": None,
+        "max_score_levels": None,
+        "requires_instructions": False,
+        "supports_images": False,
+    }
+    json.dumps(model.info())
+
+
 def test_load_rejects_a_missing_folder(tmp_path):
     with pytest.raises(FileNotFoundError):
         mlx_decision.load(tmp_path / "nowhere")

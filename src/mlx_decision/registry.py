@@ -83,7 +83,9 @@ def check_options(family: Family, options: dict) -> None:
 def load_backend(path: Path, **options) -> Backend:
     family = detect_family(path)
     check_options(family, options)
-    return resolve(family.loader)(path, **options)
+    backend = resolve(family.loader)(path, **options)
+    backend.family = family.name
+    return backend
 
 
 register_family(

@@ -36,6 +36,20 @@ def is_data_url(value: Any) -> bool:
     return isinstance(value, str) and value.startswith("data:")
 
 
+def check_data_urls(body) -> None:
+    """Refuse images that are not data URLs, so a remote caller cannot make us read files."""
+    images = body.get("images") if isinstance(body, dict) else None
+    if not isinstance(images, list):
+        return
+    for index, image in enumerate(images):
+        if not is_data_url(image):
+            raise DecisionError(
+                "expected a data URL (data:image/png;base64,...); "
+                "the server does not read files or fetch URLs",
+                param=f"images.{index}",
+            )
+
+
 def open_image(value: Any, index: int, allow_paths: bool = True):
     """One image opened but not decoded yet, so its size is known cheaply.
 

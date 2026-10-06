@@ -45,7 +45,8 @@ dependencies = [
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
 images = ["pillow>=10", "numpy>=1.26"]
-dev = ["mlx-decision[server,images]", "pytest", "ruff", "build", "twine"]
+mcp = ["mcp>=2.3,<3"]
+dev = ["mlx-decision[server,images,mcp]", "pytest", "ruff", "build", "twine"]
 
 [project.urls]
 Homepage = "https://github.com/armbues/mlx-decision"

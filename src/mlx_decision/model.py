@@ -27,6 +27,21 @@ class DecisionModel:
     def name(self) -> str:
         return self.backend.name
 
+    def info(self) -> dict[str, Any]:
+        """What the model is and what requests it takes, as plain JSON values."""
+        caps = self.backend.capabilities
+        return {
+            "name": self.name,
+            "family": getattr(self.backend, "family", None),
+            "precision": getattr(self.backend, "precision", None),
+            "max_input_tokens": caps.max_input_tokens,
+            "question_types": sorted(caps.question_types),
+            "max_choice_options": caps.max_choice_options,
+            "max_score_levels": caps.max_score_levels,
+            "requires_instructions": caps.requires_instructions,
+            "supports_images": caps.supports_images,
+        }
+
     def decide(
         self, state: Any, questions: Mapping[str, Any], images: Sequence[Any] | None = None
     ) -> Result:

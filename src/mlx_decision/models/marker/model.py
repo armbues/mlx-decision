@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import mlx.core as mx
+from mlx.utils import tree_flatten
 from tokenizers import Tokenizer
 
 from ...backbones.modernbert import Model as Encoder
@@ -71,8 +72,11 @@ class Sequence:
 
 
 class MarkerBackend:
-    def __init__(self, name, encoder, head, tokenizer, special, settings, capabilities):
+    def __init__(
+        self, name, encoder, head, tokenizer, special, settings, capabilities, precision=None
+    ):
         self.name = name
+        self.precision = precision
         self.encoder = encoder
         self.head = head
         self.tokenizer = tokenizer
@@ -175,7 +179,8 @@ def _load_parts(
     mx.eval(encoder.parameters(), head.parameters())
     tokenizer = Tokenizer.from_file(str(path / tokenizer_dir / "tokenizer.json"))
     special = _special_tokens(tokenizer, path / tokenizer_dir)
-    return encoder, head, tokenizer, special, args
+    precision = str(tree_flatten(encoder.parameters())[0][1].dtype).rsplit(".", 1)[-1]
+    return encoder, head, tokenizer, special, args, precision
 
 
 def load_julia(
@@ -200,7 +205,7 @@ def load_julia(
     policy_file = path / "inference-policy.json"
     policy = json.loads(policy_file.read_text()) if policy_file.exists() else {}
     encoder_dir = str(Path(root.get("encoder_config_file", "encoder/config.json")).parent)
-    encoder, head, tokenizer, special, args = _load_parts(
+    encoder, head, tokenizer, special, args, precision = _load_parts(
         path,
         root.get("weights_file", "model.safetensors"),
         encoder_dir,
@@ -220,7 +225,7 @@ def load_julia(
         max_score_levels=20,
     )
     return MarkerBackend(
-        path.resolve().name, encoder, head, tokenizer, special, settings, capabilities
+        path.resolve().name, encoder, head, tokenizer, special, settings, capabilities, precision
     )
 
 
@@ -234,7 +239,7 @@ def load_laya(
     ``load_julia``.
     """
     config = json.loads((path / "rl_agent_config.json").read_text())
-    encoder, head, tokenizer, special, args = _load_parts(
+    encoder, head, tokenizer, special, args, precision = _load_parts(
         path, "model.safetensors", "encoder", "tokenizer", config["head_layers"], dtype
     )
     settings = Settings(
@@ -249,7 +254,7 @@ def load_laya(
     )
     capabilities = Capabilities(max_input_tokens=settings.max_length)
     return MarkerBackend(
-        path.resolve().name, encoder, head, tokenizer, special, settings, capabilities
+        path.resolve().name, encoder, head, tokenizer, special, settings, capabilities, precision
     )
 
 

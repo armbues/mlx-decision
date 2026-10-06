@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .errors import DecisionError
-from .images import is_data_url
+from .images import check_data_urls
 from .model import DecisionModel
 
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
@@ -35,20 +35,6 @@ def error_response(
     if code is not None:
         error["code"] = code
     return JSONResponse({"error": error}, status_code=status)
-
-
-def check_data_urls(body) -> None:
-    """Images over HTTP must be data URLs: the server reads no files and fetches nothing."""
-    images = body.get("images") if isinstance(body, dict) else None
-    if not isinstance(images, list):
-        return
-    for index, image in enumerate(images):
-        if not is_data_url(image):
-            raise DecisionError(
-                "expected a data URL (data:image/png;base64,...); "
-                "the server does not read files or fetch URLs",
-                param=f"images.{index}",
-            )
 
 
 async def read_body(request: Request, limit: int) -> bytes | None:
