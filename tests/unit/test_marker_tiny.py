@@ -162,3 +162,26 @@ def test_probabilities_are_tempered_scores(tmp_path, family):
     expected = mx.softmax(mx.array(scores) / temperature).tolist()
     answer = model.decide("please refund", question).answers["team"]
     assert list(answer.probabilities.values()) == pytest.approx(expected, abs=1e-6)
+
+
+def test_questions_are_batched_by_tokens():
+    from mlx_decision.models.marker.model import Sequence, batches
+
+    def seqs(*lengths):
+        return [Sequence([0] * n, [0], 0) for n in lengths]
+
+    sizes = [[len(s.input_ids) for s in b] for b in batches(seqs(100, 120, 90, 300), budget=400)]
+    assert sizes == [[100, 120, 90], [300]]
+    assert [len(b) for b in batches(seqs(5000, 5000), budget=4096)] == [1, 1]
+    assert [len(b) for b in batches(seqs(*[100] * 50))] == [40, 10]
+
+
+def test_batched_and_single_questions_agree(tmp_path, monkeypatch):
+    from mlx_decision.models.marker import model as marker
+
+    model = mlx_decision.load(write_marker(tmp_path, "laya"), dtype="float32")
+    together = model.backend.score(model.check({"state": "please refund", "questions": QUESTIONS}))
+    monkeypatch.setattr(marker, "BATCH_TOKENS", 1)  # one question per batch
+    alone = model.backend.score(model.check({"state": "please refund", "questions": QUESTIONS}))
+    for question, probabilities in together.probabilities.items():
+        assert probabilities == pytest.approx(alone.probabilities[question], abs=1e-5)

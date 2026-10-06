@@ -21,6 +21,11 @@ from .encode import encode_request
 from .head import QUESTION_TYPES, MarkerHead
 
 QUESTION_NAMES = {index: name for name, index in QUESTION_TYPES.items()}
+# The questions of a request run in padded batches of at most this many tokens
+# (count x longest). Measured: batching short sequences is up to 4x faster
+# than one by one; from about 4k tokens per sequence one by one is about 10%
+# faster and needs less memory.
+BATCH_TOKENS = 4096
 # Laya refuses to apply a fitted temperature outside this range: below 0.5 one
 # shipped bucket (choice:11+, 0.10) would turn a 0.24 top probability into 0.99.
 TEMPERATURE_RANGE = (0.5, 5.0)
@@ -78,8 +83,9 @@ class MarkerBackend:
     def score(self, request: Request) -> BackendOutput:
         encoded = encode_request(self.tokenizer, self.special, self.settings, request)
         sequences = [Sequence(q.input_ids, q.markers, q.question_type) for q in encoded]
+        scored = [row for batch in batches(sequences) for row in self.logits(batch)]
         probabilities = {}
-        for question, scores in zip(encoded, self.logits(sequences), strict=True):
+        for question, scores in zip(encoded, scored, strict=True):
             temperature = self.settings.temperature(question.question_type, len(scores))
             values = mx.softmax(mx.array(scores, dtype=mx.float32) / temperature).tolist()
             probabilities[question.question_id] = dict(
@@ -106,6 +112,21 @@ class MarkerBackend:
         )
         mx.eval(scores)
         return [row[: len(s.markers)] for row, s in zip(scores.tolist(), sequences, strict=True)]
+
+
+def batches(sequences: list[Sequence], budget: int | None = None):
+    """Consecutive sequences grouped while count x longest stays within ``budget``."""
+    budget = BATCH_TOKENS if budget is None else budget
+    batch, longest = [], 0
+    for sequence in sequences:
+        length = max(longest, len(sequence.input_ids))
+        if batch and length * (len(batch) + 1) > budget:
+            yield batch
+            batch, length = [], len(sequence.input_ids)
+        batch.append(sequence)
+        longest = length
+    if batch:
+        yield batch
 
 
 def _special_tokens(tokenizer: Tokenizer, folder: Path) -> SpecialTokens:
