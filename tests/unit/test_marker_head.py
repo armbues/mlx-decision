@@ -110,6 +110,6 @@ def test_laya_loads_through_the_api(laya_path):
     model = mlx_decision.load(laya_path, dtype="float32")
     settings = model.backend.settings
     assert (settings.family, settings.max_length, settings.head_length) == ("laya", 512, 192)
-    assert settings.temperatures_by_options["choice:11+"] == pytest.approx(0.1006, abs=1e-4)
+    assert settings.temperatures_by_options["choice:11+"] == 0.5  # 0.1006, clamped
     assert model.backend.encoder.embeddings.norm.weight.dtype == mx.float32
     assert model.backend.special.mask_text == "[MASK]"

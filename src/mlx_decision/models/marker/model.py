@@ -6,6 +6,7 @@ become probabilities.
 """
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,7 +18,12 @@ from ...backbones.modernbert import ModelArgs as EncoderArgs
 from ...backend import BackendOutput, Capabilities
 from ...types import Request
 from .encode import encode_request
-from .head import MarkerHead
+from .head import QUESTION_TYPES, MarkerHead
+
+QUESTION_NAMES = {index: name for name, index in QUESTION_TYPES.items()}
+# Laya refuses to apply a fitted temperature outside this range: below 0.5 one
+# shipped bucket (choice:11+, 0.10) would turn a 0.24 top probability into 0.99.
+TEMPERATURE_RANGE = (0.5, 5.0)
 
 
 @dataclass(frozen=True)
@@ -37,8 +43,17 @@ class Settings:
     max_length: int  # whole sequence, special tokens included
     head_length: int  # budget for the question and its options
     strict: bool = False  # refuse instead of cutting options, question or state (Julia)
+    # Laya's calibration, already clamped: one per question type, and per
+    # bucket of type and option count ("choice:3-5"), which wins when present.
     temperatures: list[float] = field(default_factory=lambda: [1.0, 1.0, 1.0])
     temperatures_by_options: dict[str, float] = field(default_factory=dict)
+
+    def temperature(self, question_type: int, options: int) -> float:
+        size = (
+            "2" if options <= 2 else "3-5" if options <= 5 else "6-10" if options <= 10 else "11+"
+        )
+        bucket = f"{QUESTION_NAMES[question_type]}:{size}"
+        return self.temperatures_by_options.get(bucket, self.temperatures[question_type])
 
 
 @dataclass
@@ -65,7 +80,8 @@ class MarkerBackend:
         sequences = [Sequence(q.input_ids, q.markers, q.question_type) for q in encoded]
         probabilities = {}
         for question, scores in zip(encoded, self.logits(sequences), strict=True):
-            values = mx.softmax(mx.array(scores, dtype=mx.float32)).tolist()
+            temperature = self.settings.temperature(question.question_type, len(scores))
+            values = mx.softmax(mx.array(scores, dtype=mx.float32) / temperature).tolist()
             probabilities[question.question_id] = dict(
                 zip(question.option_ids, values, strict=True)
             )
@@ -201,8 +217,11 @@ def load_laya(
         family="laya",
         max_length=_max_length(max_input_tokens, config.get("max_len"), args),
         head_length=config.get("head_max_len", 192),
-        temperatures=list(config.get("temperature", [1.0, 1.0, 1.0])),
-        temperatures_by_options=dict(config.get("temperature_by_options", {})),
+        temperatures=_laya_temperatures(path, config.get("temperature", [1.0, 1.0, 1.0])),
+        temperatures_by_options={
+            bucket: _clamp_temperature(value)
+            for bucket, value in config.get("temperature_by_options", {}).items()
+        },
     )
     capabilities = Capabilities(max_input_tokens=settings.max_length, requires_instructions=True)
     return MarkerBackend(
@@ -216,3 +235,17 @@ def _max_length(requested: int | None, default: int | None, args: EncoderArgs) -
     if not 16 <= value <= limit:
         raise ValueError(f"max_input_tokens must be between 16 and {limit}")
     return value
+
+
+def _clamp_temperature(value) -> float:
+    """A usable temperature, as Laya applies it: clamped, 1.0 when not a number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return 1.0
+    low, high = TEMPERATURE_RANGE
+    return min(high, max(low, float(value)))
+
+
+def _laya_temperatures(path: Path, values) -> list[float]:
+    if not isinstance(values, list) or len(values) != 3:
+        raise ValueError(f"{path}: temperature must be a list of 3 numbers")
+    return [_clamp_temperature(value) for value in values]

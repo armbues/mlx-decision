@@ -123,3 +123,42 @@ def test_max_input_tokens_sets_the_limit(tmp_path):
     assert not model.decide(LONG_STATE, {"refund": QUESTIONS["refund"]}).truncated
     with pytest.raises(ValueError, match="between 16 and 128"):
         mlx_decision.load(folder, max_input_tokens=129)
+
+
+def test_laya_temperatures_by_bucket(tmp_path):
+    settings = mlx_decision.load(write_marker(tmp_path, "laya")).backend.settings
+    assert settings.temperature(0, 3) == 1.5  # choice:3-5, from temperature_by_options
+    assert settings.temperature(0, 2) == 2.0  # no bucket: the choice temperature
+    assert settings.temperature(1, 3) == 1.0
+    assert settings.temperature(2, 2) == 0.5
+
+
+def test_laya_temperatures_are_clamped(tmp_path):
+    import json
+
+    folder = write_marker(tmp_path, "laya")
+    config = json.loads((folder / "rl_agent_config.json").read_text())
+    config["temperature"] = [0.1, 9.0, True]
+    config["temperature_by_options"] = {"choice:11+": 0.1006, "score:3-5": "warm"}
+    (folder / "rl_agent_config.json").write_text(json.dumps(config))
+    settings = mlx_decision.load(folder).backend.settings
+    assert settings.temperatures == [0.5, 5.0, 1.0]
+    assert settings.temperatures_by_options == {"choice:11+": 0.5, "score:3-5": 1.0}
+
+
+@pytest.mark.parametrize("family", ["laya", "julia"])
+def test_probabilities_are_tempered_scores(tmp_path, family):
+    import mlx.core as mx
+
+    from mlx_decision.models.marker.model import Sequence
+
+    model = mlx_decision.load(write_marker(tmp_path, family))
+    question = {"team": QUESTIONS["team"]}
+    (encoded,) = encode(model, "please refund", question)
+    (scores,) = model.backend.logits(
+        [Sequence(encoded.input_ids, encoded.markers, encoded.question_type)]
+    )
+    temperature = 1.5 if family == "laya" else 1.0
+    expected = mx.softmax(mx.array(scores) / temperature).tolist()
+    answer = model.decide("please refund", question).answers["team"]
+    assert list(answer.probabilities.values()) == pytest.approx(expected, abs=1e-6)
