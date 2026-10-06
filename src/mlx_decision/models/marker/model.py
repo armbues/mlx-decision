@@ -123,6 +123,10 @@ def _special_tokens(tokenizer: Tokenizer, folder: Path) -> SpecialTokens:
 
 
 DTYPES = {"float32": mx.float32, "float16": mx.float16, "bfloat16": mx.bfloat16}
+# Measured against both families' float32 reference on the parity set: float16
+# is the closest and the fastest; bfloat16 moves Julia's answers by up to 0.15,
+# and float32 matmuls on the GPU (TF32) by up to 0.06.
+DEFAULT_DTYPE = "float16"
 
 
 def _load_parts(
@@ -156,7 +160,7 @@ def _load_parts(
 def load_julia(
     path: Path,
     max_input_tokens: int | None = None,
-    dtype: str | None = None,
+    dtype: str | None = DEFAULT_DTYPE,
     strict_encoding: bool | None = None,
 ) -> MarkerBackend:
     """Load Julia 1 from a release folder (``julia_config.json``).
@@ -164,7 +168,7 @@ def load_julia(
     ``max_input_tokens`` raises or lowers the sequence limit (default: the
     release's ``inference-policy.json``, up to the encoder's 8,192).
     ``dtype`` (``"float32"``, ``"float16"``, ``"bfloat16"``) converts the
-    weights; None keeps them as stored. ``strict_encoding`` (default: the
+    weights (default float16); None keeps them as stored. ``strict_encoding`` (default: the
     policy's, True for Julia 1) refuses requests that would have to be cut
     (state, question or options) instead of cutting them.
     """
@@ -201,7 +205,7 @@ def load_julia(
 
 
 def load_laya(
-    path: Path, max_input_tokens: int | None = None, dtype: str | None = None
+    path: Path, max_input_tokens: int | None = None, dtype: str | None = DEFAULT_DTYPE
 ) -> MarkerBackend:
     """Load a Laya checkpoint from a release folder (``rl_agent_config.json``).
 

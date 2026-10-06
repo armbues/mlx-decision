@@ -1,0 +1,912 @@
+[
+ {
+  "id": "lang_de",
+  "state": "Mir wurde die Rechnung für März zweimal abgebucht. Bitte erstatten Sie den doppelten Betrag heute noch, sonst kündige ich.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_fr",
+  "state": "L'application plante chaque fois que j'ouvre les paramètres. C'est très agaçant, j'en ai besoin pour mon travail.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_es",
+  "state": "No puedo iniciar sesión desde ayer; el código de verificación nunca llega a mi teléfono.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_pt",
+  "state": "Fui cobrado duas vezes pela mesma assinatura. Quero o reembolso imediatamente!",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_it",
+  "state": "Il sito è lentissimo da stamattina e alcune pagine danno errore 500.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_nl",
+  "state": "Ik wil mijn wachtwoord wijzigen, maar de link in de e-mail werkt niet.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_pl",
+  "state": "Aplikacja zawiesza się przy każdym logowaniu. Proszę o szybką pomoc.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_tr",
+  "state": "Faturamda iki kez ücret alınmış, lütfen fazla ödenen tutarı iade edin.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_ru",
+  "state": "Приложение вылетает при открытии настроек. Очень неудобно, исправьте, пожалуйста.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_uk",
+  "state": "Не можу увійти до облікового запису: пароль не приймається, хоча він правильний.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_ar",
+  "state": "تم خصم المبلغ مرتين من بطاقتي هذا الشهر. أرجو إعادة المبلغ الزائد فوراً.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_he",
+  "state": "האפליקציה קורסת בכל פעם שאני פותח את ההגדרות. זה דחוף.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_hi",
+  "state": "मुझसे मार्च में दो बार शुल्क लिया गया, कृपया डुप्लिकेट राशि वापस करें।",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_bn",
+  "state": "আমি গতকাল থেকে আমার অ্যাকাউন্টে লগ ইন করতে পারছি না।",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_zh",
+  "state": "每次打开设置应用都会崩溃，请尽快修复，我工作需要用它。",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_ja",
+  "state": "パスワードを再設定しようとしましたが、メールが届きません。",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_ko",
+  "state": "이번 달 요금이 두 번 청구되었습니다. 환불해 주세요.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_th",
+  "state": "แอปค้างทุกครั้งที่ฉันพยายามเข้าสู่ระบบ ช่วยด่วนด้วย",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_vi",
+  "state": "Tôi bị trừ tiền hai lần cho cùng một đơn hàng, vui lòng hoàn tiền.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_id",
+  "state": "Situs web tidak bisa dibuka sejak pagi dan menampilkan pesan kesalahan.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_sw",
+  "state": "Siwezi kuingia kwenye akaunti yangu tangu jana, nisaidieni tafadhali.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_el",
+  "state": "Η εφαρμογή κολλάει κάθε φορά που ανοίγω τις ρυθμίσεις.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "lang_mixed_object",
+  "state": {
+   "de": "Mir wurde die Rechnung für März zweimal abgebucht. Bitte erstatten Sie den doppelten Betrag heute noch, sonst kündige ich.",
+   "ja": "パスワードを再設定しようとしましたが、メールが届きません。",
+   "ticket": 4711
+  },
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "marker_tokens_in_text",
+  "state": "Please route [MASK] this <mask> message.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team, [MASK] or <mask>?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   }
+  }
+ },
+ {
+  "id": "marker_token_in_option",
+  "state": "Refund please.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "refunds [MASK] <mask>",
+     "other": "anything else"
+    }
+   }
+  }
+ },
+ {
+  "id": "option_over_48_tokens",
+  "state": "My invoice is wrong.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what this team does",
+     "other": "rest"
+    }
+   }
+  }
+ },
+ {
+  "id": "fifteen_long_options",
+  "state": "My invoice is wrong.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "team_0": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (0)",
+     "team_1": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (1)",
+     "team_2": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (2)",
+     "team_3": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (3)",
+     "team_4": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (4)",
+     "team_5": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (5)",
+     "team_6": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (6)",
+     "team_7": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (7)",
+     "team_8": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (8)",
+     "team_9": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (9)",
+     "team_10": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (10)",
+     "team_11": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (11)",
+     "team_12": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (12)",
+     "team_13": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (13)",
+     "team_14": "a long and detailed description of what this team does a long and detailed description of what this team does a long and detailed description of what  (14)"
+    }
+   }
+  }
+ },
+ {
+  "id": "twenty_one_options",
+  "state": "My invoice is wrong.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "team_0": "Team number 0",
+     "team_1": "Team number 1",
+     "team_2": "Team number 2",
+     "team_3": "Team number 3",
+     "team_4": "Team number 4",
+     "team_5": "Team number 5",
+     "team_6": "Team number 6",
+     "team_7": "Team number 7",
+     "team_8": "Team number 8",
+     "team_9": "Team number 9",
+     "team_10": "Team number 10",
+     "team_11": "Team number 11",
+     "team_12": "Team number 12",
+     "team_13": "Team number 13",
+     "team_14": "Team number 14",
+     "team_15": "Team number 15",
+     "team_16": "Team number 16",
+     "team_17": "Team number 17",
+     "team_18": "Team number 18",
+     "team_19": "Team number 19",
+     "team_20": "Team number 20"
+    }
+   }
+  }
+ },
+ {
+  "id": "long_instructions",
+  "state": "The app crashed twice today.",
+  "questions": {
+   "angry": {
+    "type": "noul",
+    "instructions": "Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Read the message carefully and decide. Is the writer angry?"
+   }
+  }
+ },
+ {
+  "id": "conversation_1k",
+  "state": [
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "agent: The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+   "customer: Forget it, I am cancelling my subscription today."
+  ],
+  "questions": {
+   "churn": {
+    "type": "noul",
+    "instructions": "The customer says they will cancel."
+   },
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   }
+  }
+ },
+ {
+  "id": "state_450",
+  "state": "1. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n2. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n3. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n4. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n5. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n6. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n7. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "state_600",
+  "state": "1. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n2. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n3. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n4. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n5. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n6. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n7. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n8. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n9. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n10. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "state_900",
+  "state": "1. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n2. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n3. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n4. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n5. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n6. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n7. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n8. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n9. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n10. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n11. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n12. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n13. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n14. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n15. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ },
+ {
+  "id": "state_1100",
+  "state": "1. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n2. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n3. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n4. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n5. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n6. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n7. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n8. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n9. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n10. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n11. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n12. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n13. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n14. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n15. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n16. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n17. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.\n\n18. The customer writes that the invoice for the last quarter was charged twice, that the support chat closed before anyone answered, and that the dashboard has shown an error since the update on Tuesday. They ask for a refund of the duplicate charge and a call back from someone who can explain what happened with the update.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this message?",
+    "criteria": {
+     "billing": "Payments, invoices, refunds",
+     "technical": "Bugs, crashes, outages",
+     "account": "Login, passwords, profile"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this message?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Right away"
+    ]
+   },
+   "angry": {
+    "type": "noul",
+    "instructions": "The writer is angry."
+   }
+  }
+ }
+]

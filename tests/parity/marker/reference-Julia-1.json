@@ -1,0 +1,3298 @@
+{
+ "meta": {
+  "family": "julia",
+  "strict_encoding": true,
+  "max_length": 8192,
+  "head_length": 512,
+  "dtype": "torch.float32",
+  "device": "cpu",
+  "torch": "2.14.1",
+  "transformers": "5.18.0",
+  "weights_sha256": "df853bf7fe424420011f3d0c47a05d7341aa9eefa7fb9f203ea4aada4ad95b72"
+ },
+ "results": {
+  "ticket": {
+   "questions": [
+    {
+     "id": "department",
+     "length": 51,
+     "ids_sha256": "e56fadbf332364c734ae84324661ae3267bcaa824ca8ed9c64f4b49b56b3731e",
+     "markers": [
+      12,
+      19,
+      25
+     ],
+     "scores": [
+      1.668790340423584,
+      -9.501192092895508,
+      -8.620132446289062
+     ],
+     "probabilities": [
+      0.9999519037012395,
+      1.4090207142546118e-05,
+      3.400609161775929e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "frustration",
+     "length": 45,
+     "ids_sha256": "b53c9392a42888abb5a506b3abf8e57250c54d55d78fb258f58bfa5800461ea4",
+     "markers": [
+      12,
+      18,
+      23
+     ],
+     "scores": [
+      -6.656032562255859,
+      -6.841144561767578,
+      -6.5630083084106445
+     ],
+     "probabilities": [
+      0.3414717946295004,
+      0.2837668877985388,
+      0.3747613175719609
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "is_urgent",
+     "length": 37,
+     "ids_sha256": "29e10edbfb6baa46f3e98a3608b5d741906afc8b8b2078cef6db44645e8fc0a0",
+     "markers": [
+      14,
+      16
+     ],
+     "scores": [
+      -1.6209112405776978,
+      -2.5752007961273193
+     ],
+     "probabilities": [
+      0.7219770235253561,
+      0.27802297647464386
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "single_noul_no_instructions": {
+   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+  },
+  "single_noul": {
+   "questions": [
+    {
+     "id": "refund",
+     "length": 30,
+     "ids_sha256": "5d0b6baf5c2b453ea4450cdfd3096d363070b5e9c02dcdda958fa3a25e6b9607",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -4.9636430740356445,
+      1.1804360151290894
+     ],
+     "probabilities": [
+      0.0021415552943317923,
+      0.9978584447056681
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "noul_with_criteria": {
+   "questions": [
+    {
+     "id": "damaged",
+     "length": 32,
+     "ids_sha256": "c431d4af3c18d0a50122183e1afd6ed5df7ffc538fbd79675dcec46c09e4dff5",
+     "markers": [
+      11,
+      17
+     ],
+     "scores": [
+      7.243138790130615,
+      -3.745229482650757
+     ],
+     "probabilities": [
+      0.9999831031808503,
+      1.6896819149715336e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "noul_only_true_criterion": {
+   "refused": "Noul criteria must map false and true to descriptions"
+  },
+  "choice_null_descriptions": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "choice_unsorted_keys": {
+   "questions": [
+    {
+     "id": "language",
+     "length": 31,
+     "ids_sha256": "47164d133ede1744beb2ee870d6d1aeeaa3cb68faa72084e2b083e218b691fdc",
+     "markers": [
+      9,
+      11,
+      13,
+      15,
+      17
+     ],
+     "scores": [
+      -1.5409164428710938,
+      -3.542814016342163,
+      2.532404661178589,
+      -0.33457517623901367,
+      -0.47696536779403687
+     ],
+     "probabilities": [
+      0.015122673521130548,
+      0.0020427513534191167,
+      0.8884836799651891,
+      0.05052844484339532,
+      0.04382245031686588
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "choice_no_instructions": {
+   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+  },
+  "choice_object_descriptions": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "choice_array_descriptions": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "choice_two_options": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "score_two_levels": {
+   "questions": [
+    {
+     "id": "positive",
+     "length": 21,
+     "ids_sha256": "76156925d9521f9776939bd7e7c8a407e0f87aac6438b9ae602e99304a139238",
+     "markers": [
+      10,
+      12
+     ],
+     "scores": [
+      -3.80407977104187,
+      0.6940737366676331
+     ],
+     "probabilities": [
+      0.01100702516800072,
+      0.9889929748319992
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "score_ten_levels": {
+   "questions": [
+    {
+     "id": "rating",
+     "length": 57,
+     "ids_sha256": "863edd45cc9543b931ba2b9337f1f576d481f1b8b5563ebe63bfc2d3fb87877b",
+     "markers": [
+      13,
+      16,
+      19,
+      22,
+      25,
+      28,
+      31,
+      34,
+      37,
+      40
+     ],
+     "scores": [
+      -3.769517660140991,
+      -1.8461496829986572,
+      -4.8263044357299805,
+      0.5585278272628784,
+      -2.819669485092163,
+      -1.4505536556243896,
+      -1.3670200109481812,
+      0.15643692016601562,
+      -3.0265188217163086,
+      -0.4120633900165558
+     ],
+     "probabilities": [
+      0.005282385372536025,
+      0.036152487181611646,
+      0.0018360031267340832,
+      0.4003836683225251,
+      0.013656641305689398,
+      0.05369617528936951,
+      0.058374282225634296,
+      0.26782461673156555,
+      0.011104790693581446,
+      0.15168894975075292
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "score_object_levels": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "score_no_instructions": {
+   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+  },
+  "instructions_object": {
+   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+  },
+  "instructions_array": {
+   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+  },
+  "object_state": {
+   "questions": [
+    {
+     "id": "status",
+     "length": 72,
+     "ids_sha256": "716ffd434300b5488e579860b9ac196b4dc7c0f4417d6c167d3af518b5272cff",
+     "markers": [
+      11,
+      15,
+      18
+     ],
+     "scores": [
+      -10.172446250915527,
+      -7.17298698425293,
+      -7.973671913146973
+     ],
+     "probabilities": [
+      0.033235137243226964,
+      0.6671847096738189,
+      0.29958015308295416
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "large",
+     "length": 72,
+     "ids_sha256": "7162fce33b052b69ba7ee6eb21d16951f7affb6200667562c55e9eaac0cedf9a",
+     "markers": [
+      17,
+      19
+     ],
+     "scores": [
+      4.999882698059082,
+      1.0732427835464478
+     ],
+     "probabilities": [
+      0.9806711789777025,
+      0.019328821022297396
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "array_state_unicode": {
+   "refused": "JSONL line 3: state must be text/JSON and question must be text"
+  },
+  "japanese": {
+   "questions": [
+    {
+     "id": "intent",
+     "length": 39,
+     "ids_sha256": "9979fa476c8010978685e6bd39877147bbe8fe1bd2f9aaef9f12b31bab9929ba",
+     "markers": [
+      10,
+      16,
+      20
+     ],
+     "scores": [
+      -1.5592634677886963,
+      -9.248621940612793,
+      -7.090691089630127
+     ],
+     "probabilities": [
+      0.9956014300124119,
+      0.00045565858545667555,
+      0.003942911402131428
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "polite",
+     "length": 31,
+     "ids_sha256": "d4095578bc8ef80f86107de1f063967f69d126596c587ca8c7302cf9a4088cfe",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.8406593799591064,
+      -1.7083672285079956
+     ],
+     "probabilities": [
+      0.10599758634821584,
+      0.8940024136517842
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "emoji_and_symbols": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "number_state": {
+   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+  },
+  "bool_state": {
+   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+  },
+  "nested_state": {
+   "refused": "JSONL line 2: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "ambiguous": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "empty_string_state": {
+   "questions": [
+    {
+     "id": "empty",
+     "length": 17,
+     "ids_sha256": "9a2775017bf7f31a708f1e0b757043862d57552caa06e1a70457cb878199dc3d",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -4.651573181152344,
+      1.1418499946594238
+     ],
+     "probabilities": [
+      0.0030382728284390845,
+      0.9969617271715608
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "whitespace_and_newlines": {
+   "questions": [
+    {
+     "id": "two_lines",
+     "length": 31,
+     "ids_sha256": "b86ade4880a04b0e7c7085c652babf9d139e6f3245620748f42b3138d56be6a0",
+     "markers": [
+      14,
+      16
+     ],
+     "scores": [
+      -4.831851959228516,
+      -0.7612690329551697
+     ],
+     "probabilities": [
+      0.0167810274290656,
+      0.9832189725709345
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "review_mixed": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "choice_numeric_keys": {
+   "questions": [
+    {
+     "id": "pick",
+     "length": 33,
+     "ids_sha256": "e06b5196aac1bddf544e25aba8e257d9b495037d503b41640e895233fbec1e23",
+     "markers": [
+      12,
+      15,
+      18,
+      21
+     ],
+     "scores": [
+      -7.938222885131836,
+      2.8590540885925293,
+      4.53767204284668,
+      -7.462214469909668
+     ],
+     "probabilities": [
+      3.2171260129067322e-06,
+      0.1572772408251213,
+      0.8427143636452129,
+      5.178403652847133e-06
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "special_tokens_in_state": {
+   "questions": [
+    {
+     "id": "injection",
+     "length": 63,
+     "ids_sha256": "8c8872234067c83728c764b6758db5c72b6f201e75e0742f8098b3da102d49e8",
+     "markers": [
+      15,
+      17
+     ],
+     "scores": [
+      -2.9579904079437256,
+      -7.718257427215576
+     ],
+     "probabilities": [
+      0.9915093853515802,
+      0.008490614648419686
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "code_and_html_state": {
+   "questions": [
+    {
+     "id": "kind",
+     "length": 81,
+     "ids_sha256": "14eb071233046001c4a9078603574e31ae76f83a0a6b634683bbd2f4fd1543be",
+     "markers": [
+      12,
+      17,
+      20
+     ],
+     "scores": [
+      -0.10258122533559799,
+      -9.614580154418945,
+      -9.047454833984375
+     ],
+     "probabilities": [
+      0.9997956787495762,
+      7.394394356533931e-05,
+      0.00013037730685841077
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "python",
+     "length": 74,
+     "ids_sha256": "70e8eae4e61fde1079554cdbdce4a52817821e3ddf68e8cff4ead951587d284b",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -0.9686293005943298,
+      0.05499935522675514
+     ],
+     "probabilities": [
+      0.264321185286436,
+      0.735678814713564
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "question_ids_with_symbols": {
+   "refused": "JSONL line 2: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "ten_nouls": {
+   "questions": [
+    {
+     "id": "n0",
+     "length": 34,
+     "ids_sha256": "18cf89de7494cd2e9a7c20a94c228efa51ff7d8758de676d00686c4aa94a49c4",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -2.3341658115386963,
+      1.3435167074203491
+     ],
+     "probabilities": [
+      0.024658102653185344,
+      0.9753418973468145
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n1",
+     "length": 34,
+     "ids_sha256": "aaddf4e5e3a400158df4caef6dbcc699ab718b073ca018e3c5f325a2a2c013d8",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.196446180343628,
+      -0.7932692170143127
+     ],
+     "probabilities": [
+      0.08293075774793891,
+      0.9170692422520611
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n2",
+     "length": 38,
+     "ids_sha256": "b9d6bbc847fe814c9b4558a8221dd7e86148324941d39e9ebd3f1bda9dd8cb59",
+     "markers": [
+      15,
+      17
+     ],
+     "scores": [
+      2.6966333389282227,
+      -1.0456888675689697
+     ],
+     "probabilities": [
+      0.9768496354128541,
+      0.023150364587145953
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n3",
+     "length": 35,
+     "ids_sha256": "8986015e70750c5c754353cd742a48bfe609f4a1886766086c22444a1a378bbd",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      2.8771748542785645,
+      4.917170524597168
+     ],
+     "probabilities": [
+      0.11506717292206438,
+      0.8849328270779355
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n4",
+     "length": 36,
+     "ids_sha256": "5289ba9df77d37dc046cf7cb8f0e3be05caa3999524b1b4f3e00271b20197ee4",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      0.5563575029373169,
+      -0.46873223781585693
+     ],
+     "probabilities": [
+      0.7359628328579075,
+      0.2640371671420925
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n5",
+     "length": 36,
+     "ids_sha256": "d00c8daebdec0efd0fb1f6c1535d8acdf5078d68bb8ca85fab8a608ae84f7592",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      0.6933789849281311,
+      2.781458616256714
+     ],
+     "probabilities": [
+      0.11026082806090139,
+      0.8897391719390986
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n6",
+     "length": 35,
+     "ids_sha256": "b3060b4b5d018389bf3422d70509b45fff3954d083761dd441f1af3e33deadc8",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      0.9780400991439819,
+      -1.8648689985275269
+     ],
+     "probabilities": [
+      0.944950985490625,
+      0.055049014509375126
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n7",
+     "length": 35,
+     "ids_sha256": "c4893dc4c610f75dab536aca94de07247d29c522b74ac7f2e0a596799ee939b8",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      2.66782546043396,
+      4.546374320983887
+     ],
+     "probabilities": [
+      0.13255564334313916,
+      0.8674443566568608
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n8",
+     "length": 36,
+     "ids_sha256": "a770b0700d5aed212dcf5e7bb3fd0a8765fbddb80623d6a1b1292a5fffedb766",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      1.0690385103225708,
+      0.4633723497390747
+     ],
+     "probabilities": [
+      0.6469515620156346,
+      0.3530484379843653
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n9",
+     "length": 35,
+     "ids_sha256": "dea525cb7f01ab1e31cbe313391ee05c84898817799cf64e28467195722043bd",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -0.34849920868873596,
+      0.05228985473513603
+     ],
+     "probabilities": [
+      0.40112277369240246,
+      0.5988772263075975
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "twenty_mixed": {
+   "refused": "JSONL line 14: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "choice_54_options": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "choice_255_options": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "reviews_1k": {
+   "questions": [
+    {
+     "id": "stars",
+     "length": 1087,
+     "ids_sha256": "2c58e55ca16d1e0ba9e4071f1dea11804c813271d293c571ded71b579c97d053",
+     "markers": [
+      13,
+      17,
+      21,
+      25,
+      29
+     ],
+     "scores": [
+      -8.416191101074219,
+      -3.6021010875701904,
+      -5.765082359313965,
+      -6.446286678314209,
+      -7.403675079345703
+     ],
+     "probabilities": [
+      0.006741866850675327,
+      0.8308313956001413,
+      0.09553050390897347,
+      0.0483391257726799,
+      0.018557107867529895
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "recommends",
+     "length": 1070,
+     "ids_sha256": "c5dd2521650859e9fc9ecf0f25a36ecca7ef35855c368a3039f7618a168f9b0c",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -4.124659538269043,
+      -7.32149600982666
+     ],
+     "probabilities": [
+      0.9607150543206908,
+      0.039284945679309236
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "log_1k": {
+   "questions": [
+    {
+     "id": "outage",
+     "length": 1138,
+     "ids_sha256": "6fcd6d58d8042cc71d258072f9f1146162be9da4ae6d7f5ee61a329f5c52951d",
+     "markers": [
+      19,
+      25
+     ],
+     "scores": [
+      -10.137386322021484,
+      -6.530582427978516
+     ],
+     "probabilities": [
+      0.026421409755828847,
+      0.9735785902441711
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "worst_service",
+     "length": 1136,
+     "ids_sha256": "cc73c26b49ff175f76ffc0ef2ec93d2444686f42fa476767961988abd4887243",
+     "markers": [
+      12,
+      16,
+      20,
+      24,
+      28
+     ],
+     "scores": [
+      -3.0178213119506836,
+      -5.234467506408691,
+      -5.960334777832031,
+      -6.243316650390625,
+      -1.808893084526062
+     ],
+     "probabilities": [
+      0.21971572995526073,
+      0.023943296278191983,
+      0.011586273846471628,
+      0.008730644873696824,
+      0.7360240550463789
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "severity",
+     "length": 1136,
+     "ids_sha256": "7c2f578e3edc5812e1330f540780401f23edabfb6e6e97103bcaa453ce2e4fa9",
+     "markers": [
+      15,
+      18,
+      21,
+      25,
+      28
+     ],
+     "scores": [
+      -10.07772159576416,
+      -10.468212127685547,
+      -7.45523738861084,
+      -8.079071044921875,
+      -9.65247631072998
+     ],
+     "probabilities": [
+      0.041058200315051877,
+      0.02778510395400583,
+      0.5653668356894809,
+      0.3029722238544481,
+      0.06281763618701336
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "notes_2k_array": {
+   "questions": [
+    {
+     "id": "decision_made",
+     "length": 2045,
+     "ids_sha256": "4ad2814245ac6f8f93bb9058577b9508b415924178c59b8a65720c31219db186",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -7.429136276245117,
+      -6.791173934936523
+     ],
+     "probabilities": [
+      0.3457073000596087,
+      0.6542926999403913
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic",
+     "length": 2054,
+     "ids_sha256": "7bf4ded2a85d5f6429bbd8c0e2b0349a1be77d843048e3a9514922c6a34bef71",
+     "markers": [
+      10,
+      14,
+      18,
+      22
+     ],
+     "scores": [
+      -5.960662841796875,
+      -7.521820068359375,
+      -4.137744426727295,
+      -9.268888473510742
+     ],
+     "probabilities": [
+      0.13447419691582946,
+      0.028225197562910732,
+      0.8323814016411192,
+      0.004919203880140662
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "tone",
+     "length": 2049,
+     "ids_sha256": "66e6ced71be3d7ba74f0bbfbd9ce6304b732d7aee57df23f5a870cf9f539b35e",
+     "markers": [
+      11,
+      13,
+      16,
+      18
+     ],
+     "scores": [
+      -9.00963020324707,
+      -6.885685443878174,
+      -9.002348899841309,
+      -8.432195663452148
+     ],
+     "probabilities": [
+      0.08228531400281762,
+      0.6882398569393227,
+      0.08288664491958989,
+      0.14658818413826977
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "ledger_3k": {
+   "questions": [
+    {
+     "id": "overdue",
+     "length": 3885,
+     "ids_sha256": "8c889c712578a5b44fdb00c69f41cec5c1a88fb0c4819a7e99bf6af88c5c77ba",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -7.699928283691406,
+      -10.280782699584961
+     ],
+     "probabilities": [
+      0.9296191917992626,
+      0.07038080820073735
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "largest_vendor",
+     "length": 3898,
+     "ids_sha256": "90227b3c31e1fb8c33c6aaa756a5e34702dc81d2b985eb67e270aa971200a5d2",
+     "markers": [
+      14,
+      18,
+      22,
+      26
+     ],
+     "scores": [
+      -4.948134422302246,
+      -4.498251438140869,
+      -5.244929790496826,
+      1.3458915948867798
+     ],
+     "probabilities": [
+      0.0018360763188013818,
+      0.0028792039320906424,
+      0.0013645647196990605,
+      0.993920155029409
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "risk",
+     "length": 3887,
+     "ids_sha256": "ff6bd6ee495e3e52800283d027a0e65976fab56b3e582d62d394033b74553119",
+     "markers": [
+      13,
+      15,
+      17
+     ],
+     "scores": [
+      -8.144250869750977,
+      -8.707024574279785,
+      -6.503232955932617
+     ],
+     "probabilities": [
+      0.14858738133805766,
+      0.08463936850905965,
+      0.7667732501528827
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "thread_2k": {
+   "questions": [
+    {
+     "id": "department",
+     "length": 2035,
+     "ids_sha256": "c892ba40598083a16e7ea3b86e3fa57ab52f2c5b633efd0084530e5e28d719af",
+     "markers": [
+      12,
+      19,
+      25
+     ],
+     "scores": [
+      -5.104095935821533,
+      -5.937038421630859,
+      -8.312135696411133
+     ],
+     "probabilities": [
+      0.6778723931563967,
+      0.2947172946792454,
+      0.02741031216435795
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "frustration",
+     "length": 2029,
+     "ids_sha256": "008c5c6a7418c73d8a50864691712006f72d964de6ef218ed6764d124fad1ea2",
+     "markers": [
+      12,
+      18,
+      23
+     ],
+     "scores": [
+      -4.854342460632324,
+      -2.7731335163116455,
+      -9.590604782104492
+     ],
+     "probabilities": [
+      0.11082882893990213,
+      0.8881990504444174,
+      0.0009721206156804925
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "is_urgent",
+     "length": 2021,
+     "ids_sha256": "98f47f5c7deb1f24c81c27b596646250eb4da42924cd643fd87e2fc9c1396fb4",
+     "markers": [
+      14,
+      16
+     ],
+     "scores": [
+      -7.077184200286865,
+      -2.384098768234253
+     ],
+     "probabilities": [
+      0.009075270126225107,
+      0.990924729873775
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "resolved",
+     "length": 2021,
+     "ids_sha256": "701fc4408aa1323c83366f3c9b4a79124509d4f324286fe82f06d2feac5747da",
+     "markers": [
+      14,
+      16
+     ],
+     "scores": [
+      -5.971139907836914,
+      0.1613750457763672
+     ],
+     "probabilities": [
+      0.0021664103148109726,
+      0.997833589685189
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "language",
+     "length": 2021,
+     "ids_sha256": "dcdf00f35fa656ed11a6f481d5a0cbf957f6d4c9639f2da23d8a00790f434c40",
+     "markers": [
+      10,
+      12,
+      14,
+      16
+     ],
+     "scores": [
+      -4.11696195602417,
+      -6.321096420288086,
+      -7.436347007751465,
+      -8.027153015136719
+     ],
+     "probabilities": [
+      0.8572228956015863,
+      0.09459111110874226,
+      0.0310100988649249,
+      0.01717589442474659
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "log_4k": {
+   "questions": [
+    {
+     "id": "outage",
+     "length": 4256,
+     "ids_sha256": "c7816ba7b2e092480920028dba27550293ae63d4ff868290faa582de02ac82e1",
+     "markers": [
+      19,
+      25
+     ],
+     "scores": [
+      -7.15891170501709,
+      -3.1090142726898193
+     ],
+     "probabilities": [
+      0.017125759697297623,
+      0.9828742403027024
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "worst_service",
+     "length": 4254,
+     "ids_sha256": "b08a1715e53ddc7546a16c027e147c0309d215d62cd17b575850e2b8d5841cf3",
+     "markers": [
+      12,
+      16,
+      20,
+      24,
+      28
+     ],
+     "scores": [
+      -5.278441429138184,
+      -6.435416221618652,
+      -1.6197409629821777,
+      -6.796046257019043,
+      -2.3352270126342773
+     ],
+     "probabilities": [
+      0.016857353130016083,
+      0.0053005583107797955,
+      0.654248608995855,
+      0.0036957448646375225,
+      0.3198977346987116
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "severity",
+     "length": 4254,
+     "ids_sha256": "f933f7441bfe6aceedd9ffa29228409ce6831788cd28068621f7b5fd5bb020a7",
+     "markers": [
+      15,
+      18,
+      21,
+      25,
+      28
+     ],
+     "scores": [
+      -9.402002334594727,
+      -9.858530044555664,
+      -9.068260192871094,
+      -7.965873718261719,
+      -8.823257446289062
+     ],
+     "probabilities": [
+      0.1108911994846926,
+      0.07024729666479752,
+      0.15482441641829386,
+      0.4662295699178682,
+      0.19780751751434797
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "ledger_6k": {
+   "questions": [
+    {
+     "id": "overdue",
+     "length": 7718,
+     "ids_sha256": "d53aa0eeb8b8ca5dc5145a46e421a9e3f734f3b7aecfd685242bd688501b4bd1",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -5.364792823791504,
+      -8.572970390319824
+     ],
+     "probabilities": [
+      0.9611408564441858,
+      0.038859143555814275
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "largest_vendor",
+     "length": 7731,
+     "ids_sha256": "91e40fd99c6c64d2503f4a1801b4c10fb4794824abc607b3bd78bc533416ef61",
+     "markers": [
+      14,
+      18,
+      22,
+      26
+     ],
+     "scores": [
+      -5.974387168884277,
+      -4.847860336303711,
+      -3.271233320236206,
+      1.7785972356796265
+     ],
+     "probabilities": [
+      0.00042598092913775855,
+      0.0013141185432855506,
+      0.006358504115046393,
+      0.9919013964125303
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "risk",
+     "length": 7720,
+     "ids_sha256": "1de2ff84806363e6e26a40e18ab9fc48b4e80414823830b558bb3b13e88be784",
+     "markers": [
+      13,
+      15,
+      17
+     ],
+     "scores": [
+      -5.150005340576172,
+      -7.587385654449463,
+      -2.6362640857696533
+     ],
+     "probabilities": [
+      0.07441339005100767,
+      0.0065029478246195985,
+      0.9190836621243729
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "notes_8k": {
+   "questions": [
+    {
+     "id": "decision_made",
+     "length": 7943,
+     "ids_sha256": "0e03002a889dc3e236d52a61c5451e191274d20d3fe28707227022435d7b1ec4",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -8.401468276977539,
+      -6.596997261047363
+     ],
+     "probabilities": [
+      0.14130768209930378,
+      0.8586923179006962
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic",
+     "length": 7952,
+     "ids_sha256": "796c8930910c702737de498b5f78b84ed40a030f168caa2fd3930a559b5457ed",
+     "markers": [
+      10,
+      14,
+      18,
+      22
+     ],
+     "scores": [
+      -3.996290445327759,
+      -7.891900062561035,
+      -6.214478969573975,
+      -8.99789810180664
+     ],
+     "probabilities": [
+      0.8803869879494632,
+      0.017899127212984298,
+      0.09579141293198767,
+      0.005922471905564878
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "tone",
+     "length": 7947,
+     "ids_sha256": "c29ddfe1e88db7c93f985c921362b4892dc352722bc3f6b34d9b6da8c31d985b",
+     "markers": [
+      11,
+      13,
+      16,
+      18
+     ],
+     "scores": [
+      -10.421743392944336,
+      -7.145967483520508,
+      -8.299842834472656,
+      -9.342434883117676
+     ],
+     "probabilities": [
+      0.02580419989780586,
+      0.6828759206006989,
+      0.21538730451835073,
+      0.07593257498314447
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "thread_12k": {
+   "refused": "Game state exceeds lossless context budget"
+  },
+  "log_16k_near_limit": {
+   "refused": "Game state exceeds lossless context budget"
+  },
+  "ledger_18k_truncated": {
+   "refused": "Game state exceeds lossless context budget"
+  },
+  "log_24k_truncated": {
+   "refused": "Game state exceeds lossless context budget"
+  },
+  "reviews_40k_truncated": {
+   "refused": "Game state exceeds lossless context budget"
+  },
+  "thread_6k_twenty_questions": {
+   "refused": "JSONL line 14: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "lang_de": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 59,
+     "ids_sha256": "880802bc81cd4d9487dc4c336a81a17756568f131d3d57b64ea90e0318237867",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      2.1229875087738037,
+      -9.002742767333984,
+      -9.392850875854492
+     ],
+     "probabilities": [
+      0.9999753012573955,
+      1.4728075685590918e-05,
+      9.970666918741594e-06
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 48,
+     "ids_sha256": "6a21a92d8dc49550c846804a293c769a9a7d081fb8d930649d89ca1c2866508d",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -9.152198791503906,
+      -5.1895036697387695,
+      -4.158642292022705
+     ],
+     "probabilities": [
+      0.004973668684097838,
+      0.2616094794556399,
+      0.7334168518602622
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 44,
+     "ids_sha256": "a1fd2f91d7c2d0f959dee54eb1828d846ad254d86e510a9d9926f33adc81b5f2",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.0084781646728516,
+      2.0882680416107178
+     ],
+     "probabilities": [
+      0.006079430883047093,
+      0.993920569116953
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_fr": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 61,
+     "ids_sha256": "79e089082717d23b17db0da134323f4472d877f31c39196bc5e06fe9c08933b0",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.594503402709961,
+      -4.886300086975098,
+      -9.006607055664062
+     ],
+     "probabilities": [
+      0.003254968531484252,
+      0.9808170252860451,
+      0.015928006182470793
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 50,
+     "ids_sha256": "ab3e876dc5189f1b099b4ace271adc6aff5f78d353a8d57a3917d4646092092e",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -8.806015014648438,
+      -7.122754096984863,
+      -6.108561038970947
+     ],
+     "probabilities": [
+      0.047114303297586084,
+      0.2536201187277214,
+      0.6992655779746926
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 46,
+     "ids_sha256": "0d4483700a18a26bfc712875d7093d47ae5135515da66a268fa3a7886c578efc",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -4.420680999755859,
+      -2.989372968673706
+     ],
+     "probabilities": [
+      0.1928949596520246,
+      0.8071050403479754
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_es": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 49,
+     "ids_sha256": "668cc9de51a8718ffe532b9663efc3ff5103092cae6080f6bb0f067798c1454e",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.856508255004883,
+      -7.722708225250244,
+      -8.45372486114502
+     ],
+     "probabilities": [
+      0.02855921528911556,
+      0.6557500473649991,
+      0.31569073734588543
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 38,
+     "ids_sha256": "d947a8757b89d63dc013bc22686be463d79595c3bb87e5627e15006294fa0b5e",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -5.984373569488525,
+      -4.278079986572266,
+      -3.705517530441284
+     ],
+     "probabilities": [
+      0.06144767237879021,
+      0.33848491933631114,
+      0.6000674082848987
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 34,
+     "ids_sha256": "51e6a28f01e92aa558b3540d68152d7306e11bb72e255d90a26869567a35b2f4",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.6976466178894043,
+      0.9075904488563538
+     ],
+     "probabilities": [
+      0.00990033449107457,
+      0.9900996655089256
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_pt": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 48,
+     "ids_sha256": "22754e7730c09ebe8eb66bd33bfc34757b1c568cc3f3531717c2e1e8f230b126",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -7.632907390594482,
+      -10.02659797668457,
+      -9.671377182006836
+     ],
+     "probabilities": [
+      0.8186521884026192,
+      0.07473651010608669,
+      0.10661130149129412
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 37,
+     "ids_sha256": "62be87e9c9e7efe5e32390fbd97d281053e880cc6a6e782e2a1901681069eb78",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -9.129120826721191,
+      -8.734169006347656,
+      -8.263227462768555
+     ],
+     "probabilities": [
+      0.20570030707570203,
+      0.3053235731606679,
+      0.48897611976363003
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 33,
+     "ids_sha256": "366c0fe739e53e79963e7292befb69923404c5892661810814b8457491f52815",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.2564148902893066,
+      0.8924777507781982
+     ],
+     "probabilities": [
+      0.015536684878057355,
+      0.9844633151219426
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_it": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 52,
+     "ids_sha256": "e09e9db47a4c187cfbdb71e16deab081d6b88eb46c6b8ea0a87034588404e4e6",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.661360740661621,
+      -1.2334855794906616,
+      -9.00651741027832
+     ],
+     "probabilities": [
+      8.040964545676422e-05,
+      0.9994988661732138,
+      0.0004207241813293401
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 41,
+     "ids_sha256": "d584237b2fc45537d2c5d1d37d8f32f1d1e271b2e5398d37cb38ea6bc18618b9",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -1.393951654434204,
+      -2.388964891433716,
+      -6.414159297943115
+     ],
+     "probabilities": [
+      0.7265743144439635,
+      0.2686280024011894,
+      0.004797683154847139
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 37,
+     "ids_sha256": "00bd7c8aef588e78435dbe834946e370f5308a012b0d311d6d37b506af57eade",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -2.0943984985351562,
+      2.491201162338257
+     ],
+     "probabilities": [
+      0.010094690881306817,
+      0.9899053091186931
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_nl": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 52,
+     "ids_sha256": "86d1e489fcfacb0cc501b7e5f2fbb46cc1b9e51985369b811568d5e81dec3cfc",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.589113235473633,
+      -10.12330436706543,
+      -6.424323081970215
+     ],
+     "probabilities": [
+      0.014931507594430864,
+      0.02379040748028411,
+      0.961278084925285
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 41,
+     "ids_sha256": "d0a31f4014c8d6147e3cc8ed0ee60b68fece2ffd97c3b487a08749308c57bf97",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -7.763195037841797,
+      -3.867452383041382,
+      -7.106909275054932
+     ],
+     "probabilities": [
+      0.0191864219245302,
+      0.9438294592262281,
+      0.036984118849241805
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 37,
+     "ids_sha256": "f14c7f1b25829abf59f2717fb62e3ce26ea8f59e11c850ff4d6f7646d518b736",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      2.5268187522888184,
+      2.8652069568634033
+     ],
+     "probabilities": [
+      0.416201054495269,
+      0.583798945504731
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_pl": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 53,
+     "ids_sha256": "b73efe578ad79c3f5db4f403710f40ac0d31512f52245cd18e1de44ce0b2c0e8",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.77589225769043,
+      2.0148606300354004,
+      -2.2376224994659424
+     ],
+     "probabilities": [
+      2.747321247365454e-06,
+      0.9859680533451496,
+      0.01402919933360302
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 42,
+     "ids_sha256": "423fa498fe4e43d2558b5dd54322e8c3116365c903b85be044f28173ee35a0a0",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -5.380972862243652,
+      -2.7573750019073486,
+      -5.099151134490967
+     ],
+     "probabilities": [
+      0.06207026351313169,
+      0.8556529709485764,
+      0.08227676553829193
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 38,
+     "ids_sha256": "b475a3af2872bf1df3b3bbb4972822f566fff7cfeb69094bc3c94f135a478012",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -6.330289840698242,
+      -3.7440245151519775
+     ],
+     "probabilities": [
+      0.07002760864112827,
+      0.9299723913588717
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_tr": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 54,
+     "ids_sha256": "83a8cf7a056a2a8f73a8f3db6a7b1583e42ebd277c887d069ac9efe8507034ef",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -5.592145919799805,
+      -8.453202247619629,
+      -9.478959083557129
+     ],
+     "probabilities": [
+      0.9278857378276626,
+      0.05308276344755604,
+      0.019031498724781326
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 43,
+     "ids_sha256": "8c9fa8aac7f8720b1ffe9af938171d8b4e2b1e0ed77539a32f2318de8d80e8d7",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -7.432322025299072,
+      -8.091362953186035,
+      -8.385950088500977
+     ],
+     "probabilities": [
+      0.5255723218426599,
+      0.2719034058792636,
+      0.20252427227807654
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 39,
+     "ids_sha256": "a41eb80bae458436737fac252e76b728378a0acd46a03b0a24a859235fca9a65",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -1.0686047077178955,
+      3.2719342708587646
+     ],
+     "probabilities": [
+      0.012861919262765007,
+      0.9871380807372351
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_ru": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 52,
+     "ids_sha256": "5c97aa9fdf322cf97c65c9fd152027bb2ede081d7710230906f9a4687ae9249c",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.743473052978516,
+      2.6543829441070557,
+      -8.674036979675293
+     ],
+     "probabilities": [
+      1.5183755045555041e-06,
+      0.9999864555509319,
+      1.2026073563552656e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 41,
+     "ids_sha256": "14cce9191c5d407dc2f6bbc3b2eb26e1bb46fd52cf0d85554a63df80b809ce14",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -9.083085060119629,
+      -6.845121383666992,
+      -9.374028205871582
+     ],
+     "probabilities": [
+      0.08991365627714737,
+      0.8428706545989253,
+      0.06721568912392736
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 37,
+     "ids_sha256": "dcc1101fa5fdd791b89c26dd7a4fd816636b0b1453a5332dd74f7e8b9b396aaf",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.653733253479004,
+      0.3255993127822876
+     ],
+     "probabilities": [
+      0.018354912660315234,
+      0.9816450873396847
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_uk": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 57,
+     "ids_sha256": "57340f1b89defd063f4c45548bfb7728f678c0bc68ad83afc19de168009fbbf6",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -7.268060684204102,
+      -10.371994972229004,
+      -0.5848473906517029
+     ],
+     "probabilities": [
+      0.0012501142183977462,
+      5.6095517805142315e-05,
+      0.9986937902637971
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 46,
+     "ids_sha256": "b21bf493c11023fe04eb4abd8c54108393ea2a89d4cd5f72505e9b927b4766eb",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -3.7197930812835693,
+      -6.268464088439941,
+      -7.063849449157715
+     ],
+     "probabilities": [
+      0.8980860818847859,
+      0.07021731381134574,
+      0.03169660430386828
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 42,
+     "ids_sha256": "ab0ee2319455179001d722b97b4ef11c0d3ab78ad71b1c580c2f6bc95b5bd3ec",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      0.5670180320739746,
+      1.8844107389450073
+     ],
+     "probabilities": [
+      0.2112524061769562,
+      0.7887475938230438
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_ar": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 58,
+     "ids_sha256": "1303503cd0fde98a02281049560f30c74e8c5545e23ab88a9c39fe092c994c57",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -5.257185459136963,
+      -10.114385604858398,
+      -9.098342895507812
+     ],
+     "probabilities": [
+      0.971589788858217,
+      0.00755140426806838,
+      0.020858806873714688
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 47,
+     "ids_sha256": "1e011dad2093183980a5e2d602344f7f63a80f0db8cc747ecb6dab79f29447fb",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -8.810628890991211,
+      -6.242701530456543,
+      -7.185722351074219
+     ],
+     "probabilities": [
+      0.05231023942517237,
+      0.6820612716593478,
+      0.26562848891547985
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 43,
+     "ids_sha256": "2f215855658cc0218783a4abeea67cc11df13c696cc1a5454f73aa56bfab35c4",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -5.5229692459106445,
+      -1.287864327430725
+     ],
+     "probabilities": [
+      0.014271661804015361,
+      0.9857283381959847
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_he": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 56,
+     "ids_sha256": "0c49d3c1c0a28b2994863aa077e7ed57adddfe9a1230c9927791dcb66d35a0d6",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.500569343566895,
+      3.4605658054351807,
+      -7.729107856750488
+     ],
+     "probabilities": [
+      8.64469485689484e-07,
+      0.999985319601329,
+      1.3815929185275949e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 45,
+     "ids_sha256": "b0d8342b8cc9aea44689f75e8dfbb690166f92674bf3e258ba50b071d317252d",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -5.469660758972168,
+      -3.910630464553833,
+      -5.359917640686035
+     ],
+     "probabilities": [
+      0.14555616626622866,
+      0.6920044103881863,
+      0.16243942334558503
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 41,
+     "ids_sha256": "491c720053e326608ce4ba66bf012c37892d758cbf3a53915c16294b8eea66d1",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -1.890471339225769,
+      0.44119131565093994
+     ],
+     "probabilities": [
+      0.08853440173387163,
+      0.9114655982661284
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_hi": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 57,
+     "ids_sha256": "af5f91bca267ea1c48957ac822420cffb7b2c15e03c57742efa5c9c3b6a3e383",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -4.84874153137207,
+      -9.477819442749023,
+      -9.424177169799805
+     ],
+     "probabilities": [
+      0.9803291386733889,
+      0.00957169647328275,
+      0.01009916485332842
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 46,
+     "ids_sha256": "c1c877ec2ce627e5ff6bfd1278241dd24218b3a164b0769abe02b6a3dc41c7d6",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -8.027996063232422,
+      -2.4468653202056885,
+      -6.070466995239258
+     ],
+     "probabilities": [
+      0.003656931416222012,
+      0.9704453869400169,
+      0.025897681643761043
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 42,
+     "ids_sha256": "df42041484e927a02344be68cb86a3a73f283858049c6731f25f4f7e0b7a4e06",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -4.300824165344238,
+      -0.2783548831939697
+     ],
+     "probabilities": [
+      0.017593610203316106,
+      0.9824063897966838
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_bn": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 60,
+     "ids_sha256": "90bd175a41220952b0630415c2c8f68657c5d22018c310f461a1044a28390fc7",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.703929901123047,
+      -5.488153457641602,
+      -1.168834924697876
+     ],
+     "probabilities": [
+      7.131617063295562e-05,
+      0.013133211662301976,
+      0.9867954721670651
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 49,
+     "ids_sha256": "f9d96d635925b0f06631e84bed83e50f3ac50bc8790de315ebb8b61f9142fbca",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -2.525923490524292,
+      -1.8035215139389038,
+      -3.8316030502319336
+     ],
+     "probabilities": [
+      0.30026764397634126,
+      0.6183633317172145,
+      0.0813690243064442
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 45,
+     "ids_sha256": "7e68342ec67511e2f8afa9a92fad9abdb772230561422dabcd1e8f92f991cf6e",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -0.9637972712516785,
+      2.6495563983917236
+     ],
+     "probabilities": [
+      0.026253449375168495,
+      0.9737465506248314
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_zh": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 50,
+     "ids_sha256": "ee5cf2a252ca029339903f99ba09d9bba985b0c92639c24deafe14ef5d811986",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -11.280380249023438,
+      1.3727465867996216,
+      -9.711620330810547
+     ],
+     "probabilities": [
+      3.197486953790943e-06,
+      0.9999814523654013,
+      1.535014764490443e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 39,
+     "ids_sha256": "2292b52b2d01c6515cc24e3e0456efbfcd77b4a0b64d65007fc91a8873498c89",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -9.952312469482422,
+      -5.259592533111572,
+      -7.027947902679443
+     ],
+     "probabilities": [
+      0.00776566059594443,
+      0.8476191869033267,
+      0.14461515250072887
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 35,
+     "ids_sha256": "59ef932a0a2e075248e296f66241329dd70033f47f4c89e083667c044af6e54c",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -6.869407653808594,
+      -2.400930643081665
+     ],
+     "probabilities": [
+      0.01133481233236853,
+      0.9886651876676315
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_ja": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 45,
+     "ids_sha256": "ca44f2e166cf73835e394c63fc59726c5dd731a55ddb6c7b23b0662c04611b2d",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.50632095336914,
+      -9.962238311767578,
+      -2.432572603225708
+     ],
+     "probabilities": [
+      0.0003113488652972706,
+      0.0005364625087491212,
+      0.9991521886259537
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 34,
+     "ids_sha256": "159ab261ff38310c7ec0ba268f778bd9eff3f9921feaf9bf80137a9b87571020",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -5.671969413757324,
+      -4.456267356872559,
+      -3.694056749343872
+     ],
+     "probabilities": [
+      0.0862046541125298,
+      0.29073907781006714,
+      0.623056268077403
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 30,
+     "ids_sha256": "dcd7a0a5c1e585dffa78ec239b49c5a1ead4dcb10665004357e40fa92a54a883",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -4.330214977264404,
+      3.729447841644287
+     ],
+     "probabilities": [
+      0.0003159335022851787,
+      0.9996840664977148
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_ko": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 50,
+     "ids_sha256": "527910d5dcdd1ada7a7169c391bdb9b6b8fd8557ece52e154369fed16ef3c86f",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -5.825278282165527,
+      -10.16654109954834,
+      -9.361930847167969
+     ],
+     "probabilities": [
+      0.9595725503027961,
+      0.012493707378313344,
+      0.027933742318890602
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 39,
+     "ids_sha256": "ef0ac8eb3bd754a8f7d4343f4c08b061e2c8fff6be3cf0460862a9ae5e4a8e45",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -7.365081787109375,
+      -6.288760662078857,
+      -6.475486755371094
+     ],
+     "probabilities": [
+      0.15703492813746914,
+      0.4607194907435745,
+      0.3822455811189563
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 35,
+     "ids_sha256": "b39720a3291896bd5c33121af9b89aa66ebf15f10a3a8bafc78b6dcc6cf77a40",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -6.637200355529785,
+      -0.964410126209259
+     ],
+     "probabilities": [
+      0.0034264772363423175,
+      0.9965735227636577
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_th": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 53,
+     "ids_sha256": "6df1ac57a027d37b7e43370694f2c0a975dc13c95d840b629372754e049ae7f8",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.789941787719727,
+      2.835444211959839,
+      -8.018385887145996
+     ],
+     "probabilities": [
+      1.209375388730609e-06,
+      0.9999794605931802,
+      1.9330031431000722e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 42,
+     "ids_sha256": "5fdc26ae4c9f3c69c8275b4f7015820544fcf0b95ee09cf6de4527790ab1e1c7",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -3.9548685550689697,
+      -4.291775226593018,
+      -7.548802852630615
+     ],
+     "probabilities": [
+      0.5742290257721769,
+      0.4099854391582103,
+      0.015785535069612756
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 38,
+     "ids_sha256": "71b3614b9c12582788df919158c17b81aae6ba288411fa76f65db127104da706",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -2.907559633255005,
+      -1.2478419542312622
+     ],
+     "probabilities": [
+      0.15979989881593512,
+      0.8402001011840649
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_vi": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 49,
+     "ids_sha256": "01fd36bef891f5589ad83b172bd8bbeb0a1748f313f5343d4a9e99e7bb99171b",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -1.1012790203094482,
+      -10.020964622497559,
+      -8.821924209594727
+     ],
+     "probabilities": [
+      0.9994230284834624,
+      0.0001336531241269923,
+      0.00044331839241061225
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 38,
+     "ids_sha256": "1f598b52371573cfa69bc614d6a1264f9f459346be27b4a5ed85c4e241522e21",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -8.270622253417969,
+      -6.7430243492126465,
+      -7.10573148727417
+     ],
+     "probabilities": [
+      0.11347299425694428,
+      0.52278107237035,
+      0.3637459333727057
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 34,
+     "ids_sha256": "9b41ebef4d9194c71c6d4773605f60cc2471cd021cec6b218c9df90db896707a",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -4.344110488891602,
+      -0.18007038533687592
+     ],
+     "probabilities": [
+      0.015306692125151703,
+      0.9846933078748482
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_id": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 44,
+     "ids_sha256": "1e37548d82619696fae3f301e13d4963cd61e6d0ce4476b54d263615aa433603",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.621484756469727,
+      -3.5142176151275635,
+      -7.868624687194824
+     ],
+     "probabilities": [
+      0.0008080846438362788,
+      0.986515140084501,
+      0.012676775271662692
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 33,
+     "ids_sha256": "a7834cf642480575086e2afcef4af9fa11a1f09d28ff17d7a48043528b6ca47a",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -5.105987548828125,
+      -5.349950313568115,
+      -8.110282897949219
+     ],
+     "probabilities": [
+      0.5455268082182333,
+      0.4274294235472913,
+      0.027043768234475473
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 29,
+     "ids_sha256": "98adfacb91528f7ceab7af90a13bc5b0d0b3d8220585ca36b5e6c2b5c50f3ea4",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -0.5040281414985657,
+      -0.7959133982658386
+     ],
+     "probabilities": [
+      0.5724576122282278,
+      0.4275423877717723
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_sw": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 55,
+     "ids_sha256": "8b1c7e5188625f6224c6f4b2a35109002346a0c140c5735386319aa558a7f474",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.039063453674316,
+      -8.301450729370117,
+      -1.9345587491989136
+     ],
+     "probabilities": [
+      0.00030156579758795716,
+      0.0017140271699034892,
+      0.9979844070325086
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 44,
+     "ids_sha256": "e16690aa15763b87a86d77c011dac0ab034b360afde1e5da36855d4c9db93ed6",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -1.138604998588562,
+      -1.778212547302246,
+      -5.901599407196045
+     ],
+     "probabilities": [
+      0.6510249671679765,
+      0.3434152803764626,
+      0.0055597524555609035
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 40,
+     "ids_sha256": "718809a1712447bd5722718d4aacaa7095a3fdd95f7fb24b6d9764293e130def",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -0.4879586696624756,
+      2.3626298904418945
+     ],
+     "probabilities": [
+      0.054650901768894845,
+      0.9453490982311052
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_el": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 55,
+     "ids_sha256": "94443188755dfb9448e6373e4c585705b532080ee14385b764c74c0c98fad9c8",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -10.4621000289917,
+      -9.543844223022461,
+      -8.141267776489258
+     ],
+     "probabilities": [
+      0.07305101315829046,
+      0.18298676237033837,
+      0.7439622244713712
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 44,
+     "ids_sha256": "071b5db274d6794a8b32f210d99facddce2f57060799ea091d5dadc16ec18159",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -7.852398872375488,
+      -3.4921963214874268,
+      -5.557913303375244
+     ],
+     "probabilities": [
+      0.011211727776192554,
+      0.8775754233770064,
+      0.11121284884680098
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 40,
+     "ids_sha256": "d89cca3d03fb0a2f59b17bf6e148a2b2a17313fbf1d1b2600b1fe4b476691cf7",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -5.0403337478637695,
+      -2.652437448501587
+     ],
+     "probabilities": [
+      0.08410033291734044,
+      0.9158996670826595
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "lang_mixed_object": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 89,
+     "ids_sha256": "d40c50c1d98b93fb13f7835c862be1757f8d195527e0e3749c53d05619e7713c",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -7.92745304107666,
+      -7.731049537658691,
+      -8.233052253723145
+     ],
+     "probabilities": [
+      0.3385584537651528,
+      0.4120316906912373,
+      0.24940985554360984
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 78,
+     "ids_sha256": "4a2fc904b93eb71d5af840f7538b75d6150d978d664830388b2257ec4d37adb6",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -7.9362874031066895,
+      -6.924343585968018,
+      -5.161543369293213
+     ],
+     "probabilities": [
+      0.05054215220595119,
+      0.1390385874837582,
+      0.8104192603102907
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 74,
+     "ids_sha256": "ef94144075cd5fea2ec3155df404754ad74a732bca54aa9e80f89c1bd23ace11",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -4.713346481323242,
+      -6.732213497161865
+     ],
+     "probabilities": [
+      0.8827638053151912,
+      0.11723619468480893
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "marker_tokens_in_text": {
+   "refused": "Reserved model marker in request"
+  },
+  "marker_token_in_option": {
+   "refused": "Reserved model marker in request"
+  },
+  "option_over_48_tokens": {
+   "refused": "Option exceeds 48-token model contract"
+  },
+  "fifteen_long_options": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 504,
+     "ids_sha256": "9dac7bff3f091e8e2fafe26e718b81c9672253caff136de67640f74a70f68f54",
+     "markers": [
+      12,
+      44,
+      76,
+      108,
+      140,
+      172,
+      204,
+      236,
+      268,
+      300,
+      332,
+      365,
+      398,
+      431,
+      464
+     ],
+     "scores": [
+      -7.973527908325195,
+      -6.421350955963135,
+      -4.242625713348389,
+      -5.540733337402344,
+      -4.247175693511963,
+      -4.362840175628662,
+      -4.426052570343018,
+      -5.032784461975098,
+      -5.646831512451172,
+      -4.93131160736084,
+      -5.4822187423706055,
+      -4.573151588439941,
+      -4.500284194946289,
+      -5.077202796936035,
+      -8.055000305175781
+     ],
+     "probabilities": [
+      0.0031693517417226533,
+      0.014964848557282211,
+      0.1322149839550993,
+      0.03610103878094282,
+      0.13161477490588655,
+      0.1172390252649706,
+      0.11005743953318253,
+      0.05999555735800496,
+      0.03246697649725286,
+      0.06640307529288053,
+      0.038276503988574656,
+      0.0950025172846473,
+      0.10218355782379049,
+      0.05738897320832441,
+      0.0029213758074381284
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "twenty_one_options": {
+   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+  },
+  "long_instructions": {
+   "questions": [
+    {
+     "id": "angry",
+     "length": 303,
+     "ids_sha256": "ba44b616b1fbc8640e97923a2416ac49c969c565dab5ecccfd3672b7765b8657",
+     "markers": [
+      291,
+      293
+     ],
+     "scores": [
+      -3.8579139709472656,
+      -6.4831624031066895
+     ],
+     "probabilities": [
+      0.9324689544642306,
+      0.06753104553576948
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "conversation_1k": {
+   "questions": [
+    {
+     "id": "churn",
+     "length": 1056,
+     "ids_sha256": "16763cbda09aa6d0e5242395caebae92d144aa2bdf0d4591ef1799e78a3c8132",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -8.171545028686523,
+      -4.012546062469482
+     ],
+     "probabilities": [
+      0.015382860097896762,
+      0.9846171399021033
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "team",
+     "length": 1069,
+     "ids_sha256": "f48e5ce3afc001e3a922707b73c9b8a770b21a362489cdf3305d75fb18589266",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -5.355356216430664,
+      -2.4427502155303955,
+      -8.310142517089844
+     ],
+     "probabilities": [
+      0.05139594316749427,
+      0.9459268528977142,
+      0.0026772039347915354
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "state_450": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 486,
+     "ids_sha256": "8585d5591929e02f0908a0847a62c0b84de0770abbf09debe2433e3c579096f0",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -5.110893249511719,
+      -6.002015113830566,
+      -9.86903190612793
+     ],
+     "probabilities": [
+      0.7048324616252334,
+      0.28911897082805654,
+      0.0060485675467101254
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 475,
+     "ids_sha256": "e126be31405e8364ae22819ef599d114401cf5edca8a52ca3c46c4f6c09d0a05",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -1.8875975608825684,
+      -8.265496253967285,
+      -8.16615104675293
+     ],
+     "probabilities": [
+      0.996437932551952,
+      0.0016926378316023864,
+      0.001869429616445646
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 471,
+     "ids_sha256": "f02d89a83909adc78ffed5c8eccd615477b3425e39a262c3c6994b2a6a14a9da",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.6864826679229736,
+      -5.107626914978027
+     ],
+     "probabilities": [
+      0.8055177355767769,
+      0.19448226442322314
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "state_600": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 682,
+     "ids_sha256": "eaf3a1fa92f218c046cbe04e4b6bf7955fd211013ea1cec2c7cdd0812d50d704",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -5.780478000640869,
+      -2.355311155319214,
+      -9.525849342346191
+     ],
+     "probabilities": [
+      0.0314946761724286,
+      0.9677612037187246,
+      0.0007441201088466492
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 671,
+     "ids_sha256": "9a649a9d5672b5d33e952c331d1e0fb5b9fae36c06d22365330f2f7ac4cccac4",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -0.4889701008796692,
+      -7.8099212646484375,
+      -8.344029426574707
+     ],
+     "probabilities": [
+      0.9989517821617389,
+      0.0006608392555841961,
+      0.0003873785826769274
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 667,
+     "ids_sha256": "77956e8770af0e0f508afe8c15b1dc51812040ee93aa2e993aa1a80a796119d1",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.101510524749756,
+      -4.259058952331543
+     ],
+     "probabilities": [
+      0.7608869659991846,
+      0.23911303400081538
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "state_900": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 1012,
+     "ids_sha256": "7a80eddaf45b7ed1d02da024899369ef2b35475b1bb864ed90d3bab20cf378dd",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -6.11097526550293,
+      -2.2255871295928955,
+      -9.650615692138672
+     ],
+     "probabilities": [
+      0.02011471046242105,
+      0.9793014849809368,
+      0.0005838045566420145
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 1001,
+     "ids_sha256": "ccabc649c014263ce88cb29635fe39655b27920d1c110f698f5730b85b9eb8a4",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      -0.12528783082962036,
+      -7.444000720977783,
+      -8.015871047973633
+     ],
+     "probabilities": [
+      0.9989638085294454,
+      0.0006623280249147667,
+      0.00037386344563974163
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 997,
+     "ids_sha256": "c05b49b52552714db292673b4f4f44097a3403a7f7d5da3ae3fb8c13d09600ec",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -4.006934642791748,
+      -3.872821807861328
+     ],
+     "probabilities": [
+      0.4665219549459931,
+      0.533478045054007
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  },
+  "state_1100": {
+   "questions": [
+    {
+     "id": "team",
+     "length": 1210,
+     "ids_sha256": "db5dc88248f9c62ac62db9cd95c9e0a297c53459458ecfcf97b5ea3fbb5d16a2",
+     "markers": [
+      12,
+      18,
+      24
+     ],
+     "scores": [
+      -5.963034152984619,
+      -2.168551206588745,
+      -9.569231986999512
+     ],
+     "probabilities": [
+      0.021986526842173913,
+      0.9774164312582602,
+      0.0005970418995658851
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "urgency",
+     "length": 1199,
+     "ids_sha256": "aa768b2dfc04aa2f0b202ab37890cbbcb112314250c2bc2f56b296a3e0b46f4c",
+     "markers": [
+      11,
+      14,
+      16
+     ],
+     "scores": [
+      0.6457582116127014,
+      -7.395554065704346,
+      -8.196983337402344
+     ],
+     "probabilities": [
+      0.999533904825445,
+      0.00032173623915627214,
+      0.00014435893539858054
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "angry",
+     "length": 1195,
+     "ids_sha256": "eb0f4ee2d5646b8607c4e383a34a41e88ae83eab885e68871ab34abf53575162",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.7724335193634033,
+      -3.870270013809204
+     ],
+     "probabilities": [
+      0.5244396320823768,
+      0.4755603679176233
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
+  }
+ }
+}
