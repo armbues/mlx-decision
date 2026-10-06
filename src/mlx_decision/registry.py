@@ -83,3 +83,15 @@ register_family(
         ),
     ),
 )
+
+register_family(
+    "laya",
+    detect=lambda path: (path / "rl_agent_config.json").exists(),
+    loader="mlx_decision.models.marker.model:load_laya",
+)
+
+register_family(
+    "julia",
+    detect=lambda path: (path / "julia_config.json").exists(),
+    loader="mlx_decision.models.marker.model:load_julia",
+)

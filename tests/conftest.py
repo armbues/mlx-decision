@@ -11,6 +11,7 @@ import pytest
 from huggingface_hub import snapshot_download
 
 CLEF_FLASH = ("clef-flash", "Cloudflare/clef-flash")
+LAYA = ("laya", "convaiinnovations/laya")
 JULIA = ("Julia-1", "SupersonicLabs/Julia-1")
 
 
@@ -29,6 +30,14 @@ def clef_path() -> Path:
     path = find_model(*CLEF_FLASH)
     if path is None:
         pytest.skip("clef-flash weights not found (set MLX_DECISION_MODELS)")
+    return path
+
+
+@pytest.fixture(scope="session")
+def laya_path() -> Path:
+    path = find_model(*LAYA)
+    if path is None:
+        pytest.skip("laya weights not found (set MLX_DECISION_MODELS)")
     return path
 
 

@@ -116,7 +116,9 @@ def load(model: str | Path, **options) -> DecisionModel:
     (default 16,384; longer states are truncated), ``vision=True`` to load the
     vision tower now rather than with the first image request, and
     ``max_image_pixels`` (default 2**21; larger images are shrunk, None keeps
-    only the processor's own maximum).
+    only the processor's own maximum). For Laya and Julia: ``max_input_tokens``
+    (default: the release's own limit, at most 8,192) and ``dtype``
+    (``"float32"``, ``"float16"`` or ``"bfloat16"``; default: as stored).
     """
     require_metal()
     backend = load_backend(resolve_model_path(model), **options)
