@@ -11,6 +11,7 @@ import pytest
 from huggingface_hub import snapshot_download
 
 CLEF_FLASH = ("clef-flash", "Cloudflare/clef-flash")
+JULIA = ("Julia-1", "SupersonicLabs/Julia-1")
 
 
 def find_model(name: str, repo_id: str) -> Path | None:
@@ -28,6 +29,14 @@ def clef_path() -> Path:
     path = find_model(*CLEF_FLASH)
     if path is None:
         pytest.skip("clef-flash weights not found (set MLX_DECISION_MODELS)")
+    return path
+
+
+@pytest.fixture(scope="session")
+def julia_path() -> Path:
+    path = find_model(*JULIA)
+    if path is None:
+        pytest.skip("Julia-1 weights not found (set MLX_DECISION_MODELS)")
     return path
 
 
