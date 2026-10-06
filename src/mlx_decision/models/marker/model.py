@@ -14,7 +14,9 @@ from tokenizers import Tokenizer
 
 from ...backbones.modernbert import Model as Encoder
 from ...backbones.modernbert import ModelArgs as EncoderArgs
-from ...backend import Capabilities
+from ...backend import BackendOutput, Capabilities
+from ...types import Request
+from .encode import encode_request
 from .head import MarkerHead
 
 
@@ -57,6 +59,21 @@ class MarkerBackend:
         self.special = special
         self.settings = settings
         self.capabilities = capabilities
+
+    def score(self, request: Request) -> BackendOutput:
+        encoded = encode_request(self.tokenizer, self.special, self.settings, request)
+        sequences = [Sequence(q.input_ids, q.markers, q.question_type) for q in encoded]
+        probabilities = {}
+        for question, scores in zip(encoded, self.logits(sequences), strict=True):
+            values = mx.softmax(mx.array(scores, dtype=mx.float32)).tolist()
+            probabilities[question.question_id] = dict(
+                zip(question.option_ids, values, strict=True)
+            )
+        return BackendOutput(
+            probabilities=probabilities,
+            input_tokens=sum(len(q.input_ids) for q in encoded),
+            truncated=any(q.truncated for q in encoded),
+        )
 
     def logits(self, sequences: list[Sequence]) -> list[list[float]]:
         """Raw option scores per sequence, all sequences in one padded batch."""
@@ -121,14 +138,19 @@ def _load_parts(
 
 
 def load_julia(
-    path: Path, max_input_tokens: int | None = None, dtype: str | None = None
+    path: Path,
+    max_input_tokens: int | None = None,
+    dtype: str | None = None,
+    strict_encoding: bool | None = None,
 ) -> MarkerBackend:
     """Load Julia 1 from a release folder (``julia_config.json``).
 
     ``max_input_tokens`` raises or lowers the sequence limit (default: the
     release's ``inference-policy.json``, up to the encoder's 8,192).
     ``dtype`` (``"float32"``, ``"float16"``, ``"bfloat16"``) converts the
-    weights; None keeps them as stored.
+    weights; None keeps them as stored. ``strict_encoding`` (default: the
+    policy's, True for Julia 1) refuses requests that would have to be cut
+    (state, question or options) instead of cutting them.
     """
     root = json.loads((path / "config.json").read_text()) if (path / "config.json").exists() else {}
     config = json.loads((path / root.get("julia_config_file", "julia_config.json")).read_text())
@@ -149,10 +171,13 @@ def load_julia(
         family="julia",
         max_length=_max_length(max_input_tokens, policy.get("max_length"), args),
         head_length=policy.get("head_length", 512),
-        strict=policy.get("strict_encoding", True),
+        strict=policy.get("strict_encoding", True) if strict_encoding is None else strict_encoding,
     )
     capabilities = Capabilities(
-        max_input_tokens=settings.max_length, max_choice_options=20, max_score_levels=20
+        max_input_tokens=settings.max_length,
+        max_choice_options=20,
+        max_score_levels=20,
+        requires_instructions=True,
     )
     return MarkerBackend(
         path.resolve().name, encoder, head, tokenizer, special, settings, capabilities
@@ -179,7 +204,7 @@ def load_laya(
         temperatures=list(config.get("temperature", [1.0, 1.0, 1.0])),
         temperatures_by_options=dict(config.get("temperature_by_options", {})),
     )
-    capabilities = Capabilities(max_input_tokens=settings.max_length)
+    capabilities = Capabilities(max_input_tokens=settings.max_length, requires_instructions=True)
     return MarkerBackend(
         path.resolve().name, encoder, head, tokenizer, special, settings, capabilities
     )

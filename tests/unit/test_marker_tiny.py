@@ -1,0 +1,125 @@
+"""Laya and Julia end to end on tiny random models: encoding rules, limits and errors."""
+
+import pytest
+
+import mlx_decision
+from mlx_decision.errors import DecisionError
+from mlx_decision.models.marker.encode import encode_request
+from tiny_models import write_marker
+
+QUESTIONS = {
+    "team": {
+        "type": "choice",
+        "instructions": "billing or technical",
+        "criteria": {"billing": "refund", "technical": "crash", "other": "other"},
+    },
+    "urgency": {"type": "score", "instructions": "now", "criteria": ["0", "1", "2"]},
+    "refund": {"type": "noul", "instructions": "refund"},
+}
+LONG_STATE = " ".join(["please refund now"] * 30)  # 90 words
+
+
+@pytest.fixture(scope="module", params=["laya", "julia"])
+def model(request, tmp_path_factory):
+    folder = write_marker(tmp_path_factory.mktemp(request.param), request.param)
+    return mlx_decision.load(folder)
+
+
+def encode(model, state, questions):
+    request = model.check({"state": state, "questions": questions})
+    backend = model.backend
+    return encode_request(backend.tokenizer, backend.special, backend.settings, request)
+
+
+def test_answers_every_question(model):
+    result = model.decide("please refund", QUESTIONS)
+    assert set(result.answers) == set(QUESTIONS)
+    assert set(result.answers["team"].probabilities) == {"billing", "technical", "other"}
+    assert set(result.answers["urgency"].probabilities) == {"0", "1", "2"}
+    assert sum(result.answers["team"].probabilities.values()) == pytest.approx(1, abs=1e-5)
+    assert result.usage.input_tokens > 0
+    assert not result.truncated
+
+
+def test_sequence_layout(model):
+    (encoded,) = encode(model, "please refund", {"refund": QUESTIONS["refund"]})
+    special = model.backend.special
+    ids = encoded.input_ids
+    assert ids[0] == special.cls and ids[-1] == special.sep
+    assert [ids[m] for m in encoded.markers] == [special.mask, special.mask]
+    assert encoded.option_ids == ["false", "true"]
+
+
+def test_instructions_are_required(model):
+    with pytest.raises(DecisionError) as error:
+        model.decide("x", {"q": {"type": "noul"}})
+    assert error.value.param == "questions.q.instructions"
+
+
+def test_laya_cuts_a_long_state_and_reports_it(tmp_path):
+    model = mlx_decision.load(write_marker(tmp_path, "laya"))
+    result = model.decide(LONG_STATE, {"refund": QUESTIONS["refund"]})
+    assert result.truncated
+    (encoded,) = encode(model, LONG_STATE, {"refund": QUESTIONS["refund"]})
+    assert len(encoded.input_ids) == 48
+
+
+def test_laya_keeps_the_end_of_a_conversation(tmp_path):
+    model = mlx_decision.load(write_marker(tmp_path, "laya"))
+    turns = ["please"] * 40 + ["crash"]
+    (encoded,) = encode(model, turns, {"refund": QUESTIONS["refund"]})
+    crash = model.backend.tokenizer.token_to_id("crash")
+    assert encoded.input_ids[-3] == crash  # before the closing "]" and [SEP]
+    assert encoded.truncated
+
+
+def test_laya_marker_text_is_replaced(tmp_path):
+    model = mlx_decision.load(write_marker(tmp_path, "laya"))
+    (encoded,) = encode(model, "please [MASK] refund", {"refund": QUESTIONS["refund"]})
+    assert encoded.input_ids.count(model.backend.special.mask) == 2  # the two option markers
+
+
+@pytest.mark.parametrize(
+    ("state", "questions", "param"),
+    [
+        (LONG_STATE, {"refund": QUESTIONS["refund"]}, "state"),
+        ("please [MASK]", {"refund": QUESTIONS["refund"]}, "state"),
+        (
+            "x",
+            {"q": {**QUESTIONS["team"], "criteria": {"billing": {"a": 1}, "other": "x"}}},
+            "questions.q.criteria",
+        ),
+        ("x", {"q": {**QUESTIONS["team"], "criteria": {"only": "one"}}}, "questions.q.criteria"),
+        (
+            "x",
+            {"q": {**QUESTIONS["team"], "criteria": {f"o{i}": "x" for i in range(21)}}},
+            "questions.q.criteria",
+        ),
+        ("x", {"q": {**QUESTIONS["refund"], "instructions": {"a": 1}}}, "questions.q.instructions"),
+        (
+            "x",
+            {"q": {**QUESTIONS["refund"], "criteria": {"true": "yes"}}},
+            "questions.q.criteria",
+        ),
+        (42, {"refund": QUESTIONS["refund"]}, "state"),
+    ],
+)
+def test_julia_refuses_what_it_would_have_to_cut(tmp_path, state, questions, param):
+    model = mlx_decision.load(write_marker(tmp_path, "julia"))
+    with pytest.raises(DecisionError) as error:
+        model.decide(state, questions)
+    assert error.value.param == param
+
+
+def test_julia_without_strict_encoding_cuts_the_state(tmp_path):
+    model = mlx_decision.load(write_marker(tmp_path, "julia"), strict_encoding=False)
+    assert model.decide(LONG_STATE, {"refund": QUESTIONS["refund"]}).truncated
+
+
+def test_max_input_tokens_sets_the_limit(tmp_path):
+    folder = write_marker(tmp_path, "laya")
+    model = mlx_decision.load(folder, max_input_tokens=128)
+    assert model.backend.capabilities.max_input_tokens == 128
+    assert not model.decide(LONG_STATE, {"refund": QUESTIONS["refund"]}).truncated
+    with pytest.raises(ValueError, match="between 16 and 128"):
+        mlx_decision.load(folder, max_input_tokens=129)

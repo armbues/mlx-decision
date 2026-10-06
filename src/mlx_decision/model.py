@@ -118,7 +118,9 @@ def load(model: str | Path, **options) -> DecisionModel:
     ``max_image_pixels`` (default 2**21; larger images are shrunk, None keeps
     only the processor's own maximum). For Laya and Julia: ``max_input_tokens``
     (default: the release's own limit, at most 8,192) and ``dtype``
-    (``"float32"``, ``"float16"`` or ``"bfloat16"``; default: as stored).
+    (``"float32"``, ``"float16"`` or ``"bfloat16"``; default: as stored); for
+    Julia also ``strict_encoding`` (default True, as its release: refuse
+    requests that would have to be cut).
     """
     require_metal()
     backend = load_backend(resolve_model_path(model), **options)
