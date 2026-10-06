@@ -37,8 +37,10 @@ class BrokenBackend(FakeBackend):
 
 def serve(backend, method: str, *args, allow_image_paths: bool = False):
     """Call ``method`` of a client connected to a server for ``backend``."""
-    model = DecisionModel(backend)
+    return serve_model(DecisionModel(backend), method, *args, allow_image_paths=allow_image_paths)
 
+
+def serve_model(model, method: str, *args, allow_image_paths: bool = False):
     async def main():
         with ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision") as worker:
             server = create_server(model, worker, allow_image_paths)
@@ -281,3 +283,46 @@ def test_http_api_key(http_url):
         response = httpx2.post(url, json={}, headers=headers)
         assert response.status_code == 401
         assert response.json() == {"error": "missing or invalid API key"}
+
+
+TICKET = {
+    "state": "The app crashes every time I open the settings page.",
+    "questions": {
+        "team": {
+            "type": "choice",
+            "instructions": "Which team should handle this ticket?",
+            "criteria": {
+                "billing": "Payments, invoices, refunds",
+                "technical": "Bugs, crashes and outages",
+                "sales": "Pricing and plans",
+            },
+        },
+        "angry": {
+            "type": "score",
+            "instructions": "How upset is the customer?",
+            "criteria": ["Calm", "Annoyed", "Furious"],
+        },
+        "bug": {"type": "noul", "instructions": "Is this a bug report?"},
+    },
+}
+
+
+@pytest.fixture(params=["clef", "laya", "laya_multilingual", "laya_typed", "julia"])
+def real_model(request):
+    """Each family's models with weights; Clef is the shared session copy."""
+    if request.param == "clef":
+        return request.getfixturevalue("clef")
+    import mlx_decision
+
+    return mlx_decision.load(request.getfixturevalue(f"{request.param}_path"))
+
+
+def test_real_models_answer_through_mcp(real_model):
+    result = serve_model(real_model, "call_tool", "decide", TICKET)
+    assert not result.is_error, result.content[0].text
+    answers = result.structured_content["answers"]
+    assert answers["team"]["choice"] == "technical"
+    assert answers["bug"]["noul"] > 0.5
+    assert 0 <= answers["angry"]["score"] <= 2
+    info = serve_model(real_model, "call_tool", "model_info", {}).structured_content
+    assert info["name"] == real_model.name and info["precision"]

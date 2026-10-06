@@ -67,6 +67,15 @@ def julia_path() -> Path:
     return path
 
 
+@pytest.fixture(scope="session")
+def clef(clef_path: Path):
+    """clef-flash, loaded once for every test that needs it (19 GB)."""
+    import mlx_decision
+
+    # The parity reference has no image cap beyond the processor's own.
+    return mlx_decision.load(clef_path, max_image_pixels=None)
+
+
 @pytest.fixture
 def fake_model_path(tmp_path: Path) -> Path:
     from fake_backend import write_model

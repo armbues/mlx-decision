@@ -92,14 +92,6 @@ def test_the_set_covers_images():
 
 
 @pytest.fixture(scope="session")
-def clef(clef_path: Path):
-    import mlx_decision
-
-    # The reference has no cap beyond the processor's own.
-    return mlx_decision.load(clef_path, max_image_pixels=None)
-
-
-@pytest.fixture(scope="session")
 def outputs(clef):
     """Backend output for every request, computed once."""
     return {case_id: clef.backend.score(request(case_id)) for case_id in CASE_IDS}
