@@ -38,6 +38,10 @@ change the interface).
   Julia's own code; `scripts/accuracy_benchmark.py` reports benchmarks a
   model cannot answer (too many options) as n/a and counts refused
   examples as wrong.
+- `docs/BENCHMARKS.md` with the full measurements (speed against the
+  reference code, latency, images, quantization, agreement, accuracy); the
+  README is reorganised around the supported models and keeps compact
+  tables.
 - `scripts/reference_speed.py` compares the speed of mlx-decision with
   Cloudflare's PyTorch reference on the same requests; the README shows
   the result (about 3.5x faster in bf16 on an M5 Pro).

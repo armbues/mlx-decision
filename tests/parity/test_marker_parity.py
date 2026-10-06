@@ -22,6 +22,7 @@ REQUESTS = {case["id"]: case for case in CASES}
 MODELS = {
     "laya": "laya_path",
     "laya-multilingual": "laya_multilingual_path",
+    "laya-typed-decisions": "laya_typed_path",
     "Julia-1": "julia_path",
 }
 

@@ -13,6 +13,7 @@ from huggingface_hub import snapshot_download
 CLEF_FLASH = ("clef-flash", "Cloudflare/clef-flash")
 LAYA = ("laya", "convaiinnovations/laya")
 LAYA_MULTILINGUAL = ("laya-multilingual", "convaiinnovations/laya-multilingual")
+LAYA_TYPED = ("laya-typed-decisions", "convaiinnovations/laya-typed-decisions")
 JULIA = ("Julia-1", "SupersonicLabs/Julia-1")
 
 
@@ -47,6 +48,14 @@ def laya_multilingual_path() -> Path:
     path = find_model(*LAYA_MULTILINGUAL)
     if path is None:
         pytest.skip("laya-multilingual weights not found (set MLX_DECISION_MODELS)")
+    return path
+
+
+@pytest.fixture(scope="session")
+def laya_typed_path() -> Path:
+    path = find_model(*LAYA_TYPED)
+    if path is None:
+        pytest.skip("laya-typed-decisions weights not found (set MLX_DECISION_MODELS)")
     return path
 
 
