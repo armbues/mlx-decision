@@ -84,6 +84,37 @@ def test_shorthand_questions(cli, fake_model_path):
     assert answers["anger"]["legend"] == {"0": "calm", "1": "angry"}
 
 
+@pytest.fixture
+def as_julia(monkeypatch):
+    """The fake model reports itself as Julia."""
+    import mlx_decision.model
+
+    load_backend = mlx_decision.model.load_backend
+
+    def as_julia(*args, **kwargs):
+        backend = load_backend(*args, **kwargs)
+        backend.family = "julia"
+        return backend
+
+    monkeypatch.setattr(mlx_decision.model, "load_backend", as_julia)
+
+
+def test_julia_hints_at_undescribed_options(cli, questions_file, as_julia):
+    result = cli("-s", "x", "--choice", "team=billing,sales", "--noul", "q=Is it?")
+    assert result.exit_code == 0, result.output
+    assert "hint: team: Julia answers much worse without option descriptions" in result.stderr
+    assert "-q file" in result.stderr
+    typed = lines_of({"state": "x"})
+    with_states = cli("--choice", "team=billing,sales", "--states", "-", input=typed)
+    assert "hint: team:" in with_states.stderr
+    # Described options, and other families, get no hint.
+    assert "hint" not in cli("-q", str(questions_file), "-s", "x").stderr
+
+
+def test_no_option_hint_for_other_families(cli):
+    assert "hint" not in cli("-s", "x", "--choice", "team=billing,sales").stderr
+
+
 def test_shorthand_noul_text_is_the_instruction(fake_model_path):
     from mlx_decision.cli import shorthand_questions
 

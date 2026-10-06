@@ -7,6 +7,14 @@ change the interface).
 
 ## [Unreleased]
 
+### Changed
+
+- Julia: `run` and `chat` print a hint when a choice question's options
+  have no descriptions, and the README explains how to word them. Julia
+  reads an option only through its description and answers routing
+  questions much worse with bare ids or one-word labels than with a short
+  phrase of what each option covers.
+
 ## [0.4.0] - 2026-10-06
 
 ### Models

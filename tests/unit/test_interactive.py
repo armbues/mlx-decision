@@ -75,6 +75,21 @@ def test_builder_opens_without_questions(fake_model, capsys):
     assert [list(b["answers"]) for b in bodies(out)] == [["team", "noul_1"]]
 
 
+def test_julia_hints_at_undescribed_options(fake_model, capsys):
+    fake_model.backend.family = "julia"
+    typed = lines(
+        CHOICE, "team", "", "billing: Billing and payment disputes", "sales", "",
+        ADD,
+        CHOICE, "kind", "", "bug: A bug or an error", "question: A question", "",
+        START,
+    )  # fmt: skip
+    drive(fake_model, typed)
+    err = capsys.readouterr().err
+    assert "hint: team: Julia answers much worse without option descriptions" in err
+    assert "/edit ID" in err
+    assert "hint: kind" not in err
+
+
 def test_the_type_menu_works_with_arrow_keys(fake_model):
     session = drive(fake_model, DOWN + ENTER + lines("anger", "", "calm", "angry", "", ""))
     assert session.questions == {"anger": {"type": "score", "criteria": ["calm", "angry"]}}

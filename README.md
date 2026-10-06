@@ -401,6 +401,15 @@ description for every option. Where a question leaves them out (as the
 short forms `--choice` and `--noul` do), the question id stands in for the
 instructions and the option id for the description. Both run in float16.
 
+Julia reads an option only through its description, and how that is
+worded matters a lot. Describe each option in a short phrase of what it
+covers: on 11 support tickets routed to billing, technical or sales,
+Julia got 8 to 11 right with phrases such as "Billing and payment
+disputes", but 4 to 6 with the bare ids and 1 to 3 with one-word labels
+such as "Billing" (Laya: 9 to 10 with any of them). Check the wording on
+a few of your own cases before relying on it. `run` and `chat` print a
+hint when Julia gets choice options without descriptions.
+
 ## Quantizing clef-flash: `convert`
 
 Laya and Julia load as they are (0.3 to 0.85 GB). clef-flash can be

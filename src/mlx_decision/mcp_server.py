@@ -48,8 +48,8 @@ fractional), `confidence`, `legend`, `probabilities` per level.
 Example arguments:
 {{"state": "I was charged twice for my subscription this month.", \
 "questions": {{"team": {{"type": "choice", "instructions": "Which team should \
-handle this ticket?", "criteria": {{"billing": "Payments, invoices, refunds", \
-"technical": "Bugs and outages", "sales": "Pricing and plans"}}}}, \
+handle this request?", "criteria": {{"billing": "Billing and payment disputes", \
+"technical": "Technical problems and errors", "sales": "Sales and new purchases"}}}}, \
 "urgent": {{"type": "noul", "instructions": "Does this need a reply today?"}}}}}}
 
 Ask all questions about one state in one call. `confidence` runs from 0 \
@@ -83,7 +83,8 @@ def family_hints(info: dict[str, Any], allow_image_paths: bool) -> list[str]:
         hints.append(f"A choice takes at most {info['max_choice_options']} options.")
     if info["family"] == "julia":
         hints.append(
-            "Give every choice option a description in `criteria`: with bare ids "
+            "Describe every choice option in `criteria` with a short phrase of what it "
+            'covers ("Billing and payment disputes"): with bare ids or one-word labels '
             "this model answers much worse."
         )
     if info["supports_images"]:

@@ -19,7 +19,14 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.validation import ValidationError, Validator
 
-from .cli import QUESTION_ID, format_result, parse_state
+from .cli import (
+    CHAT_DESCRIBE_HOW,
+    QUESTION_ID,
+    describe_options_hint,
+    format_result,
+    parse_state,
+    undescribed_choices,
+)
 from .errors import DecisionError
 
 TYPES = {
@@ -307,6 +314,8 @@ class Session:
             }
         say(f"{'updated' if question_id else 'added'}:")
         say(describe({draft_id: draft}, indent="  "))
+        if bare := undescribed_choices(self.model, {draft_id: draft}):
+            say(describe_options_hint(bare, CHAT_DESCRIBE_HOW))
 
     def ask_question(
         self, question_id: str | None, draft_id: str | None, current: dict[str, Any]
