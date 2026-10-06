@@ -95,6 +95,16 @@ CASES = {
 }
 
 
+def filled(case, family):
+    """The case as the reference sees it: filled in as mlx-decision does."""
+    from mlx_decision.models.marker.encode import fill_defaults
+    from mlx_decision.types import parse_request
+
+    state, questions = case
+    request = fill_defaults(parse_request({"state": state, "questions": questions}), family)
+    return state, {qid: q.model_dump() for qid, q in request.questions.items()}
+
+
 def ours(model, case):
     """Our encoding, or None when the request is refused."""
     state, questions = case
@@ -131,7 +141,7 @@ def laya_reference(agent, case):
 @pytest.mark.parametrize("name", list(CASES))
 def test_laya_encoding_is_identical(laya_pair, name):
     model, agent = laya_pair
-    assert ours(model, CASES[name]) == laya_reference(agent, CASES[name])
+    assert ours(model, CASES[name]) == laya_reference(agent, filled(CASES[name], "laya"))
 
 
 @pytest.fixture(scope="module")
@@ -171,15 +181,15 @@ def julia_pair(julia_path):
 @pytest.mark.parametrize("name", list(CASES))
 def test_julia_encoding_is_identical(julia_pair, name):
     model, reference = julia_pair
-    assert ours(model, CASES[name]) == reference(CASES[name])
+    assert ours(model, CASES[name]) == reference(filled(CASES[name], "julia"))
 
 
 def test_cases_cover_both_outcomes(laya_pair, julia_pair):
     """The case list exercises cutting as well as refusing, for each family."""
     model, agent = laya_pair
-    laya_refused = [n for n, c in CASES.items() if laya_reference(agent, c) is None]
+    laya_refused = [n for n, c in CASES.items() if laya_reference(agent, filled(c, "laya")) is None]
     julia_model, reference = julia_pair
-    julia_refused = [n for n, c in CASES.items() if reference(c) is None]
+    julia_refused = [n for n, c in CASES.items() if reference(filled(c, "julia")) is None]
     assert len(julia_refused) >= 6
     assert len(julia_refused) < len(CASES) - 4
     assert 0 < len(laya_refused) < len(CASES)

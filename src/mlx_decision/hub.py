@@ -35,7 +35,7 @@ def resolve_model_path(model: str | Path) -> Path:
     )
 
     try:
-        return Path(snapshot_download(str(model)))
+        return Path(_snapshot(str(model), snapshot_download))
     except GatedRepoError:
         reason = "gated on the Hugging Face Hub: accept its terms there and set HF_TOKEN"
     except RepositoryNotFoundError:
@@ -49,3 +49,19 @@ def resolve_model_path(model: str | Path) -> Path:
     except (HfHubHTTPError, httpx.HTTPError, OSError) as error:
         reason = f"cannot download from the Hugging Face Hub: {str(error).splitlines()[0]}"
     raise ModelNotFoundError(f"{model}: {reason}") from None
+
+
+def _snapshot(repo_id: str, snapshot_download) -> str:
+    """The repository in the Hub cache: the files its family needs, or all of it.
+
+    The family is recognised from the JSON files, fetched first.
+    """
+    from .registry import detect_family
+
+    configs = Path(snapshot_download(repo_id, allow_patterns=["*.json"]))
+    try:
+        files = detect_family(configs).files
+    except ValueError:
+        files = None
+    patterns = list(files) if files is not None else None
+    return snapshot_download(repo_id, allow_patterns=patterns)

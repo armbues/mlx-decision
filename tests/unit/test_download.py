@@ -14,6 +14,15 @@ from mlx_decision.registry import known_models
 REPOS = {
     "Cloudflare/clef-flash": {"joint_head_config.json": "{}", "config.json": "{}"},
     "Qwen/Qwen3.5-9B": {"config.json": "{}"},
+    "convaiinnovations/laya": {"rl_agent_config.json": "{}"},
+}
+LAYA_FILES = {  # the root checkpoint, plus a second one in a sub-folder
+    "model.safetensors": 843_000_000,
+    "rl_agent_config.json": 1_000,
+    "encoder/config.json": 2_000,
+    "tokenizer/tokenizer.json": 3_600_000,
+    "multilingual/model.safetensors": 644_000_000,
+    "assets/logo.png": 300_000,
 }
 
 
@@ -27,6 +36,11 @@ def hub(monkeypatch, tmp_path):
                 request = httpx.Request("GET", "https://huggingface.co/api/models/x")
                 raise RepositoryNotFoundError(
                     "missing", response=httpx.Response(404, request=request)
+                )
+            if repo_id == "convaiinnovations/laya":
+                files = LAYA_FILES.items()
+                return SimpleNamespace(
+                    siblings=[SimpleNamespace(rfilename=n, size=size) for n, size in files]
                 )
             return SimpleNamespace(siblings=[SimpleNamespace(size=19_100_000_000)])
 
@@ -92,8 +106,14 @@ def test_the_menu_lists_known_models_and_other():
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
-    assert [m.repo_id for m in known_models()] == ["Cloudflare/clef-flash"]
-    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("2\rorg/model\r", "org/model")]:
+    assert [m.repo_id for m in known_models()] == [
+        "Cloudflare/clef-flash",
+        "convaiinnovations/laya",
+        "convaiinnovations/laya-multilingual",
+        "convaiinnovations/laya-typed-decisions",
+        "SupersonicLabs/Julia-1",
+    ]
+    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("6\rorg/model\r", "org/model")]:
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             pipe.send_text(typed)
             assert pick_repo() == expected
@@ -188,3 +208,12 @@ def test_an_invalid_repo_id(hub, monkeypatch):
     result = invoke("not a valid/id")
     assert result.exit_code == 1
     assert "error: not a valid/id: Repo id must be" in result.stderr
+
+
+def test_a_laya_repo_fetches_only_its_root_checkpoint(hub):
+    result = invoke("convaiinnovations/laya")
+    assert result.exit_code == 0, result.output
+    assert "downloading convaiinnovations/laya (0.8 GB)" in result.stderr
+    patterns = hub[-1][1]
+    assert "model.safetensors" in patterns and "encoder/*" in patterns
+    assert not any(p.startswith(("multilingual", "assets", "*")) for p in patterns)

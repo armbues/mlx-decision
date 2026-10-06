@@ -115,9 +115,47 @@ def _name(question) -> str:
     return question.type
 
 
+def _missing(value: Any) -> bool:
+    return value is None or value == ""
+
+
+def fill_defaults(request: Request, family: str) -> Request:
+    """Fill in what Laya and Julia need but a request may leave out.
+
+    Both families were trained with instructions; Julia also with a description
+    for every option. Short forms (``run --choice``, questions built in
+    ``chat``) leave them out, and the families' own code refuses such
+    requests. Here a missing instruction becomes the question id, and for
+    Julia a missing choice description the option id (as Laya writes an
+    option without one) and a missing noul side its literal ``false`` /
+    ``true`` (Julia's default when no side is described).
+    """
+    questions = {}
+    for question_id, question in request.questions.items():
+        update = {}
+        if _missing(question.instructions):
+            update["instructions"] = question_id
+        if (
+            family == "julia"
+            and isinstance(question, Choice)
+            and any(_missing(v) for v in question.criteria.values())
+        ):
+            update["criteria"] = {
+                key: key if _missing(value) else value for key, value in question.criteria.items()
+            }
+        if family == "julia" and isinstance(question, Noul) and question.criteria is not None:
+            update["criteria"] = {
+                key: key if _missing(question.criteria.get(key)) else question.criteria[key]
+                for key in ("false", "true")
+            }
+        questions[question_id] = question.model_copy(update=update) if update else question
+    return request.model_copy(update={"questions": questions})
+
+
 def encode_request(tokenizer: Tokenizer, special, settings, request: Request):
     """One ``EncodedQuestion`` per question, in request order."""
     julia = settings.family == "julia"
+    request = fill_defaults(request, settings.family)
     strict = julia and settings.strict
 
     def tokens(text: str) -> list[int]:

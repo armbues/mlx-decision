@@ -79,7 +79,27 @@
    ]
   },
   "single_noul_no_instructions": {
-   "refused": "question 'wants_refund': no 'instructions'; add the text the model should answer"
+   "questions": [
+    {
+     "id": "wants_refund",
+     "length": 37,
+     "ids_sha256": "47ba9449324e058f6614c42627c872cd8802669f95e35fb2e0c0d55ce7fad71e",
+     "markers": [
+      10,
+      20
+     ],
+     "scores": [
+      3.707939624786377,
+      -0.40990132093429565
+     ],
+     "probabilities": [
+      0.888563684132641,
+      0.11143631586735896
+     ],
+     "truncated": false,
+     "temperature": 1.983399510383606
+    }
+   ]
   },
   "single_noul": {
    "questions": [
@@ -212,7 +232,30 @@
    ]
   },
   "choice_no_instructions": {
-   "refused": "question 'intent': no 'instructions'; add the text the model should answer"
+   "questions": [
+    {
+     "id": "intent",
+     "length": 31,
+     "ids_sha256": "2a9c2600896ac6d1fbd391c015544a4d88c4f46e572adfb8344aafad3160652c",
+     "markers": [
+      6,
+      13,
+      20
+     ],
+     "scores": [
+      8.863788604736328,
+      -3.665719985961914,
+      0.6960799694061279
+     ],
+     "probabilities": [
+      0.9896439442283698,
+      0.0008016529250998724,
+      0.009554402846530426
+     ],
+     "truncated": false,
+     "temperature": 1.7601518630981445
+    }
+   ]
   },
   "choice_object_descriptions": {
    "questions": [
@@ -389,7 +432,30 @@
    ]
   },
   "score_no_instructions": {
-   "refused": "question 'satisfaction': no 'instructions'; add the text the model should answer"
+   "questions": [
+    {
+     "id": "satisfaction",
+     "length": 25,
+     "ids_sha256": "9ad96fc0d30c286b56c8213b13a52867a02b791ad89fcf55031736c419495d0b",
+     "markers": [
+      6,
+      11,
+      16
+     ],
+     "scores": [
+      -0.49315449595451355,
+      2.7835545539855957,
+      1.1262174844741821
+     ],
+     "probabilities": [
+      0.05446389900187697,
+      0.746883957730993,
+      0.19865214326713002
+     ],
+     "truncated": false,
+     "temperature": 1.2514300346374512
+    }
+   ]
   },
   "instructions_object": {
    "questions": [
@@ -483,7 +549,77 @@
    ]
   },
   "array_state_unicode": {
-   "refused": "question 'anger': no 'instructions'; add the text the model should answer"
+   "questions": [
+    {
+     "id": "language",
+     "length": 67,
+     "ids_sha256": "cd966a565a8e3853329e19a5e9ea595b19a7b29138cbbee061aec7e822a5f775",
+     "markers": [
+      9,
+      13,
+      17,
+      21
+     ],
+     "scores": [
+      -1.9481908082962036,
+      -1.1172590255737305,
+      -2.610328197479248,
+      -1.8569068908691406
+     ],
+     "probabilities": [
+      0.2302538793987882,
+      0.3691718009550607,
+      0.1580640858031508,
+      0.24251023384300033
+     ],
+     "truncated": false,
+     "temperature": 1.7601518630981445
+    },
+    {
+     "id": "damage",
+     "length": 72,
+     "ids_sha256": "844c3f5b2c6fe8e3eed3dff6261527db3498636b70f138e32aa378c92045cd4b",
+     "markers": [
+      12,
+      22
+     ],
+     "scores": [
+      -2.90966796875,
+      1.2881972789764404
+     ],
+     "probabilities": [
+      0.10750341308502026,
+      0.8924965869149797
+     ],
+     "truncated": false,
+     "temperature": 1.983399510383606
+    },
+    {
+     "id": "anger",
+     "length": 68,
+     "ids_sha256": "393d6cab750edee8929afec14107646b3ca5383e769450755b5f7ff28b85d272",
+     "markers": [
+      6,
+      11,
+      16,
+      21
+     ],
+     "scores": [
+      -0.9592896699905396,
+      2.8980283737182617,
+      1.9373759031295776,
+      0.3098704516887665
+     ],
+     "probabilities": [
+      0.028020690139487183,
+      0.6111065541341366,
+      0.28361780258487035,
+      0.07725495314150592
+     ],
+     "truncated": false,
+     "temperature": 1.2514300346374512
+    }
+   ]
   },
   "japanese": {
    "questions": [

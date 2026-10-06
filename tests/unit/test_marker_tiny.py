@@ -50,10 +50,24 @@ def test_sequence_layout(model):
     assert encoded.option_ids == ["false", "true"]
 
 
-def test_instructions_are_required(model):
-    with pytest.raises(DecisionError) as error:
-        model.decide("x", {"q": {"type": "noul"}})
-    assert error.value.param == "questions.q.instructions"
+def test_missing_text_is_filled_in_from_the_ids(model):
+    from mlx_decision.models.marker.encode import fill_defaults
+    from mlx_decision.types import parse_request
+
+    questions = {
+        "team": {"type": "choice", "criteria": {"billing": None, "other": "the rest"}},
+        "refund": {"type": "noul", "instructions": "", "criteria": {"true": "refund"}},
+    }
+    family = model.backend.settings.family
+    request = fill_defaults(parse_request({"state": "x", "questions": questions}), family)
+    assert request.questions["team"].instructions == "team"
+    assert request.questions["refund"].instructions == "refund"
+    if family == "julia":
+        assert request.questions["team"].criteria == {"billing": "billing", "other": "the rest"}
+        assert request.questions["refund"].criteria == {"false": "false", "true": "refund"}
+    else:
+        assert request.questions["team"].criteria == {"billing": None, "other": "the rest"}
+    assert set(model.decide("please refund", questions).answers) == {"team", "refund"}
 
 
 def test_laya_cuts_a_long_state_and_reports_it(tmp_path):
@@ -96,11 +110,6 @@ def test_laya_marker_text_is_replaced(tmp_path):
             "questions.q.criteria",
         ),
         ("x", {"q": {**QUESTIONS["refund"], "instructions": {"a": 1}}}, "questions.q.instructions"),
-        (
-            "x",
-            {"q": {**QUESTIONS["refund"], "criteria": {"true": "yes"}}},
-            "questions.q.criteria",
-        ),
         (42, {"refund": QUESTIONS["refund"]}, "state"),
     ],
 )
@@ -185,3 +194,29 @@ def test_batched_and_single_questions_agree(tmp_path, monkeypatch):
     alone = model.backend.score(model.check({"state": "please refund", "questions": QUESTIONS}))
     for question, probabilities in together.probabilities.items():
         assert probabilities == pytest.approx(alone.probabilities[question], abs=1e-5)
+
+
+@pytest.mark.parametrize("family", ["laya", "julia"])
+def test_run_with_shorthand_questions(tmp_path, family):
+    import json
+
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+
+    folder = write_marker(tmp_path, family)
+    args = ["run", "-m", str(folder), "-s", "please refund", "--json"]
+    args += ["--choice", "team=billing,technical", "--score", "urgency=0,1,2", "--noul", "refund?"]
+    result = CliRunner().invoke(app, [*args, "--max-input-tokens", "64"])
+    assert result.exit_code == 0, result.output
+    assert set(json.loads(result.stdout)["answers"]) == {"team", "urgency", "noul_1"}
+    result = CliRunner().invoke(app, [*args, "--max-image-mp", "1"])
+    assert result.exit_code == 1
+    assert f"{family} models do not take max_image_pixels" in result.stderr
+
+
+def test_convert_refuses_marker_models(tmp_path):
+    from mlx_decision.convert import convert
+
+    with pytest.raises(ValueError, match="laya models cannot be converted"):
+        convert(write_marker(tmp_path / "laya", "laya"), tmp_path / "out")

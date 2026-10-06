@@ -79,7 +79,27 @@
    ]
   },
   "single_noul_no_instructions": {
-   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+   "questions": [
+    {
+     "id": "wants_refund",
+     "length": 22,
+     "ids_sha256": "db1316e49e23e4cbfcd9f87c1585523eba158fdb494bc3bf2a44c57740846ced",
+     "markers": [
+      9,
+      11
+     ],
+     "scores": [
+      -1.7748706340789795,
+      -0.2256556898355484
+     ],
+     "probabilities": [
+      0.17519968352815307,
+      0.824800316471847
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "single_noul": {
    "questions": [
@@ -128,10 +148,56 @@
    ]
   },
   "noul_only_true_criterion": {
-   "refused": "Noul criteria must map false and true to descriptions"
+   "questions": [
+    {
+     "id": "damaged",
+     "length": 31,
+     "ids_sha256": "b0d65a4aeb0f9fd04c258f72d70c80001e0fe1084363469794af2124f7910753",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.1994268894195557,
+      5.237651824951172
+     ],
+     "probabilities": [
+      0.0002166352762432901,
+      0.9997833647237566
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "choice_null_descriptions": {
-   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "sentiment",
+     "length": 26,
+     "ids_sha256": "a0f7370962036ffcaeaef0c94bf150ed3374d349d62d21f2d30bc541e654e883",
+     "markers": [
+      10,
+      12,
+      14,
+      16
+     ],
+     "scores": [
+      -2.429983377456665,
+      -6.087159156799316,
+      -9.19097900390625,
+      -10.150260925292969
+     ],
+     "probabilities": [
+      0.973324008871393,
+      0.025116908060961198,
+      0.0011271827749034463,
+      0.00043190029274228927
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "choice_unsorted_keys": {
    "questions": [
@@ -166,7 +232,30 @@
    ]
   },
   "choice_no_instructions": {
-   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+   "questions": [
+    {
+     "id": "intent",
+     "length": 22,
+     "ids_sha256": "059353e349b28690823f92b1546030a13bf570dd8bcc0df4d69115db2878c66e",
+     "markers": [
+      6,
+      10,
+      14
+     ],
+     "scores": [
+      -1.3579955101013184,
+      -2.8411788940429688,
+      -6.917048454284668
+     ],
+     "probabilities": [
+      0.81250173305069,
+      0.18436816647954377,
+      0.003130100469766183
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "choice_object_descriptions": {
    "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
@@ -175,7 +264,27 @@
    "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
   },
   "choice_two_options": {
-   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "spam",
+     "length": 21,
+     "ids_sha256": "a466e33499b78a3ec879ef04cae66c12c824f38a0b8a74ab44e9c3dd3369ac42",
+     "markers": [
+      9,
+      11
+     ],
+     "scores": [
+      -1.5656726360321045,
+      0.328430712223053
+     ],
+     "probabilities": [
+      0.13077731582275615,
+      0.8692226841772438
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "score_two_levels": {
    "questions": [
@@ -251,7 +360,30 @@
    "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
   },
   "score_no_instructions": {
-   "refused": "JSONL line 1: state must be text/JSON and question must be text"
+   "questions": [
+    {
+     "id": "satisfaction",
+     "length": 15,
+     "ids_sha256": "4804cc44e1b6ce7e6da5102e1e19cfc296a23f2e149256d2e5b61c5e14534e4a",
+     "markers": [
+      6,
+      8,
+      10
+     ],
+     "scores": [
+      -0.543086588382721,
+      -2.0263428688049316,
+      -4.426365852355957
+     ],
+     "probabilities": [
+      0.8016155063897309,
+      0.1818846680215694,
+      0.01649982558869971
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "instructions_object": {
    "refused": "JSONL line 1: state must be text/JSON and question must be text"
@@ -305,7 +437,77 @@
    ]
   },
   "array_state_unicode": {
-   "refused": "JSONL line 3: state must be text/JSON and question must be text"
+   "questions": [
+    {
+     "id": "language",
+     "length": 47,
+     "ids_sha256": "acd3b0b8ea8ae9029a354c31e76bebf8f98f41d6221db297c6ef510954063765",
+     "markers": [
+      9,
+      11,
+      13,
+      15
+     ],
+     "scores": [
+      5.379246711730957,
+      0.8598357439041138,
+      -2.5290207862854004,
+      -5.371419429779053
+     ],
+     "probabilities": [
+      0.9888413586518717,
+      0.010773861241029253,
+      0.0003635881219662222,
+      2.1191985132686023e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "damage",
+     "length": 46,
+     "ids_sha256": "f8800f267c540bb85c9f27268bd84d23cb7a309bdec5cc9d28f8a726b84820f9",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -7.217907428741455,
+      4.1521525382995605
+     ],
+     "probabilities": [
+      1.153561325863209e-05,
+      0.9999884643867413
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "anger",
+     "length": 44,
+     "ids_sha256": "77cdf24adfdbc1b2351c6b915b773ad3c03611afb9c749de8eaecbc3d54e9cf9",
+     "markers": [
+      6,
+      8,
+      10,
+      12
+     ],
+     "scores": [
+      -8.043538093566895,
+      -6.332242012023926,
+      -8.726692199707031,
+      -8.58391284942627
+     ],
+     "probabilities": [
+      0.13117018656011306,
+      0.7261754814808182,
+      0.06624377564758276,
+      0.07641055631148598
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "japanese": {
    "questions": [
@@ -353,7 +555,80 @@
    ]
   },
   "emoji_and_symbols": {
-   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "sentiment",
+     "length": 37,
+     "ids_sha256": "b33d945c4fc2bef5f1921043481d85fbd19155c1fe9c5e58b3a3a01cbcdbc84c",
+     "markers": [
+      10,
+      12,
+      14,
+      16
+     ],
+     "scores": [
+      -3.951428174972534,
+      -6.07906436920166,
+      -9.246038436889648,
+      -10.287612915039062
+     ],
+     "probabilities": [
+      0.8881719164994094,
+      0.1057977369899589,
+      0.004457352865895819,
+      0.0015729936447357706
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "stars",
+     "length": 52,
+     "ids_sha256": "0615045c186b368d186e0143df348cb6051da62f944370972125525a4a42c36c",
+     "markers": [
+      13,
+      17,
+      21,
+      25,
+      29
+     ],
+     "scores": [
+      -5.77710485458374,
+      -2.63265061378479,
+      -3.997166395187378,
+      -5.840789794921875,
+      -3.3193328380584717
+     ],
+     "probabilities": [
+      0.023389864477092317,
+      0.5428087388052298,
+      0.1386900026703481,
+      0.021946723255936954,
+      0.2731646707913928
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "recommends",
+     "length": 35,
+     "ids_sha256": "3b0367aeff85c0661da985f2c05e878c904d822a1de7536802317e8f9c89ac13",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -3.290910005569458,
+      3.4807775020599365
+     ],
+     "probabilities": [
+      0.001144448278104292,
+      0.9988555517218958
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "number_state": {
    "refused": "JSONL line 1: state must be text/JSON and question must be text"
@@ -362,10 +637,109 @@
    "refused": "JSONL line 1: state must be text/JSON and question must be text"
   },
   "nested_state": {
-   "refused": "JSONL line 2: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "account_takeover",
+     "length": 78,
+     "ids_sha256": "d0b3d8dd0cf82f63821b5215790df2f40457bc8513dbb7fd73a440a591eeb8b4",
+     "markers": [
+      14,
+      16
+     ],
+     "scores": [
+      1.0195273160934448,
+      -2.541095495223999
+     ],
+     "probabilities": [
+      0.9723643187565678,
+      0.02763568124343228
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "plan",
+     "length": 80,
+     "ids_sha256": "995c0a8b1e47f6cc80172ab22db0881c82585d31a49ebcddc2cf958f92c10412",
+     "markers": [
+      12,
+      14,
+      16,
+      18
+     ],
+     "scores": [
+      -7.237815856933594,
+      3.646953582763672,
+      -1.4920657873153687,
+      1.9738625288009644
+     ],
+     "probabilities": [
+      1.5702352096688007e-05,
+      0.8378379267331438,
+      0.00491260969562781,
+      0.15723376121913157
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "ambiguous": {
-   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "sentiment",
+     "length": 21,
+     "ids_sha256": "905919e385166a5fba90470de929278f0ff16023d762c6f4a467b6eecbd9314b",
+     "markers": [
+      10,
+      12,
+      14,
+      16
+     ],
+     "scores": [
+      -0.824808657169342,
+      -4.068624496459961,
+      -7.79897928237915,
+      -9.47790241241455
+     ],
+     "probabilities": [
+      0.9614228460548703,
+      0.03750965922740226,
+      0.0008996438585335189,
+      0.00016785085919401852
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "satisfaction",
+     "length": 27,
+     "ids_sha256": "9bc37b5812fd2fad412bb18f20c1f1ccbbb8499a22ffee4965dc510b6347b87d",
+     "markers": [
+      11,
+      14,
+      17,
+      19,
+      21
+     ],
+     "scores": [
+      -9.699108123779297,
+      -7.137904167175293,
+      -5.675273895263672,
+      -6.735481262207031,
+      -4.860788822174072
+     ],
+     "probabilities": [
+      0.004640553175201925,
+      0.06010166437165618,
+      0.2594769324706007,
+      0.08987865110733444,
+      0.5859021988752068
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "empty_string_state": {
    "questions": [
@@ -414,7 +788,80 @@
    ]
   },
   "review_mixed": {
-   "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "sentiment",
+     "length": 31,
+     "ids_sha256": "3f007ec88a61dd7769ee661bd12073ddff41c652ec2a5c6eb53260c071488822",
+     "markers": [
+      10,
+      12,
+      14,
+      16
+     ],
+     "scores": [
+      -4.621537208557129,
+      1.5394271612167358,
+      -4.821229457855225,
+      -10.026524543762207
+     ],
+     "probabilities": [
+      0.0021021284124688516,
+      0.9961668174660139,
+      0.0017216069224272666,
+      9.44719908998984e-06
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "stars",
+     "length": 46,
+     "ids_sha256": "838ccb3a712474d6d6673c3351499604847db0caa5b3cc6a44493609014a9350",
+     "markers": [
+      13,
+      17,
+      21,
+      25,
+      29
+     ],
+     "scores": [
+      -4.289224624633789,
+      -5.561046600341797,
+      -3.551422595977783,
+      -1.7734049558639526,
+      -5.15535306930542
+     ],
+     "probabilities": [
+      0.061846819001806906,
+      0.017336926230392843,
+      0.12934234098484035,
+      0.7654625835316933,
+      0.02601133025126659
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "recommends",
+     "length": 29,
+     "ids_sha256": "2a32aa263922318342f93d2d2cc6f6452799bcf9296826fa0a424f952d90dc2c",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -1.7091083526611328,
+      0.11410019546747208
+     ],
+     "probabilities": [
+      0.13904931785563315,
+      0.8609506821443669
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "choice_numeric_keys": {
    "questions": [
@@ -514,7 +961,49 @@
    ]
   },
   "question_ids_with_symbols": {
-   "refused": "JSONL line 2: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "needs.callback",
+     "length": 37,
+     "ids_sha256": "075617f3e7447da00c590859a64da0fc15ad07944c60d1733f7564911bc48e78",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -5.291573524475098,
+      -3.5371944904327393
+     ],
+     "probabilities": [
+      0.14749572468017674,
+      0.8525042753198233
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "contact-channel",
+     "length": 35,
+     "ids_sha256": "ea2c70e4fec96840a945b92771b93e0ca6787ac40e03f06c6d6ea7c7b04c8dac",
+     "markers": [
+      7,
+      9,
+      11
+     ],
+     "scores": [
+      6.414724349975586,
+      -4.144238471984863,
+      -8.390848159790039
+     ],
+     "probabilities": [
+      0.9999736693773323,
+      2.5959078778981632e-05,
+      3.7154388865020724e-07
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "ten_nouls": {
    "questions": [
@@ -711,7 +1200,421 @@
    ]
   },
   "twenty_mixed": {
-   "refused": "JSONL line 14: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "n0",
+     "length": 34,
+     "ids_sha256": "18cf89de7494cd2e9a7c20a94c228efa51ff7d8758de676d00686c4aa94a49c4",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -2.3341612815856934,
+      1.3435426950454712
+     ],
+     "probabilities": [
+      0.024657586599704448,
+      0.9753424134002957
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n1",
+     "length": 34,
+     "ids_sha256": "aaddf4e5e3a400158df4caef6dbcc699ab718b073ca018e3c5f325a2a2c013d8",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -3.1964781284332275,
+      -0.7932918667793274
+     ],
+     "probabilities": [
+      0.08293005058290343,
+      0.9170699494170966
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n2",
+     "length": 38,
+     "ids_sha256": "b9d6bbc847fe814c9b4558a8221dd7e86148324941d39e9ebd3f1bda9dd8cb59",
+     "markers": [
+      15,
+      17
+     ],
+     "scores": [
+      2.696612596511841,
+      -1.0456849336624146
+     ],
+     "probabilities": [
+      0.9768490773654283,
+      0.023150922634571844
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n3",
+     "length": 35,
+     "ids_sha256": "8986015e70750c5c754353cd742a48bfe609f4a1886766086c22444a1a378bbd",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      2.877157688140869,
+      4.917181015014648
+     ],
+     "probabilities": [
+      0.11506435677578264,
+      0.8849356432242174
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n4",
+     "length": 36,
+     "ids_sha256": "5289ba9df77d37dc046cf7cb8f0e3be05caa3999524b1b4f3e00271b20197ee4",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      0.5563246607780457,
+      -0.4687211811542511
+     ],
+     "probabilities": [
+      0.7359543022830016,
+      0.26404569771699826
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n5",
+     "length": 36,
+     "ids_sha256": "d00c8daebdec0efd0fb1f6c1535d8acdf5078d68bb8ca85fab8a608ae84f7592",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      0.6933642029762268,
+      2.7814276218414307
+     ],
+     "probabilities": [
+      0.11026241856837203,
+      0.889737581431628
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n6",
+     "length": 35,
+     "ids_sha256": "b3060b4b5d018389bf3422d70509b45fff3954d083761dd441f1af3e33deadc8",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      0.9780463576316833,
+      -1.8648452758789062
+     ],
+     "probabilities": [
+      0.9449500770220061,
+      0.05504992297799393
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n7",
+     "length": 35,
+     "ids_sha256": "c4893dc4c610f75dab536aca94de07247d29c522b74ac7f2e0a596799ee939b8",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      2.6678264141082764,
+      4.546363830566406
+     ],
+     "probabilities": [
+      0.13255695924350247,
+      0.8674430407564976
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n8",
+     "length": 36,
+     "ids_sha256": "a770b0700d5aed212dcf5e7bb3fd0a8765fbddb80623d6a1b1292a5fffedb766",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      1.0690364837646484,
+      0.46343794465065
+     ],
+     "probabilities": [
+      0.6469361167642969,
+      0.3530638832357031
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n9",
+     "length": 35,
+     "ids_sha256": "dea525cb7f01ab1e31cbe313391ee05c84898817799cf64e28467195722043bd",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -0.3484928011894226,
+      0.052320655435323715
+     ],
+     "probabilities": [
+      0.40111691389146803,
+      0.5988830861085319
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "department",
+     "length": 51,
+     "ids_sha256": "e56fadbf332364c734ae84324661ae3267bcaa824ca8ed9c64f4b49b56b3731e",
+     "markers": [
+      12,
+      19,
+      25
+     ],
+     "scores": [
+      1.6687904596328735,
+      -9.501191139221191,
+      -8.620132446289062
+     ],
+     "probabilities": [
+      0.999951903693536,
+      1.4090218900227555e-05,
+      3.400608756365553e-05
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "frustration",
+     "length": 45,
+     "ids_sha256": "b53c9392a42888abb5a506b3abf8e57250c54d55d78fb258f58bfa5800461ea4",
+     "markers": [
+      12,
+      18,
+      23
+     ],
+     "scores": [
+      -6.656032085418701,
+      -6.841144561767578,
+      -6.563008785247803
+     ],
+     "probabilities": [
+      0.3414719628763687,
+      0.28376689230294094,
+      0.37476114482069034
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "is_urgent",
+     "length": 37,
+     "ids_sha256": "29e10edbfb6baa46f3e98a3608b5d741906afc8b8b2078cef6db44645e8fc0a0",
+     "markers": [
+      14,
+      16
+     ],
+     "scores": [
+      -1.6209112405776978,
+      -2.5752007961273193
+     ],
+     "probabilities": [
+      0.7219770235253561,
+      0.27802297647464386
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "sentiment",
+     "length": 37,
+     "ids_sha256": "d877742f59047fcaa8671461f2b25ed0423f9aedeca4f9fe80692a377d904eba",
+     "markers": [
+      10,
+      12,
+      14,
+      16
+     ],
+     "scores": [
+      -6.752333164215088,
+      -2.4833967685699463,
+      -7.1184163093566895,
+      -9.788430213928223
+     ],
+     "probabilities": [
+      0.013663615264233897,
+      0.9762052636361208,
+      0.009474967630121633,
+      0.0006561534695236598
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "stars",
+     "length": 52,
+     "ids_sha256": "2e7d73cfaf671c3431312cbd42c92cf6eb9992e037f9ba553312a30a38898fc2",
+     "markers": [
+      13,
+      17,
+      21,
+      25,
+      29
+     ],
+     "scores": [
+      -6.913261413574219,
+      -1.9820085763931274,
+      -2.1659953594207764,
+      -6.48002815246582,
+      -7.159328937530518
+     ],
+     "probabilities": [
+      0.0038888442583285905,
+      0.5388109917950674,
+      0.4482620801980427,
+      0.005997515311842367,
+      0.003040568436718846
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "recommends",
+     "length": 35,
+     "ids_sha256": "f12b80c14df1d5f53e9dd21fa4df4d39521c30fe062f3274c9abf534c57876bc",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -1.983730435371399,
+      0.3061004877090454
+     ],
+     "probabilities": [
+      0.09196866864363945,
+      0.9080313313563605
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic0",
+     "length": 35,
+     "ids_sha256": "7b0b47d4d209fd59f208e06364297f00613fd6b9d111fd20a7aa2035ce22b0fb",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -8.88978385925293,
+      -8.369827270507812,
+      -7.077244281768799
+     ],
+     "probabilities": [
+      0.11353392841689477,
+      0.1909589168300033,
+      0.6955071547531019
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic1",
+     "length": 35,
+     "ids_sha256": "6ebf0d5d9a69417bead0515e4236ff8df660a953289bf4f613dd2eaf4b5f8fed",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -8.732629776000977,
+      -8.442102432250977,
+      -6.867581367492676
+     ],
+     "probabilities": [
+      0.11372190258487175,
+      0.15206124401187615,
+      0.7342168534032522
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic2",
+     "length": 35,
+     "ids_sha256": "9252f9c9020618a1d4e11cdfef0843d93a783466e74b162b6ee3b8e82f374bdd",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -8.642309188842773,
+      -8.331544876098633,
+      -6.819894313812256
+     ],
+     "probabilities": [
+      0.11694199048400948,
+      0.15956355658773855,
+      0.723494452928252
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic3",
+     "length": 35,
+     "ids_sha256": "d1f11fd9dce2868a0c1d88c0c6ccf70dd02e0152188a9c970c9ca10919a4180b",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -8.733606338500977,
+      -8.57455825805664,
+      -7.039883613586426
+     ],
+     "probabilities": [
+      0.13137000241829816,
+      0.1540174439396282,
+      0.7146125536420737
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "choice_54_options": {
    "refused": "JSONL line 1: options must contain 2\u201320 nonempty rendered descriptions"
@@ -1341,7 +2244,421 @@
    "refused": "Game state exceeds lossless context budget"
   },
   "thread_6k_twenty_questions": {
-   "refused": "JSONL line 14: options must contain 2\u201320 nonempty rendered descriptions"
+   "questions": [
+    {
+     "id": "n0",
+     "length": 6012,
+     "ids_sha256": "9c38a67b05f3b503f9b5f631d895eddc6d1592e8747749b375a806536b5b48aa",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -7.0581231117248535,
+      -2.036351203918457
+     ],
+     "probabilities": [
+      0.0065496536762854,
+      0.9934503463237147
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n1",
+     "length": 6012,
+     "ids_sha256": "458d107fecdc04f5cf09d3e57bd866020106b9a00e96def31f0254b4c433abaf",
+     "markers": [
+      11,
+      13
+     ],
+     "scores": [
+      -7.340550422668457,
+      -2.4777719974517822
+     ],
+     "probabilities": [
+      0.0076697006786807685,
+      0.9923302993213192
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n2",
+     "length": 6016,
+     "ids_sha256": "b32b18500d830237298aa51376cbd22bebcc04b933089a0341a7b327e1174b96",
+     "markers": [
+      15,
+      17
+     ],
+     "scores": [
+      -6.2054123878479,
+      -3.148223876953125
+     ],
+     "probabilities": [
+      0.04490813757086738,
+      0.9550918624291326
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n3",
+     "length": 6013,
+     "ids_sha256": "1f7ed320a29ba79a90f6b568704e238f80d1f071f642d855e465bf7df362b251",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -5.353002548217773,
+      -1.5171366930007935
+     ],
+     "probabilities": [
+      0.02112667348338408,
+      0.9788733265166158
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n4",
+     "length": 6014,
+     "ids_sha256": "36334fbcac233deda6ce6bb396374d6eb29d013debb509ea6cf07c1f4289b07f",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -7.977658748626709,
+      -2.563992977142334
+     ],
+     "probabilities": [
+      0.004435516747072819,
+      0.9955644832529271
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n5",
+     "length": 6014,
+     "ids_sha256": "e0f99935e4b2388cd90febaf59ca72c51a5e4f8b720b73cd1d61f315bbff7f7d",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -6.037410736083984,
+      1.2311502695083618
+     ],
+     "probabilities": [
+      0.0006966287861236403,
+      0.9993033712138762
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n6",
+     "length": 6013,
+     "ids_sha256": "fec079307d334d9680d8079dc713baadfe0b2b3ffd5dde15b6939d6c71b86020",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -5.203401565551758,
+      -2.3087260723114014
+     ],
+     "probabilities": [
+      0.05241740096468365,
+      0.9475825990353163
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n7",
+     "length": 6013,
+     "ids_sha256": "224159ebd25a6d9bd858484b2a388299ff99b8cf882b60427348195397ce35f4",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -7.246601104736328,
+      -3.9167656898498535
+     ],
+     "probabilities": [
+      0.03456172161148854,
+      0.9654382783885114
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n8",
+     "length": 6014,
+     "ids_sha256": "099d612f3ddd84234ae2abad71476203887fa44e23b78e74904bbbb2e0ab84b0",
+     "markers": [
+      13,
+      15
+     ],
+     "scores": [
+      -6.185055732727051,
+      -3.441035747528076
+     ],
+     "probabilities": [
+      0.06042526874371538,
+      0.9395747312562847
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "n9",
+     "length": 6013,
+     "ids_sha256": "e38e64b88ebfc2601d996991c81d4212bda842802a892a8e6618d4ecab26b627",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -7.981918811798096,
+      -2.515519857406616
+     ],
+     "probabilities": [
+      0.004208636849314173,
+      0.995791363150686
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "department",
+     "length": 6029,
+     "ids_sha256": "63917e6a6d03928eed632dfe684c01f6a4c7303f485ece7b9509d571b9781368",
+     "markers": [
+      12,
+      19,
+      25
+     ],
+     "scores": [
+      -3.3470711708068848,
+      -3.0953280925750732,
+      -5.991774559020996
+     ],
+     "probabilities": [
+      0.42421559320449814,
+      0.5456538927978684,
+      0.03013051399763346
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "frustration",
+     "length": 6023,
+     "ids_sha256": "b65eae381b7f1f2a692e1620637f9eb5a8305504bd798fb902d57c3e05931990",
+     "markers": [
+      12,
+      18,
+      23
+     ],
+     "scores": [
+      -8.0044527053833,
+      -9.803228378295898,
+      -10.041747093200684
+     ],
+     "probabilities": [
+      0.7716749686280636,
+      0.1277132815320753,
+      0.10061174983986106
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "is_urgent",
+     "length": 6015,
+     "ids_sha256": "38efc4226b3edf01c911f45975bb982bae61288269050e45e45bdbc7a90aee5e",
+     "markers": [
+      14,
+      16
+     ],
+     "scores": [
+      -7.705963611602783,
+      -3.8991096019744873
+     ],
+     "probabilities": [
+      0.021735057842986485,
+      0.9782649421570134
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "sentiment",
+     "length": 6015,
+     "ids_sha256": "af6a9595012f613e984d46af118a512a164fc4e4c59f7c3de8514a4d9b170306",
+     "markers": [
+      10,
+      12,
+      14,
+      16
+     ],
+     "scores": [
+      -7.994089603424072,
+      -8.146646499633789,
+      -7.55450439453125,
+      -7.317539215087891
+     ],
+     "probabilities": [
+      0.1859547035937571,
+      0.15964398124760523,
+      0.28861347145314503,
+      0.36578784370549267
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "stars",
+     "length": 6030,
+     "ids_sha256": "f45346acbde35ac556e1763115dc457318e8aa8d072e3168a9a99cf3b67d8dc8",
+     "markers": [
+      13,
+      17,
+      21,
+      25,
+      29
+     ],
+     "scores": [
+      -6.612558841705322,
+      -2.5433337688446045,
+      -4.455226898193359,
+      -4.606593132019043,
+      -3.9778881072998047
+     ],
+     "probabilities": [
+      0.011169237414102666,
+      0.653529983040363,
+      0.09659193830800572,
+      0.08302394411792806,
+      0.15568489711960048
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "recommends",
+     "length": 6013,
+     "ids_sha256": "ea5f593266ac8c8f19c538402b03ecf26c109c965d36b0f69eccb2566c731455",
+     "markers": [
+      12,
+      14
+     ],
+     "scores": [
+      -7.851559638977051,
+      -2.9244024753570557
+     ],
+     "probabilities": [
+      0.007194934040978078,
+      0.9928050659590221
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic0",
+     "length": 6013,
+     "ids_sha256": "8ee23382d2065cafdb2650fa04d2c5286681990f5422c65868ae595ea5954fe8",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -6.561030387878418,
+      -9.303274154663086,
+      -5.412347793579102
+     ],
+     "probabilities": [
+      0.23705329538018138,
+      0.015272307545566608,
+      0.747674397074252
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic1",
+     "length": 6013,
+     "ids_sha256": "75e819138484047f1fb32bc7af050fc6434fb458c9a738acdfb6e73113f7dc09",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -6.608603000640869,
+      -9.478165626525879,
+      -4.932973384857178
+     ],
+     "probabilities": [
+      0.15627731610703263,
+      0.008864632385031013,
+      0.8348580515079362
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic2",
+     "length": 6013,
+     "ids_sha256": "96b3952fbb77cace875014fe0b4895c7e1aadeb12941bc0ed364730860816ee6",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -6.868947505950928,
+      -8.86375904083252,
+      -5.445496082305908
+     ],
+     "probabilities": [
+      0.1891266062241924,
+      0.025728649308765086,
+      0.7851447444670426
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    },
+    {
+     "id": "topic3",
+     "length": 6013,
+     "ids_sha256": "36f471a63177a4a9e794717a037c2919ecd03de52be0aa2c9c8f209d12d8599f",
+     "markers": [
+      10,
+      12,
+      14
+     ],
+     "scores": [
+      -6.608967304229736,
+      -8.61522102355957,
+      -5.6624298095703125
+     ],
+     "probabilities": [
+      0.2694500001538117,
+      0.03623875497610008,
+      0.6943112448700881
+     ],
+     "truncated": false,
+     "temperature": 1.0
+    }
+   ]
   },
   "lang_de": {
    "questions": [

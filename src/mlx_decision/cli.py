@@ -263,6 +263,26 @@ MaxImageOption = Annotated[
 ]
 
 
+MaxInputOption = Annotated[
+    int | None,
+    typer.Option(
+        "--max-input-tokens",
+        min=16,
+        help="Input limit in tokens; longer states are cut (or refused by models that do not "
+        "cut). Default: the model's own (Clef 16,384; Laya 512 or 1,024; Julia 8,192). Laya "
+        "and Julia take up to 8,192.",
+    ),
+]
+
+
+def load_options(max_image_mp: float | None, max_input_tokens: int | None) -> dict[str, Any]:
+    """Load options for the flags that were given."""
+    options = image_options(max_image_mp)
+    if max_input_tokens is not None:
+        options["max_input_tokens"] = max_input_tokens
+    return options
+
+
 def image_options(max_image_mp: float | None) -> dict[str, Any]:
     """Load options for ``--max-image-mp``; none when the flag is not given."""
     if max_image_mp is None:
@@ -303,6 +323,7 @@ def run(
     state_json: StateJsonOption = False,
     image: ImageOption = None,
     max_image_mp: MaxImageOption = None,
+    max_input_tokens: MaxInputOption = None,
     states: Annotated[
         str | None,
         typer.Option(
@@ -341,7 +362,7 @@ def run(
             try:
                 if "questions" in body:
                     parse_request({**body, "state": ""})
-                loaded = load(model, **image_options(max_image_mp))
+                loaded = load(model, **load_options(max_image_mp, max_input_tokens))
             except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
                 fail(str(error))
             answer_states(loaded, body, lines)
@@ -349,7 +370,7 @@ def run(
     body = add_images(build_request(questions, shorthand, state, state_file, state_json), image)
     try:
         parse_request(body)  # catch request errors before loading
-        result = load(model, **image_options(max_image_mp)).decide_request(body)
+        result = load(model, **load_options(max_image_mp, max_input_tokens)).decide_request(body)
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
     if as_json:
@@ -371,6 +392,7 @@ def chat(
     as_json: JsonOption = False,
     image: ImageOption = None,
     max_image_mp: MaxImageOption = None,
+    max_input_tokens: MaxInputOption = None,
 ) -> None:
     """Load a model once, then answer states typed one after another.
 
@@ -391,7 +413,7 @@ def chat(
     try:
         if "questions" in body:
             parse_request({**body, "state": ""})  # catch question errors before loading
-        loaded = load(model, **image_options(max_image_mp))
+        loaded = load(model, **load_options(max_image_mp, max_input_tokens))
         if body.get("images"):
             loaded.check({"state": "", "questions": {"q": {"type": "noul"}}, **body})
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
@@ -503,7 +525,7 @@ def download(
             local_dir = parent / repo_id.rsplit("/", 1)[-1]
         target = f" to {local_dir}" if local_dir else ""
         typer.echo(f"downloading {repo_id} ({format_size(check.size_bytes)}){target} ...", err=True)
-        path = fetch(repo_id, local_dir)
+        path = fetch(repo_id, local_dir, check.files)
     except RepositoryNotFoundError:
         fail(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
     except (HfHubHTTPError, httpx.HTTPError, OSError, ValueError) as error:
@@ -521,6 +543,7 @@ def server(
     host: Annotated[str, typer.Option(help="Address to bind to.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
     max_image_mp: MaxImageOption = None,
+    max_input_tokens: MaxInputOption = None,
     api_key: Annotated[
         str | None,
         typer.Option(
@@ -540,16 +563,18 @@ def server(
         fail("the server needs extra packages: pip install 'mlx-decision[server]'")
     from .hub import resolve_model_path
     from .model import load
-    from .registry import detect_family
+    from .registry import check_options, detect_family
 
     typer.echo(f"loading {model} ...", err=True)
+    options = load_options(max_image_mp, max_input_tokens)
     try:
-        detect_family(resolve_model_path(model))  # fail here, not inside the server
+        # Fail here, not inside the server.
+        check_options(detect_family(resolve_model_path(model)), options)
     except (FileNotFoundError, ValueError) as error:
         fail(str(error))
     if api_key:
         typer.echo("API key required on /v1/*", err=True)
-    app = create_app(lambda: load(model, **image_options(max_image_mp)), api_key=api_key)
+    app = create_app(lambda: load(model, **options), api_key=api_key)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 

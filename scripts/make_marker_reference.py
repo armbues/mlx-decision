@@ -14,6 +14,12 @@ encoder's forward that fails with current transformers; its plain
 `TransformerEngine` runs the unchanged model, and `julia.data.sequence`
 with `strict=True` decides what is refused.
 
+Requests are filled in first as mlx-decision does
+(mlx_decision.models.marker.encode.fill_defaults: a missing instruction
+becomes the question id, and for Julia a missing description the option
+id), so the references answer them too. A request the wire format itself
+refuses is recorded as refused.
+
 Writes tests/parity/marker/reference-<model folder>.json with, per request,
 either the refusal or per question: the token count and a SHA-256 of the
 token ids, the marker positions, whether the state was cut, the raw option
@@ -211,10 +217,21 @@ def main() -> None:
     if args.only:
         wanted = set(args.only.split(","))
         cases = [c for c in cases if c["id"] in wanted]
+    from mlx_decision.errors import DecisionError
+    from mlx_decision.models.marker.encode import fill_defaults
+    from mlx_decision.types import parse_request
+
     results = dict(existing)
     for case in cases:
         start = time.perf_counter()
-        results[case["id"]] = reference.run(case["state"], case["questions"])
+        try:
+            request = parse_request({"state": case["state"], "questions": case["questions"]})
+        except DecisionError as error:
+            results[case["id"]] = {"refused": str(error)}
+        else:
+            filled = fill_defaults(request, reference.meta["family"])
+            questions = {qid: q.model_dump() for qid, q in filled.questions.items()}
+            results[case["id"]] = reference.run(case["state"], questions)
         status = "refused" if "refused" in results[case["id"]] else "ok"
         print(f"{case['id']}: {status} ({time.perf_counter() - start:.1f} s)", flush=True)
     meta = reference.meta | {

@@ -1,5 +1,6 @@
 """Model families: how a model folder is recognised and loaded."""
 
+import inspect
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ class Family:
     loader: str  # "module:function"; imported only when the family is used
     converter: str | None = None  # same form; writes an MLX copy of a model
     known_models: tuple[KnownModel, ...] = ()
+    # Files a download fetches (Hub patterns); None: the whole repository.
+    files: tuple[str, ...] | None = None
 
 
 _FAMILIES: dict[str, Family] = {}
@@ -38,8 +41,9 @@ def register_family(
     loader: str,
     converter: str | None = None,
     known_models: tuple[KnownModel, ...] = (),
+    files: tuple[str, ...] | None = None,
 ) -> None:
-    _FAMILIES[name] = Family(name, detect, loader, converter, known_models)
+    _FAMILIES[name] = Family(name, detect, loader, converter, known_models, files)
 
 
 def known_models() -> list[KnownModel]:
@@ -66,8 +70,20 @@ def detect_family(path: Path) -> Family:
     raise ValueError(f"{path}: not a supported decision model (known families: {known})")
 
 
+def check_options(family: Family, options: dict) -> None:
+    """Fail unless the family's loader takes every option."""
+    accepted = inspect.signature(resolve(family.loader)).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in accepted.values()):
+        return
+    unknown = [name for name in options if name not in accepted]
+    if unknown:
+        raise ValueError(f"{family.name} models do not take {', '.join(unknown)}")
+
+
 def load_backend(path: Path, **options) -> Backend:
-    return resolve(detect_family(path).loader)(path, **options)
+    family = detect_family(path)
+    check_options(family, options)
+    return resolve(family.loader)(path, **options)
 
 
 register_family(
@@ -84,14 +100,44 @@ register_family(
     ),
 )
 
+# The encoder and tokenizer folders plus the files at the top; the Laya repo
+# also holds other checkpoints in sub-folders, Julia's its PyTorch code.
+_MARKER_FILES = ("model.safetensors", "encoder/*", "tokenizer/*", "README.md", "LICENSE*")
+
 register_family(
     "laya",
     detect=lambda path: (path / "rl_agent_config.json").exists(),
     loader="mlx_decision.models.marker.model:load_laya",
+    known_models=(
+        KnownModel(
+            "convaiinnovations/laya",
+            "Laya: English decision model (ModernBERT-large, 421M), calibrated",
+            "843 MB",
+        ),
+        KnownModel(
+            "convaiinnovations/laya-multilingual",
+            "Laya multilingual: 100+ languages (mmBERT-base, 322M)",
+            "678 MB",
+        ),
+        KnownModel(
+            "convaiinnovations/laya-typed-decisions",
+            "Laya fine-tuned for typed-decision workflows (ModernBERT-large)",
+            "846 MB",
+        ),
+    ),
+    files=(*_MARKER_FILES, "rl_agent_config.json"),
 )
 
 register_family(
     "julia",
     detect=lambda path: (path / "julia_config.json").exists(),
     loader="mlx_decision.models.marker.model:load_julia",
+    known_models=(
+        KnownModel(
+            "SupersonicLabs/Julia-1",
+            "Julia 1: multilingual decision model (mmBERT-small, 144M), 2-20 options",
+            "577 MB",
+        ),
+    ),
+    files=(*_MARKER_FILES, "config.json", "julia_config.json", "inference-policy.json"),
 )

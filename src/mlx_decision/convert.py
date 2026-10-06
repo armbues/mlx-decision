@@ -35,7 +35,7 @@ def convert(model: str | Path, output: str | Path, **options) -> Path:
     path = resolve_model_path(model)
     family = detect_family(path)
     if family.converter is None:
-        raise ValueError(f"{family.name} models cannot be converted")
+        raise ValueError(f"{family.name} models cannot be converted; they load as they are")
     # A Hub id, or only the folder name: a local path would put the user's
     # directories into a folder that may be shared.
     source = str(model) if is_repo_id(model) else path.resolve().name

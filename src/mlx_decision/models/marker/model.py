@@ -218,7 +218,6 @@ def load_julia(
         max_input_tokens=settings.max_length,
         max_choice_options=20,
         max_score_levels=20,
-        requires_instructions=True,
     )
     return MarkerBackend(
         path.resolve().name, encoder, head, tokenizer, special, settings, capabilities
@@ -248,7 +247,7 @@ def load_laya(
             for bucket, value in config.get("temperature_by_options", {}).items()
         },
     )
-    capabilities = Capabilities(max_input_tokens=settings.max_length, requires_instructions=True)
+    capabilities = Capabilities(max_input_tokens=settings.max_length)
     return MarkerBackend(
         path.resolve().name, encoder, head, tokenizer, special, settings, capabilities
     )

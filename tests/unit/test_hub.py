@@ -33,7 +33,7 @@ def http_error(kind):
     ],
 )
 def test_hub_failures_become_one_line_errors(monkeypatch, error, reason):
-    def snapshot_download(repo_id):
+    def snapshot_download(repo_id, allow_patterns=None):
         raise error
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
@@ -54,14 +54,16 @@ def test_local_paths_are_never_looked_up_on_the_hub(tmp_path):
 
 def test_a_model_loaded_by_repo_id_is_named_after_the_repo(monkeypatch, tmp_path):
     snapshot = write_model(tmp_path / "models--org--decider" / "snapshots" / ("0" * 40))
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda repo_id: str(snapshot))
+    monkeypatch.setattr(
+        huggingface_hub, "snapshot_download", lambda repo_id, allow_patterns=None: str(snapshot)
+    )
     assert mlx_decision.load("org/decider").name == "decider"
     assert mlx_decision.load(snapshot).name == "fake"  # a folder keeps the backend's name
 
 
 @pytest.mark.parametrize("command", [["run", "-s", "x", "--noul", "q?"], ["server"], ["benchmark"]])
 def test_commands_report_an_unknown_repo_in_one_line(monkeypatch, command):
-    def snapshot_download(repo_id):
+    def snapshot_download(repo_id, allow_patterns=None):
         raise http_error(RepositoryNotFoundError)
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
@@ -69,3 +71,19 @@ def test_commands_report_an_unknown_repo_in_one_line(monkeypatch, command):
     assert result.exit_code == 1, result.output
     assert "error: nobody/nothing: not a local folder, and not found" in result.stderr
     assert "Traceback" not in result.output
+
+
+def test_a_repo_id_fetches_only_the_files_its_family_needs(monkeypatch, tmp_path):
+    from tiny_models import write_marker
+
+    snapshot = write_marker(tmp_path / "snapshot", "laya")
+    calls = []
+
+    def snapshot_download(repo_id, allow_patterns=None):
+        calls.append(allow_patterns)
+        return str(snapshot)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    assert mlx_decision.load("org/laya").name == "laya"
+    assert calls[0] == ["*.json"]
+    assert "rl_agent_config.json" in calls[1] and "encoder/*" in calls[1]
