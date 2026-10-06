@@ -12,6 +12,8 @@ class Capabilities:
     max_input_tokens: int | None = None
     max_choice_options: int | None = None
     max_score_levels: int | None = None
+    # Tokens one question and its options share; options are cut to fit.
+    question_tokens: int | None = None
     requires_instructions: bool = False
     supports_images: bool = False
     # False when inputs over max_input_tokens are refused instead of cut.

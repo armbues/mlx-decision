@@ -88,6 +88,9 @@ def test_descriptions_carry_the_model_limits():
     assert "bare ids" not in tools()["decide"].description
     refusing = FakeBackend(max_input_tokens=512, truncates_input=False)
     assert "are refused" in tools(refusing)["decide"].description
+    assert "at most 16 options" in tools(FakeBackend(question_tokens=192))["decide"].description
+    strict = FakeBackend(question_tokens=192, truncates_input=False)
+    assert "groups of options" not in tools(strict)["decide"].description
 
 
 def test_decide_answers_every_question_type():
@@ -140,6 +143,22 @@ def test_image_paths_are_refused_unless_allowed(tmp_path):
     assert refused.content[0].text.startswith("images.1: expected a data URL")
     allowed = decide(arguments, FakeBackend(supports_images=True), allow_image_paths=True)
     assert not allowed.is_error
+
+
+def test_more_options_than_a_cutting_model_tells_apart_are_refused():
+    many = {f"intent_{n}": f"Intent number {n}" for n in range(17)}
+    question = {"type": "choice", "instructions": "Which intent?", "criteria": many}
+    arguments = {"state": "My card is stuck", "questions": {"intent": question}}
+    refused = decide(arguments, FakeBackend(question_tokens=192))
+    assert refused.is_error
+    assert refused.content[0].text.startswith("questions.intent.criteria: 17 options")
+    many.pop("intent_0")
+    assert not decide(arguments, FakeBackend(question_tokens=192)).is_error
+    strict = FakeBackend(question_tokens=192, truncates_input=False)
+    assert not decide({**arguments, "questions": {"intent": question}}, strict).is_error
+    many["intent_0"] = "Intent number 0"
+    capped = decide(arguments, FakeBackend(max_choice_options=16))
+    assert "Choose among groups" in capped.content[0].text
 
 
 def test_failures_do_not_leak_details():

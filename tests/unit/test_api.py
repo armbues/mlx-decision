@@ -46,6 +46,7 @@ def test_info_describes_the_model_and_its_limits(fake_model_path):
         "question_types": ["choice", "noul", "score"],
         "max_choice_options": None,
         "max_score_levels": None,
+        "question_tokens": None,
         "requires_instructions": False,
         "supports_images": False,
     }

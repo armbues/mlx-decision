@@ -39,6 +39,7 @@ class DecisionModel:
             "question_types": sorted(caps.question_types),
             "max_choice_options": caps.max_choice_options,
             "max_score_levels": caps.max_score_levels,
+            "question_tokens": caps.question_tokens,
             "requires_instructions": caps.requires_instructions,
             "supports_images": caps.supports_images,
         }

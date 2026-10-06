@@ -42,8 +42,11 @@ Question types, keyed by an id of your choice in `questions`:
 - choice: pick one option of `criteria` (option id -> short description). \
 Answer: `choice` (the most likely id), `confidence`, `probabilities` per option.
 - score: rate on ordered levels; `criteria` lists their descriptions from \
-lowest to highest. Answer: `score` (the expected level, 0-based, may be \
-fractional), `confidence`, `legend`, `probabilities` per level.
+lowest to highest. Answer: `score`, the expected level as a 0-based index \
+into `criteria` (fractional: 1.7 lies between levels 1 and 2), `confidence`, \
+`legend` (index -> level description) and `probabilities` per level. To name \
+one level, take the most probable one and report its `legend` text; do not \
+cut `score` down to an integer.
 
 Example arguments:
 {{"state": "I was charged twice for my subscription this month.", \
@@ -52,8 +55,14 @@ handle this request?", "criteria": {{"billing": "Billing and payment disputes", 
 "technical": "Technical problems and errors", "sales": "Sales and new purchases"}}}}, \
 "urgent": {{"type": "noul", "instructions": "Does this need a reply today?"}}}}}}
 
-Ask all questions about one state in one call. `confidence` runs from 0 \
-to 1; a low value means the model hesitates between answers."""
+The state is one item (a message, a review, a document). Ask all \
+questions about it in one call; for several items, make one call per item \
+(calls may run in parallel), since every question reads the whole state and \
+cannot address a part of it. `confidence` runs from 0 \
+to 1; a low value (below about 0.5) means the model hesitates between \
+answers: report such an answer as uncertain, with the runner-up. Report \
+the model's answers as they are; if you disagree with one, say so and why \
+rather than replacing it."""
 
 MODEL_INFO = """\
 Describe the loaded decision model: name, family, precision, input limit \
@@ -66,21 +75,60 @@ questions about a text with probabilities, fast and without generating \
 text. `model_info` lists its limits."""
 
 
+def option_limit(info: dict[str, Any]) -> int | None:
+    """Options per question that ``decide`` takes, or None for no limit.
+
+    The family's own limit, and for a model that cuts options to fit, the
+    count that keeps about 12 tokens each: beyond it the descriptions
+    shrink to a word or two and the answers turn confidently wrong.
+    """
+    limits = [info["max_choice_options"]]
+    if info["question_tokens"] and info["truncates_input"]:
+        limits.append(info["question_tokens"] // 12)
+    return min((limit for limit in limits if limit), default=None)
+
+
+def check_option_counts(body: Any, limit: int) -> None:
+    questions = body.get("questions") if isinstance(body, dict) else None
+    if not isinstance(questions, dict):
+        return
+    for question_id, question in questions.items():
+        criteria = question.get("criteria") if isinstance(question, dict) else None
+        if isinstance(criteria, (dict, list)) and len(criteria) > limit:
+            raise DecisionError(
+                f"{len(criteria)} options; this model takes at most {limit}. Choose "
+                "among groups of options first, then ask again with the options of the "
+                "chosen group",
+                param=f"questions.{question_id}.criteria",
+            )
+
+
 def family_hints(info: dict[str, Any], allow_image_paths: bool) -> list[str]:
     """What an agent should know about this model beyond the general description."""
     hints = []
     if info["max_input_tokens"] and info["truncates_input"]:
+        words = info["max_input_tokens"] * 3 // 4
         hints.append(
-            f"States longer than {info['max_input_tokens']:,} tokens are cut; "
-            "the result then has `truncated: true`."
+            f"It reads at most {info['max_input_tokens']:,} tokens (about {words:,} words, "
+            "questions included); a longer state is cut, the model sees only part of it "
+            "and the result has `truncated: true`. Split longer texts into parts (by "
+            "section or paragraph), ask about each part in its own call and combine "
+            "the answers."
         )
     elif info["max_input_tokens"]:
         hints.append(
             f"Requests longer than {info['max_input_tokens']:,} tokens are refused; "
             "split long texts."
         )
-    if info["max_choice_options"]:
-        hints.append(f"A choice takes at most {info['max_choice_options']} options.")
+    if limit := option_limit(info):
+        why = ""
+        if info["truncates_input"] and limit != info["max_choice_options"]:
+            why = f" (a question and its options share {info['question_tokens']} tokens)"
+        hints.append(
+            f"A choice or score takes at most {limit} options or levels{why}. For more, "
+            "first choose among groups of options, then ask again with the options of "
+            "the chosen group."
+        )
     if info["family"] == "julia":
         hints.append(
             "Describe every choice option in `criteria` with a short phrase of what it "
@@ -208,6 +256,7 @@ def create_server(
     only for stdio, where the client already has the server's file access.
     """
     tools = tool_list(model, allow_image_paths)
+    limit = option_limit(model.info())
 
     async def on_worker(function: Callable, *args):
         return await asyncio.get_running_loop().run_in_executor(worker, function, *args)
@@ -225,6 +274,8 @@ def create_server(
         try:
             if not allow_image_paths:
                 check_data_urls(body)
+            if limit:
+                check_option_counts(body, limit)
             result = await on_worker(model.decide_request, body)
         except DecisionError as error:
             return error_result(str(error))
