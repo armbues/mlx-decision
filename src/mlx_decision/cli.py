@@ -583,14 +583,37 @@ def mcp(
     model: Annotated[
         str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
     ],
+    http: Annotated[
+        bool,
+        typer.Option(
+            "--http",
+            help="Serve over streamable HTTP at http://HOST:PORT/mcp instead of stdio, so "
+            "several clients share one loaded model.",
+        ),
+    ] = False,
+    host: Annotated[str, typer.Option(help="Address to bind to (with --http).")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on (with --http).")] = 8000,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    api_key: Annotated[
+        str | None,
+        typer.Option(
+            envvar="MLX_DECISION_API_KEY",
+            help="With --http: require 'Authorization: Bearer KEY' (ignored on stdio, "
+            "which only its own client can reach).",
+            show_envvar=True,
+        ),
+    ] = None,
 ) -> None:
-    """Serve a model to agents over MCP on stdin/stdout (tools: decide, model_info)."""
+    """Serve a model to agents over MCP (tools: decide, model_info).
+
+    On stdio by default, as MCP clients start local servers; --http for one
+    shared process.
+    """
     try:
         import anyio
 
-        from .mcp_server import serve_stdio
+        from .mcp_server import serve_http, serve_stdio
     except ImportError:
         fail("the MCP server needs extra packages: pip install 'mlx-decision[mcp]'")
     import logging
@@ -609,7 +632,12 @@ def mcp(
         fail(str(error))
     typer.echo(f"loading {model} ...", err=True)
     try:
-        anyio.run(serve_stdio, lambda: load(model, **options))
+        if http:
+            if api_key:
+                typer.echo("API key required", err=True)
+            serve_http(lambda: load(model, **options), host, port, api_key)
+        else:
+            anyio.run(serve_stdio, lambda: load(model, **options))
     except KeyboardInterrupt:
         pass
     except Exception as error:

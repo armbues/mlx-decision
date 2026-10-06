@@ -198,3 +198,86 @@ def test_without_the_extra_the_command_says_what_to_install(tmp_path):
     )
     assert result.returncode == 1
     assert "pip install 'mlx-decision[mcp]'" in result.stderr
+
+
+@pytest.fixture
+def http_url():
+    """Start a streamable HTTP server in a thread; yields a function of the API key."""
+    import socket
+    import time
+
+    import uvicorn
+
+    from mlx_decision.mcp_server import http_app
+
+    servers = []
+    worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision")
+
+    def start(api_key=None):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        model = DecisionModel(FakeBackend(supports_images=True))
+        app = http_app(create_server(model, worker), "127.0.0.1", api_key)
+        server = uvicorn.Server(uvicorn.Config(app, port=port, log_level="warning"))
+        threading.Thread(target=server.run, daemon=True).start()
+        servers.append(server)
+        while not server.started:
+            time.sleep(0.01)
+        return f"http://127.0.0.1:{port}/mcp"
+
+    yield start
+    for server in servers:
+        server.should_exit = True
+    worker.shutdown()
+
+
+def over_http(url, *calls, api_key=None):
+    """Run ``(method, args...)`` calls with one HTTP client; returns their results."""
+    import httpx2
+    from mcp.client.streamable_http import streamable_http_client
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    async def main():
+        async with (
+            httpx2.AsyncClient(headers=headers) as http,
+            Client(streamable_http_client(url, http_client=http)) as client,
+        ):
+            return [await getattr(client, method)(*args) for method, *args in calls]
+
+    return anyio.run(main)
+
+
+def test_http_serves_the_tools_and_refuses_image_paths(http_url, tmp_path):
+    listed, answered, refused = over_http(
+        http_url(),
+        ("list_tools",),
+        ("call_tool", "decide", {**ARGUMENTS, "images": [PIXEL]}),
+        ("call_tool", "decide", {**ARGUMENTS, "images": [str(tmp_path / "secret.png")]}),
+    )
+    images = next(tool for tool in listed.tools if tool.name == "decide").input_schema
+    assert "file path" not in images["properties"]["images"]["description"]
+    assert not answered.is_error
+    assert refused.is_error and refused.content[0].text.startswith("images.0: expected a data URL")
+
+
+def test_http_clients_share_one_server(http_url):
+    url = http_url()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(
+            pool.map(lambda _: over_http(url, ("call_tool", "decide", ARGUMENTS)), range(8))
+        )
+    assert all(not result.is_error for (result,) in results)
+
+
+def test_http_api_key(http_url):
+    import httpx2
+
+    url = http_url(api_key="secret")
+    (result,) = over_http(url, ("call_tool", "decide", ARGUMENTS), api_key="secret")
+    assert not result.is_error
+    for headers in ({}, {"Authorization": "Bearer wrong"}):
+        response = httpx2.post(url, json={}, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"error": "missing or invalid API key"}

@@ -7,6 +7,7 @@ work runs on the one worker thread the model was loaded on.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 from collections.abc import Callable
@@ -23,6 +24,9 @@ from .images import check_data_urls
 from .model import DecisionModel
 
 logger = logging.getLogger(__name__)
+
+# Room for several large images as data URLs, as on the HTTP server.
+MAX_BODY_BYTES = 64 * 2**20
 
 READ_ONLY = types.ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
@@ -250,3 +254,55 @@ async def serve_stdio(load_model: Callable[[], DecisionModel]) -> None:
             logger.info("model %s loaded", model.name)
             server = create_server(model, worker, allow_image_paths=True)
             await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
+class RequireApiKey:
+    """ASGI middleware: HTTP requests need ``Authorization: Bearer <key>``, else 401."""
+
+    def __init__(self, app, api_key: str):
+        self.app = app
+        self.expected = f"Bearer {api_key}".encode()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            given = dict(scope["headers"]).get(b"authorization", b"")
+            if not hmac.compare_digest(given, self.expected):
+                body = json.dumps({"error": "missing or invalid API key"}).encode()
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                            (b"www-authenticate", b"Bearer"),
+                        ],
+                    }
+                )
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
+def http_app(server: Server, host: str, api_key: str | None = None):
+    """The streamable HTTP app at ``/mcp``, behind the API key if there is one.
+
+    The SDK turns on DNS rebinding protection when ``host`` is a loopback address.
+    """
+    app = server.streamable_http_app(host=host, max_request_body_size=MAX_BODY_BYTES)
+    return RequireApiKey(app, api_key) if api_key else app
+
+
+def serve_http(
+    load_model: Callable[[], DecisionModel], host: str, port: int, api_key: str | None = None
+) -> None:
+    """Load the model, then serve over streamable HTTP until interrupted.
+
+    Image paths are refused: a client must not make the server read its files.
+    """
+    import uvicorn
+
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision") as worker:
+        model = worker.submit(load_model).result()
+        logger.info("model %s loaded", model.name)
+        server = create_server(model, worker, allow_image_paths=False)
+        uvicorn.run(http_app(server, host, api_key), host=host, port=port, log_level="info")
