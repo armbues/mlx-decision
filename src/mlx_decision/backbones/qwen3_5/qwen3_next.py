@@ -5,13 +5,13 @@
 # under the MIT License. See LICENSES/mlx-lm-MIT.txt.
 #
 # Modified for mlx-decision: reduced to the gated RMSNorm, attention and MLP
-# blocks used by the Qwen3.5 text model, for a single pass without a cache.
-# Attention optionally takes per-axis position ids for image and video tokens.
+# blocks used by the Qwen3.5 text model. Attention optionally takes per-axis
+# position ids for image and video tokens.
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -120,6 +120,7 @@ class Qwen3NextAttention(nn.Module):
         x: mx.array,
         mask: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         B, L, D = x.shape
 
@@ -139,15 +140,22 @@ class Qwen3NextAttention(nn.Module):
             0, 2, 1, 3
         )
 
-        if position_ids is None:
-            queries = self.rope(queries)
-            keys = self.rope(keys)
-        else:
+        # Per-axis positions are absolute; without them, tokens continue
+        # after the ones already in the cache.
+        if position_ids is not None:
             queries = self.mrope(queries, position_ids)
             keys = self.mrope(keys, position_ids)
+        elif cache is not None:
+            queries = self.rope(queries, offset=cache.offset)
+            keys = self.rope(keys, offset=cache.offset)
+        else:
+            queries = self.rope(queries)
+            keys = self.rope(keys)
+        if cache is not None:
+            keys, values = cache.update_and_fetch(keys, values)
 
         output = scaled_dot_product_attention(
-            queries, keys, values, cache=None, scale=self.scale, mask=mask
+            queries, keys, values, cache=cache, scale=self.scale, mask=mask
         )
         output = output.transpose(0, 2, 1, 3).reshape(B, L, -1)
 

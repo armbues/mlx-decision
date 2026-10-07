@@ -4,20 +4,22 @@
 # mlx_lm/models/qwen3_5.py at commit 5cfec4cb39deba54210b3ff4d86f2337c7bc10b5,
 # under the MIT License. See LICENSES/mlx-lm-MIT.txt.
 #
-# Modified for mlx-decision: reduced to a text-only model that runs one full
-# pass over the input and returns the final hidden states. Removed: caches,
-# pipeline and distributed (sharding) support, and mixture-of-experts layers.
+# Modified for mlx-decision: reduced to a text-only model that returns the
+# final hidden states, optionally continuing from a cache of one sequence
+# (no padding). Removed: batched caches, pipeline and distributed (sharding)
+# support, and mixture-of-experts layers.
 # Added: optional per-axis position ids for image and video tokens, and a row
 # lookup into the output embeddings that also works when they are quantized,
 # and sanitizing a part of the weights (one shard) with the layout given.
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import mlx.core as mx
 import mlx.nn as nn
 
 from .base import BaseModelArgs, create_attention_mask
+from .cache import ArraysCache, ConcatenateKVCache
 from .gated_delta import gated_delta_update, normalize_qk
 from .qwen3_next import Qwen3NextAttention as Attention
 from .qwen3_next import Qwen3NextMLP as MLP
@@ -130,7 +132,7 @@ class GatedDeltaNet(nn.Module):
 
         self.out_proj = nn.Linear(self.value_dim, self.hidden_size, bias=False)
 
-    def __call__(self, inputs: mx.array) -> mx.array:
+    def __call__(self, inputs: mx.array, cache: Optional[Any] = None) -> mx.array:
         B, S, _ = inputs.shape
 
         qkv = self.in_proj_qkv(inputs)
@@ -138,11 +140,17 @@ class GatedDeltaNet(nn.Module):
         b = self.in_proj_b(inputs)
         a = self.in_proj_a(inputs)
 
-        conv_state = mx.zeros(
-            (B, self.conv_kernel_size - 1, self.conv_dim),
-            dtype=inputs.dtype,
-        )
+        if cache is not None and cache[0] is not None:
+            conv_state = cache[0]
+        else:
+            conv_state = mx.zeros(
+                (B, self.conv_kernel_size - 1, self.conv_dim),
+                dtype=inputs.dtype,
+            )
         conv_input = mx.concatenate([conv_state, qkv], axis=1)
+        if cache is not None:
+            n_keep = self.conv_kernel_size - 1
+            cache[0] = mx.contiguous(conv_input[:, -n_keep:, :])
         conv_out = nn.silu(self.conv1d(conv_input))
 
         q, k, v = [
@@ -154,9 +162,10 @@ class GatedDeltaNet(nn.Module):
             )
         ]
 
+        state = cache[1] if cache else None
         q, k = normalize_qk(q, k, inv_scale=self.head_k_dim**-0.5, eps=1e-6)
 
-        out, _ = gated_delta_update(
+        out, state = gated_delta_update(
             q,
             k,
             v,
@@ -164,10 +173,13 @@ class GatedDeltaNet(nn.Module):
             b,
             self.A_log,
             self.dt_bias,
-            None,
+            state,
             None,
             use_kernel=not self.training,
         )
+
+        if cache is not None:
+            cache[1] = state
 
         out = self.norm(out, z)
         return self.out_proj(out.reshape(B, S, -1))
@@ -196,11 +208,12 @@ class DecoderLayer(nn.Module):
         x: mx.array,
         mask: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         if self.is_linear:
-            r = self.linear_attn(self.input_layernorm(x))
+            r = self.linear_attn(self.input_layernorm(x), cache)
         else:
-            r = self.self_attn(self.input_layernorm(x), mask, position_ids)
+            r = self.self_attn(self.input_layernorm(x), mask, position_ids, cache)
         h = x + r
         out = h + self.mlp(self.post_attention_layernorm(h))
         return out
@@ -214,27 +227,35 @@ class Qwen3_5TextModel(nn.Module):
             DecoderLayer(args=args, layer_idx=i) for i in range(args.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.fa_idx = args.full_attention_interval - 1
 
     def __call__(
         self,
         inputs: mx.array,
         input_embeddings: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
         """Final hidden states (after the last norm) for token ids ``[B, L]``.
 
         ``input_embeddings`` ``[B, L, hidden]`` replaces the token embeddings,
         which is how image features enter. ``position_ids`` ``[3, B, L]`` gives
         each token a (time, height, width) position; without it tokens are
-        numbered in order, which is right for text.
+        numbered in order, which is right for text. ``cache`` (from
+        ``make_cache``) holds the state after earlier tokens of the same
+        sequence; the pass continues from it and updates it.
         """
         if input_embeddings is not None:
             hidden_states = input_embeddings
         else:
             hidden_states = self.embed_tokens(inputs)
-        mask = create_attention_mask(hidden_states)
-        for layer in self.layers:
-            hidden_states = layer(hidden_states, mask=mask, position_ids=position_ids)
+        if cache is None:
+            cache = [None] * len(self.layers)
+        mask = create_attention_mask(hidden_states, cache[self.fa_idx])
+        for layer, c in zip(self.layers, cache):
+            hidden_states = layer(
+                hidden_states, mask=mask, position_ids=position_ids, cache=c
+            )
         return self.norm(hidden_states)
 
 
@@ -252,8 +273,19 @@ class TextModel(nn.Module):
         inputs: mx.array,
         input_embeddings: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
-        return self.model(inputs, input_embeddings, position_ids)
+        return self.model(inputs, input_embeddings, position_ids, cache)
+
+    @property
+    def layers(self):
+        return self.model.layers
+
+    def make_cache(self):
+        return [
+            ArraysCache(size=2) if l.is_linear else ConcatenateKVCache()
+            for l in self.layers
+        ]
 
     def output_embedding_rows(self, ids: mx.array) -> mx.array:
         """Rows of the output embedding matrix for token ``ids``, dequantized if needed."""
@@ -324,8 +356,12 @@ class Model(nn.Module):
         inputs: mx.array,
         input_embeddings: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
+        cache: Optional[Any] = None,
     ) -> mx.array:
-        return self.language_model(inputs, input_embeddings, position_ids)
+        return self.language_model(inputs, input_embeddings, position_ids, cache)
+
+    def make_cache(self):
+        return self.language_model.make_cache()
 
     def sanitize(self, weights, release: Optional[bool] = None):
         sanitized = {}
