@@ -4,7 +4,7 @@ import json
 
 from typer.testing import CliRunner
 
-from mlx_decision.benchmark import make_questions, percentile, run
+from mlx_decision.benchmark import format_report, make_questions, percentile, run
 from mlx_decision.cli import app
 from mlx_decision.types import parse_request
 
@@ -35,6 +35,52 @@ def test_grid_and_sizes(fake_model):
     # The fake backend counts words, so the states hit their sizes exactly.
     assert [c.input_tokens for c in report.cells] == [10, 10, 100, 100]
     assert all(c.p95_s >= c.median_s > 0 for c in report.cells)
+    # The fake backend keeps no prefixes: no warm times, no warm columns.
+    assert all(c.warm_median_s is None for c in report.cells)
+    assert "Warm" not in format_report(report)
+
+
+class KeptStates:
+    """A stand-in prefix cache: keeps states up to ``max_words`` words, counts hits."""
+
+    def __init__(self, max_words: int):
+        self.max_bytes = 2e9
+        self.max_words = max_words
+        self.kept: set[str] = set()
+        self.hits = 0
+        self.cleared = 0
+
+    def clear(self):
+        self.kept.clear()
+        self.cleared += 1
+
+    def wrap(self, score):
+        def scored(request):
+            if request.state in self.kept:
+                self.hits += 1
+            elif len(request.state.split()) <= self.max_words:
+                self.kept.add(request.state)
+            return score(request)
+
+        return scored
+
+
+def test_warm_times_with_a_prefix_cache(fake_model):
+    cache = KeptStates(max_words=50)
+    fake_model.backend.prefix_cache = cache
+    fake_model.backend.score = cache.wrap(fake_model.backend.score)
+    report = run(fake_model, lengths=(10, 100), question_counts=(1,), repeats=3)
+    small, large = report.cells
+    assert small.warm_p95_s >= small.warm_median_s > 0
+    # Too large to keep: every warm request missed, so there is nothing to show.
+    assert large.warm_median_s is None and large.warm_p95_s is None
+    assert cache.hits == 3
+    # Each cold request dropped the kept prefixes first.
+    assert cache.cleared == 2 * 3
+    assert report.prefix_cache_gb == 2.0
+    table = format_report(report)
+    assert "| Warm median s | Warm p95 s |" in table
+    assert "| 100 | 1 | 100 |" in table and table.count(" - | - |") == 1
 
 
 def test_cli(fake_model_path):
@@ -62,13 +108,19 @@ def test_results_file_names_machine_software_model_and_options(
     assert result.stdout.startswith("Apple M1 (MacBookPro17,1), 4 Performance + 4 Efficiency")
     assert f"results written to {out}" in result.stderr
     data = json.loads(out.read_text())
-    assert data["format"] == 2
+    assert data["format"] == 3
     assert data["date"].endswith("+00:00")
     assert data["machine"] == MACHINE
     assert set(data["software"]) == {"mlx_decision", "mlx", "python"}
     assert data["model"] == "fake"
     assert data["model_info"]["family"] == "fake"
-    assert data["options"] == {"lengths": [20], "question_counts": [2], "repeats": 2}
+    assert data["options"] == {
+        "lengths": [20],
+        "question_counts": [2],
+        "repeats": 2,
+        "prefix_cache_gb": None,
+    }
+    assert data["cells"][0]["warm_median_s"] is None
     assert data["cells"][0]["input_tokens"] == 20
 
 

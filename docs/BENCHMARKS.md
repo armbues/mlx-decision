@@ -129,6 +129,31 @@ Throughput: clef-flash about 1,550-1,850 tokens per second, laya and
 laya-typed-decisions about 24,000-26,000, laya-multilingual about 60,000,
 Julia-1 about 100,000.
 
+### Prefix reuse
+
+Clef keeps the computed state of recent requests (2 GB by default,
+`--prefix-cache GB`), so a later request on the same state and images
+computes only its questions. `benchmark` times this as "warm" columns: each
+row's request again with its state kept. clef-flash with a 16,384-token
+input (the state is cut to fit the questions), median of 5 runs:
+
+| Questions | bf16 first request | bf16 same state | 8-bit first request | 8-bit same state |
+|---|---|---|---|---|
+| 1 | 9.91 s | 0.20 s | 11.30 s | 0.17 s |
+| 5 | 10.41 s | 0.48 s | 11.83 s | 0.53 s |
+| 20 | 10.37 s | 1.53 s | 12.72 s | 1.82 s |
+| Peak memory | 20.4 GB | | 12.5 GB | |
+
+A warm request takes about as long as the same questions on a short state
+(20 questions on a 250-token state: 1.27 s in bf16); the questions still
+attend over the whole state, which adds a little. Keeping the 16,384-token
+state adds about 1.3 GB to the peak memory. Laya and Julia read each
+question together with the state, so they have nothing to reuse.
+
+```bash
+mlx-decision benchmark -m Cloudflare/clef-flash --lengths 16384
+```
+
 ## Images
 
 clef-flash with a short state and three questions (text only: 0.23 s):

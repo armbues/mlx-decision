@@ -4,6 +4,10 @@ The grid crosses state lengths (in tokens) with numbers of questions. Each
 cell runs one warm-up request, then ``repeats`` timed ones, end to end
 through ``DecisionModel.decide_request``. It works for any family: states
 are filler text, sized from the token counts the model reports.
+
+For a model that keeps computed prefixes (Clef), each cell also times
+requests on a state it has seen: the "warm" times, which cover only the
+questions. The timed cold requests drop kept prefixes first.
 """
 
 import math
@@ -18,8 +22,9 @@ from .machine import describe, machine_info, software_info
 from .model import DecisionModel, load
 
 # Version of the JSON written by ``to_dict``: format 2 added everything but
-# the numbers (date, machine, software, model info, options).
-FORMAT = 2
+# the numbers (date, machine, software, model info, options), format 3 the
+# warm times and the prefix cache option.
+FORMAT = 3
 
 FILLER = (
     "The customer wrote again about the delayed delivery and asked whether the "
@@ -38,6 +43,8 @@ class Cell:
     median_s: float
     p95_s: float
     tokens_per_s: float
+    warm_median_s: float | None = None
+    warm_p95_s: float | None = None
 
 
 @dataclass
@@ -53,6 +60,7 @@ class Report:
     model_info: dict = field(default_factory=dict)
     lengths: tuple[int, ...] = ()
     question_counts: tuple[int, ...] = ()
+    prefix_cache_gb: float | None = None
 
 
 def make_questions(count: int) -> dict:
@@ -110,11 +118,35 @@ def tokens_per_word(model: DecisionModel) -> float:
     return max((probe - base) / 500, 1e-3)
 
 
+def prefix_cache(model: DecisionModel):
+    """The backend's cache of computed prefixes, or None (off, or a family without one)."""
+    return getattr(model.backend, "prefix_cache", None)
+
+
 def forget_prefixes(model: DecisionModel) -> None:
     """Drop kept prefixes, so a repeated request is timed as a new one."""
-    cache = getattr(model.backend, "prefix_cache", None)
+    cache = prefix_cache(model)
     if cache is not None:
         cache.clear()
+
+
+def time_warm(model: DecisionModel, request: dict, repeats: int) -> list[float] | None:
+    """Times of ``request`` with its state's prefix kept, or None if it was not.
+
+    The request repeats unchanged: only the prefix is looked up, so its
+    questions are computed each time, as new questions would be. A prefix
+    larger than the cache limit is not kept, and then there is nothing to time.
+    """
+    cache = prefix_cache(model)
+    if cache is None:
+        return None
+    hits = cache.hits
+    times = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        model.decide_request(request)
+        times.append(time.perf_counter() - start)
+    return times if cache.hits - hits == repeats else None
 
 
 def run(
@@ -141,6 +173,7 @@ def run(
                 start = time.perf_counter()
                 model.decide_request(request)
                 times.append(time.perf_counter() - start)
+            warm = time_warm(model, request, repeats)
             median = statistics.median(times)
             cells.append(
                 Cell(
@@ -150,6 +183,8 @@ def run(
                     median_s=median,
                     p95_s=percentile(times, 0.95),
                     tokens_per_s=result.usage.input_tokens / median,
+                    warm_median_s=statistics.median(warm) if warm else None,
+                    warm_p95_s=percentile(warm, 0.95) if warm else None,
                 )
             )
     return Report(
@@ -164,6 +199,7 @@ def run(
         model_info=model.info(),
         lengths=tuple(lengths),
         question_counts=tuple(question_counts),
+        prefix_cache_gb=cache.max_bytes / 1e9 if (cache := prefix_cache(model)) else None,
     )
 
 
@@ -176,20 +212,36 @@ def benchmark(reference: str, check_memory: bool = True, **options) -> Report:
 
 
 def format_report(report: Report) -> str:
+    """A Markdown table; warm columns only when some cell has warm times."""
+    warm = any(cell.warm_median_s is not None for cell in report.cells)
+    header = "| State tokens | Questions | Input tokens | Median s | p95 s | Tokens/s |"
     lines = [
         describe(report.machine),
         f"{report.model}: load {report.load_s:.1f} s, peak memory "
         f"{report.peak_memory_gb:.1f} GB, {report.repeats} timed runs per row after a warm-up",
         "",
-        "| State tokens | Questions | Input tokens | Median s | p95 s | Tokens/s |",
-        "|---|---|---|---|---|---|",
+        header + (" Warm median s | Warm p95 s |" if warm else ""),
+        "|---" * (8 if warm else 6) + "|",
     ]
     for cell in report.cells:
-        lines.append(
+        line = (
             f"| {cell.state_tokens} | {cell.questions} | {cell.input_tokens} "
             f"| {cell.median_s:.3f} | {cell.p95_s:.3f} | {cell.tokens_per_s:.0f} |"
         )
+        if warm:
+            line += f" {_seconds(cell.warm_median_s)} | {_seconds(cell.warm_p95_s)} |"
+        lines.append(line)
+    if warm:
+        lines += [
+            "",
+            "Warm: the same request again with its state's computed prefix kept "
+            "(only the questions are computed); - where the prefix was too large to keep.",
+        ]
     return "\n".join(lines)
+
+
+def _seconds(value: float | None) -> str:
+    return "-" if value is None else f"{value:.3f}"
 
 
 def to_dict(report: Report) -> dict:
@@ -205,6 +257,7 @@ def to_dict(report: Report) -> dict:
             "lengths": list(report.lengths),
             "question_counts": list(report.question_counts),
             "repeats": report.repeats,
+            "prefix_cache_gb": report.prefix_cache_gb,
         },
         "load_s": report.load_s,
         "peak_memory_gb": report.peak_memory_gb,

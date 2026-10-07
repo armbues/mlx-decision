@@ -41,6 +41,11 @@ change the interface).
   `--json` prints the same object, and the table now starts with a line
   naming the machine.
 
+- `benchmark` also times each row for Clef with its state already
+  computed (the "warm" columns, `warm_median_s` and `warm_p95_s` in the
+  JSON): on clef-flash, a 16,384-token request takes about 10 s the
+  first time and 0.2 s with one new question, 1.5 s with twenty.
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

@@ -863,7 +863,11 @@ def benchmark(
         ),
     ] = None,
 ) -> None:
-    """Measure load time and latency per request across state length and question count."""
+    """Measure load time and latency per request across state length and question count.
+
+    For Clef, each row is also timed with its state's computed prefix kept
+    (the warm columns), as a later request on the same state would run.
+    """
     from .benchmark import benchmark as run_benchmark
     from .benchmark import format_report, to_dict
 
