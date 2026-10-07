@@ -30,6 +30,9 @@ class Family:
     known_models: tuple[KnownModel, ...] = ()
     # Files a download fetches (Hub patterns); None: the whole repository.
     files: tuple[str, ...] | None = None
+    # "module:function" (path, load options) -> [(weight file, load dtype or None)],
+    # for the memory check; None: every top-level *.safetensors, as stored.
+    weight_files: str | None = None
 
 
 _FAMILIES: dict[str, Family] = {}
@@ -42,8 +45,9 @@ def register_family(
     converter: str | None = None,
     known_models: tuple[KnownModel, ...] = (),
     files: tuple[str, ...] | None = None,
+    weight_files: str | None = None,
 ) -> None:
-    _FAMILIES[name] = Family(name, detect, loader, converter, known_models, files)
+    _FAMILIES[name] = Family(name, detect, loader, converter, known_models, files, weight_files)
 
 
 def known_models() -> list[KnownModel]:
@@ -108,6 +112,7 @@ register_family(
     ),
     # Weights, head, tokenizer and configs; not the reference code or chat template.
     files=("*.json", "model*.safetensors", "joint_head.safetensors", "LICENSE*", "README.md"),
+    weight_files="mlx_decision.models.clef.model:weight_files",
 )
 
 # The encoder and tokenizer folders plus the files at the top; the Laya repo
@@ -136,6 +141,7 @@ register_family(
         ),
     ),
     files=(*_MARKER_FILES, "rl_agent_config.json"),
+    weight_files="mlx_decision.models.marker.model:weight_files",
 )
 
 register_family(
@@ -150,4 +156,5 @@ register_family(
         ),
     ),
     files=(*_MARKER_FILES, "config.json", "julia_config.json", "inference-policy.json"),
+    weight_files="mlx_decision.models.marker.model:weight_files",
 )

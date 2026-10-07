@@ -9,6 +9,7 @@ from .answers import build_answer
 from .backend import Backend
 from .errors import DecisionError, require_metal
 from .hub import is_repo_id, resolve_model_path
+from .memory import check_fits
 from .registry import load_backend
 from .types import Choice, Request, Result, Score, Usage, parse_request
 
@@ -126,7 +127,7 @@ class DecisionModel:
                 )
 
 
-def load(model: str | Path, **options) -> DecisionModel:
+def load(model: str | Path, check_memory: bool = True, **options) -> DecisionModel:
     """Load a decision model from a local folder or a Hugging Face repo id.
 
     ``options`` go to the model family's loader. For Clef: ``max_input_tokens``
@@ -138,9 +139,16 @@ def load(model: str | Path, **options) -> DecisionModel:
     (``"float32"``, ``"float16"`` or ``"bfloat16"``; default float16); for
     Julia also ``strict_encoding`` (default True, as its release: refuse
     requests that would have to be cut).
+
+    Before reading the weights, ``load`` checks that the model fits in the
+    GPU's recommended working set (its weights plus 10%) and raises
+    ``ModelTooLargeError`` if not; ``check_memory=False`` skips the check.
     """
     require_metal()
-    backend = load_backend(resolve_model_path(model), **options)
+    path = resolve_model_path(model)
+    if check_memory:
+        check_fits(path, options, name=str(model))
+    backend = load_backend(path, **options)
     if is_repo_id(model):
         # Named after the repo, not the cache's snapshot folder.
         backend.name = str(model).rstrip("/").rsplit("/", 1)[-1]

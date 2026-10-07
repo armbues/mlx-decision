@@ -183,6 +183,15 @@ def _load_parts(
     return encoder, head, tokenizer, special, args, precision
 
 
+def weight_files(path: Path, options: dict) -> list[tuple[Path, str | None]]:
+    """The weights file ``load_laya`` / ``load_julia`` read, and the dtype they convert to."""
+    name = "model.safetensors"
+    if (path / "julia_config.json").exists() and (path / "config.json").exists():
+        name = json.loads((path / "config.json").read_text()).get("weights_file", name)
+    file = path / name
+    return [(file, options.get("dtype", DEFAULT_DTYPE))] if file.exists() else []
+
+
 def load_julia(
     path: Path,
     max_input_tokens: int | None = None,

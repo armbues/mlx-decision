@@ -1,4 +1,5 @@
 from .errors import DecisionError
+from .memory import ModelTooLargeError
 from .model import DecisionModel, load
 from .types import (
     Choice,
@@ -20,6 +21,7 @@ __all__ = [
     "ChoiceAnswer",
     "DecisionError",
     "DecisionModel",
+    "ModelTooLargeError",
     "Noul",
     "NoulAnswer",
     "Request",

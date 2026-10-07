@@ -9,6 +9,13 @@ change the interface).
 
 ### Added
 
+- Loading checks first that the model fits in memory: if its weights
+  plus 10% exceed the GPU's recommended working set, it is refused
+  before anything is read, with both sizes and, for a model that can be
+  quantized, the `convert` command that makes it fit (instead of the
+  Mac swapping). `--no-memory-check` (or `load(..., check_memory=False)`)
+  loads it anyway. `server` and `mcp` check before they start.
+
 - `benchmark --out FILE` writes the results as JSON together with the
   machine they were measured on (Mac model, chip, CPU cores per kind,
   GPU cores, memory, GPU working set, macOS), the versions of

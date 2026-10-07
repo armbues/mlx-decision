@@ -304,6 +304,16 @@ MaxInputOption = Annotated[
 ]
 
 
+NoMemoryCheckOption = Annotated[
+    bool,
+    typer.Option(
+        "--no-memory-check",
+        help="Load the model even if its weights plus 10% exceed the GPU's recommended "
+        "working set (refused by default, as it would swap).",
+    ),
+]
+
+
 def load_options(max_image_mp: float | None, max_input_tokens: int | None) -> dict[str, Any]:
     """Load options for the flags that were given."""
     options = image_options(max_image_mp)
@@ -353,6 +363,7 @@ def run(
     image: ImageOption = None,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    no_memory_check: NoMemoryCheckOption = False,
     states: Annotated[
         str | None,
         typer.Option(
@@ -391,7 +402,11 @@ def run(
             try:
                 if "questions" in body:
                     parse_request({**body, "state": ""})
-                loaded = load(model, **load_options(max_image_mp, max_input_tokens))
+                loaded = load(
+                    model,
+                    check_memory=not no_memory_check,
+                    **load_options(max_image_mp, max_input_tokens),
+                )
             except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
                 fail(str(error))
             if bare := undescribed_choices(loaded, body.get("questions")):
@@ -401,7 +416,9 @@ def run(
     body = add_images(build_request(questions, shorthand, state, state_file, state_json), image)
     try:
         parse_request(body)  # catch request errors before loading
-        loaded = load(model, **load_options(max_image_mp, max_input_tokens))
+        loaded = load(
+            model, check_memory=not no_memory_check, **load_options(max_image_mp, max_input_tokens)
+        )
         if bare := undescribed_choices(loaded, body.get("questions")):
             typer.echo(describe_options_hint(bare, RUN_DESCRIBE_HOW), err=True)
         result = loaded.decide_request(body)
@@ -427,6 +444,7 @@ def chat(
     image: ImageOption = None,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    no_memory_check: NoMemoryCheckOption = False,
 ) -> None:
     """Load a model once, then answer states typed one after another.
 
@@ -447,7 +465,9 @@ def chat(
     try:
         if "questions" in body:
             parse_request({**body, "state": ""})  # catch question errors before loading
-        loaded = load(model, **load_options(max_image_mp, max_input_tokens))
+        loaded = load(
+            model, check_memory=not no_memory_check, **load_options(max_image_mp, max_input_tokens)
+        )
         if body.get("images"):
             loaded.check({"state": "", "questions": {"q": {"type": "noul"}}, **body})
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
@@ -580,6 +600,7 @@ def server(
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    no_memory_check: NoMemoryCheckOption = False,
     api_key: Annotated[
         str | None,
         typer.Option(
@@ -598,6 +619,7 @@ def server(
     except ImportError:
         fail("the server needs extra packages: pip install 'mlx-decision[server]'")
     from .hub import resolve_model_path
+    from .memory import check_fits
     from .model import load
     from .registry import check_options, detect_family
 
@@ -605,12 +627,15 @@ def server(
     options = load_options(max_image_mp, max_input_tokens)
     try:
         # Fail here, not inside the server.
-        check_options(detect_family(resolve_model_path(model)), options)
+        path = resolve_model_path(model)
+        check_options(detect_family(path), options)
+        if not no_memory_check:
+            check_fits(path, options, name=model)
     except (FileNotFoundError, ValueError) as error:
         fail(str(error))
     if api_key:
         typer.echo("API key required on /v1/*", err=True)
-    app = create_app(lambda: load(model, **options), api_key=api_key)
+    app = create_app(lambda: load(model, check_memory=False, **options), api_key=api_key)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 
@@ -631,6 +656,7 @@ def mcp(
     port: Annotated[int, typer.Option(help="Port to listen on (with --http).")] = 8000,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    no_memory_check: NoMemoryCheckOption = False,
     api_key: Annotated[
         str | None,
         typer.Option(
@@ -655,6 +681,7 @@ def mcp(
     import logging
 
     from .hub import resolve_model_path
+    from .memory import check_fits
     from .model import load
     from .registry import check_options, detect_family
 
@@ -663,7 +690,10 @@ def mcp(
     options = load_options(max_image_mp, max_input_tokens)
     try:
         # Fail here, before a client is waiting for the handshake.
-        check_options(detect_family(resolve_model_path(model)), options)
+        path = resolve_model_path(model)
+        check_options(detect_family(path), options)
+        if not no_memory_check:
+            check_fits(path, options, name=model)
     except (FileNotFoundError, ValueError) as error:
         fail(str(error))
     typer.echo(f"loading {model} ...", err=True)
@@ -671,9 +701,9 @@ def mcp(
         if http:
             if api_key:
                 typer.echo("API key required", err=True)
-            serve_http(lambda: load(model, **options), host, port, api_key)
+            serve_http(lambda: load(model, check_memory=False, **options), host, port, api_key)
         else:
-            anyio.run(serve_stdio, lambda: load(model, **options))
+            anyio.run(serve_stdio, lambda: load(model, check_memory=False, **options))
     except KeyboardInterrupt:
         pass
     except Exception as error:
@@ -795,6 +825,7 @@ def benchmark(
         str, typer.Option(help="Numbers of questions, comma-separated.")
     ] = "1,5,20",
     repeats: Annotated[int, typer.Option(min=1, help="Timed runs per row.")] = 5,
+    no_memory_check: NoMemoryCheckOption = False,
     as_json: Annotated[
         bool,
         typer.Option("--json", help="Print the results as JSON (with machine and versions)."),
@@ -819,7 +850,7 @@ def benchmark(
     if min(grid["question_counts"]) < 1:
         raise typer.BadParameter("at least one question per request", param_hint="--questions")
     try:
-        report = run_benchmark(model, repeats=repeats, **grid)
+        report = run_benchmark(model, check_memory=not no_memory_check, repeats=repeats, **grid)
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
     if out is not None:

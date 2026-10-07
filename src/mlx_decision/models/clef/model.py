@@ -182,6 +182,12 @@ def precision(path: Path, backbone) -> str:
     return str(tree_flatten(backbone.parameters())[0][1].dtype).rsplit(".", 1)[-1]
 
 
+def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
+    """The weights ``load`` reads (the vision tower's included), kept as stored."""
+    files = sorted(path.glob("model*.safetensors")) + [path / "joint_head.safetensors"]
+    return [(file, None) for file in files if file.exists()]
+
+
 def load(
     path: Path,
     max_input_tokens: int = DEFAULT_MAX_LENGTH,

@@ -159,10 +159,10 @@ def run(
     )
 
 
-def benchmark(reference: str, **options) -> Report:
+def benchmark(reference: str, check_memory: bool = True, **options) -> Report:
     """Load ``reference`` (timed) and run the grid."""
     start = time.perf_counter()
-    model = load(reference)
+    model = load(reference, check_memory=check_memory)
     load_s = time.perf_counter() - start
     return run(model, load_s=load_s, **options)
 
