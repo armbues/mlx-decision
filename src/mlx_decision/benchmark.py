@@ -9,11 +9,17 @@ are filler text, sized from the token counts the model reports.
 import math
 import statistics
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 
 import mlx.core as mx
 
+from .machine import describe, machine_info, software_info
 from .model import DecisionModel, load
+
+# Version of the JSON written by ``to_dict``: format 2 added everything but
+# the numbers (date, machine, software, model info, options).
+FORMAT = 2
 
 FILLER = (
     "The customer wrote again about the delayed delivery and asked whether the "
@@ -41,6 +47,12 @@ class Report:
     peak_memory_gb: float
     repeats: int
     cells: list[Cell]
+    date: str = ""
+    machine: dict = field(default_factory=dict)
+    software: dict = field(default_factory=dict)
+    model_info: dict = field(default_factory=dict)
+    lengths: tuple[int, ...] = ()
+    question_counts: tuple[int, ...] = ()
 
 
 def make_questions(count: int) -> dict:
@@ -138,6 +150,12 @@ def run(
         peak_memory_gb=mx.get_peak_memory() / 2**30,
         repeats=repeats,
         cells=cells,
+        date=datetime.now(UTC).isoformat(timespec="seconds"),
+        machine=machine_info(),
+        software=software_info(),
+        model_info=model.info(),
+        lengths=tuple(lengths),
+        question_counts=tuple(question_counts),
     )
 
 
@@ -151,6 +169,7 @@ def benchmark(reference: str, **options) -> Report:
 
 def format_report(report: Report) -> str:
     lines = [
+        describe(report.machine),
         f"{report.model}: load {report.load_s:.1f} s, peak memory "
         f"{report.peak_memory_gb:.1f} GB, {report.repeats} timed runs per row after a warm-up",
         "",
@@ -166,4 +185,21 @@ def format_report(report: Report) -> str:
 
 
 def to_dict(report: Report) -> dict:
-    return asdict(report)
+    """The report as one JSON object that names where its numbers come from."""
+    return {
+        "format": FORMAT,
+        "date": report.date,
+        "machine": report.machine,
+        "software": report.software,
+        "model": report.model,
+        "model_info": report.model_info,
+        "options": {
+            "lengths": list(report.lengths),
+            "question_counts": list(report.question_counts),
+            "repeats": report.repeats,
+        },
+        "load_s": report.load_s,
+        "peak_memory_gb": report.peak_memory_gb,
+        "repeats": report.repeats,
+        "cells": [asdict(cell) for cell in report.cells],
+    }

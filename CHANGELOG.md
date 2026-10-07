@@ -7,6 +7,15 @@ change the interface).
 
 ## [Unreleased]
 
+### Added
+
+- `benchmark --out FILE` writes the results as JSON together with the
+  machine they were measured on (Mac model, chip, CPU cores per kind,
+  GPU cores, memory, GPU working set, macOS), the versions of
+  mlx-decision, MLX and Python, the model's details and the options.
+  `--json` prints the same object, and the table now starts with a line
+  naming the machine.
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

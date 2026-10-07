@@ -795,7 +795,18 @@ def benchmark(
         str, typer.Option(help="Numbers of questions, comma-separated.")
     ] = "1,5,20",
     repeats: Annotated[int, typer.Option(min=1, help="Timed runs per row.")] = 5,
-    as_json: Annotated[bool, typer.Option("--json", help="Print the numbers as JSON.")] = False,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Print the results as JSON (with machine and versions)."),
+    ] = False,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            help="Also write the results as JSON to this file, with the machine's "
+            "configuration and the versions, to compare runs across Macs.",
+        ),
+    ] = None,
 ) -> None:
     """Measure load time and latency per request across state length and question count."""
     from .benchmark import benchmark as run_benchmark
@@ -811,7 +822,11 @@ def benchmark(
         report = run_benchmark(model, repeats=repeats, **grid)
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
+    if out is not None:
+        out.write_text(json.dumps(to_dict(report), indent=2) + "\n")
     if as_json:
         typer.echo(json.dumps(to_dict(report), indent=2))
     else:
         typer.echo(format_report(report))
+    if out is not None:
+        typer.echo(f"results written to {out}", err=True)

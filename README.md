@@ -562,7 +562,10 @@ It reports load time, peak memory and median / p95 time per request
 across state lengths (those that fit the model's limit) and numbers of
 questions. As a rule of thumb, clef-flash reads about 1,700 tokens per
 second; laya about 25,000, laya-multilingual about 60,000 and Julia-1
-about 100,000, counting the state once per question.
+about 100,000, counting the state once per question. `--out FILE` also
+writes the results as JSON, with the Mac's chip, CPU and GPU cores,
+memory, macOS and the versions used, so runs on different Macs can be
+compared.
 
 ## Development
 
