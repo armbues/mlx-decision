@@ -6,22 +6,23 @@ A decision model reads a *state* (a message, a document, any JSON) and a set
 of typed *questions*, and returns a probability for every allowed answer in
 a single forward pass, without generating text. mlx-decision is to decision
 models what `mlx-lm` is to LLMs: load a model, ask it questions from Python
-or the command line, or serve it over HTTP with an API compatible with
-[Jev's](https://typesafe.ai).
+or the command line, serve it over HTTP with an API compatible with
+[Jev's](https://typesafe.ai), or hand it to agents as an
+[MCP](#agents-mcp) tool.
 
-| Model | Size | Input | Limit | Memory | Short request | Good at |
-|---|---|---|---|---|---|---|
-| Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | knowledge, entailment, many options, images |
-| [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | topic classification of English text |
-| [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | English text | 1,024 tokens per question | 1.7 GB | 16 ms | as laya, tuned for typed decision workflows |
-| [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | text, 100+ languages | 1,024 tokens per question | 1.6 GB | 8 ms | topic classification in many languages |
-| Supersonic Labs' [Julia-1](https://huggingface.co/SupersonicLabs/Julia-1) | 144M | text, many languages | 8,192 tokens per question | 1.4 GB | 6 ms | emotion and routing with 2 to 20 options, long states |
+| Model | Size | Input | Limit | Memory | Short request | Speedup | Good at |
+|---|---|---|---|---|---|---|---|
+| Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | 3.5x | knowledge, entailment, many options, images |
+| [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
+| [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | English text | 1,024 tokens per question | 1.7 GB | 16 ms | 2.9x | as laya, tuned for typed decision workflows |
+| [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | text, 100+ languages | 1,024 tokens per question | 1.6 GB | 8 ms | 2.5x | topic classification in many languages |
+| Supersonic Labs' [Julia-1](https://huggingface.co/SupersonicLabs/Julia-1) | 144M | text, many languages | 8,192 tokens per question | 1.4 GB | 6 ms | 2.0x | emotion and routing with 2 to 20 options, long states |
 
 "Short request": one question about a state of about 250 tokens, on an
-Apple M5 Pro. mlx-decision answers 3.5 times faster than Cloudflare's
-PyTorch reference for clef-flash on the same Mac (MPS), and 1.4 to 6 times
-faster than Laya's and Julia's own PyTorch code, with the same answers
-([Speed](#speed)). How the models differ is in [Models](#models).
+Apple M5 Pro. "Speedup": the same request against the model's own PyTorch
+code on the same Mac (MPS), with the same answers; across all measured
+requests it ranges from 1.4 to 6 times ([Speed](#speed)). How the models differ is in
+[Models](#models).
 
 This is alpha software: the interface may still change. Questions and bug
 reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues).
@@ -37,11 +38,12 @@ clef-flash a Mac with 32 GB or more, or a smaller copy made with
 pip install mlx-decision                    # library and the mlx-decision command
 pip install "mlx-decision[images]"          # plus image input (Pillow, NumPy)
 pip install "mlx-decision[server]"          # plus the HTTP server (FastAPI, uvicorn)
-pip install "mlx-decision[server,images]"   # both
+pip install "mlx-decision[mcp]"             # plus the MCP server for agents
+pip install "mlx-decision[server,images]"   # several extras at once
 ```
 
 From source: clone the [repository](https://github.com/armbues/mlx-decision)
-and run `pip install -e ".[server,images]"` in it. MLX also has builds for
+and run `pip install -e ".[server,images,mcp]"` in it. MLX also has builds for
 Linux and Windows, so pip may install mlx-decision there, but loading a
 model stops with an error: the models run on Apple Silicon only.
 
@@ -124,6 +126,8 @@ from `mlx_decision`.
 (Laya and Julia up to 8,192), `strict_encoding=False` lets Julia cut what it
 would otherwise refuse, `dtype` sets Laya's and Julia's precision (default
 float16), and `max_image_pixels` caps image size for clef-flash.
+`model.info()` describes the loaded model as JSON data: family,
+precision, input limit, option limits and whether it takes images.
 
 With the `images` extra, clef-flash takes images as file paths, bytes, PIL
 images or data URLs:
@@ -324,6 +328,89 @@ To require a key, start it with `--api-key KEY` (or set
 `Authorization: Bearer KEY`, which is what the SDK sends from
 `TYPESAFE_API_KEY`; others get `401`. `/health` stays open.
 
+## Agents: MCP
+
+`mlx-decision mcp` serves a model to AI agents over the
+[Model Context Protocol](https://modelcontextprotocol.io), so an agent in
+Claude Code, Claude Desktop, Cursor or any other MCP client can call a
+decision as a tool, answered on your Mac. It needs the `mcp` extra.
+
+The server has two tools:
+
+- `decide` takes the fields of a request body (`state`, `questions`, and
+  `images` for clef-flash) and returns the response body as structured
+  content, plus `truncated`. An invalid request comes back as a tool
+  error naming the field, which the agent can read and correct.
+- `model_info` describes the loaded model: family, precision, input
+  limit, option limits and whether it reads images.
+
+The tool descriptions explain decision models to an agent that has never
+heard of them, with an example, and add what matters for the loaded
+model: its input limit and how to split longer texts, its option limit,
+and for Julia that options need short descriptions. Laya cuts long
+option lists to fit its question budget, and with more than about 16
+options the answers turn confidently wrong, so `decide` refuses more
+options than the model tells apart (16 for laya, 21 for
+laya-typed-decisions and laya-multilingual; Julia's own limit is 20) and
+tells the agent to choose among groups of options first. `run`,
+`server` and the Python API keep Laya's own behaviour.
+
+### Claude Code
+
+```bash
+claude mcp add decision -- mlx-decision mcp -m convaiinnovations/laya
+```
+
+`--scope user` makes it available in all your projects. Then ask
+something like "Use the decision tool to sort these five tickets by
+team", and the agent calls `decide` once per ticket.
+
+### Claude Desktop
+
+Add the server to `claude_desktop_config.json` (Settings, Developer,
+Edit Config) and restart the app. Claude Desktop does not search your
+shell's `PATH`, so give the full path that `which mlx-decision` prints:
+
+```json
+{
+  "mcpServers": {
+    "decision": {
+      "command": "/Users/you/.venv/bin/mlx-decision",
+      "args": ["mcp", "-m", "convaiinnovations/laya"]
+    }
+  }
+}
+```
+
+Other clients take the same command and arguments. On stdio, each client
+starts its own process with its own copy of the model, loaded before the
+client's handshake is answered (about a second, longer the first time
+the weights are read from disk). A repo id that is not downloaded yet is
+downloaded first, which can take longer than a client waits, so fetch
+the model beforehand with `mlx-decision download` or pass a local
+folder. Logs go to stderr, which clients show in their MCP log.
+
+`images` takes data URLs and, on stdio only, absolute file paths, which
+the server reads.
+
+### Over HTTP
+
+To share one loaded model between several agents (or keep clef-flash's
+19 GB loaded once), start one process with `--http`:
+
+```bash
+mlx-decision mcp --http -m Cloudflare/clef-flash --port 8001 --api-key KEY
+claude mcp add --transport http decision http://127.0.0.1:8001/mcp \
+  --header "Authorization: Bearer KEY"
+```
+
+It serves streamable HTTP at `http://HOST:PORT/mcp`, binds to localhost
+by default (`--host` to change; port 8000 by default, as `server`),
+answers one call at a time (others queue), and takes images as data URLs
+only: it reads no files on behalf of a client. The API key works as for
+[`server`](#server) (`--api-key` or `MLX_DECISION_API_KEY`); without one,
+requests are not checked.
+
 ## Models
 
 The models differ in size and in how they read a request. clef-flash reads
@@ -335,13 +422,14 @@ Accuracy on five public benchmarks, 500 test examples each, with the same
 questions and option descriptions for every model (preliminary; Jev is
 TypeSafe AI's hosted model, for comparison):
 
-| Benchmark | Options | clef-flash | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
-|---|---|---|---|---|---|---|---|
-| AG News (topic) | 4 | 91.4 | **94.6** | **94.6** | 93.8 | 83.0 | 86.4 |
-| DAIR Emotion | 6 | 60.0 | 59.8 | 61.2 | 49.0 | **73.8** | 62.2 |
-| ANLI (entailment) | 3 | 58.2 | 48.6 | 47.4 | 39.2 | 33.0 | **71.6** |
-| BANKING77 (intent) | 77 | **96.0** | 36.0 | 36.2 | 35.0 | n/a | 80.2 |
-| MMLU (knowledge) | 4 | **93.0** | 35.2 | 37.6 | 30.2 | 32.2 | 91.6 |
+| Model | AG News (topic, 4 options) | DAIR Emotion (6) | ANLI (entailment, 3) | BANKING77 (intent, 77) | MMLU (knowledge, 4) |
+|---|---|---|---|---|---|
+| clef-flash | 91.4 | 60.0 | 58.2 | **96.0** | **93.0** |
+| laya | **94.6** | 59.8 | 48.6 | 36.0 | 35.2 |
+| laya-typed-decisions | **94.6** | 61.2 | 47.4 | 36.2 | 37.6 |
+| laya-multilingual | 93.8 | 49.0 | 39.2 | 35.0 | 30.2 |
+| Julia-1 | 83.0 | **73.8** | 33.0 | n/a | 32.2 |
+| Jev | 86.4 | 62.2 | **71.6** | 80.2 | 91.6 |
 
 Accuracy in percent; macro-F1 and calibration error are in
 [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md). The small models match or beat

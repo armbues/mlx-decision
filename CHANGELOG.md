@@ -7,6 +7,27 @@ change the interface).
 
 ## [Unreleased]
 
+### Added
+
+- `mlx-decision mcp` serves a model to AI agents over the Model Context
+  Protocol (`mcp` extra), with the tools `decide` (a request body in, the
+  response body as structured content out, invalid requests as tool
+  errors naming the field) and `model_info` (family, precision, input
+  and option limits, image support). Tool descriptions are written for
+  agents and include hints for the loaded model. On stdio by default,
+  where `images` also takes local file paths; `--http` serves streamable
+  HTTP at `/mcp` so several agents share one loaded model, with the same
+  optional API key as `server`. The README shows the setup for Claude
+  Code, Claude Desktop and HTTP clients.
+- Over MCP, `decide` refuses a choice or score with more options than the
+  model tells apart and asks the agent to choose among groups first: for
+  Laya, which shortens long option lists until the descriptions are a word
+  or two, 16 options (laya) or 21 (laya-typed-decisions,
+  laya-multilingual); for Julia its limit of 20. `run`, `server` and the
+  Python API keep each model's own behaviour.
+- `DecisionModel.info()` returns the model's name, family, precision or
+  quantization, input limit and capabilities.
+
 ### Changed
 
 - Julia: `run` and `chat` print a hint when a choice question's options
