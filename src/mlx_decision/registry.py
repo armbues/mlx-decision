@@ -99,7 +99,15 @@ register_family(
             "Clef flash: Cloudflare's 9B decision model (Qwen3.5), text and images",
             "19 GB",
         ),
+        KnownModel(
+            "Cloudflare/clef",
+            "Clef: Cloudflare's 27B decision model (Qwen3.5), text and images; "
+            "on a 64 GB Mac it runs quantized (convert -q)",
+            "55 GB",
+        ),
     ),
+    # Weights, head, tokenizer and configs; not the reference code or chat template.
+    files=("*.json", "model*.safetensors", "joint_head.safetensors", "LICENSE*", "README.md"),
 )
 
 # The encoder and tokenizer folders plus the files at the top; the Laya repo

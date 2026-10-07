@@ -24,6 +24,15 @@ LAYA_FILES = {  # the root checkpoint, plus a second one in a sub-folder
     "multilingual/model.safetensors": 644_000_000,
     "assets/logo.png": 300_000,
 }
+CLEF_FILES = {  # the weights and head count; the reference code does not
+    "config.json": 3_000,
+    "model-00001-of-00002.safetensors": 9_000_000_000,
+    "model-00002-of-00002.safetensors": 9_830_000_000,
+    "joint_head.safetensors": 243_000_000,
+    "tokenizer.json": 20_000_000,
+    "joint_schema_model.py": 23_000,
+    "chat_template.jinja": 7_000,
+}
 
 
 @pytest.fixture
@@ -37,12 +46,13 @@ def hub(monkeypatch, tmp_path):
                 raise RepositoryNotFoundError(
                     "missing", response=httpx.Response(404, request=request)
                 )
-            if repo_id == "convaiinnovations/laya":
-                files = LAYA_FILES.items()
-                return SimpleNamespace(
-                    siblings=[SimpleNamespace(rfilename=n, size=size) for n, size in files]
-                )
-            return SimpleNamespace(siblings=[SimpleNamespace(size=19_100_000_000)])
+            files = {
+                "convaiinnovations/laya": LAYA_FILES,
+                "Cloudflare/clef-flash": CLEF_FILES,
+            }.get(repo_id, {"model.safetensors": 19_100_000_000})
+            return SimpleNamespace(
+                siblings=[SimpleNamespace(rfilename=n, size=size) for n, size in files.items()]
+            )
 
     def snapshot_download(repo_id, allow_patterns=None, local_dir=None):
         calls.append((repo_id, allow_patterns, local_dir))
@@ -67,11 +77,20 @@ def test_a_supported_model_is_downloaded(hub):
     assert result.exit_code == 0, result.output
     assert "downloading Cloudflare/clef-flash (19.1 GB)" in result.stderr
     assert "try it: mlx-decision chat -m Cloudflare/clef-flash" in result.stderr
-    # First only the JSON files, then everything.
+    # First only the JSON files, then the family's files.
     assert [(repo, patterns) for repo, patterns, _ in hub] == [
         ("Cloudflare/clef-flash", ["*.json"]),
-        ("Cloudflare/clef-flash", None),
+        (
+            "Cloudflare/clef-flash",
+            ["*.json", "model*.safetensors", "joint_head.safetensors", "LICENSE*", "README.md"],
+        ),
     ]
+
+
+def test_clef_skips_the_reference_code(hub):
+    check = download.check_repo("Cloudflare/clef-flash")
+    skipped = CLEF_FILES["joint_schema_model.py"] + CLEF_FILES["chat_template.jinja"]
+    assert check.size_bytes == sum(CLEF_FILES.values()) - skipped
 
 
 def test_into_a_local_folder(hub, tmp_path):
@@ -108,12 +127,13 @@ def test_the_menu_lists_known_models_and_other():
 
     assert [m.repo_id for m in known_models()] == [
         "Cloudflare/clef-flash",
+        "Cloudflare/clef",
         "convaiinnovations/laya",
         "convaiinnovations/laya-multilingual",
         "convaiinnovations/laya-typed-decisions",
         "SupersonicLabs/Julia-1",
     ]
-    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("6\rorg/model\r", "org/model")]:
+    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("7\rorg/model\r", "org/model")]:
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             pipe.send_text(typed)
             assert pick_repo() == expected
