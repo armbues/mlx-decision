@@ -80,4 +80,9 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["weights: needs the model weights (skipped when they are absent)"]
+# Slow tests run only when asked for: pytest -m slow (make test-slow).
+addopts = "-m 'not slow'"
+markers = [
+    "weights: needs the model weights (skipped when they are absent)",
+    "slow: takes minutes; deselected unless asked for with -m slow",
+]

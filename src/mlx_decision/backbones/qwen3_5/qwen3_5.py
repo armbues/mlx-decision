@@ -256,6 +256,11 @@ class Qwen3_5TextModel(nn.Module):
             hidden_states = layer(
                 hidden_states, mask=mask, position_ids=position_ids, cache=c
             )
+            if c is not None:
+                # Layer by layer: an unevaluated cache entry (the conv tail is
+                # a slice) would keep each layer's whole input alive until the
+                # end of the pass, about 16 GB at 16k tokens for Clef 27B.
+                mx.eval(hidden_states, c.state)
         return self.norm(hidden_states)
 
 

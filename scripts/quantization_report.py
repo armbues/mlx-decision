@@ -1,7 +1,7 @@
 """Compare models (e.g. quantized copies) on the parity set; print a Markdown report.
 
 usage: python scripts/quantization_report.py BASELINE MODEL [MODEL ...] [--out FILE]
-                                            [--cache DIR [--rerun]]
+                                            [--cache DIR [--rerun]] [--reference FILE]
 
 Each model runs in its own process, one after another, so only one is in
 memory at a time. Every model answers the parity set (after one warm-up
@@ -9,7 +9,10 @@ request); its probabilities are compared with the baseline's (the first
 model) and with the PyTorch reference fixture. With ``--cache`` each model's
 raw results are kept in ``DIR/<model folder name>.json`` and reused while
 the parity set is unchanged, so adding a model only runs that model
-(``--rerun`` ignores the cache).
+(``--rerun`` ignores the cache). ``--reference`` takes another reference
+fixture, such as ``tests/parity/reference-clef.json`` from a larger Mac; when
+it also holds mlx-decision's bf16 results, those are the baseline (the first
+row), so only the quantized copies need to run here.
 """
 
 import argparse
@@ -37,14 +40,21 @@ def run_model(model: str, out: Path) -> None:
     import mlx.core as mx
 
     import mlx_decision
+    from mlx_decision.benchmark import forget_prefixes
     from mlx_decision.types import parse_request
 
     sys.path.insert(0, str(PARITY))
     from parity_images import open_image
 
     cases = json.loads((PARITY / "requests.json").read_text())
+    from mlx_decision.hub import resolve_model_path
+    from mlx_decision.registry import detect_family
+
+    # Clef: no image cap beyond the processor's own, as the reference.
+    clef = detect_family(resolve_model_path(model)).name == "clef"
+    options = {"max_image_pixels": None} if clef else {}
     start = time.perf_counter()
-    loaded = mlx_decision.load(model)
+    loaded = mlx_decision.load(model, **options)
     load_seconds = time.perf_counter() - start
     active_after_load = mx.get_active_memory()
     # Image requests carry their images, as when the reference was computed.
@@ -62,6 +72,7 @@ def run_model(model: str, out: Path) -> None:
     mx.reset_peak_memory()
     probabilities, seconds = {}, {}
     for case_id, request in requests.items():
+        forget_prefixes(loaded)  # time every request as a new one
         start = time.perf_counter()
         output = loaded.backend.score(request)
         seconds[case_id] = time.perf_counter() - start
@@ -87,6 +98,25 @@ def folder_gb(model: str) -> float:
 
     path = resolve_model_path(model).resolve()
     return sum(f.resolve().stat().st_size for f in path.rglob("*") if f.is_file()) / 2**30
+
+
+def baseline_from_file(fixture: dict) -> dict:
+    """mlx-decision's results stored in a reference file, in a worker's shape."""
+    results = fixture["mlx"]["results"]
+    return {
+        "model": "Clef bf16 (larger Mac)",
+        "requests": requests_digest(),
+        "disk_gb": None,
+        "load_seconds": fixture["mlx"]["meta"].get("load_s"),
+        "active_gb": None,
+        "peak_gb": max(entry["peak_gb"] for entry in results.values()),
+        "seconds": {case_id: entry["seconds"] for case_id, entry in results.items()},
+        "probabilities": {case_id: entry["probabilities"] for case_id, entry in results.items()},
+    }
+
+
+def number(value, digits: int) -> str:
+    return "n/a" if value is None else f"{value:.{digits}f}"
 
 
 def compare(ours: dict, theirs: dict, reference: dict) -> dict:
@@ -119,15 +149,28 @@ def main() -> None:
     parser.add_argument("--out", type=Path, help="also write the report here")
     parser.add_argument("--cache", type=Path, help="keep per-model results here and reuse them")
     parser.add_argument("--rerun", action="store_true", help="run every model again")
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        default=PARITY / "reference.json",
+        help="reference fixture (default: clef-flash's); one with mlx results gives the baseline",
+    )
     parser.add_argument("--worker", nargs=2, metavar=("MODEL", "OUT"), help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
         run_model(args.worker[0], Path(args.worker[1]))
         return
-    if not args.models:
+    fixture = json.loads(args.reference.read_text())
+    if (
+        "requests_sha256" in fixture
+        and fixture["requests_sha256"]
+        != hashlib.sha256((PARITY / "requests.json").read_bytes()).hexdigest()
+    ):
+        parser.error(f"{args.reference} was computed on another parity set")
+    stored = "mlx" in fixture
+    if not args.models and not stored:
         parser.error("give at least one model")
-
-    reference = json.loads((PARITY / "reference.json").read_text())["results"]
+    reference = fixture.get("reference", fixture)["results"]
     torch_probabilities = {
         case_id: {
             q["id"]: dict(zip(q["option_ids"], q["probabilities"], strict=True))
@@ -136,6 +179,8 @@ def main() -> None:
         for case_id, entry in reference.items()
     }
     results = {}
+    if stored:
+        results["Clef bf16 (larger Mac)"] = baseline_from_file(fixture)
     if args.cache:
         args.cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as scratch:
@@ -156,7 +201,7 @@ def main() -> None:
             subprocess.run(command, check=True)
             results[model] = json.loads(out.read_text())
 
-    baseline = args.models[0]
+    baseline = next(iter(results))
     questions = sum(len(entry["questions"]) for entry in reference.values())
     lines = [
         f"Parity set: {len(reference)} requests, {questions} questions. Baseline: "
@@ -172,10 +217,12 @@ def main() -> None:
         seconds = list(result["seconds"].values())
         vs_base = compare(result["probabilities"], results[baseline]["probabilities"], reference)
         vs_torch = compare(result["probabilities"], torch_probabilities, reference)
-        disk_gb = result.get("disk_gb") or folder_gb(model)
+        disk_gb = result.get("disk_gb") if model in args.models else None
+        if model in args.models and disk_gb is None:
+            disk_gb = folder_gb(model)
         lines.append(
-            f"| `{Path(model).name}` | {disk_gb:.1f} | {result['load_seconds']:.1f} "
-            f"| {result['active_gb']:.1f} / {result['peak_gb']:.1f} | {sum(seconds):.1f} "
+            f"| `{Path(model).name}` | {number(disk_gb, 1)} | {number(result['load_seconds'], 1)} "
+            f"| {number(result['active_gb'], 1)} / {result['peak_gb']:.1f} | {sum(seconds):.1f} "
             f"| {statistics.median(seconds):.3f} "
             f"| {vs_base['max']:.4f} / {vs_base['mean']:.4f} "
             f"| {vs_base['flips']} ({vs_base['decided_flips']}) "
