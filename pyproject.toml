@@ -19,6 +19,7 @@ keywords = [
     "clef",
     "qwen",
     "llm",
+    "mcp",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
