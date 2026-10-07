@@ -276,3 +276,107 @@ def test_no_quantizable_layer_is_an_error(release):
 
     with pytest.raises(ValueError, match="no layer can be quantized with group size 100"):
         quantize_text_model(load_text_model(release), bits=4, group_size=100)
+
+
+def hf_release(folder: Path, shards: int = 3) -> Path:
+    """The tiny Clef with its backbone in the Hugging Face layout, as Cloudflare ships it.
+
+    Release names, conv kernels as [C, 1, K], norm weights stored minus one,
+    an MTP weight (dropped on load), spread over ``shards`` files.
+    """
+    import mlx.core as mx
+    from mlx.utils import tree_flatten
+
+    from mlx_decision.backbones.qwen3_5.load import load_text_model
+
+    path = write_clef(folder)
+    model = load_text_model(path)
+    norms = (".input_layernorm.weight", ".post_attention_layernorm.weight", "model.norm.weight")
+    norms += (".q_norm.weight", ".k_norm.weight")
+    weights = {}
+    for name, value in tree_flatten(model.parameters()):
+        if name.endswith("conv1d.weight"):
+            value = value.moveaxis(1, 2)
+        elif name.endswith(norms):
+            value = value - 1.0
+        name = name.replace("language_model.model.", "model.language_model.")
+        weights[name.replace("language_model.lm_head", "lm_head")] = value
+    weights["mtp.fc.weight"] = mx.zeros((4, 4))
+    for file in path.glob("model*.safetensors"):
+        file.unlink()
+    names = sorted(weights)
+    size = -(-len(names) // shards)
+    weight_map = {}
+    for index in range(shards):
+        file = f"model-{index + 1:05d}-of-{shards:05d}.safetensors"
+        part = {name: weights[name] for name in names[index * size : (index + 1) * size]}
+        mx.save_safetensors(str(path / file), part, metadata={"format": "pt"})
+        weight_map.update(dict.fromkeys(part, file))
+    index_file = {"metadata": {"total_size": 0}, "weight_map": weight_map}
+    (path / "model.safetensors.index.json").write_text(json.dumps(index_file))
+    return path
+
+
+@pytest.mark.parametrize("layout", ["release", "mlx"])
+@pytest.mark.parametrize("bits", [None, 8, 4])
+def test_streaming_matches_the_whole_model_path(tmp_path, monkeypatch, layout, bits):
+    import mlx.core as mx
+    from mlx.utils import tree_flatten
+
+    import mlx_decision.backbones.qwen3_5.load as load
+
+    source = hf_release(tmp_path / "src") if layout == "release" else write_clef(tmp_path / "src")
+    whole = load.load_text_model(source)
+    if bits is not None:
+        load.quantize_text_model(whole, bits, 64)
+    expected = dict(tree_flatten(whole.parameters()))
+
+    # Small output shards, so the tiny model is written as several.
+    monkeypatch.setattr(load, "SHARD_BYTES", 2**16)
+    convert(source, tmp_path / "out", bits=bits)
+    out = tmp_path / "out"
+    files = sorted(out.glob("model-0*.safetensors"))
+    assert len(files) > 1
+    assert files[0].name == f"model-00001-of-{len(files):05d}.safetensors"
+    assert not list(out.glob(".model-*"))
+    written = {}
+    for file in files:
+        written.update(mx.load(str(file)))
+    assert written.keys() == expected.keys()
+    for name, value in expected.items():
+        assert written[name].dtype == value.dtype, name
+        assert mx.array_equal(written[name], value).item(), name
+    index = json.loads((out / "model.safetensors.index.json").read_text())
+    assert set(index["weight_map"]) == set(written)
+    config = json.loads((source / "config.json").read_text())
+    if bits is not None:
+        config["quantization"] = {"group_size": 64, "bits": bits, "mode": "affine"}
+    assert json.loads((out / "config.json").read_text()) == config
+    assert index["metadata"]["total_size"] == sum(v.nbytes for v in written.values())
+    mlx_decision.load(out).decide("refund please", {"q": {"type": "noul"}})
+
+
+def test_streaming_reads_each_shard_once_when_it_is_handed_over(tmp_path, monkeypatch):
+    import mlx.core as mx
+
+    import mlx_decision.backbones.qwen3_5.load as load
+
+    source = hf_release(tmp_path / "src", shards=4)
+    events = []
+
+    def shards():
+        for file in load.source_shards(source):
+            events.append(("handed", file.name))
+            yield file
+
+    real_load = mx.load
+
+    def recording_load(file):
+        events.append(("read", Path(file).name))
+        return real_load(file)
+
+    monkeypatch.setattr(load.mx, "load", recording_load)
+    config = json.loads((source / "config.json").read_text())
+    load.convert_text_weights(config, tmp_path / "out", shards(), bits=8)
+    names = [f"model-{i:05d}-of-00004.safetensors" for i in range(1, 5)]
+    assert events == [(kind, name) for name in names for kind in ("handed", "read")]

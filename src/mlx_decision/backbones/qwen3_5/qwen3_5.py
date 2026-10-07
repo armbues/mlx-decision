@@ -8,7 +8,8 @@
 # pass over the input and returns the final hidden states. Removed: caches,
 # pipeline and distributed (sharding) support, and mixture-of-experts layers.
 # Added: optional per-axis position ids for image and video tokens, and a row
-# lookup into the output embeddings that also works when they are quantized.
+# lookup into the output embeddings that also works when they are quantized,
+# and sanitizing a part of the weights (one shard) with the layout given.
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
@@ -269,10 +270,15 @@ class TextModel(nn.Module):
             mode=layer.mode,
         )
 
-    def sanitize(self, weights):
-        has_unsanitized_conv1d = any(
-            "conv1d.weight" in k and v.shape[-1] != 1 for k, v in weights.items()
-        )
+    def sanitize(self, weights, release: Optional[bool] = None):
+        # ``release``: whether the weights are in the Hugging Face layout;
+        # None tells from the conv kernels (needs them among ``weights``).
+        if release is None:
+            has_unsanitized_conv1d = any(
+                "conv1d.weight" in k and v.shape[-1] != 1 for k, v in weights.items()
+            )
+        else:
+            has_unsanitized_conv1d = release
         weights = {k: v for k, v in weights.items() if "mtp." not in k}
 
         if self.args.tie_word_embeddings:
@@ -321,7 +327,7 @@ class Model(nn.Module):
     ) -> mx.array:
         return self.language_model(inputs, input_embeddings, position_ids)
 
-    def sanitize(self, weights):
+    def sanitize(self, weights, release: Optional[bool] = None):
         sanitized = {}
         for key, value in weights.items():
             if key.startswith("vision_tower") or key.startswith("model.visual"):
@@ -333,4 +339,4 @@ class Model(nn.Module):
             else:
                 key = "language_model." + key
             sanitized[key] = value
-        return self.language_model.sanitize(sanitized)
+        return self.language_model.sanitize(sanitized, release)

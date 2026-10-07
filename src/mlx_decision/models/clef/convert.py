@@ -13,13 +13,14 @@ from pathlib import Path
 import mlx.core as mx
 
 from ...backbones.qwen3_5.load import (
+    convert_text_weights,
     has_vision_weights,
-    load_text_model,
     output_embeddings_path,
     quantizable_layers,
     quantize_text_model,
     read_vision_weights,
     save_text_model,
+    source_shards,
     write_vision_weights,
 )
 from ...calibration import calibration_requests
@@ -55,32 +56,45 @@ def convert(
     target_bits: float | None = None,
     progress: Callable[[int, int, object, float], None] | None = None,
 ) -> None:
-    """Convert; ``target_bits`` switches to mixed precision (``bits`` is then ignored)."""
+    """Convert; ``target_bits`` switches to mixed precision (``bits`` is then ignored).
+
+    Uniform and unquantized output is written one source shard at a time
+    (``convert_text_weights``); mixed precision loads the whole model, since
+    choosing the bits runs it.
+    """
     config = json.loads((path / "config.json").read_text())
     if "quantization" in config:
         raise ValueError(f"{path} is already quantized; convert the original release")
+    vision = has_vision_weights(path)
+    if not vision:
+        config.pop("vision_config", None)
     mixed = None
-    if target_bits is not None:
+    if target_bits is None:
+        quantization = convert_text_weights(
+            config,
+            output,
+            source_shards(path),
+            bits,
+            group_size,
+            output_embeddings=quantize_output_embeddings,
+        )
+        if quantization is not None:
+            config["quantization"] = quantization
+    else:
         backbone, mixed = _mixed_plan(
             path, target_bits, group_size, quantize_output_embeddings, progress
         )
         bits = mixed["base_bits"]
-    else:
-        backbone = load_text_model(path)
-    if bits is not None:
-        layer_bits = mixed["layer_bits"] if mixed else None
         config["quantization"] = quantize_text_model(
             backbone,
             bits,
             group_size,
             output_embeddings=quantize_output_embeddings,
-            layer_bits=layer_bits,
+            layer_bits=mixed["layer_bits"],
         )
         mx.eval(backbone.parameters())
-    vision = has_vision_weights(path)
-    if not vision:
-        config.pop("vision_config", None)
-    save_text_model(backbone, output, config)
+        save_text_model(backbone, output, config)
+        del backbone
     if vision:
         # Copied as stored, without building the tower (which needs NumPy).
         write_vision_weights(read_vision_weights(path), output)

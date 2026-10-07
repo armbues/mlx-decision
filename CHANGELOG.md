@@ -16,6 +16,15 @@ change the interface).
   Mac swapping). `--no-memory-check` (or `load(..., check_memory=False)`)
   loads it anyway. `server` and `mcp` check before they start.
 
+### Changed
+
+- `convert` reads, quantizes and writes one weight shard at a time, so
+  it no longer needs memory for the whole model: an 8-bit copy of
+  clef-flash peaks at about 10 GB instead of 19 GB, and a model larger
+  than the Mac's memory can be quantized. The output has the same
+  weights as before; how they are split into files may differ. Mixed
+  precision (`--target-bits`) still loads the whole model.
+
 - `benchmark --out FILE` writes the results as JSON together with the
   machine they were measured on (Mac model, chip, CPU cores per kind,
   GPU cores, memory, GPU working set, macOS), the versions of

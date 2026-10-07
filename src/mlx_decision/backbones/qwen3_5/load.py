@@ -1,7 +1,9 @@
 """Load, quantize and save a Qwen3.5 text model (Hugging Face or MLX folders)."""
 
+import copy
 import json
-from collections.abc import Mapping
+import struct
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 import mlx.core as mx
@@ -182,6 +184,118 @@ def quantize_text_model(
     nn.quantize(model, group_size=group_size, bits=bits, mode=mode, class_predicate=predicate)
     if not quantized:
         raise ValueError(f"no layer can be quantized with group size {group_size}")
+    return quantization
+
+
+def source_shards(path: str | Path) -> list[Path]:
+    """The weight files of a folder in the order its index lists them."""
+    path = Path(path)
+    index = path / "model.safetensors.index.json"
+    if index.exists():
+        names = dict.fromkeys(json.loads(index.read_text())["weight_map"].values())
+        return [path / name for name in names]
+    return sorted(path.glob("model*.safetensors"))
+
+
+def _safetensors_format(file: Path) -> str | None:
+    """The ``format`` entry of a safetensors file's metadata ("pt", "mlx", ...)."""
+    with open(file, "rb") as handle:
+        (length,) = struct.unpack("<Q", handle.read(8))
+        header = json.loads(handle.read(length))
+    return (header.get("__metadata__") or {}).get("format")
+
+
+def convert_text_weights(
+    config: dict,
+    output: str | Path,
+    shards: Iterable[Path],
+    bits: int | None = None,
+    group_size: int = 64,
+    mode: str = "affine",
+    output_embeddings: bool = True,
+) -> dict | None:
+    """Write the text model of ``shards`` to ``output``, quantized when ``bits`` is set.
+
+    Reads one source shard at a time and writes output shards of at most
+    ``SHARD_BYTES`` as it goes, so the full model is never in memory; the
+    tensors equal those of ``load_text_model`` + ``quantize_text_model`` +
+    ``save_text_model``. ``shards`` may be a generator (a shard fetched just
+    before it is read). Returns the config's ``quantization`` entry, or None.
+    """
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    # A lazily built skeleton (MLX allocates nothing until evaluated): which
+    # layers get quantized, and the names and shapes the output must have.
+    # Built from a copy: the model args rewrite parts of the config in place.
+    model = Model(ModelArgs.from_dict(copy.deepcopy(config)))
+    quantization = None
+    quantized: set[str] = set()
+    if bits is not None:
+        quantization = quantize_text_model(model, bits, group_size, mode, output_embeddings)
+        quantized = {path for path, module in model.named_modules() if hasattr(module, "scales")}
+    expected = {name: value.shape for name, value in tree_flatten(model.parameters())}
+
+    written: dict[str, str] = {}
+    pending: dict[str, mx.array] = {}
+    pending_bytes = 0
+    files: list[Path] = []
+    total = 0
+
+    def flush() -> None:
+        nonlocal pending_bytes
+        file = output / f".model-{len(files) + 1:05d}.safetensors"
+        mx.save_safetensors(str(file), pending, metadata={"format": "mlx"})
+        files.append(file)
+        written.update(dict.fromkeys(pending, file.name))
+        pending.clear()
+        pending_bytes = 0
+
+    release = None
+    for shard in shards:
+        if release is None:
+            release = _safetensors_format(shard) != "mlx"
+        weights = model.sanitize(mx.load(str(shard)), release=release)
+        for name, value in weights.items():
+            layer = name.removesuffix(".weight")
+            if layer in quantized and name != layer:
+                parts = mx.quantize(value, group_size, bits, mode=mode)
+                tensors = dict(zip(("weight", "scales", "biases"), parts, strict=False))
+                tensors = {f"{layer}.{key}": array for key, array in tensors.items()}
+            else:
+                tensors = {name: value}
+            for key, array in tensors.items():
+                if key not in expected:
+                    raise ValueError(f"{shard.name}: unexpected weight {key}")
+                if array.shape != expected[key]:
+                    raise ValueError(
+                        f"{shard.name}: {key} has shape {array.shape}, expected {expected[key]}"
+                    )
+                mx.eval(array)
+                if pending and pending_bytes + array.nbytes > SHARD_BYTES:
+                    flush()
+                pending[key] = array
+                pending_bytes += array.nbytes
+                total += array.nbytes
+        del weights
+    missing = sorted(set(expected) - set(written) - set(pending))
+    if missing:
+        raise ValueError(f"weights missing from the source: {', '.join(missing[:5])}")
+    if pending:
+        flush()
+
+    names = {}
+    for index, file in enumerate(files, 1):
+        name = f"model-{index:05d}-of-{len(files):05d}.safetensors"
+        file.rename(output / name)
+        names[file.name] = name
+    index = {
+        "metadata": {"total_size": total},
+        "weight_map": {key: names[file] for key, file in sorted(written.items())},
+    }
+    (output / "model.safetensors.index.json").write_text(json.dumps(index, indent=2) + "\n")
+    if quantization is not None:
+        config = {**config, "quantization": quantization}
+    (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
     return quantization
 
 
