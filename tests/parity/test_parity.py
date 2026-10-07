@@ -91,12 +91,6 @@ def test_the_set_covers_images():
     assert any(isinstance(spec, dict) for case in with_images for spec in case["images"])
 
 
-@pytest.fixture(scope="session")
-def outputs(clef):
-    """Backend output for every request, computed once."""
-    return {case_id: clef.backend.score(request(case_id)) for case_id in CASE_IDS}
-
-
 @pytest.mark.parametrize("case_id", CASE_IDS)
 def test_probabilities_match(outputs, case_id):
     output = outputs[case_id]

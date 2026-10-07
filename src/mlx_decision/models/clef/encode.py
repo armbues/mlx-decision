@@ -4,7 +4,7 @@
 #
 # Modified for mlx-decision: tokenizes with the `tokenizers` library, takes
 # each image's token count instead of running the processor, reports
-# truncation of the state; no video.
+# truncation of the state and where it ends; no video.
 """Render a request into the token sequence Clef was trained on."""
 
 import json
@@ -40,6 +40,9 @@ class EncodedRequest:
     input_ids: tuple[int, ...]
     questions: tuple[EncodedQuestion, ...]
     truncated: bool
+    # Tokens up to the state's last one (system prompt, images, state as cut):
+    # what requests with the same state and other questions share.
+    prefix_length: int = 0
 
 
 def render(value: Any) -> str:
@@ -168,4 +171,5 @@ def encode_request(
         input_ids=tuple(prefix_ids + state_ids + schema_ids + suffix_ids),
         questions=shifted,
         truncated=truncated,
+        prefix_length=offset,
     )

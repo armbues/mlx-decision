@@ -127,7 +127,8 @@ def _mixed_plan(path, target_bits, group_size, quantize_output_embeddings, progr
     """Measure sensitivity with the whole model, then choose bits per layer."""
     from .model import load
 
-    backend = load(path)
+    # No prefix reuse: the sweep answers the same requests with other weights.
+    backend = load(path, prefix_cache_gb=0)
     backbone = backend.backbone
     base = base_bits(target_bits)
     layers = quantizable_layers(backbone, group_size)

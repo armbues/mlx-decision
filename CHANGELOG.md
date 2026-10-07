@@ -16,6 +16,15 @@ change the interface).
   Mac swapping). `--no-memory-check` (or `load(..., check_memory=False)`)
   loads it anyway. `server` and `mcp` check before they start.
 
+- Clef reuses what it computed for a state: a request with the same
+  state (and images) as a recent one and other questions reads only the
+  new questions. On by default for the Python API, `run --states`,
+  `chat`, `server` and `mcp`, with up to 2 GB of kept states per model;
+  `--prefix-cache GB` (or `load(..., prefix_cache_gb=...)`) changes the
+  amount, 0 turns it off. Answers stay within the parity tolerance of
+  those without reuse (at most 0.004 apart on clef-flash) and are the
+  same for a first and a repeated request.
+
 ### Changed
 
 - `convert` reads, quantizes and writes one weight shard at a time, so

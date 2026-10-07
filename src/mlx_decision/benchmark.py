@@ -110,6 +110,13 @@ def tokens_per_word(model: DecisionModel) -> float:
     return max((probe - base) / 500, 1e-3)
 
 
+def forget_prefixes(model: DecisionModel) -> None:
+    """Drop kept prefixes, so a repeated request is timed as a new one."""
+    cache = getattr(model.backend, "prefix_cache", None)
+    if cache is not None:
+        cache.clear()
+
+
 def run(
     model: DecisionModel,
     lengths: tuple[int, ...] | None = None,
@@ -130,6 +137,7 @@ def run(
             result = model.decide_request(request)  # warm-up
             times = []
             for _ in range(repeats):
+                forget_prefixes(model)
                 start = time.perf_counter()
                 model.decide_request(request)
                 times.append(time.perf_counter() - start)

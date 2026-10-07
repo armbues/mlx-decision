@@ -304,6 +304,18 @@ MaxInputOption = Annotated[
 ]
 
 
+PrefixCacheOption = Annotated[
+    float | None,
+    typer.Option(
+        "--prefix-cache",
+        min=0,
+        metavar="GB",
+        help="Memory for kept states (Clef): a request whose state came recently, with "
+        "other questions, computes only the questions. Default 2; 0 turns it off.",
+    ),
+]
+
+
 NoMemoryCheckOption = Annotated[
     bool,
     typer.Option(
@@ -314,11 +326,15 @@ NoMemoryCheckOption = Annotated[
 ]
 
 
-def load_options(max_image_mp: float | None, max_input_tokens: int | None) -> dict[str, Any]:
+def load_options(
+    max_image_mp: float | None, max_input_tokens: int | None, prefix_cache: float | None = None
+) -> dict[str, Any]:
     """Load options for the flags that were given."""
     options = image_options(max_image_mp)
     if max_input_tokens is not None:
         options["max_input_tokens"] = max_input_tokens
+    if prefix_cache is not None:
+        options["prefix_cache_gb"] = prefix_cache
     return options
 
 
@@ -363,6 +379,7 @@ def run(
     image: ImageOption = None,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    prefix_cache: PrefixCacheOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     states: Annotated[
         str | None,
@@ -405,7 +422,7 @@ def run(
                 loaded = load(
                     model,
                     check_memory=not no_memory_check,
-                    **load_options(max_image_mp, max_input_tokens),
+                    **load_options(max_image_mp, max_input_tokens, prefix_cache),
                 )
             except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
                 fail(str(error))
@@ -417,7 +434,9 @@ def run(
     try:
         parse_request(body)  # catch request errors before loading
         loaded = load(
-            model, check_memory=not no_memory_check, **load_options(max_image_mp, max_input_tokens)
+            model,
+            check_memory=not no_memory_check,
+            **load_options(max_image_mp, max_input_tokens, prefix_cache),
         )
         if bare := undescribed_choices(loaded, body.get("questions")):
             typer.echo(describe_options_hint(bare, RUN_DESCRIBE_HOW), err=True)
@@ -444,6 +463,7 @@ def chat(
     image: ImageOption = None,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    prefix_cache: PrefixCacheOption = None,
     no_memory_check: NoMemoryCheckOption = False,
 ) -> None:
     """Load a model once, then answer states typed one after another.
@@ -466,7 +486,9 @@ def chat(
         if "questions" in body:
             parse_request({**body, "state": ""})  # catch question errors before loading
         loaded = load(
-            model, check_memory=not no_memory_check, **load_options(max_image_mp, max_input_tokens)
+            model,
+            check_memory=not no_memory_check,
+            **load_options(max_image_mp, max_input_tokens, prefix_cache),
         )
         if body.get("images"):
             loaded.check({"state": "", "questions": {"q": {"type": "noul"}}, **body})
@@ -600,6 +622,7 @@ def server(
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    prefix_cache: PrefixCacheOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: Annotated[
         str | None,
@@ -624,7 +647,7 @@ def server(
     from .registry import check_options, detect_family
 
     typer.echo(f"loading {model} ...", err=True)
-    options = load_options(max_image_mp, max_input_tokens)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache)
     try:
         # Fail here, not inside the server.
         path = resolve_model_path(model)
@@ -656,6 +679,7 @@ def mcp(
     port: Annotated[int, typer.Option(help="Port to listen on (with --http).")] = 8000,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
+    prefix_cache: PrefixCacheOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: Annotated[
         str | None,
@@ -687,7 +711,7 @@ def mcp(
 
     # stdout carries the protocol: everything else goes to stderr.
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(message)s")
-    options = load_options(max_image_mp, max_input_tokens)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache)
     try:
         # Fail here, before a client is waiting for the handshake.
         path = resolve_model_path(model)
