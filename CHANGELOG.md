@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may
 change the interface).
 
-## [Unreleased]
+## [0.6.0] - 2026-10-08
 
 ### Added
 
@@ -51,6 +51,15 @@ change the interface).
   amount, 0 turns it off. Answers stay within the parity tolerance of
   those without reuse (at most 0.004 apart on clef-flash) and are the
   same for a first and a repeated request.
+
+- `python -m mlx_decision` runs the command line, as `mlx-decision`.
+
+- `scripts/clef_parity_bundle.py` writes a standalone folder that runs
+  Cloudflare's reference and mlx-decision side by side on the parity
+  set on another Mac, for models too large for this one (how Clef 27B
+  in bf16 was checked). `scripts/quantization_report.py` takes such a
+  results file with `--reference` and keeps each model's results with
+  `--cache DIR`, so adding a model runs only that model.
 
 ### Changed
 
