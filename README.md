@@ -13,7 +13,7 @@ or the command line, serve it over HTTP with an API compatible with
 | Model | Size | Input | Limit | Memory | Short request | Speedup | Good at |
 |---|---|---|---|---|---|---|---|
 | Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | 3.5x | knowledge, entailment, many options, images |
-| Cloudflare's [clef](https://huggingface.co/Cloudflare/clef) | 27B | text, images | 16,384 tokens | 54 GB (8-bit: 32 GB, 4-bit: 19 GB) | 1.1 s (8-bit) | 3.7x (bf16, M2 Ultra) | as clef-flash, on Macs with more memory |
+| Cloudflare's [clef](https://huggingface.co/Cloudflare/clef) | 27B | text, images | 16,384 tokens | 54 GB (8-bit: 32 GB, 4-bit: 19 GB) | 1.1 s (8-bit) | 3.7x (bf16, M2 Ultra) | as clef-flash, no more accurate on our benchmarks (8-bit) |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
 | [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | English text | 1,024 tokens per question | 1.7 GB | 16 ms | 2.9x | as laya, tuned for typed decision workflows |
 | [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | text, 100+ languages | 1,024 tokens per question | 1.6 GB | 8 ms | 2.5x | topic classification in many languages |
@@ -426,6 +426,7 @@ TypeSafe AI's hosted model, for comparison):
 | Model | AG News (topic, 4 options) | DAIR Emotion (6) | ANLI (entailment, 3) | BANKING77 (intent, 77) | MMLU (knowledge, 4) |
 |---|---|---|---|---|---|
 | clef-flash | 91.4 | 60.0 | 58.2 | **96.0** | **93.0** |
+| clef (8-bit) | 91.4 | 62.2 | 60.2 | 93.2 | 91.2 |
 | laya | **94.6** | 59.8 | 48.6 | 36.0 | 35.2 |
 | laya-typed-decisions | **94.6** | 61.2 | 47.4 | 36.2 | 37.6 |
 | laya-multilingual | 93.8 | 49.0 | 39.2 | 35.0 | 30.2 |
