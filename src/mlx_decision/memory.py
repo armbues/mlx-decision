@@ -7,6 +7,7 @@ safetensors headers, so nothing is loaded to find out.
 """
 
 import json
+import shlex
 import struct
 from collections.abc import Iterable
 from pathlib import Path
@@ -127,13 +128,15 @@ def check_fits(
     budget: int | None = None,
     name: str | None = None,
     extra: int = 0,
+    source: str | None = None,
 ) -> int:
     """Raise ``ModelTooLargeError`` unless the model fits; returns the bytes it needs.
 
     ``budget`` defaults to the GPU's recommended working set. ``name`` is
     how the model is named in the message (default: the folder's name).
     ``extra`` is memory the model takes on top of its weights and margin
-    (kept prefixes).
+    (kept prefixes). ``source`` is what the ``convert`` hint passes to ``-m``
+    (default: ``name`` if given, else the path).
     """
     weights = weight_bytes(path, options)
     required = round(weights * MARGIN) + extra
@@ -142,6 +145,7 @@ def check_fits(
         budget, limit_name = working_set(), "this Mac's GPU working set"
     if required <= budget:
         return required
+    source = source or name or str(path)
     name = name or path.resolve().name
     message = (
         f"{name} needs about {gb(required)} ({gb(weights)} of weights plus 10%"
@@ -159,8 +163,9 @@ def check_fits(
         bits = next((bits for bits, size in sizes.items() if size <= budget), None)
         if bits is not None:
             flags = "-q" if bits == QUANTIZED_BITS[0] else f"-q --bits {bits}"
+            command = f"mlx-decision convert -m {shlex.quote(source)} {flags}"
             message += (
-                f" Make a quantized copy first: mlx-decision convert -m {name} {flags}"
+                f" Make a quantized copy first: {command}"
                 f" ({bits}-bit, needs about {gb(sizes[bits])})."
             )
         else:

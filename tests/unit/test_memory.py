@@ -83,8 +83,8 @@ def test_a_model_that_does_not_fit_is_refused_with_sizes_and_a_hint(tmp_path, wo
 
 
 @pytest.mark.parametrize(("bits", "hint"), [
-    (8, "convert -m clef -q (8-bit, needs about"),
-    (4, "convert -m clef -q --bits 4 (4-bit, needs about"),
+    (8, "clef -q (8-bit, needs about"),
+    (4, "clef -q --bits 4 (4-bit, needs about"),
     (None, "Even a 4-bit copy would need about"),
 ])  # fmt: skip
 def test_the_hint_names_a_copy_that_fits(tmp_path, working_set, bits, hint):
@@ -98,6 +98,19 @@ def test_the_hint_names_a_copy_that_fits(tmp_path, working_set, bits, hint):
         check_fits(path)
     assert hint in str(error.value)
     assert "--no-memory-check" in str(error.value)
+
+
+def test_the_hint_converts_the_source_and_the_message_names_the_model(tmp_path, working_set):
+    path = write_clef(tmp_path / "my models" / "clef")
+    working_set(round(weight_bytes(path) * 1.1) - 1)
+    with pytest.raises(ModelTooLargeError) as error:
+        check_fits(path)
+    assert f"convert -m '{path}' -q" in str(error.value)
+    with pytest.raises(ModelTooLargeError) as error:
+        check_fits(path, name="big-clef", source=str(path))
+    message = str(error.value)
+    assert message.startswith("big-clef needs about ")
+    assert f"convert -m '{path}' -q" in message
 
 
 def test_a_budget_replaces_the_working_set(tmp_path, working_set):

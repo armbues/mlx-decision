@@ -175,7 +175,14 @@ class ModelPool:
             spec = self.specs[name]
             extra = prefix_cache_bytes(spec)
             if self.check_memory:
-                size = check_fits(spec.path, spec.options, self.budget, name=name, extra=extra)
+                size = check_fits(
+                    spec.path,
+                    spec.options,
+                    self.budget,
+                    name=name,
+                    extra=extra,
+                    source=str(spec.path),
+                )
             else:
                 size = required_bytes(spec.path, spec.options) + extra
             self._sizes[name] = size

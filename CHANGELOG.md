@@ -7,6 +7,13 @@ change the interface).
 
 ## [Unreleased]
 
+### Fixed
+
+- When a model in a `server` or `benchmark` folder does not fit in
+  memory, the hint now names the model's folder in its `convert`
+  command (`convert -m ~/Models/clef -q`), not the model's name, which
+  `convert` could not find.
+
 ## [0.6.0] - 2026-10-08
 
 ### Added

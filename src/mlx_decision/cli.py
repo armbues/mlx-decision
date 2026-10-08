@@ -993,7 +993,7 @@ def benchmark_models(
         fitting = []
         for spec in specs:
             try:
-                check_fits(spec.path, spec.options, name=spec.name)
+                check_fits(spec.path, spec.options, name=spec.name, source=str(spec.path))
                 fitting.append(spec)
             except ModelTooLargeError as error:
                 skipped.append(str(error))

@@ -224,6 +224,17 @@ def test_a_model_counts_its_prefix_cache_limit(tmp_path, working_set):
         tight.get(None)
 
 
+def test_the_convert_hint_names_the_model_folder(tmp_path):
+    clef = write_clef(tmp_path / "clef")
+    pool = ModelPool(
+        discover([clef], {"prefix_cache_gb": 0}), budget=memory.required_bytes(clef) - 1
+    )
+    with pytest.raises(ModelTooLargeError) as error:
+        pool.get(None)
+    assert str(error.value).startswith("clef needs about ")
+    assert f"convert -m {clef} -q" in str(error.value)
+
+
 def test_a_failed_load_leaves_the_pool_unchanged(models):
     def load(spec):
         if spec.name == "beta":
