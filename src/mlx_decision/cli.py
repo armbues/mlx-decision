@@ -947,10 +947,86 @@ def int_list(value: str, flag: str) -> tuple[int, ...]:
     return numbers
 
 
+def is_folder_of_models(model: str) -> bool:
+    """Whether ``model`` is a local folder that no family loads itself.
+
+    Its subfolders may be models; ``discover`` says whether any is.
+    """
+    from .hub import is_repo_id
+    from .registry import detect_family
+
+    path = Path(model).expanduser()
+    if is_repo_id(model) or not path.is_dir():
+        return False
+    try:
+        detect_family(path)
+    except ValueError:
+        return True
+    return False
+
+
+def benchmark_models(
+    folder: str, arguments: list[str], check_memory: bool, as_json: bool, out: Path | None
+) -> None:
+    """``benchmark`` for a folder of models: one process per model, then a summary."""
+    from .benchmark import format_report, format_summary, from_dict, run_models
+    from .memory import ModelTooLargeError, check_fits
+    from .pool import discover
+
+    if out is not None and out.exists() and not out.is_dir():
+        raise typer.BadParameter("with a folder of models, --out is a folder", param_hint="--out")
+    skipped: list[str] = []
+    try:
+        specs = discover([folder], on_skip=lambda path, reason: skipped.append(reason))
+    except (FileNotFoundError, ValueError) as error:
+        fail(str(error))
+    if check_memory:
+        fitting = []
+        for spec in specs:
+            try:
+                check_fits(spec.path, spec.options, name=spec.name)
+                fitting.append(spec)
+            except ModelTooLargeError as error:
+                skipped.append(str(error))
+        specs = fitting
+    for reason in skipped:
+        typer.echo(f"skipped {reason}", err=True)
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+
+    def on_start(number: int, total: int, name: str) -> None:
+        typer.echo(f"benchmarking {name} ({number}/{total}) ...", err=True)
+
+    def on_done(run) -> None:
+        if run.data is None:
+            typer.echo(f"error: {run.name}: {run.error}", err=True)
+            return
+        if out is not None:
+            (out / f"{run.name}.json").write_text(json.dumps(run.data, indent=2) + "\n")
+        if not as_json:
+            typer.echo(format_report(from_dict(run.data)) + "\n")
+
+    runs = run_models(specs, arguments, on_start, on_done)
+    if as_json:
+        typer.echo(json.dumps([run.data for run in runs if run.data is not None], indent=2))
+    else:
+        typer.echo(format_summary(runs, skipped))
+    if out is not None:
+        typer.echo(f"results written to {out}", err=True)
+    if any(run.data is None for run in runs):
+        raise typer.Exit(1)
+
+
 @app.command()
 def benchmark(
     model: Annotated[
-        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+        str,
+        typer.Option(
+            "--model",
+            "-m",
+            help="Model folder, Hugging Face repo id, or a folder of models (each "
+            "subfolder benchmarked in a process of its own, in alphabetical order).",
+        ),
     ],
     lengths: Annotated[
         str | None,
@@ -973,7 +1049,8 @@ def benchmark(
         typer.Option(
             "--out",
             help="Also write the results as JSON to this file, with the machine's "
-            "configuration and the versions, to compare runs across Macs.",
+            "configuration and the versions, to compare runs across Macs. With a "
+            "folder of models: a folder, one <model>.json per model.",
         ),
     ] = None,
 ) -> None:
@@ -991,6 +1068,12 @@ def benchmark(
     }
     if min(grid["question_counts"]) < 1:
         raise typer.BadParameter("at least one question per request", param_hint="--questions")
+    if is_folder_of_models(model):
+        arguments = ["--questions", questions, "--repeats", str(repeats)]
+        arguments += ["--lengths", lengths] if lengths else []
+        arguments += ["--no-memory-check"] if no_memory_check else []
+        benchmark_models(model, arguments, not no_memory_check, as_json, out)
+        return
     try:
         report = run_benchmark(model, check_memory=not no_memory_check, repeats=repeats, **grid)
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:

@@ -10,9 +10,13 @@ requests on a state it has seen: the "warm" times, which cover only the
 questions. The timed cold requests drop kept prefixes first.
 """
 
+import json
 import math
 import statistics
+import subprocess
+import sys
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 
@@ -20,6 +24,7 @@ import mlx.core as mx
 
 from .machine import describe, machine_info, software_info
 from .model import DecisionModel, load
+from .pool import ModelSpec
 
 # Version of the JSON written by ``to_dict``: format 2 added everything but
 # the numbers (date, machine, software, model info, options), format 3 the
@@ -264,3 +269,108 @@ def to_dict(report: Report) -> dict:
         "repeats": report.repeats,
         "cells": [asdict(cell) for cell in report.cells],
     }
+
+
+def from_dict(data: dict) -> Report:
+    """A report read back from ``to_dict``'s JSON."""
+    options = data.get("options", {})
+    return Report(
+        model=data["model"],
+        load_s=data["load_s"],
+        peak_memory_gb=data["peak_memory_gb"],
+        repeats=data["repeats"],
+        cells=[Cell(**cell) for cell in data["cells"]],
+        date=data.get("date", ""),
+        machine=data.get("machine", {}),
+        software=data.get("software", {}),
+        model_info=data.get("model_info", {}),
+        lengths=tuple(options.get("lengths", ())),
+        question_counts=tuple(options.get("question_counts", ())),
+        prefix_cache_gb=options.get("prefix_cache_gb"),
+    )
+
+
+# Several models: each runs in a process of its own, so that all of its
+# memory is released before the next one loads and a crash stops only it.
+
+
+@dataclass
+class ModelRun:
+    """One model of a folder: its results, or why there are none."""
+
+    name: str
+    data: dict | None = None  # to_dict's JSON, named after the folder
+    error: str | None = None
+
+
+def run_in_process(path: str, arguments: Sequence[str]) -> tuple[int, str, str]:
+    """``mlx-decision benchmark -m path --json`` in a new Python process.
+
+    Returns the exit code, stdout and stderr.
+    """
+    command = [sys.executable, "-m", "mlx_decision", "benchmark", "-m", path, "--json"]
+    done = subprocess.run([*command, *arguments], capture_output=True, text=True)
+    return done.returncode, done.stdout, done.stderr
+
+
+def run_models(
+    specs: Sequence[ModelSpec],
+    arguments: Sequence[str] = (),
+    on_start: Callable[[int, int, str], None] | None = None,
+    on_done: Callable[[ModelRun], None] | None = None,
+    run: Callable[[str, Sequence[str]], tuple[int, str, str]] | None = None,
+) -> list[ModelRun]:
+    """Benchmark each model in turn, one process per model.
+
+    ``arguments`` are passed on to each run (grid, repeats, memory check). A
+    model that fails is recorded with the last line its process wrote to
+    stderr and the others still run. ``run`` replaces ``run_in_process``.
+    """
+    run = run or run_in_process
+    runs = []
+    for number, spec in enumerate(specs, 1):
+        if on_start is not None:
+            on_start(number, len(specs), spec.name)
+        code, out, err = run(str(spec.path), arguments)
+        if code == 0:
+            data = json.loads(out)
+            data["model"] = spec.name
+            result = ModelRun(spec.name, data=data)
+        else:
+            lines = [line for line in err.splitlines() if line.strip()]
+            message = lines[-1] if lines else f"exit code {code}"
+            result = ModelRun(spec.name, error=message.removeprefix("error: "))
+        runs.append(result)
+        if on_done is not None:
+            on_done(result)
+    return runs
+
+
+def format_summary(runs: Sequence[ModelRun], skipped: Sequence[str] = ()) -> str:
+    """One row per model: load time, peak memory, and the median at its
+    shortest and longest state with the fewest questions."""
+    lines = [
+        "| Model | Load s | Peak GB | Shortest state | Median s | Longest state | Median s |",
+        "|---" * 7 + "|",
+    ]
+    for run in runs:
+        if run.data is None:
+            lines.append(f"| {run.name} | failed: {run.error} | | | | | |")
+            continue
+        report = from_dict(run.data)
+        fewest = min(cell.questions for cell in report.cells)
+        cells = [cell for cell in report.cells if cell.questions == fewest]
+        short = min(cells, key=lambda cell: cell.state_tokens)
+        long = max(cells, key=lambda cell: cell.state_tokens)
+        lines.append(
+            f"| {run.name} | {report.load_s:.1f} | {report.peak_memory_gb:.1f} "
+            f"| {short.input_tokens} tokens | {short.median_s:.3f} "
+            f"| {long.input_tokens} tokens | {long.median_s:.3f} |"
+        )
+    questions = {min(cell["questions"] for cell in run.data["cells"]) for run in runs if run.data}
+    if questions:
+        counts = ", ".join(map(str, sorted(questions)))
+        lines += ["", f"States in input tokens; medians with {counts} question(s) per request."]
+    if skipped:
+        lines += ["", "Skipped:", *(f"- {reason}" for reason in skipped)]
+    return "\n".join(lines)

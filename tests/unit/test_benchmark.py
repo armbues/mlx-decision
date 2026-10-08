@@ -1,7 +1,10 @@
 """The latency benchmark, through the fake backend."""
 
 import json
+from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from mlx_decision.benchmark import format_report, make_questions, percentile, run
@@ -194,3 +197,127 @@ def test_default_lengths_fit_the_input_limit():
     assert default_lengths(1024) == (250, 1000)
     assert default_lengths(512) == (250, 450)
     assert default_lengths(128) == (100,)
+
+
+# A folder of models.
+
+
+def test_a_folder_of_models_runs_each_in_its_own_process(tmp_path):
+    from tiny_models import write_clef, write_marker
+
+    folder = tmp_path / "models"
+    write_clef(folder / "clef-tiny")
+    write_marker(folder / "Laya-tiny", "laya")
+    (folder / "notes").mkdir()
+    (folder / ".hidden").mkdir()
+    out = tmp_path / "results"
+    args = ["benchmark", "-m", str(folder), "--lengths", "20", "--questions", "1,2"]
+    result = CliRunner().invoke(app, [*args, "--repeats", "1", "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    # Alphabetical ignoring case (a plain sort puts capitals first); the
+    # folder no family loads is listed, not run.
+    assert "benchmarking clef-tiny (1/2) ..." in result.stderr
+    assert "benchmarking Laya-tiny (2/2) ..." in result.stderr
+    assert "skipped " in result.stderr and "notes: not a supported decision model" in result.stderr
+    assert "Laya-tiny: load" in result.stdout and "clef-tiny: load" in result.stdout
+    summary = result.stdout.split("| Model | Load s |")[1]
+    assert summary.index("| clef-tiny |") < summary.index("| Laya-tiny |")
+    assert "medians with 1 question(s) per request" in summary
+    assert "Skipped:" in summary
+    assert sorted(p.name for p in out.iterdir()) == ["Laya-tiny.json", "clef-tiny.json"]
+    data = json.loads((out / "clef-tiny.json").read_text())
+    assert data["model"] == "clef-tiny" and data["format"] == 3
+    assert [(c["state_tokens"], c["questions"]) for c in data["cells"]] == [(20, 1), (20, 2)]
+    assert data["options"]["repeats"] == 1
+
+
+@pytest.fixture
+def fake_runs(monkeypatch):
+    """Runs each model in this process (the fake family exists only here);
+    a model named in ``failing`` fails as a crashed process would."""
+    import mlx_decision.benchmark as benchmark
+
+    state = SimpleNamespace(calls=[], failing=set())
+
+    def run(path, arguments):
+        state.calls.append((Path(path).name, list(arguments)))
+        if Path(path).name in state.failing:
+            return 1, "", "Traceback ...\nerror: out of memory\n"
+        done = CliRunner().invoke(app, ["benchmark", "-m", path, "--json", *arguments])
+        return done.exit_code, done.stdout, done.stderr
+
+    monkeypatch.setattr(benchmark, "run_in_process", run)
+    return state
+
+
+def fake_folder(tmp_path, *names):
+    from fake_backend import write_model
+
+    folder = tmp_path / "models"
+    for name in names:
+        write_model(folder / name)
+    return folder
+
+
+FAST = ["--lengths", "20", "--questions", "1", "--repeats", "1"]
+
+
+def test_a_failed_model_does_not_stop_the_others(tmp_path, fake_runs):
+    folder = fake_folder(tmp_path, "a", "b", "c")
+    fake_runs.failing.add("b")
+    result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST])
+    assert result.exit_code == 1
+    assert [name for name, _ in fake_runs.calls] == ["a", "b", "c"]
+    assert fake_runs.calls[0][1] == ["--questions", "1", "--repeats", "1", "--lengths", "20"]
+    assert "error: b: out of memory" in result.stderr
+    assert "| b | failed: out of memory |" in result.stdout
+    assert "| a | " in result.stdout and "| c | " in result.stdout
+
+
+def test_models_that_do_not_fit_are_skipped(tmp_path, fake_runs, monkeypatch):
+    import mlx_decision.memory as memory
+    from fake_backend import write_sized_model
+
+    folder = fake_folder(tmp_path, "small")
+    write_sized_model(folder / "large", 2_000)
+    monkeypatch.setattr(memory, "working_set", lambda: 1_000)
+    result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST])
+    assert result.exit_code == 0, result.output
+    assert [name for name, _ in fake_runs.calls] == ["small"]
+    assert "skipped large needs about 0.0 GB" in result.stderr
+    # Without the memory check every model runs, and the runs skip it too.
+    result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST, "--no-memory-check"])
+    assert result.exit_code == 0, result.output
+    assert [name for name, _ in fake_runs.calls[1:]] == ["large", "small"]
+    assert fake_runs.calls[-1][1][-1] == "--no-memory-check"
+
+
+def test_json_for_a_folder_is_a_list(tmp_path, fake_runs):
+    folder = fake_folder(tmp_path, "one", "two")
+    result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST, "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert [entry["model"] for entry in data] == ["one", "two"]
+
+
+def test_out_must_be_a_folder_for_a_folder_of_models(tmp_path, fake_runs):
+    folder = fake_folder(tmp_path, "one")
+    (tmp_path / "file.json").write_text("{}")
+    args = ["benchmark", "-m", str(folder), *FAST, "--out", str(tmp_path / "file.json")]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 2 and "--out is a folder" in result.output
+    assert fake_runs.calls == []
+
+
+def test_a_folder_without_models(tmp_path, fake_runs):
+    (tmp_path / "empty" / "notes").mkdir(parents=True)
+    result = CliRunner().invoke(app, ["benchmark", "-m", str(tmp_path / "empty"), *FAST])
+    assert result.exit_code == 1
+    assert "none of its subfolders is one" in result.stderr
+
+
+def test_a_report_survives_json(fake_model):
+    from mlx_decision.benchmark import from_dict, to_dict
+
+    report = run(fake_model, lengths=(10,), question_counts=(1, 2), repeats=1)
+    assert from_dict(json.loads(json.dumps(to_dict(report)))) == report
