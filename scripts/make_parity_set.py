@@ -20,6 +20,8 @@ from pathlib import Path
 
 from tokenizers import Tokenizer
 
+from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
+
 ROOT = Path(__file__).resolve().parents[1]
 
 # ---------------------------------------------------------------------------
@@ -986,7 +988,7 @@ def main() -> None:
     parser.add_argument("--model", type=Path, required=True, help="folder with tokenizer.json")
     parser.add_argument("--out", type=Path, default=ROOT / "tests" / "parity" / "requests.json")
     args = parser.parse_args()
-    tokenizer = Tokenizer.from_file(str(args.model / "tokenizer.json"))
+    tokenizer = load_tokenizer(args.model)
 
     cases = short_cases() + many_questions() + big_choices() + long_cases(tokenizer)
     cases += image_cases(tokenizer)

@@ -15,6 +15,8 @@ from pathlib import Path
 import pytest
 from test_parity import MARGIN, MEAN_TOLERANCE, REQUESTS, TOLERANCE, request
 
+from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
+
 HERE = Path(__file__).parent
 FIXTURE = json.loads((HERE / "reference-clef.json").read_text())
 REFERENCE = FIXTURE["reference"]["results"]
@@ -81,14 +83,12 @@ def tokenizer_folder() -> Path | None:
 
 
 def test_tokens_match():
-    from tokenizers import Tokenizer
-
     from mlx_decision.models.clef.encode import encode_request
 
     folder = tokenizer_folder()
     if folder is None:
         pytest.skip("Clef 27B's tokenizer is not here (set MLX_DECISION_MODELS)")
-    tokenizer = Tokenizer.from_file(str(folder / "tokenizer.json"))
+    tokenizer = load_tokenizer(folder)
     for case_id, reference in REFERENCE.items():
         if REQUESTS[case_id].get("images"):
             pytest.importorskip("PIL")

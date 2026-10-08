@@ -257,7 +257,9 @@ probability.
 - clef-flash: 63 requests (13 with one to three images, states up to beyond
   the 16,384-token limit) against Cloudflare's reference in bf16 on MPS.
   Largest difference 0.035 per probability (mean 0.001; with images 0.015,
-  mean 0.002), no changed answers.
+  mean 0.002), no changed answers. Also the 34 requests of the Laya and
+  Julia set below (22 languages, long options; 89 questions): same token
+  ids, largest difference 0.009, mean 0.001, no changed answers.
 - Clef 27B: the same 63 requests in bf16 on the M2 Ultra against
   Cloudflare's reference. Same token ids, largest difference 0.031 per
   probability (mean 0.001), no changed answers.

@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 import mlx.core as mx
-from tokenizers import Tokenizer
 
 from ...backbones.qwen3_5.load import has_vision_weights, load_text_model
+from ...backbones.qwen3_5.tokenizer import load_tokenizer
 from ...backend import BackendOutput, Capabilities
 from ...types import Request
 from ..qwen import count_image_tokens, image_config, image_inputs, open_images, precision, prepare
@@ -185,7 +185,7 @@ def load(
     head.load_weights(str(path / "joint_head.safetensors"), strict=True)
     head.eval()
     mx.eval(head.parameters())
-    tokenizer = Tokenizer.from_file(str(path / "tokenizer.json"))
+    tokenizer = load_tokenizer(path)
     backend = ClefBackend(
         path.resolve().name,
         backbone,

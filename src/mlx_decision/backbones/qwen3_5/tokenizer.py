@@ -9,6 +9,7 @@
 # ``tokenizer.json`` with the `tokenizers` library.
 """Load a Qwen3.5 tokenizer as transformers does."""
 
+import json
 from pathlib import Path
 
 from tokenizers import Regex, Tokenizer, pre_tokenizers
@@ -20,8 +21,17 @@ PRETOKENIZE_REGEX = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{
 
 
 def load_tokenizer(path: str | Path) -> Tokenizer:
-    """``tokenizer.json`` of a Qwen3.5 folder with transformers' pre-tokenizer."""
+    """``tokenizer.json`` of a Qwen3.5 folder with transformers' pre-tokenizer.
+
+    Only a Qwen-style pre-tokenizer (a split by pattern, then byte level) is
+    replaced; any other (the word-level tokenizers of the test models) is
+    kept as it is.
+    """
     tokenizer = Tokenizer.from_file(str(Path(path) / "tokenizer.json"))
+    stored = json.loads(tokenizer.to_str()).get("pre_tokenizer") or {}
+    kinds = [step.get("type") for step in stored.get("pretokenizers", [])]
+    if stored.get("type") != "Sequence" or kinds != ["Split", "ByteLevel"]:
+        return tokenizer
     tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
         [
             pre_tokenizers.Split(Regex(PRETOKENIZE_REGEX), behavior="isolated", invert=False),

@@ -42,11 +42,10 @@ IMAGE_STATE = "A customer sent this photo with their support request about a boo
 
 def make_cases(model_path: Path) -> list[dict]:
     """The requests, identical on both sides: text grid first, then images."""
-    from tokenizers import Tokenizer
-
+    from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
     from mlx_decision.benchmark import make_questions, make_state
 
-    tokenizer = Tokenizer.from_file(str(model_path / "tokenizer.json"))
+    tokenizer = load_tokenizer(model_path)
     rate = len(tokenizer.encode(make_state(1000)).ids) / 1000
     cases = []
     for length in LENGTHS:

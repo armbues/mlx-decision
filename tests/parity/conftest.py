@@ -9,6 +9,14 @@ WARM_UP = {"warm_up": {"type": "noul", "instructions": "Is this a test?"}}
 
 
 @pytest.fixture(scope="session")
+def tokenizer(clef_path):
+    """clef-flash's tokenizer, loaded as Clef loads it."""
+    from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
+
+    return load_tokenizer(clef_path)
+
+
+@pytest.fixture(scope="session")
 def parity_runs(clef):
     """Backend outputs for every request of the parity set, computed once.
 

@@ -50,13 +50,6 @@ def test_every_request_has_a_reference():
     assert set(REQUESTS) == set(REFERENCE)
 
 
-@pytest.fixture(scope="session")
-def tokenizer(clef_path: Path):
-    from tokenizers import Tokenizer
-
-    return Tokenizer.from_file(str(clef_path / "tokenizer.json"))
-
-
 @pytest.mark.parametrize("case_id", CASE_IDS)
 def test_tokens_and_spans_match(tokenizer, clef_path, case_id):
     encoded = encode_request(

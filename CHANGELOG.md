@@ -23,6 +23,15 @@ change the interface).
 
 ### Fixed
 
+- Clef split text with combining marks (Hindi, Bengali, Thai, Arabic
+  with vowel signs, and other scripts that use them) into other tokens
+  than Cloudflare's reference: the release's `tokenizer.json` carries an
+  older pre-tokenizer pattern, which transformers replaces when it loads
+  the tokenizer. Clef now loads it the same way, so such requests get
+  the reference's tokens and answers (Thai: 329 tokens instead of 343 on
+  the test request). Converted copies are fixed too; nothing needs to be
+  converted again.
+
 - When a model in a `server` or `benchmark` folder does not fit in
   memory, the hint now names the model's folder in its `convert`
   command (`convert -m ~/Models/clef -q`), not the model's name, which
