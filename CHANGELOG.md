@@ -7,6 +7,20 @@ change the interface).
 
 ## [Unreleased]
 
+### Added
+
+- Perplexity's pplx decider (`perplexity-ai/pplx-decider-v1.1-27b`), a
+  27B model with text and images, through the same API, `run`, `chat`,
+  `server`, `mcp` and `benchmark`, and in the `download` menu after the
+  Clef models. It reads each question as its own sequence (up to 8,192
+  tokens; longer input is refused, not cut) and answers up to 255
+  options. `convert -q` and `--bits 4`, or `download --bits 8` / `--bits
+  4`, store an 8-bit copy (29 GB peak, Macs with 48 GB or more) or a
+  4-bit copy (17 GB peak, 32 GB or more); the decision head and the
+  vision tower stay as released. Its prompt matches the release's code
+  token for token; probabilities were compared with that code on a small
+  random model in the release's layout.
+
 ### Fixed
 
 - When a model in a `server` or `benchmark` folder does not fit in

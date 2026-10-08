@@ -287,7 +287,8 @@ MaxImageOption = Annotated[
         "--max-image-mp",
         min=0,
         help="Shrink larger images to this many megapixels (1 MP = 2^20 pixels = 1,024 "
-        "tokens). Default: 2. 0 = no cap beyond the model's own, as in Cloudflare's reference.",
+        "tokens; Clef). Default: 2. 0 = no cap beyond the model's own, as in Cloudflare's "
+        "reference.",
     ),
 ]
 
@@ -298,8 +299,8 @@ MaxInputOption = Annotated[
         "--max-input-tokens",
         min=16,
         help="Input limit in tokens; longer states are cut (or refused by models that do not "
-        "cut). Default: the model's own (Clef 16,384; Laya 512 or 1,024; Julia 8,192). Laya "
-        "and Julia take up to 8,192.",
+        "cut). Default: the model's own (Clef 16,384; pplx 8,192; Laya 512 or 1,024; Julia "
+        "8,192). Laya and Julia take up to 8,192; pplx only a lower limit.",
     ),
 ]
 
@@ -886,7 +887,7 @@ def convert(
         bool,
         typer.Option(
             "--keep-output-embeddings",
-            help="Leave the output embedding matrix (lm_head) unquantized.",
+            help="Leave the output embedding matrix (lm_head) unquantized (Clef).",
         ),
     ] = False,
     target_bits: Annotated[
@@ -895,7 +896,7 @@ def convert(
             min=2,
             max=8,
             help="Mixed precision: average bits per weight, allocated by measured "
-            "sensitivity (implies --quantize; takes a few minutes).",
+            "sensitivity (Clef; implies --quantize; takes a few minutes).",
         ),
     ] = None,
 ) -> None:

@@ -14,6 +14,7 @@ or the command line, serve it over HTTP with an API compatible with
 |---|---|---|---|---|---|---|---|
 | Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | 3.5x | knowledge, entailment, many options, images |
 | Cloudflare's [clef](https://huggingface.co/Cloudflare/clef) | 27B | text, images | 16,384 tokens | 54 GB (8-bit: 32 GB, 4-bit: 19 GB) | 1.1 s (8-bit) | 3.7x (bf16) | as clef-flash, no more accurate on our benchmarks (8-bit) |
+| Perplexity's [pplx-decider-v1.1-27b](https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b) | 27B | text, images | 8,192 tokens per question | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | 0.83 s (8-bit) | - | as clef in a first spot check (8-bit) |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
 | [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | English text | 1,024 tokens per question | 1.7 GB | 16 ms | 2.9x | as laya, tuned for typed decision workflows |
 | [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | text, 100+ languages | 1,024 tokens per question | 1.6 GB | 8 ms | 2.5x | topic classification in many languages |
@@ -24,7 +25,8 @@ Apple M5 Pro. "Speedup": the same request against the model's own PyTorch
 code on the same Mac (MPS), with the same answers; across all measured
 requests it ranges from 1.4 to 6 times ([Speed](#speed)). Clef 27B's
 reference does not fit that Mac in bf16, so its speedup was measured on
-an M2 Ultra. How the models differ is in [Models](#models).
+an M2 Ultra; pplx's was not measured. How the models differ is in
+[Models](#models).
 
 This is alpha software: the interface may still change. Questions and bug
 reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues).
@@ -33,7 +35,7 @@ reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues
 
 Requirements: a Mac with Apple Silicon (M1 or later) and macOS 14 or newer,
 Python 3.12 or newer, and the memory the model needs (see the table; which
-Clef copy fits which Mac is in [Clef](#clef)).
+copy fits which Mac is in [Clef](#which-copy-fits) and [pplx](#pplx)).
 
 ```bash
 pip install mlx-decision                    # library and the mlx-decision command
@@ -66,7 +68,7 @@ cache); `--local-dir` names the folder directly. It warns before
 downloading a repository no supported model family can load. Private or
 gated repos need `HF_TOKEN`.
 
-Clef models can also be stored quantized. After the model, the menu asks
+Clef and pplx models can also be stored quantized. After the model, the menu asks
 for full size, 8-bit or 4-bit, with the size of each and which of them fit
 in the Mac's memory (the largest that fits is the default); `--bits 8` or
 `--bits 4` chooses without asking:
@@ -80,7 +82,7 @@ The full-size weight files are then fetched one at a time, quantized and
 deleted, so the full-size model never has to fit in memory or on disk:
 Clef 27B in 8-bit takes about 30 GB on disk, plus one 5 GB file while
 the download runs. The result is the same as running
-[convert](#quantizing-clef-convert) on a full download. In the Hugging
+[convert](#quantizing-clef-and-pplx-convert) on a full download. In the Hugging
 Face cache it takes the place of the repo's files, so `-m
 Cloudflare/clef` loads it without fetching anything. `hf cache ls` and
 `hf cache rm` treat it like any download; `hf cache verify` reports it
@@ -89,7 +91,7 @@ as changed, since it no longer holds the repo's files.
 Before reading the weights, loading checks that the model fits: its
 weights plus 10% must be within the GPU's recommended working set
 (macOS swaps beyond it). A model that does not fit is refused with both
-sizes and, for Clef, the `convert` command for a smaller copy that fits.
+sizes and, for Clef and pplx, the `convert` command for a smaller copy that fits.
 `--no-memory-check` loads it anyway.
 
 ## Python
@@ -150,7 +152,7 @@ the state was cut to fit the model's input limit. The answer types
 from `mlx_decision`.
 
 `load` takes options per model: `max_input_tokens` changes the input limit
-(Laya and Julia up to 8,192), `strict_encoding=False` lets Julia cut what it
+(Laya and Julia up to 8,192; pplx only lower), `strict_encoding=False` lets Julia cut what it
 would otherwise refuse, `dtype` sets Laya's and Julia's precision (default
 float16), `max_image_pixels` caps image size for Clef, and
 `prefix_cache_gb` sets how much memory Clef keeps for
@@ -160,8 +162,8 @@ raises `mlx_decision.ModelTooLargeError` otherwise.
 `model.info()` describes the loaded model as JSON data: family,
 precision, input limit, option limits and whether it takes images.
 
-With the `images` extra, Clef takes images as file paths, bytes, PIL
-images or data URLs:
+With the `images` extra, Clef and pplx take images as file paths, bytes,
+PIL images or data URLs:
 
 ```python
 result = model.decide(
@@ -207,7 +209,7 @@ The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body. `--image FILE` (repeatable) sends images along with the
-state (Clef). `--max-input-tokens N` (also on `chat` and `server`)
+state (Clef, pplx). `--max-input-tokens N` (also on `chat` and `server`)
 changes the model's input limit, e.g. to give Laya up to 8,192 tokens.
 
 `mlx-decision --version` prints the installed version.
@@ -359,7 +361,7 @@ decision as a tool, answered on your Mac. It needs the `mcp` extra.
 The server has two tools:
 
 - `decide` takes the fields of a request body (`state`, `questions`, and
-  `images` for Clef) and returns the response body as structured
+  `images` for Clef and pplx) and returns the response body as structured
   content, plus `truncated`. An invalid request comes back as a tool
   error naming the field, which the agent can read and correct.
 - `model_info` describes the loaded model: family, precision, input
@@ -432,9 +434,9 @@ requests are not checked.
 ## Models
 
 The models differ in size and in how they read a request. Clef reads the
-state once and answers all questions together; Laya and Julia read each
-question on its own, with the whole state, so their input limit applies per
-question and their time grows with the number of questions.
+state once and answers all questions together; pplx, Laya and Julia read
+each question on its own, with the whole state, so their input limit
+applies per question and their time grows with the number of questions.
 
 Accuracy on five public benchmarks, 500 test examples each, with the same
 questions and option descriptions for every model (preliminary; Jev is
@@ -453,9 +455,13 @@ TypeSafe AI's hosted model, for comparison):
 Accuracy in percent; macro-F1 and calibration error are in
 [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md). The small models match or beat
 clef-flash on topic and emotion and are near chance on knowledge and
-entailment, as their model cards say. Each model matches its own reference
-code token for token on a fixed test set, with probabilities within 0.035
-(clef-flash), 0.031 (clef), 0.004 (Laya) and 0.018 (Julia).
+entailment, as their model cards say. pplx is not in the table yet: on
+50 examples per benchmark its 8-bit copy got 80% right, Clef 27B (8-bit)
+83% of the same examples ([pplx](#pplx)). Each model matches its own
+reference code token for token on a fixed test set, with probabilities
+within 0.035 (clef-flash), 0.031 (clef), 0.004 (Laya) and 0.018 (Julia);
+pplx's probabilities were compared on a small random model in its layout
+(within 0.00001), not on the 27B weights.
 
 ### Clef
 
@@ -478,7 +484,7 @@ is about two thirds of a Mac's memory on a 16 GB Mac and four fifths on a
 Peak memory at the full 16,384 tokens: clef-flash 19.0 GB in bf16 and
 11.2 GB in 8-bit; Clef 27B 32 GB in 8-bit and 19.5 GB in 4-bit.
 [`download --bits`](#getting-a-model) stores a quantized copy directly;
-[convert](#quantizing-clef-convert) makes one from a full download and
+[convert](#quantizing-clef-and-pplx-convert) makes one from a full download and
 offers mixed precision, which changes fewer answers than uniform 4-bit.
 
 Clef 27B is three to four times slower than clef-flash and was not more
@@ -519,6 +525,47 @@ are the same as without reuse, within the parity tolerance.
 read each question together with the state, so they have nothing to
 reuse.
 
+### pplx
+
+Perplexity's pplx-decider-v1.1-27b, fine-tuned from Qwen3.8-27B (the
+same architecture as Clef 27B) with a decision head of up to 255 options.
+It reads every question as its own sequence with the whole state and its
+images, so its input limit, 8,192 tokens, applies per question. Longer
+input is refused, never cut (`truncated` is never set), as the release
+does; `--max-input-tokens` can lower the limit, not raise it.
+
+| Copy | Disk | The fit check needs | Peak memory (7,350 tokens) |
+|---|---|---|---|
+| bf16 (as released) | 52.2 GB | 57.4 GB: 96 GB Macs and up | - |
+| 8-bit | 28.2 GB | 31.0 GB: 48 GB Macs and up | 29.1 GB |
+| 4-bit | 15.3 GB | 16.9 GB: 32 GB Macs and up | 17.1 GB |
+
+`download --bits 8` or `--bits 4` stores a copy without keeping the
+full-size files, and [convert](#quantizing-clef-and-pplx-convert) writes
+one from a full download (uniform 8-bit or 4-bit; the decision head and
+the vision tower stay as released).
+
+One question about a 250-token state takes 0.83 s (8-bit), a little less
+than Clef 27B; five questions take five times as long, where Clef 27B
+reads the state once (4,000-token state: 9.5 s for one question, 49 s for
+five; Clef 27B 10.6 s and 11.9 s). The 4-bit copy is about as fast. There
+is nothing to reuse between requests, since the state is read together
+with each question.
+
+Images, as for Clef, need the `images` extra; each image is scaled to
+between 64 and 256 tokens (the release's fixed bounds, so
+`--max-image-mp` does not apply), and the vision tower loads with the
+first image request.
+
+How accurate it is here has only been spot-checked: on 50 examples of
+each benchmark in [Models](#models), the 8-bit copy and Clef 27B (8-bit)
+got AG News 44 / 43, DAIR Emotion 33 / 32, ANLI 37 / 36, BANKING77 43 /
+48 and MMLU 43 / 48 right. Perplexity reports a Decision Index of 61.6
+for the release (Jev: 57.9). Its prompt and token ids match the
+release's code exactly; its probabilities were compared with that code on
+a small random model in the same layout, since the release's code needs
+about 104 GB to run the 27B on a Mac.
+
 ### Laya
 
 Encoder models from Convai Innovations: laya and laya-typed-decisions
@@ -551,10 +598,10 @@ such as "Billing" (Laya: 9 to 10 with any of them). Check the wording on
 a few of your own cases before relying on it. `run` and `chat` print a
 hint when Julia gets choice options without descriptions.
 
-## Quantizing Clef: `convert`
+## Quantizing Clef and pplx: `convert`
 
-Laya and Julia are small enough to load as released. Clef can be written
-as a smaller copy:
+Laya and Julia are small enough to load as released. Clef and pplx can be
+written as a smaller copy:
 
 ```bash
 # 8-bit: half the memory, answers within the parity tolerance
@@ -584,6 +631,9 @@ bits within the average you asked for.
 Use the released model if it fits ([which copy fits](#which-copy-fits)),
 otherwise 8-bit, then a 4-bit copy. Quantization saves memory, not time:
 quantized copies are 10-20% slower.
+
+pplx takes `-q` (8-bit) and `-q --bits 4`; mixed precision is not
+offered for it, since measuring it needs the full-size model loaded.
 
 `convert` reads one weight file at a time, so a model larger than the
 Mac's memory can be converted: Clef 27B to 8-bit takes about 10 s and
@@ -621,8 +671,9 @@ It reports load time, peak memory and median / p95 time per request
 across state lengths (those that fit the model's limit) and numbers of
 questions; for Clef also each request again on a state it has kept. As a
 rule of thumb, clef-flash reads about 1,700 tokens per second and Clef
-27B (8-bit) about 380; laya about 25,000, laya-multilingual about 60,000
-and Julia-1 about 100,000, counting the state once per question. `--out FILE` also
+27B (8-bit) about 380; pplx (8-bit) about 420, laya about 25,000,
+laya-multilingual about 60,000 and Julia-1 about 100,000, counting the
+state once per question. `--out FILE` also
 writes the results as JSON, with the Mac's chip, CPU and GPU cores,
 memory, macOS and the versions used, so runs on different Macs can be
 compared.
@@ -653,16 +704,19 @@ parity fixtures are rebuilt with `scripts/make_parity_set.py` and
 `scripts/make_parity_reference.py` (runs Cloudflare's reference with
 PyTorch), and for Laya and Julia with `scripts/make_marker_parity_set.py`
 and `scripts/make_marker_reference.py` (runs the `laya` package or Julia's
-code from its release folder).
+code from its release folder). pplx's fixture comes from
+`scripts/make_pplx_reference.py`, which runs the release's code on a
+small random model with the release's tokenizer; its tests need only the
+release's small files in the Hugging Face cache.
 
 ## Affiliation
 
 mlx-decision is an independent open-source project, not affiliated with or
-endorsed by Cloudflare, TypeSafe AI, Convai Innovations or Supersonic Labs.
-Its server speaks a request and response format compatible with TypeSafe
-AI's public Jev API. Clef and clef-flash (Cloudflare), Laya (Convai
-Innovations) and Julia 1 (Supersonic Labs) are used under their Apache-2.0
-licences; this
+endorsed by Cloudflare, Perplexity, TypeSafe AI, Convai Innovations or
+Supersonic Labs. Its server speaks a request and response format
+compatible with TypeSafe AI's public Jev API. Clef and clef-flash
+(Cloudflare), pplx-decider (Perplexity), Laya (Convai Innovations) and
+Julia 1 (Supersonic Labs) are used under their Apache-2.0 licences; this
 package downloads them from Hugging Face and does not ship their weights.
 
 ## Licence
@@ -672,8 +726,10 @@ MIT, see `LICENSE`. The Qwen3.5 model code is adapted from
 input encoding and head are ported from Cloudflare's release; the image
 preprocessing, vision tower, image positions and the ModernBERT encoder
 are ported from [transformers](https://github.com/huggingface/transformers);
-the Laya and Julia head and input encoding are ported from the
+the pplx prompt is ported from pplx-decider's release; the Laya and Julia
+head and input encoding are ported from the
 [laya](https://pypi.org/project/laya/) package and Julia 1's release (all
 Apache-2.0). Their licence texts are in `LICENSES/`. The test photos are
 public domain or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep
-their own licence (Clef, clef-flash, Laya, Julia 1: Apache-2.0).
+their own licence (Clef, clef-flash, pplx-decider, Laya, Julia 1:
+Apache-2.0).
