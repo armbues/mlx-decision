@@ -218,12 +218,12 @@ def test_a_folder_of_models_runs_each_in_its_own_process(tmp_path):
     # folder no family loads is listed, not run.
     assert "benchmarking clef-tiny (1/2) ..." in result.stderr
     assert "benchmarking Laya-tiny (2/2) ..." in result.stderr
-    assert "skipped " in result.stderr and "notes: not a supported decision model" in result.stderr
+    assert "skipped" not in result.stderr  # listed once, in the summary
     assert "Laya-tiny: load" in result.stdout and "clef-tiny: load" in result.stdout
     summary = result.stdout.split("| Model | Load s |")[1]
     assert summary.index("| clef-tiny |") < summary.index("| Laya-tiny |")
     assert "medians with 1 question(s) per request" in summary
-    assert "Skipped:" in summary
+    assert "Skipped:\n- notes: not a supported decision model" in summary
     assert sorted(p.name for p in out.iterdir()) == ["Laya-tiny.json", "clef-tiny.json"]
     data = json.loads((out / "clef-tiny.json").read_text())
     assert data["model"] == "clef-tiny" and data["format"] == 3
@@ -284,7 +284,7 @@ def test_models_that_do_not_fit_are_skipped(tmp_path, fake_runs, monkeypatch):
     result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST])
     assert result.exit_code == 0, result.output
     assert [name for name, _ in fake_runs.calls] == ["small"]
-    assert "skipped large needs about 0.0 GB" in result.stderr
+    assert "- large needs about 0.0 GB" in result.stdout
     # Without the memory check every model runs, and the runs skip it too.
     result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST, "--no-memory-check"])
     assert result.exit_code == 0, result.output
@@ -298,6 +298,9 @@ def test_json_for_a_folder_is_a_list(tmp_path, fake_runs):
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
     assert [entry["model"] for entry in data] == ["one", "two"]
+    (folder / "notes").mkdir()
+    result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST, "--json"])
+    assert "skipped notes: not a supported decision model" in result.stderr
 
 
 def test_out_must_be_a_folder_for_a_folder_of_models(tmp_path, fake_runs):

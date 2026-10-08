@@ -977,7 +977,10 @@ def benchmark_models(
         raise typer.BadParameter("with a folder of models, --out is a folder", param_hint="--out")
     skipped: list[str] = []
     try:
-        specs = discover([folder], on_skip=lambda path, reason: skipped.append(reason))
+        specs = discover(
+            [folder],
+            on_skip=lambda path, reason: skipped.append(reason.replace(str(path), path.name, 1)),
+        )
     except (FileNotFoundError, ValueError) as error:
         fail(str(error))
     if check_memory:
@@ -989,8 +992,9 @@ def benchmark_models(
             except ModelTooLargeError as error:
                 skipped.append(str(error))
         specs = fitting
-    for reason in skipped:
-        typer.echo(f"skipped {reason}", err=True)
+    if as_json:  # otherwise listed in the summary
+        for reason in skipped:
+            typer.echo(f"skipped {reason}", err=True)
     if out is not None:
         out.mkdir(parents=True, exist_ok=True)
 
