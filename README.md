@@ -33,7 +33,8 @@ reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues
 Requirements: a Mac with Apple Silicon (M1 or later) and macOS 14 or newer,
 Python 3.12 or newer, and the memory the model needs (see the table; for
 clef-flash a Mac with 32 GB or more, or a smaller copy made with
-[convert](#quantizing-clef-flash-convert)).
+[convert](#quantizing-clef-convert); for Clef 27B a quantized copy, 8-bit
+on a 64 GB Mac).
 
 ```bash
 pip install mlx-decision                    # library and the mlx-decision command
@@ -65,6 +66,32 @@ it, which you then pass to `-m`; an empty answer keeps the Hugging Face
 cache); `--local-dir` names the folder directly. It warns before
 downloading a repository no supported model family can load. Private or
 gated repos need `HF_TOKEN`.
+
+Clef models can also be stored quantized. After the model, the menu asks
+for full size, 8-bit or 4-bit, with the size of each (8-bit is the default
+for a model that does not fit in the Mac's memory, such as Clef 27B on a
+64 GB Mac); `--bits 8` or `--bits 4` chooses without asking:
+
+```bash
+mlx-decision download Cloudflare/clef --bits 8
+mlx-decision run -m Cloudflare/clef -s "My card was charged twice." --noul "Is it a billing problem?"
+```
+
+The full-size weight files are then fetched one at a time, quantized and
+deleted, so the full-size model never has to fit in memory or on disk:
+Clef 27B in 8-bit takes about 30 GB on disk, plus one 5 GB file while
+the download runs. The result is the same as running
+[convert](#quantizing-clef-convert) on a full download. In the Hugging
+Face cache it takes the place of the repo's files, so `-m
+Cloudflare/clef` loads it without fetching anything. `hf cache ls` and
+`hf cache rm` treat it like any download; `hf cache verify` reports it
+as changed, since it no longer holds the repo's files.
+
+Before reading the weights, loading checks that the model fits: its
+weights plus 10% must be within the GPU's recommended working set
+(macOS swaps beyond it). A model that does not fit is refused with both
+sizes and, for Clef, the `convert` command for a smaller copy.
+`--no-memory-check` loads it anyway.
 
 ## Python
 
@@ -126,11 +153,15 @@ from `mlx_decision`.
 `load` takes options per model: `max_input_tokens` changes the input limit
 (Laya and Julia up to 8,192), `strict_encoding=False` lets Julia cut what it
 would otherwise refuse, `dtype` sets Laya's and Julia's precision (default
-float16), and `max_image_pixels` caps image size for clef-flash.
+float16), `max_image_pixels` caps image size for Clef, and
+`prefix_cache_gb` sets how much memory Clef keeps for
+[recent states](#reusing-a-state) (default 2, 0 turns it off).
+`check_memory=False` skips the memory check; a model that does not fit
+raises `mlx_decision.ModelTooLargeError` otherwise.
 `model.info()` describes the loaded model as JSON data: family,
 precision, input limit, option limits and whether it takes images.
 
-With the `images` extra, clef-flash takes images as file paths, bytes, PIL
+With the `images` extra, Clef takes images as file paths, bytes, PIL
 images or data URLs:
 
 ```python
@@ -177,7 +208,7 @@ The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body. `--image FILE` (repeatable) sends images along with the
-state (clef-flash). `--max-input-tokens N` (also on `chat` and `server`)
+state (Clef). `--max-input-tokens N` (also on `chat` and `server`)
 changes the model's input limit, e.g. to give Laya up to 8,192 tokens.
 
 `mlx-decision --version` prints the installed version.
@@ -312,8 +343,8 @@ SDK:
 TYPESAFE_BASE_URL=http://127.0.0.1:8000 TYPESAFE_API_KEY=unused python my_script.py
 ```
 
-The server binds to localhost by default (`--host` to change), ignores the
-request's `model` field, answers one request at a time (others queue),
+The server binds to localhost by default (`--host` to change), answers
+one request at a time (others queue),
 returns `422` with the API's error body for invalid requests, and sets
 `X-MLX-Decision-Truncated: true` when the state was truncated. Request
 bodies larger than 64 MB get `413`.
@@ -329,6 +360,29 @@ To require a key, start it with `--api-key KEY` (or set
 `Authorization: Bearer KEY`, which is what the SDK sends from
 `TYPESAFE_API_KEY`; others get `401`. `/health` stays open.
 
+### Several models
+
+One server can serve several models: repeat `-m`, or pass a folder of
+models (each subfolder a model, named after it; folders no model family
+loads are skipped). The request's `model` field picks one, which is what
+the SDK sends with `model=`:
+
+```bash
+mlx-decision server -m ~/Models --default-model clef-flash --memory-budget 30
+```
+
+Models load on their first request and stay loaded while they fit in
+`--memory-budget` (in GB; default: the GPU's recommended working set);
+when the next one would not fit, the least recently used are unloaded
+first. Sizes are estimated from the weights, plus the memory Clef keeps
+for recent states. A request without a `model`, or with one the server
+does not have (such as the SDK's default `jev-latest`), goes to
+`--default-model`, which also loads at startup. With a single model that
+model is the default; with several and no `--default-model`, such
+requests get `422` listing the models. `GET /v1/models` lists them, and
+`/health` names the default and the loaded ones. A model too large for
+the budget gets `422` with the memory check's message.
+
 ## Agents: MCP
 
 `mlx-decision mcp` serves a model to AI agents over the
@@ -339,7 +393,7 @@ decision as a tool, answered on your Mac. It needs the `mcp` extra.
 The server has two tools:
 
 - `decide` takes the fields of a request body (`state`, `questions`, and
-  `images` for clef-flash) and returns the response body as structured
+  `images` for Clef) and returns the response body as structured
   content, plus `truncated`. An invalid request comes back as a tool
   error naming the field, which the agent can read and correct.
 - `model_info` describes the loaded model: family, precision, input
@@ -396,8 +450,8 @@ the server reads.
 
 ### Over HTTP
 
-To share one loaded model between several agents (or keep clef-flash's
-19 GB loaded once), start one process with `--http`:
+To share one loaded model between several agents (or keep Clef loaded
+once), start one process with `--http`:
 
 ```bash
 mlx-decision mcp --http -m Cloudflare/clef-flash --port 8001 --api-key KEY
@@ -414,8 +468,8 @@ requests are not checked.
 
 ## Models
 
-The models differ in size and in how they read a request. clef-flash reads
-the state once and answers all questions together; Laya and Julia read each
+The models differ in size and in how they read a request. Clef reads the
+state once and answers all questions together; Laya and Julia read each
 question on its own, with the whole state, so their input limit applies per
 question and their time grows with the number of questions.
 
@@ -438,13 +492,37 @@ Accuracy in percent; macro-F1 and calibration error are in
 clef-flash on topic and emotion and are near chance on knowledge and
 entailment, as their model cards say. Each model matches its own reference
 code token for token on a fixed test set, with probabilities within 0.035
-(clef-flash), 0.004 (Laya) and 0.018 (Julia).
+(clef-flash), 0.031 (clef), 0.004 (Laya) and 0.018 (Julia).
 
-### clef-flash
+### Clef
 
-Takes text and images (videos are rejected) up to 16,384 tokens; a longer
-state is cut to fit. Runs in bf16 as released, or as a smaller copy made
-with [convert](#quantizing-clef-flash-convert).
+Cloudflare's clef-flash (9B) and clef (27B) take text and images (videos
+are rejected) up to 16,384 tokens; a longer state is cut to fit. Both run
+in bf16 as released, or as a smaller copy made with
+[convert](#quantizing-clef-convert) or [`download
+--bits`](#getting-a-model).
+
+**Clef 27B** needs about 60 GB in bf16 (55 GB of weights plus working
+memory), more than a 64 GB Mac gives the GPU, so there it runs as an
+8-bit copy (27.7 GB on disk, 32 GB peak) or 4-bit (15.2 GB, 19.5 GB
+peak). It is three to four times slower than clef-flash and was not more
+accurate on our benchmarks (8-bit, see the table above). In bf16, on a Mac with enough memory, it matches
+Cloudflare's reference within 0.031 per probability (M2 Ultra, 3.7 times
+faster than the reference there); the 8-bit copy changed one of 177
+answers, the 4-bit copy three.
+
+#### Reusing a state
+
+Clef keeps what it computed for recent states (up
+to 2 GB per model), so a request with the same state and images as a
+recent one, and other questions, computes only the new questions: on
+clef-flash, a 16,384-token state takes about 10 s the first time and
+0.2 s for one new question after that (1.5 s for twenty). The answers
+are the same as without reuse, within the parity tolerance.
+`--prefix-cache GB` on `run`, `chat`, `server` and `mcp` (Python:
+`prefix_cache_gb`) changes the amount; 0 turns it off. Laya and Julia
+read each question together with the state, so they have nothing to
+reuse.
 
 **Images** need the `images` extra. The Python API takes file paths,
 bytes, PIL images or data URLs; `run` and `chat` take files (`--image`,
@@ -500,10 +578,10 @@ such as "Billing" (Laya: 9 to 10 with any of them). Check the wording on
 a few of your own cases before relying on it. `run` and `chat` print a
 hint when Julia gets choice options without descriptions.
 
-## Quantizing clef-flash: `convert`
+## Quantizing Clef: `convert`
 
-Laya and Julia load as they are (0.3 to 0.85 GB). clef-flash can be
-written as a smaller copy:
+Laya and Julia load as they are (0.3 to 0.85 GB). Clef can be written as a
+smaller copy:
 
 ```bash
 # 8-bit: half the memory, answers within the parity tolerance
@@ -534,6 +612,13 @@ Use the released model if 19 GB fit; otherwise 8-bit; on smaller Macs
 `--target-bits 5`, then `--target-bits 4`. Quantization saves memory, not
 time: quantized copies are 10-20% slower.
 
+`convert` reads one weight file at a time, so a model larger than the
+Mac's memory can be converted: Clef 27B to 8-bit takes about 10 s and
+9 GB of memory. Mixed precision runs the model to measure it, so it
+needs the full-size model to fit (not Clef 27B on a 64 GB Mac).
+[`download --bits`](#getting-a-model) stores a quantized copy without
+the full-size download.
+
 ## Speed
 
 Median time per request, end to end, against each model's own PyTorch code
@@ -562,24 +647,36 @@ mlx-decision benchmark -m Cloudflare/clef-flash
 
 It reports load time, peak memory and median / p95 time per request
 across state lengths (those that fit the model's limit) and numbers of
-questions. As a rule of thumb, clef-flash reads about 1,700 tokens per
-second; laya about 25,000, laya-multilingual about 60,000 and Julia-1
-about 100,000, counting the state once per question. `--out FILE` also
+questions; for Clef also each request again on a state it has kept. As a
+rule of thumb, clef-flash reads about 1,700 tokens per second and Clef
+27B (8-bit) about 380; laya about 25,000, laya-multilingual about 60,000
+and Julia-1 about 100,000, counting the state once per question. `--out FILE` also
 writes the results as JSON, with the Mac's chip, CPU and GPU cores,
 memory, macOS and the versions used, so runs on different Macs can be
 compared.
+
+Given a folder of models, `benchmark` measures each in turn, each in a
+process of its own, and ends with a summary table; folders no family
+loads and models that do not fit are listed as skipped. `--out DIR`
+then writes one file per model:
+
+```bash
+mlx-decision benchmark -m ~/Models --out results/
+```
 
 ## Development
 
 ```bash
 make setup   # editable install with dev tools
-make test    # unit tests; parity tests run when the weights are found
+make test       # unit tests; parity tests run when the weights are found
+make test-slow  # Clef 27B 8-bit against its reference (about 8 min)
 make lint
 ```
 
 Tests that need weights look for them in `$MLX_DECISION_MODELS/<name>`
-(`clef-flash`, `laya`, `laya-typed-decisions`, `laya-multilingual`,
-`Julia-1`), then in the Hugging Face cache, and are skipped otherwise. The
+(`clef-flash`, `clef-8bit`, `laya`, `laya-typed-decisions`,
+`laya-multilingual`, `Julia-1`), then in the Hugging Face cache, and are
+skipped otherwise. The
 parity fixtures are rebuilt with `scripts/make_parity_set.py` and
 `scripts/make_parity_reference.py` (runs Cloudflare's reference with
 PyTorch), and for Laya and Julia with `scripts/make_marker_parity_set.py`
@@ -591,8 +688,9 @@ code from its release folder).
 mlx-decision is an independent open-source project, not affiliated with or
 endorsed by Cloudflare, TypeSafe AI, Convai Innovations or Supersonic Labs.
 Its server speaks a request and response format compatible with TypeSafe
-AI's public Jev API. clef-flash (Cloudflare), Laya (Convai Innovations) and
-Julia 1 (Supersonic Labs) are used under their Apache-2.0 licences; this
+AI's public Jev API. Clef and clef-flash (Cloudflare), Laya (Convai
+Innovations) and Julia 1 (Supersonic Labs) are used under their Apache-2.0
+licences; this
 package downloads them from Hugging Face and does not ship their weights.
 
 ## Licence
@@ -606,4 +704,4 @@ the Laya and Julia head and input encoding are ported from the
 [laya](https://pypi.org/project/laya/) package and Julia 1's release (all
 Apache-2.0). Their licence texts are in `LICENSES/`. The test photos are
 public domain or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep
-their own licence (clef-flash, Laya, Julia 1: Apache-2.0).
+their own licence (Clef, clef-flash, Laya, Julia 1: Apache-2.0).

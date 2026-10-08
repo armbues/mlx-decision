@@ -125,7 +125,7 @@ register_family(
         KnownModel(
             "Cloudflare/clef",
             "Clef: Cloudflare's 27B decision model (Qwen3.5), text and images; "
-            "on a 64 GB Mac it runs quantized (convert -q)",
+            "on a 64 GB Mac it runs quantized (8-bit, offered after picking it)",
             "55 GB",
         ),
     ),

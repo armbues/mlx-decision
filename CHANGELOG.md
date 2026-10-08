@@ -9,6 +9,32 @@ change the interface).
 
 ### Added
 
+- Cloudflare's Clef 27B (`Cloudflare/clef`), with text and images, in
+  the `download` menu after clef-flash. On a 64 GB Mac it runs as an
+  8-bit copy (32 GB peak) or 4-bit (19.5 GB). In bf16, on a larger Mac,
+  it matches Cloudflare's reference within 0.031 per probability.
+
+- `download` can store a Clef model quantized: `--bits 8` or `--bits 4`,
+  or a choice of full size, 8-bit or 4-bit in the menu (8-bit by
+  default for a model that does not fit in memory). The full-size
+  weight files are fetched one at a time, quantized and deleted, so
+  Clef 27B in 8-bit needs about 30 GB of disk, not 55. Stored in the
+  Hugging Face cache, the copy loads by repo id without fetching the
+  full-size files.
+
+- `server` serves several models: repeat `-m`, or pass a folder of
+  models. The request's `model` field picks one; `--default-model`
+  answers requests that name none or an unknown one (such as the SDK's
+  `jev-latest`). Models load on first use and the least recently used
+  are unloaded to stay within `--memory-budget` (default: the GPU's
+  recommended working set). `/v1/models` lists the models, `/health`
+  the default and the loaded ones.
+
+- `benchmark -m FOLDER` measures every model in a folder, each in a
+  process of its own, and ends with a summary table; folders no family
+  loads and models that do not fit are listed as skipped. `--out DIR`
+  writes one file per model, `--json` prints a list.
+
 - Loading checks first that the model fits in memory: if its weights
   plus 10% exceed the GPU's recommended working set, it is refused
   before anything is read, with both sizes and, for a model that can be
@@ -26,6 +52,10 @@ change the interface).
   same for a first and a repeated request.
 
 ### Changed
+
+- `server` no longer ignores the request's `model` field. With one
+  model, every request still goes to it; with several, a request without
+  a known `model` gets `422` unless `--default-model` is set.
 
 - `convert` reads, quantizes and writes one weight shard at a time, so
   it no longer needs memory for the whole model: an 8-bit copy of
