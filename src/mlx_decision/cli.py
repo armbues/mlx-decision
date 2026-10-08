@@ -553,6 +553,36 @@ def ask_models_dir() -> Path | None:
     return Path(parent).expanduser() if parent else None
 
 
+def pick_bits(check) -> int:
+    """A menu of full size and the quantized sizes; 0 is full size.
+
+    The default is 8-bit when the model does not fit at full size. Raises
+    ``typer.Exit`` when the menu is cancelled.
+    """
+    from prompt_toolkit.shortcuts import choice
+
+    from .download import QUANTIZED_BITS, format_size
+    from .interactive import MENU_BINDINGS
+
+    fits = check.fits()
+    full = f"full size  {format_size(check.size_bytes)}"
+    if not fits:
+        full += "  (does not fit in this Mac's GPU working set)"
+    options = [(0, full)] + [
+        (bits, f"{bits}-bit      about {format_size(check.quantized_bytes(bits))}")
+        for bits in QUANTIZED_BITS
+    ]
+    try:
+        return choice(
+            "Store the model:",
+            options=options,
+            default=0 if fits else QUANTIZED_BITS[0],
+            key_bindings=MENU_BINDINGS,
+        )
+    except (KeyboardInterrupt, EOFError):
+        raise typer.Exit(1) from None
+
+
 def stdin_is_terminal() -> bool:
     return sys.stdin.isatty()
 
@@ -571,6 +601,15 @@ def download(
             "folder named after the repo inside it."
         ),
     ] = None,
+    bits: Annotated[
+        int | None,
+        typer.Option(
+            help="Store the model quantized to 8 or 4 bits instead of at full size; "
+            "the full-size weights are fetched one file at a time and deleted after "
+            "quantizing. Default in a terminal: asks (8-bit when the model does not fit "
+            "in memory at full size).",
+        ),
+    ] = None,
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Download even if no model family can load it.")
     ] = False,
@@ -579,8 +618,11 @@ def download(
     import httpx
     from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
-    from .download import check_repo, format_size
+    from .download import QUANTIZED_BITS, check_repo, download_quantized, format_size
     from .download import download as fetch
+
+    if bits is not None and bits not in QUANTIZED_BITS:
+        raise typer.BadParameter("must be 8 or 4", param_hint="--bits")
 
     terminal = stdin_is_terminal()
     parent = ask_models_dir() if local_dir is None and terminal else None
@@ -599,11 +641,36 @@ def download(
 
                 if not terminal or not confirm("Download it anyway?"):
                     fail("not downloaded (use --yes to download anyway)")
+        if bits is not None and not check.convertible:
+            fail(f"{repo_id}: {check.family or 'these'} models cannot be stored quantized")
+        if bits is None and check.convertible:
+            if terminal:
+                bits = pick_bits(check) or None
+            elif not check.fits():
+                typer.echo(
+                    f"warning: {repo_id} does not fit in this Mac's GPU working set at full "
+                    "size; --bits 8 stores it quantized",
+                    err=True,
+                )
         if parent is not None:
             local_dir = parent / repo_id.rsplit("/", 1)[-1]
         target = f" to {local_dir}" if local_dir else ""
-        typer.echo(f"downloading {repo_id} ({format_size(check.size_bytes)}){target} ...", err=True)
-        path = fetch(repo_id, local_dir, check.files)
+        if bits is None:
+            size = format_size(check.size_bytes)
+            typer.echo(f"downloading {repo_id} ({size}){target} ...", err=True)
+            path = fetch(repo_id, local_dir, check.files, check.revision)
+        else:
+            size = format_size(check.quantized_bytes(bits))
+            typer.echo(
+                f"downloading {repo_id} as {bits}-bit (about {size}){target}; "
+                "fetching one weight file at a time ...",
+                err=True,
+            )
+
+            def on_file(number: int, total: int, name: str) -> None:
+                typer.echo(f"{number}/{total} {name}", err=True)
+
+            path = download_quantized(check, bits, local_dir, on_file)
     except RepositoryNotFoundError:
         fail(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
     except (HfHubHTTPError, httpx.HTTPError, OSError, ValueError) as error:

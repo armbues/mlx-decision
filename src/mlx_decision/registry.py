@@ -26,7 +26,9 @@ class Family:
     name: str
     detect: Callable[[Path], bool]
     loader: str  # "module:function"; imported only when the family is used
-    converter: str | None = None  # same form; writes an MLX copy of a model
+    # Same form; writes an MLX copy of a model: (path, output, source, bits=,
+    # shards=, revision=, ...), shards being the weight files read in turn.
+    converter: str | None = None
     known_models: tuple[KnownModel, ...] = ()
     # Files a download fetches (Hub patterns); None: the whole repository.
     files: tuple[str, ...] | None = None
@@ -52,6 +54,10 @@ def register_family(
 
 def known_models() -> list[KnownModel]:
     return [model for family in _FAMILIES.values() for model in family.known_models]
+
+
+def get_family(name: str) -> Family:
+    return _FAMILIES[name]
 
 
 def resolve(reference: str) -> Callable:

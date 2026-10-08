@@ -65,17 +65,21 @@ def sanitize_vision_weights(weights: Mapping[str, mx.array]) -> dict[str, mx.arr
     return sanitized
 
 
-def read_vision_weights(path: str | Path) -> dict[str, mx.array]:
-    """The vision tower's weights of a folder (see ``sanitize_vision_weights``); no NumPy."""
+def vision_shards(path: str | Path) -> set[str]:
+    """Names of the weight files that hold vision weights (all of them without an index)."""
     path = Path(path)
     index = path / "model.safetensors.index.json"
     if index.exists():
         weight_map = json.loads(index.read_text())["weight_map"]
-        files = sorted({f for name, f in weight_map.items() if name.startswith(VISION_PREFIXES)})
-    else:
-        files = [file.name for file in sorted(path.glob("model*.safetensors"))]
+        return {f for name, f in weight_map.items() if name.startswith(VISION_PREFIXES)}
+    return {file.name for file in path.glob("model*.safetensors")}
+
+
+def read_vision_weights(path: str | Path) -> dict[str, mx.array]:
+    """The vision tower's weights of a folder (see ``sanitize_vision_weights``); no NumPy."""
+    path = Path(path)
     weights = {}
-    for file in files:
+    for file in sorted(vision_shards(path)):
         weights.update(sanitize_vision_weights(mx.load(str(path / file))))
     if not weights:
         raise FileNotFoundError(f"no vision weights in {path}")

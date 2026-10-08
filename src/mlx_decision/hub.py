@@ -35,6 +35,8 @@ def resolve_model_path(model: str | Path) -> Path:
     )
 
     try:
+        if (stored := stored_snapshot(str(model))) is not None:
+            return stored
         return Path(_snapshot(str(model), snapshot_download))
     except GatedRepoError:
         reason = "gated on the Hugging Face Hub: accept its terms there and set HF_TOKEN"
@@ -49,6 +51,24 @@ def resolve_model_path(model: str | Path) -> Path:
     except (HfHubHTTPError, httpx.HTTPError, OSError) as error:
         reason = f"cannot download from the Hugging Face Hub: {str(error).splitlines()[0]}"
     raise ModelNotFoundError(f"{model}: {reason}") from None
+
+
+def stored_snapshot(repo_id: str) -> Path | None:
+    """The model ``download`` stored quantized in the Hub cache, if there is one.
+
+    It is the snapshot of the cached main revision, recognised by a marker
+    written there as a plain file (a downloaded file is a link to a blob).
+    Its full-size weight files are not in the cache, so asking the Hub for
+    the snapshot would fetch them again. Needs no network.
+    """
+    from huggingface_hub import try_to_load_from_cache
+
+    from .registry import MARKER_FILE
+
+    found = try_to_load_from_cache(repo_id, MARKER_FILE)
+    if not isinstance(found, str) or Path(found).is_symlink():
+        return None
+    return Path(found).parent
 
 
 def _snapshot(repo_id: str, snapshot_download) -> str:

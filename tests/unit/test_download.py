@@ -54,7 +54,7 @@ def hub(monkeypatch, tmp_path):
                 siblings=[SimpleNamespace(rfilename=n, size=size) for n, size in files.items()]
             )
 
-    def snapshot_download(repo_id, allow_patterns=None, local_dir=None):
+    def snapshot_download(repo_id, allow_patterns=None, local_dir=None, revision=None):
         calls.append((repo_id, allow_patterns, local_dir))
         folder = local_dir or tmp_path / "cache" / repo_id
         folder = type(tmp_path)(folder)
@@ -181,9 +181,14 @@ def terminal(monkeypatch):
         state.asked.append("model")
         return "Cloudflare/clef-flash"
 
+    def pick_bits(check):
+        state.asked.append("size")
+        return 0  # full size
+
     monkeypatch.setattr(cli, "stdin_is_terminal", lambda: True)
     monkeypatch.setattr(cli, "ask_models_dir", ask_models_dir)
     monkeypatch.setattr(cli, "pick_repo", pick_repo)
+    monkeypatch.setattr(cli, "pick_bits", pick_bits)
     return state
 
 
@@ -191,7 +196,7 @@ def test_a_terminal_asks_for_the_folder_before_the_model(hub, terminal, tmp_path
     terminal.folders.append(tmp_path / "models")
     result = invoke()
     assert result.exit_code == 0, result.output
-    assert terminal.asked == ["folder", "model"]
+    assert terminal.asked == ["folder", "model", "size"]
     target = tmp_path / "models" / "clef-flash"
     assert hub[-1][2] == target
     assert f"(19.1 GB) to {target} ..." in result.stderr
@@ -202,7 +207,7 @@ def test_an_empty_folder_keeps_the_cache(hub, terminal):
     terminal.folders.append(None)
     result = invoke("Cloudflare/clef-flash")
     assert result.exit_code == 0, result.output
-    assert terminal.asked == ["folder"]
+    assert terminal.asked == ["folder", "size"]
     assert hub[-1][2] is None
     assert "(19.1 GB) ..." in result.stderr
     assert "chat -m Cloudflare/clef-flash" in result.stderr
@@ -211,7 +216,7 @@ def test_an_empty_folder_keeps_the_cache(hub, terminal):
 def test_local_dir_skips_the_question(hub, terminal, tmp_path):
     result = invoke("Cloudflare/clef-flash", "--local-dir", str(tmp_path / "here"))
     assert result.exit_code == 0, result.output
-    assert terminal.asked == []
+    assert terminal.asked == ["size"]
     assert hub[-1][2] == tmp_path / "here"
 
 
@@ -237,3 +242,245 @@ def test_a_laya_repo_fetches_only_its_root_checkpoint(hub):
     patterns = hub[-1][1]
     assert "model.safetensors" in patterns and "encoder/*" in patterns
     assert not any(p.startswith(("multilingual", "assets", "*")) for p in patterns)
+
+
+# Storing a model quantized: a tiny Clef release stands in for the repository.
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+@pytest.fixture
+def remote(monkeypatch, tmp_path):
+    """Fake Hub functions serving a tiny Clef with vision, its text in several shards.
+
+    ``events`` records each weight file fetched with the weight files then in
+    the download folder, and each file's deletion is visible there.
+    """
+    import shutil
+
+    import mlx_decision.backbones.qwen3_5.load as load
+    from tiny_models import write_clef
+
+    with monkeypatch.context() as patch:
+        patch.setattr(load, "SHARD_BYTES", 2**16)
+        release = write_clef(tmp_path / "release", vision=True)
+    (release / "README.md").write_text("readme\n")
+    (release / "joint_schema_model.py").write_text("# reference code\n")
+    names = sorted(p.name for p in release.iterdir())
+    state = SimpleNamespace(release=release, events=[], fail_on=None)
+
+    class Api:
+        def model_info(self, repo_id, files_metadata=False):
+            siblings = [
+                SimpleNamespace(rfilename=n, size=(release / n).stat().st_size) for n in names
+            ]
+            return SimpleNamespace(siblings=siblings, sha=SHA)
+
+    def snapshot_download(
+        repo_id, allow_patterns=None, local_dir=None, revision=None, ignore_patterns=None
+    ):
+        assert revision == SHA and local_dir is not None
+        picked = filter_repo_objects(names, allow_patterns=allow_patterns)
+        picked = filter_repo_objects(picked, ignore_patterns=ignore_patterns)
+        Path(local_dir).mkdir(parents=True, exist_ok=True)
+        for name in picked:
+            shutil.copy2(release / name, Path(local_dir) / name)
+        return str(local_dir)
+
+    def hf_hub_download(repo_id, filename, revision=None, local_dir=None):
+        assert revision == SHA
+        present = sorted(p.name for p in Path(local_dir).glob("model*.safetensors"))
+        state.events.append((filename, present))
+        if filename == state.fail_on:
+            raise OSError("connection reset")
+        shutil.copy2(release / filename, Path(local_dir) / filename)
+        return str(Path(local_dir) / filename)
+
+    monkeypatch.setattr(download, "HfApi", Api)
+    monkeypatch.setattr(download, "snapshot_download", snapshot_download)
+    monkeypatch.setattr(download, "hf_hub_download", hf_hub_download)
+    monkeypatch.setattr(download.constants, "HF_HUB_CACHE", str(tmp_path / "hub"))
+    return state
+
+
+from pathlib import Path  # noqa: E402
+
+from huggingface_hub.utils import filter_repo_objects  # noqa: E402
+
+
+def tensors(folder):
+    import mlx.core as mx
+
+    found = {}
+    for file in sorted(folder.glob("*.safetensors")):
+        found.update(mx.load(str(file)))
+    return found
+
+
+def assert_same_model(stored, converted):
+    import mlx.core as mx
+
+    expected = tensors(converted)
+    got = tensors(stored)
+    assert got.keys() == expected.keys()
+    for name, value in expected.items():
+        assert mx.array_equal(got[name], value).item(), name
+    for name in ("config.json", "tokenizer.json", "processor_config.json", "LICENSE"):
+        assert (stored / name).read_bytes() == (converted / name).read_bytes(), name
+
+
+def test_a_quantized_download_equals_a_converted_copy(remote, tmp_path):
+    import json
+
+    from mlx_decision.convert import convert
+    from mlx_decision.registry import MARKER_FILE
+
+    check = download.check_repo("org/tiny-clef")
+    assert check.convertible and check.revision == SHA
+    fetched = []
+    out = download.download_quantized(
+        check, 8, tmp_path / "models" / "tiny-clef", lambda i, n, name: fetched.append((i, n))
+    )
+    assert out == tmp_path / "models" / "tiny-clef"
+    assert_same_model(out, convert(remote.release, tmp_path / "converted", bits=8))
+    marker = json.loads((out / MARKER_FILE).read_text())
+    assert marker["source"] == "org/tiny-clef" and marker["revision"] == SHA
+    assert marker["quantization"]["bits"] == 8 and marker["vision"] is True
+    # One weight file at a time: each fetch finds the previous one deleted.
+    weights = download._weight_files(remote.release)
+    assert len(weights) > 2
+    assert remote.events == [(name, []) for name in weights]
+    assert fetched == [(i, len(weights)) for i in range(1, len(weights) + 1)]
+    assert sorted(p.name for p in out.parent.iterdir()) == ["tiny-clef"]
+    assert not (out / "joint_schema_model.py").exists()
+
+
+def test_a_quantized_download_into_the_cache_loads_by_repo_id(remote, tmp_path, monkeypatch):
+    import huggingface_hub
+    from huggingface_hub import scan_cache_dir
+
+    import mlx_decision
+    from mlx_decision.hub import resolve_model_path
+
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_CACHE", str(tmp_path / "hub"))
+    out = download.download_quantized(download.check_repo("org/tiny-clef"), 4)
+    repo = tmp_path / "hub" / "models--org--tiny-clef"
+    assert out == repo / "snapshots" / SHA
+    assert (repo / "refs" / "main").read_text() == SHA
+    assert sorted(p.name for p in repo.iterdir()) == ["refs", "snapshots"]
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("the Hub was asked")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", no_network)
+    assert resolve_model_path("org/tiny-clef") == out
+    model = mlx_decision.load("org/tiny-clef")
+    assert model.name == "tiny-clef"
+    model.decide("refund please", {"q": {"type": "noul"}})
+
+    # The Hub's cache tools see one revision of files and can delete it.
+    cache = scan_cache_dir(tmp_path / "hub")
+    assert not cache.warnings
+    (cached,) = cache.repos
+    (revision,) = cached.revisions
+    assert revision.commit_hash == SHA and revision.refs == frozenset({"main"})
+    assert revision.size_on_disk == sum(p.stat().st_size for p in out.iterdir())
+    cache.delete_revisions(SHA).execute()
+    assert not (repo / "snapshots" / SHA).exists()
+
+
+def test_a_stored_model_is_not_overwritten(remote, tmp_path):
+    check = download.check_repo("org/tiny-clef")
+    out = download.download_quantized(check, 8)
+    with pytest.raises(FileExistsError, match="cache already has"):
+        download.download_quantized(check, 4)
+    with pytest.raises(FileExistsError, match="already stored quantized"):
+        download.download(check.repo_id, files=check.files, revision=SHA)
+    assert (out / "mlx_decision.json").exists()
+
+
+def test_a_failed_quantized_download_leaves_nothing_behind(remote, tmp_path):
+    check = download.check_repo("org/tiny-clef")
+    remote.fail_on = download._weight_files(remote.release)[1]
+    with pytest.raises(OSError, match="connection reset"):
+        download.download_quantized(check, 8, tmp_path / "models" / "tiny-clef")
+    assert list((tmp_path / "models").iterdir()) == []
+    with pytest.raises(OSError, match="connection reset"):
+        download.download_quantized(check, 8)
+    repo = tmp_path / "hub" / "models--org--tiny-clef"
+    assert not (repo / "snapshots").exists() and not (repo / "refs").exists()
+    assert list(repo.iterdir()) == []
+
+
+def test_not_enough_disk_space(remote, tmp_path, monkeypatch):
+    check = download.check_repo("org/tiny-clef")
+    monkeypatch.setattr(download.shutil, "disk_usage", lambda path: SimpleNamespace(free=1_000))
+    with pytest.raises(OSError, match="of free disk space"):
+        download.download_quantized(check, 8, tmp_path / "x")
+    assert remote.events == []
+
+
+def test_quantized_sizes_and_fit():
+    check = download.RepoCheck(
+        "Cloudflare/clef", 55_400_000_000, "clef", weight_bytes=55_100_000_000
+    )
+    assert check.quantized_bytes(8) == pytest.approx(29.6e9, rel=0.01)
+    assert check.quantized_bytes(4) == pytest.approx(15.8e9, rel=0.01)
+    assert not check.fits(budget=55_700_000_000)
+    assert check.fits(budget=64e9)
+    assert not download.RepoCheck("org/laya", 1, "laya").convertible
+
+
+def test_bits_on_the_command_line(remote, tmp_path):
+    out = tmp_path / "here"
+    result = invoke("org/tiny-clef", "--bits", "8", "--local-dir", str(out))
+    assert result.exit_code == 0, result.output
+    assert "as 8-bit (about" in result.stderr and "1/" in result.stderr
+    assert (out / "mlx_decision.json").exists()
+    result = invoke("org/tiny-clef", "--bits", "6", "--local-dir", str(tmp_path / "x"))
+    assert result.exit_code == 2 and "must be 8 or 4" in result.output
+
+
+def test_bits_need_a_family_that_converts(hub):
+    result = invoke("convaiinnovations/laya", "--bits", "8")
+    assert result.exit_code == 1
+    assert "laya models cannot be stored quantized" in result.stderr
+
+
+def test_a_model_too_large_gets_a_hint_without_a_terminal(hub, monkeypatch):
+    monkeypatch.setattr(download, "working_set", lambda: 10_000_000_000)
+    result = invoke("Cloudflare/clef-flash")
+    assert result.exit_code == 0, result.output
+    assert "does not fit in this Mac's GPU working set at full size; --bits 8" in result.stderr
+
+
+@pytest.mark.parametrize(("budget", "typed", "expected"), [
+    (64e9, "\r", 0),  # fits: full size first
+    (10e9, "\r", 8),  # does not fit: 8-bit
+    (10e9, "3\r", 4),
+])  # fmt: skip
+def test_the_size_menu(monkeypatch, budget, typed, expected):
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    from mlx_decision.cli import pick_bits
+
+    monkeypatch.setattr(download, "working_set", lambda: budget)
+    check = download.RepoCheck("org/m", 19e9, "clef", weight_bytes=18.8e9)
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        pipe.send_text(typed)
+        assert pick_bits(check) == expected
+
+
+def test_a_terminal_asks_for_the_size_after_the_model(remote, terminal, monkeypatch, tmp_path):
+    import mlx_decision.cli as cli
+
+    monkeypatch.setattr(cli, "pick_repo", lambda: terminal.asked.append("model") or "org/tiny")
+    monkeypatch.setattr(cli, "pick_bits", lambda check: terminal.asked.append("size") or 4)
+    terminal.folders.append(tmp_path / "models")
+    result = invoke()
+    assert result.exit_code == 0, result.output
+    assert terminal.asked == ["folder", "model", "size"]
+    marker = (tmp_path / "models" / "tiny" / "mlx_decision.json").read_text()
+    assert '"bits": 4' in marker

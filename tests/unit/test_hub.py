@@ -87,3 +87,24 @@ def test_a_repo_id_fetches_only_the_files_its_family_needs(monkeypatch, tmp_path
     assert mlx_decision.load("org/laya").name == "laya"
     assert calls[0] == ["*.json"]
     assert "rl_agent_config.json" in calls[1] and "encoder/*" in calls[1]
+
+
+def test_only_a_marker_written_by_download_counts_as_a_stored_model(monkeypatch, tmp_path):
+    from mlx_decision.hub import stored_snapshot
+
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_CACHE", str(tmp_path))
+    repo = tmp_path / "models--org--decider"
+    snapshot = repo / "snapshots" / ("0" * 40)
+    snapshot.mkdir(parents=True)
+    (repo / "refs").mkdir()
+    (repo / "refs" / "main").write_text("0" * 40)
+    assert stored_snapshot("org/decider") is None
+    # A converted model on the Hub: its marker arrives as a link to a blob,
+    # and the rest of its files may still be missing.
+    (repo / "blobs").mkdir()
+    (repo / "blobs" / "abc").write_text('{"family": "fake"}')
+    (snapshot / "mlx_decision.json").symlink_to(repo / "blobs" / "abc")
+    assert stored_snapshot("org/decider") is None
+    (snapshot / "mlx_decision.json").unlink()
+    (snapshot / "mlx_decision.json").write_text('{"family": "fake"}')
+    assert stored_snapshot("org/decider") == snapshot
