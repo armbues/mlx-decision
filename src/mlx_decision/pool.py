@@ -142,14 +142,16 @@ class ModelPool:
         self._load = load
         self._loaded: OrderedDict[str, DecisionModel] = OrderedDict()
         self._sizes: dict[str, int] = {}
+        # A copy for other threads (the server's /health), replaced after each change.
+        self._loaded_names: tuple[str, ...] = ()
 
     @property
     def names(self) -> list[str]:
         return list(self.specs)
 
     def loaded(self) -> list[str]:
-        """The loaded models, least recently used first."""
-        return list(self._loaded)
+        """The loaded models, least recently used first; safe to call from any thread."""
+        return list(self._loaded_names)
 
     def resolve(self, name: str | None) -> str:
         """The model that answers a request naming ``name``."""
@@ -184,6 +186,7 @@ class ModelPool:
         name = self.resolve(name)
         if name in self._loaded:
             self._loaded.move_to_end(name)
+            self._loaded_names = tuple(self._loaded)
             return self._loaded[name]
         size = self.size(name)
         limit = self._limit()
@@ -191,12 +194,15 @@ class ModelPool:
         while self._loaded and sum(self._sizes[n] for n in self._loaded) + size > limit:
             old, _ = self._loaded.popitem(last=False)
             logger.info("unloaded %s to make room for %s", old, name)
+            self._loaded_names = tuple(self._loaded)
             unloaded = True
         if unloaded:
             _release_memory()
+        logger.info("loading %s ...", name)
         model = self._load(self.specs[name])
         model.backend.name = name
         self._loaded[name] = model
+        self._loaded_names = tuple(self._loaded)
         return model
 
     def _limit(self) -> int:

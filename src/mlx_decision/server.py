@@ -1,15 +1,15 @@
 """An HTTP server with an API compatible with Jev's: ``POST /v1/systemone``.
 
-Needs the ``server`` extra (FastAPI, uvicorn). All model work, loading
-included, runs on one worker thread; requests wait their turn there. With
-an API key, ``/v1/*`` requires ``Authorization: Bearer <key>``.
+Needs the ``server`` extra (FastAPI, uvicorn). The models come from a
+``ModelPool``; the request's ``model`` field picks one. All model work,
+loading included, runs on one worker thread; requests wait their turn
+there. With an API key, ``/v1/*`` requires ``Authorization: Bearer <key>``.
 """
 
 import asyncio
 import hmac
 import json
 import logging
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -18,7 +18,8 @@ from fastapi.responses import JSONResponse
 
 from .errors import DecisionError
 from .images import check_data_urls
-from .model import DecisionModel
+from .memory import ModelTooLargeError
+from .pool import ModelPool
 
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
 # Room for several large images as data URLs.
@@ -52,11 +53,9 @@ async def read_body(request: Request, limit: int) -> bytes | None:
 
 
 def create_app(
-    load_model: Callable[[], DecisionModel],
-    api_key: str | None = None,
-    max_body_bytes: int = MAX_BODY_BYTES,
+    pool: ModelPool, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
 ) -> FastAPI:
-    """The app; ``load_model`` runs on the worker thread at startup."""
+    """The app; the pool's default model, if it has one, loads at startup on the worker thread."""
     worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision")
 
     async def on_worker(function, *args):
@@ -64,8 +63,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.model = await on_worker(load_model)
-        logger.info("model %s loaded", app.state.model.name)
+        if pool.default is not None:
+            await on_worker(pool.get, pool.default)
+            logger.info("model %s loaded", pool.default)
         yield
         worker.shutdown(wait=True)
 
@@ -99,14 +99,20 @@ def create_app(
             )
         except RecursionError:
             return error_response(400, "the body is nested too deeply", "invalid_request_error")
-        model: DecisionModel = request.app.state.model
+        name = body.get("model") if isinstance(body, dict) else None
+
+        def answer():
+            return pool.get(name if isinstance(name, str) else None).decide_request(body)
+
         try:
             check_data_urls(body)
-            result = await on_worker(model.decide_request, body)
+            result = await on_worker(answer)
         except DecisionError as error:
             return error_response(
                 422, error.message, "invalid_request_error", error.param, error.code
             )
+        except ModelTooLargeError as error:
+            return error_response(422, str(error), "invalid_request_error", "model")
         except Exception:
             logger.exception("request failed")
             return error_response(500, "the model failed to answer the request", "api_error")
@@ -114,12 +120,11 @@ def create_app(
         return JSONResponse(result.to_wire(), headers=headers)
 
     @app.get("/health")
-    async def health(request: Request):
-        return {"status": "ok", "model": request.app.state.model.name}
+    async def health():
+        return {"status": "ok", "model": pool.default, "loaded": pool.loaded()}
 
     @app.get("/v1/models")
-    async def models(request: Request):
-        name = request.app.state.model.name
+    async def models():
         return {
             "models": [
                 {
@@ -128,6 +133,7 @@ def create_app(
                     # Unknown for a local model; the field is required.
                     "release_date": "",
                 }
+                for name in pool.names
             ]
         }
 

@@ -616,8 +616,31 @@ def download(
 @app.command()
 def server(
     model: Annotated[
-        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+        list[str],
+        typer.Option(
+            "--model",
+            "-m",
+            help="Model folder, Hugging Face repo id, or a folder of models (each subfolder "
+            "a model named after it). Repeat for several.",
+        ),
     ],
+    default_model: Annotated[
+        str | None,
+        typer.Option(
+            help="Model for requests that name none or an unknown one (such as the Jev SDK's "
+            "jev-latest). Default: the only model; with several and no default, such "
+            "requests get a 422.",
+        ),
+    ] = None,
+    memory_budget: Annotated[
+        float | None,
+        typer.Option(
+            min=0,
+            metavar="GB",
+            help="Memory for loaded models; the least recently used are unloaded to stay "
+            "within it. Default: the GPU's recommended working set.",
+        ),
+    ] = None,
     host: Annotated[str, typer.Option(help="Address to bind to.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
     max_image_mp: MaxImageOption = None,
@@ -634,31 +657,55 @@ def server(
         ),
     ] = None,
 ) -> None:
-    """Serve a model over HTTP (Jev-compatible API: POST /v1/systemone)."""
+    """Serve models over HTTP (Jev-compatible API: POST /v1/systemone).
+
+    The request's "model" field picks the model. Models load on their first
+    request (the default model at startup) and are unloaded, least recently
+    used first, when the next one would exceed the memory budget.
+    """
     try:
         import uvicorn
 
         from .server import create_app
     except ImportError:
         fail("the server needs extra packages: pip install 'mlx-decision[server]'")
-    from .hub import resolve_model_path
-    from .memory import check_fits
-    from .model import load
-    from .registry import check_options, detect_family
+    import logging
 
-    typer.echo(f"loading {model} ...", err=True)
+    from .pool import ModelPool, discover
+
+    # Loads and unloads; uvicorn configures only its own loggers.
+    package_logger = logging.getLogger("mlx_decision")
+    if not package_logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        package_logger.addHandler(handler)
+    package_logger.setLevel(logging.INFO)
     options = load_options(max_image_mp, max_input_tokens, prefix_cache)
+    budget = round(memory_budget * 1e9) if memory_budget is not None else None
     try:
-        # Fail here, not inside the server.
-        path = resolve_model_path(model)
-        check_options(detect_family(path), options)
-        if not no_memory_check:
-            check_fits(path, options, name=model)
+        # Fail here, not inside the server: folders, options, the default model's size.
+        specs = discover(
+            model, options, on_skip=lambda path, reason: typer.echo(f"skipped {reason}", err=True)
+        )
+        pool = ModelPool(
+            specs, default=default_model, budget=budget, check_memory=not no_memory_check
+        )
+        if pool.default is not None:
+            pool.size(pool.default)
     except (FileNotFoundError, ValueError) as error:
         fail(str(error))
+    names = ", ".join(pool.names)
+    if pool.default is None:
+        typer.echo(
+            f"models: {names}; no default model: requests must name one in 'model' (or "
+            f"start with --default-model NAME)",
+            err=True,
+        )
+    elif len(pool.names) > 1:
+        typer.echo(f"models: {names}; default {pool.default}", err=True)
     if api_key:
         typer.echo("API key required on /v1/*", err=True)
-    app = create_app(lambda: load(model, check_memory=False, **options), api_key=api_key)
+    app = create_app(pool, api_key=api_key)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 

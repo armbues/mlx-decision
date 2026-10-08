@@ -73,4 +73,13 @@ def write_model(folder: Path, **config) -> Path:
     return folder
 
 
+def write_sized_model(folder: Path, weights: int) -> Path:
+    """A fake model whose memory check counts ``weights`` bytes (plus 10%)."""
+    import mlx.core as mx
+
+    write_model(folder)
+    mx.save_safetensors(str(folder / "model.safetensors"), {"w": mx.zeros(weights, mx.uint8)})
+    return folder
+
+
 register_family(FAMILY, detect=lambda path: False, loader="fake_backend:load")

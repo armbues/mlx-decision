@@ -67,9 +67,9 @@ def test_server_answers_422_with_the_hint(folder, png):
         ["PIL", "numpy"],
         f"""
 from fastapi.testclient import TestClient
-import mlx_decision
+from mlx_decision.pool import ModelPool, discover
 from mlx_decision.server import create_app
-with TestClient(create_app(lambda: mlx_decision.load({str(folder)!r}))) as client:
+with TestClient(create_app(ModelPool(discover([{str(folder)!r}])))) as client:
     response = client.post("/v1/systemone", json={body!r})
 print(json.dumps({{"status": response.status_code, "body": response.json()}}))
 """,

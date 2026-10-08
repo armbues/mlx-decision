@@ -4,12 +4,11 @@ import logging
 import weakref
 from pathlib import Path
 
-import mlx.core as mx
 import pytest
 
 import mlx_decision.memory as memory
 import mlx_decision.pool as pool_module
-from fake_backend import write_model
+from fake_backend import write_model, write_sized_model
 from mlx_decision import DecisionError, ModelTooLargeError
 from mlx_decision.hub import ModelNotFoundError
 from mlx_decision.pool import ModelPool, discover, prefix_cache_bytes
@@ -19,11 +18,7 @@ BODY = {"state": "Stripe is down", "questions": {"urgent": {"type": "noul"}}}
 
 
 def fake(folder: Path, weights: int = 0) -> Path:
-    """A fake model whose memory check counts ``weights`` bytes (plus 10%)."""
-    write_model(folder)
-    if weights:
-        mx.save_safetensors(str(folder / "model.safetensors"), {"w": mx.zeros(weights, mx.uint8)})
-    return folder
+    return write_sized_model(folder, weights) if weights else write_model(folder)
 
 
 @pytest.fixture
