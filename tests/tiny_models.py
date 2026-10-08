@@ -114,6 +114,132 @@ def write_vision(folder: Path, seed: int) -> None:
     (folder / "processor_config.json").write_text(json.dumps(PROCESSOR))
 
 
+PPLX_TEXT = {
+    **QWEN3_5["text_config"],
+    "num_hidden_layers": 8,
+    "head_dim": 64,
+    "vocab_size": 248320,  # the release's, so real token ids can be fed in
+    "rope_parameters": {**QWEN3_5["text_config"]["rope_parameters"], "mrope_section": [3, 3, 2]},
+}
+PPLX_VISION = {
+    "depth": 2,
+    "hidden_size": 32,
+    "intermediate_size": 64,
+    "num_heads": 2,
+    "in_channels": 3,
+    "patch_size": 16,
+    "temporal_patch_size": 2,
+    "spatial_merge_size": 2,
+    "out_hidden_size": 64,
+    "num_position_embeddings": 16,
+    "hidden_act": "gelu_pytorch_tanh",
+    "deepstack_visual_indexes": [],
+    "model_type": "qwen3_5_vision",
+    "rope_parameters": {"rope_theta": 10000.0, "rope_type": "axial"},
+}
+PPLX_CONFIG = {
+    "architectures": ["Qwen3_5Model"],
+    "model_type": "qwen3_5",
+    "image_token_id": 248056,
+    "video_token_id": 248057,
+    "vision_start_token_id": 248053,
+    "vision_end_token_id": 248054,
+    "tie_word_embeddings": False,
+    "text_config": {
+        **PPLX_TEXT,
+        "layer_types": (["linear_attention"] * 3 + ["full_attention"]) * 2,
+        "mtp_num_hidden_layers": 0,
+        "attn_output_gate": True,
+        "rms_norm_eps": 1e-6,
+        "hidden_act": "silu",
+        "max_position_embeddings": 262144,
+        "partial_rotary_factor": 0.25,
+    },
+    "vision_config": PPLX_VISION,
+}
+# The release's small files that describe its prompt and answers.
+PPLX_FILES = (
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "chat_template.jinja",
+    "processor_config.json",
+    "decision_config.json",
+)
+
+
+def _random(name: str, shape: tuple[int, ...], seed: int):
+    """Weights drawn with NumPy, seeded by name, so they never depend on the MLX version."""
+    import zlib
+
+    import numpy as np
+
+    rng = np.random.default_rng([seed, zlib.crc32(name.encode())])
+    if len(shape) == 1:
+        return rng.uniform(-0.3, 0.3, shape).astype(np.float32)
+    return rng.normal(0, 0.05, shape).astype(np.float32)
+
+
+def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> Path:
+    """A pplx release folder: tiny backbone with vision tower and readout, float32.
+
+    Names and layouts are the release's (``language_model.*`` and
+    ``visual.*`` without a ``model.`` prefix, PyTorch's convolution kernels,
+    no ``lm_head``), the vision tower shares the first shard with the
+    embeddings, as in the release. The vocabulary has the release's size;
+    ``files_from`` (a release folder) supplies the tokenizer, processor and
+    decision config, which are not written otherwise.
+    """
+    import shutil
+
+    from mlx.utils import tree_flatten
+
+    from mlx_decision.backbones.qwen3_5.vision import VisionArgs, VisionModel
+
+    # Lazily built: only the names and shapes are used, nothing is allocated.
+    text = Model(ModelArgs.from_dict({"model_type": "qwen3_5", "text_config": PPLX_TEXT}))
+    vision = VisionModel(VisionArgs.from_config(PPLX_CONFIG))
+    shapes = {}
+    for name, value in tree_flatten(text.parameters()):
+        if name.startswith("language_model.lm_head"):
+            continue
+        shape = tuple(value.shape)
+        if "conv1d.weight" in name:
+            shape = (shape[0], shape[2], shape[1])
+        shapes[name.replace("language_model.model.", "language_model.", 1)] = shape
+    for name, value in tree_flatten(vision.parameters()):
+        shape = tuple(value.shape)
+        if name == "patch_embed.proj.weight":
+            v = PPLX_VISION
+            patch = (v["in_channels"], v["temporal_patch_size"], v["patch_size"], v["patch_size"])
+            shape = (shape[0], *patch)
+        shapes[f"visual.{name}"] = shape
+
+    first = {n for n in shapes if n.startswith(("visual.", "language_model.embed_tokens."))}
+    shards = {
+        "model-00001-of-00002.safetensors": sorted(first),
+        "model-00002-of-00002.safetensors": sorted(set(shapes) - first),
+    }
+    folder.mkdir(parents=True, exist_ok=True)
+    weight_map = {}
+    total = 0
+    for file, names in shards.items():
+        tensors = {name: mx.array(_random(name, shapes[name], seed)) for name in names}
+        mx.save_safetensors(str(folder / file), tensors, metadata={"format": "pt"})
+        weight_map.update(dict.fromkeys(names, file))
+        total += sum(t.nbytes for t in tensors.values())
+    index = {"metadata": {"total_size": total}, "weight_map": dict(sorted(weight_map.items()))}
+    (folder / "model.safetensors.index.json").write_text(json.dumps(index, indent=2) + "\n")
+    (folder / "config.json").write_text(json.dumps(PPLX_CONFIG, indent=2) + "\n")
+    readout = _random("readout", (255, PPLX_TEXT["hidden_size"]), seed) * 3
+    mx.save_safetensors(
+        str(folder / "readout.safetensors"), {"weight": mx.array(readout)}, {"format": "pt"}
+    )
+    for name in PPLX_FILES if files_from else ():
+        shutil.copy(Path(files_from) / name, folder / name)
+    (folder / "LICENSE").write_text("test licence\n")
+    return folder
+
+
 MODERNBERT = {
     "vocab_size": 64,
     "hidden_size": 64,
