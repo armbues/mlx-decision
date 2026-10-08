@@ -14,16 +14,6 @@ from mlx_decision.memory import ModelTooLargeError, check_fits, tensor_bytes, we
 from tiny_models import write_clef, write_marker
 
 
-@pytest.fixture
-def working_set(monkeypatch):
-    """Set the working set the check compares against."""
-
-    def set_to(size: int) -> None:
-        monkeypatch.setattr(memory, "working_set", lambda: size)
-
-    return set_to
-
-
 def test_tensor_bytes_reads_the_header(tmp_path):
     file = tmp_path / "w.safetensors"
     tensors = {

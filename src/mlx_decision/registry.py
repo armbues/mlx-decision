@@ -117,6 +117,14 @@ def load_backend(path: Path, **options) -> Backend:
     return backend
 
 
+def _qwen_text_matrix(name: str, shape: list[int]) -> bool:
+    """The text backbone's matrices (named as released or as MLX saves them);
+    the vision tower and the decision head stay as they are."""
+    return len(shape) == 2 and name.startswith(
+        ("model.language_model.", "lm_head.", "language_model.")
+    )
+
+
 register_family(
     "clef",
     detect=lambda path: (path / "joint_head_config.json").exists(),
@@ -138,21 +146,38 @@ register_family(
     # Weights, head, tokenizer and configs; not the reference code or chat template.
     files=("*.json", "model*.safetensors", "joint_head.safetensors", "LICENSE*", "README.md"),
     weight_files="mlx_decision.models.clef.model:weight_files",
-    # The text backbone's matrices (named as released or as MLX saves them);
-    # the vision tower and the decision head stay as they are.
-    quantizable=lambda name, shape: (
-        len(shape) == 2
-        and name.startswith(("model.language_model.", "lm_head.", "language_model."))
-    ),
+    quantizable=_qwen_text_matrix,
 )
 
 register_family(
     "pplx",
-    detect=lambda path: (
-        (path / "decision_config.json").exists() and (path / "readout.safetensors").exists()
-    ),
+    # The JSON files alone, so that ``download`` recognises the repository.
+    detect=lambda path: (path / "decision_config.json").exists(),
     loader="mlx_decision.models.pplx.model:load",
+    converter="mlx_decision.models.pplx.convert:convert",
+    known_models=(
+        KnownModel(
+            "perplexity-ai/pplx-decider-v1.1-27b",
+            "pplx decider: Perplexity's 27B decision model (Qwen3.5), text and images; "
+            "below 96 GB of memory it runs quantized (offered after picking it)",
+            "52 GB",
+        ),
+    ),
+    # Not the training and evaluation files or the reference code.
+    files=(
+        "config.json",
+        "decision_config.json",
+        "model.safetensors.index.json",
+        "processor_config.json",
+        "tokenizer.json",
+        "model*.safetensors",
+        "readout.safetensors",
+        "LICENSE",
+        "NOTICE",
+        "README.md",
+    ),
     weight_files="mlx_decision.models.pplx.model:weight_files",
+    quantizable=_qwen_text_matrix,
 )
 
 # The encoder and tokenizer folders plus the files at the top; the Laya repo

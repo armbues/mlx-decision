@@ -3,7 +3,7 @@
 import copy
 import json
 import struct
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 
 import mlx.core as mx
@@ -102,6 +102,22 @@ def write_vision_weights(weights: Mapping[str, mx.array], path: str | Path) -> N
     )
     index["metadata"]["total_size"] += sum(v.nbytes for v in named.values())
     index_file.write_text(json.dumps(index, indent=2) + "\n")
+
+
+def keeping_vision_weights(
+    shards: Iterable[Path], vision_files: set[str], into: dict[str, mx.array]
+) -> Iterator[Path]:
+    """Hand over ``shards``; once one is read, keep the vision weights in it.
+
+    They are taken when the converter asks for the next shard, so before a
+    fetching generator deletes the file.
+    """
+    for shard in shards:
+        yield shard
+        if shard.name in vision_files:
+            weights = sanitize_vision_weights(mx.load(str(shard)))
+            mx.eval(weights)
+            into.update(weights)
 
 
 def has_vision_weights(path: str | Path) -> bool:
@@ -217,6 +233,7 @@ def convert_text_weights(
     group_size: int = 64,
     mode: str = "affine",
     output_embeddings: bool = True,
+    lm_head: bool = True,
 ) -> dict | None:
     """Write the text model of ``shards`` to ``output``, quantized when ``bits`` is set.
 
@@ -224,14 +241,15 @@ def convert_text_weights(
     ``SHARD_BYTES`` as it goes, so the full model is never in memory; the
     tensors equal those of ``load_text_model`` + ``quantize_text_model`` +
     ``save_text_model``. ``shards`` may be a generator (a shard fetched just
-    before it is read). Returns the config's ``quantization`` entry, or None.
+    before it is read). ``lm_head=False`` for models saved without output
+    embeddings. Returns the config's ``quantization`` entry, or None.
     """
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     # A lazily built skeleton (MLX allocates nothing until evaluated): which
     # layers get quantized, and the names and shapes the output must have.
     # Built from a copy: the model args rewrite parts of the config in place.
-    model = Model(ModelArgs.from_dict(copy.deepcopy(config)))
+    model = Model(ModelArgs.from_dict(copy.deepcopy(config)), lm_head=lm_head)
     quantization = None
     quantized: set[str] = set()
     if bits is not None:

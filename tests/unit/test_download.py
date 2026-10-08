@@ -137,12 +137,13 @@ def test_the_menu_lists_known_models_and_other():
     assert [m.repo_id for m in known_models()] == [
         "Cloudflare/clef-flash",
         "Cloudflare/clef",
+        "perplexity-ai/pplx-decider-v1.1-27b",
         "convaiinnovations/laya",
         "convaiinnovations/laya-multilingual",
         "convaiinnovations/laya-typed-decisions",
         "SupersonicLabs/Julia-1",
     ]
-    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("7\rorg/model\r", "org/model")]:
+    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("8\rorg/model\r", "org/model")]:
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             pipe.send_text(typed)
             assert pick_repo() == expected
@@ -265,8 +266,6 @@ def remote(monkeypatch, tmp_path):
     ``events`` records each weight file fetched with the weight files then in
     the download folder, and each file's deletion is visible there.
     """
-    import shutil
-
     import mlx_decision.backbones.qwen3_5.load as load
     from tiny_models import write_clef
 
@@ -275,7 +274,27 @@ def remote(monkeypatch, tmp_path):
         release = write_clef(tmp_path / "release", vision=True)
     (release / "README.md").write_text("readme\n")
     (release / "joint_schema_model.py").write_text("# reference code\n")
-    names = sorted(p.name for p in release.iterdir())
+    return serve(monkeypatch, tmp_path, release)
+
+
+@pytest.fixture
+def remote_pplx(monkeypatch, tmp_path):
+    """The same for a tiny pplx release, with the release's extra files."""
+    from tiny_models import write_pplx
+
+    release = write_pplx(tmp_path / "release")
+    for name in ("README.md", "NOTICE", "chat_template.jinja", "release-manifest.json"):
+        (release / name).write_text("x\n")
+    for name in ("source/src/autojev/model.py", "training/config.json"):
+        (release / name).parent.mkdir(parents=True, exist_ok=True)
+        (release / name).write_text("{}\n")
+    return serve(monkeypatch, tmp_path, release)
+
+
+def serve(monkeypatch, tmp_path, release):
+    import shutil
+
+    names = sorted(str(p.relative_to(release)) for p in release.rglob("*") if p.is_file())
     state = SimpleNamespace(release=release, events=[], fail_on=None)
 
     class Api:
@@ -296,6 +315,7 @@ def remote(monkeypatch, tmp_path):
         picked = filter_repo_objects(picked, ignore_patterns=ignore_patterns)
         Path(local_dir).mkdir(parents=True, exist_ok=True)
         for name in picked:
+            (Path(local_dir) / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(release / name, Path(local_dir) / name)
         return str(local_dir)
 
@@ -338,7 +358,10 @@ def assert_same_model(stored, converted):
     for name, value in expected.items():
         assert mx.array_equal(got[name], value).item(), name
     for name in ("config.json", "tokenizer.json", "processor_config.json", "LICENSE"):
-        assert (stored / name).read_bytes() == (converted / name).read_bytes(), name
+        if (converted / name).exists():  # the tiny pplx has no processor config
+            assert (stored / name).read_bytes() == (converted / name).read_bytes(), name
+        else:
+            assert not (stored / name).exists(), name
 
 
 def test_a_quantized_download_equals_a_converted_copy(remote, tmp_path):
@@ -365,6 +388,50 @@ def test_a_quantized_download_equals_a_converted_copy(remote, tmp_path):
     assert fetched == [(i, len(weights)) for i in range(1, len(weights) + 1)]
     assert sorted(p.name for p in out.parent.iterdir()) == ["tiny-clef"]
     assert not (out / "joint_schema_model.py").exists()
+
+
+def test_a_pplx_download_fetches_only_what_it_loads(remote_pplx, tmp_path):
+    check = download.check_repo("perplexity-ai/tiny-pplx")
+    assert check.family == "pplx" and check.convertible
+    out = download.download(check.repo_id, tmp_path / "full", check.files, check.revision)
+    assert sorted(p.name for p in out.iterdir()) == [
+        "LICENSE",
+        "NOTICE",
+        "README.md",
+        "config.json",
+        "decision_config.json",
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+        "model.safetensors.index.json",
+        "readout.safetensors",
+        "tokenizer.json",
+    ]
+    weights = sum(p.stat().st_size for p in out.glob("*.safetensors"))
+    assert check.weight_bytes == weights
+    assert check.size_bytes == sum(p.stat().st_size for p in out.iterdir())
+
+
+def test_a_quantized_pplx_download_equals_a_converted_copy(remote_pplx, tmp_path):
+    import json
+
+    import mlx_decision
+    from mlx_decision.convert import convert
+    from mlx_decision.registry import MARKER_FILE
+
+    check = download.check_repo("perplexity-ai/tiny-pplx")
+    out = download.download_quantized(check, 4, tmp_path / "models" / "tiny-pplx")
+    converted = convert(remote_pplx.release, tmp_path / "converted", bits=4)
+    assert_same_model(out, converted)
+    for name in ("readout.safetensors", "decision_config.json", "NOTICE"):
+        assert (out / name).read_bytes() == (remote_pplx.release / name).read_bytes(), name
+    marker = json.loads((out / MARKER_FILE).read_text())
+    assert marker["family"] == "pplx" and marker["revision"] == SHA
+    assert marker["quantization"]["bits"] == 4 and marker["vision"] is True
+    weights = download._weight_files(remote_pplx.release)
+    assert remote_pplx.events == [(name, []) for name in weights]
+    assert not (out / "source").exists() and not (out / "chat_template.jinja").exists()
+    result = mlx_decision.load(out).decide("refund please", {"q": {"type": "noul"}})
+    assert 0 <= result.answers["q"].noul <= 1
 
 
 def test_a_quantized_download_into_the_cache_loads_by_repo_id(remote, tmp_path, monkeypatch):

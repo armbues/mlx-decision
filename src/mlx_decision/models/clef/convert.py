@@ -7,7 +7,7 @@ The vision tower, when the release has one, is kept in its stored precision
 
 import json
 import shutil
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import mlx.core as mx
@@ -15,11 +15,11 @@ import mlx.core as mx
 from ...backbones.qwen3_5.load import (
     convert_text_weights,
     has_vision_weights,
+    keeping_vision_weights,
     output_embeddings_path,
     quantizable_layers,
     quantize_text_model,
     read_vision_weights,
-    sanitize_vision_weights,
     save_text_model,
     source_shards,
     vision_shards,
@@ -83,7 +83,7 @@ def convert(
         quantization = convert_text_weights(
             config,
             output,
-            _collecting(
+            keeping_vision_weights(
                 source_shards(path) if shards is None else shards,
                 vision_shards(path) if vision else set(),
                 vision_weights,
@@ -137,22 +137,6 @@ def convert(
         }
         (output / SENSITIVITY_FILE).write_text(json.dumps(mixed["report"], indent=2) + "\n")
     (output / MARKER_FILE).write_text(json.dumps(marker, indent=2) + "\n")
-
-
-def _collecting(
-    shards: Iterable[Path], vision_files: set[str], into: dict[str, mx.array]
-) -> Iterator[Path]:
-    """Hand over ``shards``; once one is read, keep the vision weights in it.
-
-    They are taken when the converter asks for the next shard, so before a
-    fetching generator deletes the file.
-    """
-    for shard in shards:
-        yield shard
-        if shard.name in vision_files:
-            weights = sanitize_vision_weights(mx.load(str(shard)))
-            mx.eval(weights)
-            into.update(weights)
 
 
 def _mixed_plan(path, target_bits, group_size, quantize_output_embeddings, progress):

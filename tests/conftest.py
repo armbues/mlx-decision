@@ -17,6 +17,17 @@ LAYA_TYPED = ("laya-typed-decisions", "convaiinnovations/laya-typed-decisions")
 JULIA = ("Julia-1", "SupersonicLabs/Julia-1")
 
 
+@pytest.fixture
+def working_set(monkeypatch):
+    """Set the working set the memory check compares against."""
+    import mlx_decision.memory as memory
+
+    def set_to(size: int) -> None:
+        monkeypatch.setattr(memory, "working_set", lambda: size)
+
+    return set_to
+
+
 def find_model(name: str, repo_id: str) -> Path | None:
     root = os.environ.get("MLX_DECISION_MODELS")
     if root and (Path(root) / name).is_dir():
