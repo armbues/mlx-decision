@@ -82,6 +82,24 @@ def test_a_model_that_does_not_fit_is_refused_with_sizes_and_a_hint(tmp_path, wo
     assert error.value.required > error.value.available
 
 
+@pytest.mark.parametrize(("bits", "hint"), [
+    (8, "convert -m clef -q (8-bit, needs about"),
+    (4, "convert -m clef -q --bits 4 (4-bit, needs about"),
+    (None, "Even a 4-bit copy would need about"),
+])  # fmt: skip
+def test_the_hint_names_a_copy_that_fits(tmp_path, working_set, bits, hint):
+    path = write_clef(tmp_path / "clef")
+    weights, quantizable = weight_bytes(path), memory.quantizable_bytes(path)
+    assert 0 < quantizable < weights  # the head stays as it is
+    rest = weights - quantizable
+    needs = {b: round((rest + memory.quantized_size(quantizable, b)) * 1.1) for b in (8, 4)}
+    working_set({8: needs[8], 4: needs[8] - 1, None: needs[4] - 1}[bits])
+    with pytest.raises(ModelTooLargeError) as error:
+        check_fits(path)
+    assert hint in str(error.value)
+    assert "--no-memory-check" in str(error.value)
+
+
 def test_a_budget_replaces_the_working_set(tmp_path, working_set):
     path = write_clef(tmp_path / "clef")
     working_set(10**12)

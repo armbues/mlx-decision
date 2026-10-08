@@ -126,7 +126,7 @@ clef-flash, in bf16, as an 8-bit copy and as a uniform 4-bit copy:
 | 16,384 | 20 | 10.7 s | 12.1 s | 11.4 s |
 | Peak memory | | 19.0 GB | 11.2 GB | 7.1 GB |
 
-Clef 27B as an 8-bit and a 4-bit copy (bf16 does not fit on this Mac):
+Clef 27B as an 8-bit and a 4-bit copy (bf16 does not fit on the M5 Pro):
 
 | Input tokens | Questions | 8-bit | 4-bit |
 |---|---|---|---|

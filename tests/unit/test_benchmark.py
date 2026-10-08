@@ -143,7 +143,7 @@ def test_machine_description():
 
     assert describe(MACHINE) == (
         "Apple M1 (MacBookPro17,1), 4 Performance + 4 Efficiency CPU cores, 8 GPU cores, "
-        "16 GB memory, 10.7 GB GPU working set, macOS 15.6"
+        "16 GB memory, 11.5 GB GPU working set, macOS 15.6"
     )
     assert describe({}) == "unknown chip"
 

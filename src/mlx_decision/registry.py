@@ -35,6 +35,9 @@ class Family:
     # "module:function" (path, load options) -> [(weight file, load dtype or None)],
     # for the memory check; None: every top-level *.safetensors, as stored.
     weight_files: str | None = None
+    # (tensor name, shape) -> whether the converter quantizes it, for size
+    # estimates before converting; None: every tensor.
+    quantizable: Callable[[str, list[int]], bool] | None = None
 
 
 _FAMILIES: dict[str, Family] = {}
@@ -48,8 +51,11 @@ def register_family(
     known_models: tuple[KnownModel, ...] = (),
     files: tuple[str, ...] | None = None,
     weight_files: str | None = None,
+    quantizable: Callable[[str, list[int]], bool] | None = None,
 ) -> None:
-    _FAMILIES[name] = Family(name, detect, loader, converter, known_models, files, weight_files)
+    _FAMILIES[name] = Family(
+        name, detect, loader, converter, known_models, files, weight_files, quantizable
+    )
 
 
 def known_models() -> list[KnownModel]:
@@ -125,13 +131,19 @@ register_family(
         KnownModel(
             "Cloudflare/clef",
             "Clef: Cloudflare's 27B decision model (Qwen3.5), text and images; "
-            "on a 64 GB Mac it runs quantized (8-bit, offered after picking it)",
+            "below 96 GB of memory it runs quantized (offered after picking it)",
             "55 GB",
         ),
     ),
     # Weights, head, tokenizer and configs; not the reference code or chat template.
     files=("*.json", "model*.safetensors", "joint_head.safetensors", "LICENSE*", "README.md"),
     weight_files="mlx_decision.models.clef.model:weight_files",
+    # The text backbone's matrices (named as released or as MLX saves them);
+    # the vision tower and the decision head stay as they are.
+    quantizable=lambda name, shape: (
+        len(shape) == 2
+        and name.startswith(("model.language_model.", "lm_head.", "language_model."))
+    ),
 )
 
 # The encoder and tokenizer folders plus the files at the top; the Laya repo

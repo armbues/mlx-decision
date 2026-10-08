@@ -556,27 +556,27 @@ def ask_models_dir() -> Path | None:
 def pick_bits(check) -> int:
     """A menu of full size and the quantized sizes; 0 is full size.
 
-    The default is 8-bit when the model does not fit at full size. Raises
-    ``typer.Exit`` when the menu is cancelled.
+    The default is the largest size that fits (the smallest when none
+    does). Raises ``typer.Exit`` when the menu is cancelled.
     """
     from prompt_toolkit.shortcuts import choice
 
     from .download import QUANTIZED_BITS, format_size
     from .interactive import MENU_BINDINGS
 
-    fits = check.fits()
-    full = f"full size  {format_size(check.size_bytes)}"
-    if not fits:
-        full += "  (does not fit in this Mac's GPU working set)"
-    options = [(0, full)] + [
-        (bits, f"{bits}-bit      about {format_size(check.quantized_bytes(bits))}")
+    def label(text: str, bits: int) -> str:
+        return text if check.fits(bits) else f"{text}  (does not fit in this Mac's GPU working set)"
+
+    options = [(0, label(f"full size  {format_size(check.size_bytes)}", 0))] + [
+        (bits, label(f"{bits}-bit      about {format_size(check.quantized_bytes(bits))}", bits))
         for bits in QUANTIZED_BITS
     ]
+    best = check.fitting_bits()
     try:
         return choice(
             "Store the model:",
             options=options,
-            default=0 if fits else QUANTIZED_BITS[0],
+            default=QUANTIZED_BITS[-1] if best is None else best,
             key_bindings=MENU_BINDINGS,
         )
     except (KeyboardInterrupt, EOFError):
@@ -647,9 +647,15 @@ def download(
             if terminal:
                 bits = pick_bits(check) or None
             elif not check.fits():
+                best = check.fitting_bits()
+                hint = (
+                    f"--bits {best} stores it quantized"
+                    if best
+                    else f"not even at {QUANTIZED_BITS[-1]} bits"
+                )
                 typer.echo(
                     f"warning: {repo_id} does not fit in this Mac's GPU working set at full "
-                    "size; --bits 8 stores it quantized",
+                    f"size; {hint}",
                     err=True,
                 )
         if parent is not None:

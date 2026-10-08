@@ -54,6 +54,15 @@ def hub(monkeypatch, tmp_path):
                 siblings=[SimpleNamespace(rfilename=n, size=size) for n, size in files.items()]
             )
 
+        def get_safetensors_metadata(self, repo_id, revision=None):
+            tensors = {  # bf16: 17.83 GB of text backbone, 1 GB of vision tower
+                "model.language_model.embed_tokens.weight": [8_915_000_000, 1],
+                "model.visual.blocks.0.mlp.weight": [500_000_000, 1],
+            }
+            info = {n: SimpleNamespace(dtype="BF16", shape=shape) for n, shape in tensors.items()}
+            files = {"model.safetensors": SimpleNamespace(tensors=info)}
+            return SimpleNamespace(files_metadata=files)
+
     def snapshot_download(repo_id, allow_patterns=None, local_dir=None, revision=None):
         calls.append((repo_id, allow_patterns, local_dir))
         folder = local_dir or tmp_path / "cache" / repo_id
@@ -276,6 +285,9 @@ def remote(monkeypatch, tmp_path):
             ]
             return SimpleNamespace(siblings=siblings, sha=SHA)
 
+        def get_safetensors_metadata(self, repo_id, revision=None):
+            raise download.NotASafetensorsRepoError("no index")
+
     def snapshot_download(
         repo_id, allow_patterns=None, local_dir=None, revision=None, ignore_patterns=None
     ):
@@ -428,6 +440,21 @@ def test_quantized_sizes_and_fit():
     assert check.quantized_bytes(4) == pytest.approx(15.8e9, rel=0.01)
     assert not check.fits(budget=55_700_000_000)
     assert check.fits(budget=64e9)
+    assert check.fits(8, budget=33e9) and not check.fits(8, budget=32e9)
+    # What the converter leaves unquantized (vision tower, head) counts in full.
+    check = download.RepoCheck(
+        "Cloudflare/clef", 55_400_000_000, "clef", weight_bytes=55_100_000_000,
+        quantizable_bytes=54_000_000_000,
+    )  # fmt: skip
+    assert check.quantized_bytes(8) == pytest.approx(30.0e9, rel=0.01)
+
+
+def test_the_check_reads_what_the_converter_quantizes(hub):
+    check = download.check_repo("Cloudflare/clef-flash")
+    assert check.quantizable_bytes == 17_830_000_000
+    assert check.quantized_bytes(8) == pytest.approx(
+        check.size_bytes - 17_830_000_000 * 7.5 / 16, rel=1e-6
+    )
     assert not download.RepoCheck("org/laya", 1, "laya").convertible
 
 
@@ -448,16 +475,33 @@ def test_bits_need_a_family_that_converts(hub):
 
 
 def test_a_model_too_large_gets_a_hint_without_a_terminal(hub, monkeypatch):
-    monkeypatch.setattr(download, "working_set", lambda: 10_000_000_000)
+    monkeypatch.setattr(download, "working_set", lambda: 12_000_000_000)
     result = invoke("Cloudflare/clef-flash")
     assert result.exit_code == 0, result.output
     assert "does not fit in this Mac's GPU working set at full size; --bits 8" in result.stderr
+    monkeypatch.setattr(download, "working_set", lambda: 7_000_000_000)
+    result = invoke("Cloudflare/clef-flash")
+    assert "at full size; --bits 4 stores it quantized" in result.stderr
+    monkeypatch.setattr(download, "working_set", lambda: 1_000_000_000)
+    result = invoke("Cloudflare/clef-flash")
+    assert "at full size; not even at 4 bits" in result.stderr
+
+
+@pytest.mark.parametrize(("budget", "expected"), [
+    (64e9, 0), (12e9, 8), (10e9, 4), (1e9, None),
+])  # fmt: skip
+def test_the_largest_size_that_fits(monkeypatch, budget, expected):
+    monkeypatch.setattr(download, "working_set", lambda: budget)
+    check = download.RepoCheck("org/m", 19e9, "clef", weight_bytes=18.8e9)
+    assert check.fitting_bits() == expected
 
 
 @pytest.mark.parametrize(("budget", "typed", "expected"), [
     (64e9, "\r", 0),  # fits: full size first
-    (10e9, "\r", 8),  # does not fit: 8-bit
-    (10e9, "3\r", 4),
+    (12e9, "\r", 8),  # does not fit: the largest that does
+    (10e9, "\r", 4),
+    (1e9, "\r", 4),  # nothing fits: the smallest
+    (12e9, "3\r", 4),
 ])  # fmt: skip
 def test_the_size_menu(monkeypatch, budget, typed, expected):
     from prompt_toolkit.application import create_app_session

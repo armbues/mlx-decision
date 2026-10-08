@@ -14,6 +14,10 @@ from pathlib import Path
 from .registry import MARKER_FILE, detect_family, resolve
 
 MARGIN = 1.1
+# The bit widths a model can be stored quantized with, largest first.
+QUANTIZED_BITS = (8, 4)
+# Affine quantization with groups of 64 adds a bf16 scale and bias per group.
+GROUP_OVERHEAD_BITS = 0.5
 # Bytes per element of the safetensors dtypes.
 DTYPE_BYTES = {
     "F64": 8, "I64": 8, "U64": 8,
@@ -42,27 +46,47 @@ def working_set() -> int:
     return int(mx.device_info()["max_recommended_working_set_size"])
 
 
+def read_header(file: Path) -> dict[str, dict]:
+    """The tensors of a safetensors file: name -> {"dtype", "shape", ...}."""
+    with open(file, "rb") as handle:
+        (length,) = struct.unpack("<Q", handle.read(8))
+        header = json.loads(handle.read(length))
+    header.pop("__metadata__", None)
+    return header
+
+
+def element_count(shape: list[int]) -> int:
+    count = 1
+    for size in shape:
+        count *= size
+    return count
+
+
 def tensor_bytes(file: Path, load_dtype: str | None = None) -> int:
     """Bytes the tensors in ``file`` take once loaded.
 
     ``load_dtype`` (``"float16"``, ...) is the precision floating-point
     tensors are converted to when loading; None keeps them as stored.
     """
-    with open(file, "rb") as handle:
-        (length,) = struct.unpack("<Q", handle.read(8))
-        header = json.loads(handle.read(length))
     total = 0
-    for name, entry in header.items():
-        if name == "__metadata__":
-            continue
-        count = 1
-        for size in entry["shape"]:
-            count *= size
+    for entry in read_header(file).values():
+        count = element_count(entry["shape"])
         dtype = entry["dtype"]
         if load_dtype is not None and dtype in FLOAT_DTYPES:
             total += count * LOAD_DTYPE_BYTES[load_dtype]
         else:
             total += count * DTYPE_BYTES[dtype]
+    return total
+
+
+def quantizable_bytes(path: Path) -> int:
+    """Bytes of the tensors in the model at ``path`` its family's converter quantizes."""
+    family = detect_family(path)
+    total = 0
+    for file, _ in weight_files(path, {}):
+        for name, entry in read_header(file).items():
+            if family.quantizable is None or family.quantizable(name, entry["shape"]):
+                total += element_count(entry["shape"]) * DTYPE_BYTES[entry["dtype"]]
     return total
 
 
@@ -85,6 +109,12 @@ def weight_bytes(path: Path, options: dict | None = None) -> int:
 def required_bytes(path: Path, options: dict | None = None) -> int:
     """The memory a model is taken to need: its weights plus the margin."""
     return round(weight_bytes(path, options) * MARGIN)
+
+
+def quantized_size(weights: int, bits: int) -> int:
+    """About the size of 16-bit ``weights`` quantized to ``bits``, every
+    tensor counted as quantized, which the small unquantized parts barely change."""
+    return round(weights * (bits + GROUP_OVERHEAD_BITS) / 16)
 
 
 def gb(size: int) -> str:
@@ -120,6 +150,21 @@ def check_fits(
     )
     # A converted folder (marker file) cannot be converted again.
     if detect_family(path).converter is not None and not (path / MARKER_FILE).exists():
-        message += f" Make a quantized copy first: mlx-decision convert -m {name} -q (8-bit)."
+        quantizable = quantizable_bytes(path)
+        sizes = {
+            bits: round((weights - quantizable + quantized_size(quantizable, bits)) * MARGIN)
+            + extra
+            for bits in QUANTIZED_BITS
+        }
+        bits = next((bits for bits, size in sizes.items() if size <= budget), None)
+        if bits is not None:
+            flags = "-q" if bits == QUANTIZED_BITS[0] else f"-q --bits {bits}"
+            message += (
+                f" Make a quantized copy first: mlx-decision convert -m {name} {flags}"
+                f" ({bits}-bit, needs about {gb(sizes[bits])})."
+            )
+        else:
+            smallest = QUANTIZED_BITS[-1]
+            message += f" Even a {smallest}-bit copy would need about {gb(sizes[smallest])}."
     message += " To load it anyway, turn off the memory check (--no-memory-check)."
     raise ModelTooLargeError(message, required, budget)

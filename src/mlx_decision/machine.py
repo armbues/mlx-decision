@@ -113,7 +113,9 @@ def describe(machine: dict) -> str:
     if machine.get("memory_bytes"):
         parts.append(f"{machine['memory_bytes'] / 2**30:.0f} GB memory")
     if machine.get("gpu_working_set_bytes"):
-        parts.append(f"{machine['gpu_working_set_bytes'] / 2**30:.1f} GB GPU working set")
+        parts.append(
+            f"{machine['gpu_working_set_bytes'] / 1e9:.1f} GB GPU working set"
+        )  # as the fit check
     if machine.get("macos"):
         parts.append(f"macOS {machine['macos']}")
     return ", ".join(parts)

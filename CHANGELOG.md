@@ -10,13 +10,14 @@ change the interface).
 ### Added
 
 - Cloudflare's Clef 27B (`Cloudflare/clef`), with text and images, in
-  the `download` menu after clef-flash. On a 64 GB Mac it runs as an
-  8-bit copy (32 GB peak) or 4-bit (19.5 GB). In bf16, on a larger Mac,
-  it matches Cloudflare's reference within 0.031 per probability.
+  the `download` menu after clef-flash. In bf16 it needs a Mac with
+  96 GB or more and matches Cloudflare's reference within 0.031 per
+  probability; as an 8-bit copy it runs from 48 GB (32 GB peak), as a
+  4-bit copy from 32 GB (19.5 GB peak).
 
 - `download` can store a Clef model quantized: `--bits 8` or `--bits 4`,
-  or a choice of full size, 8-bit or 4-bit in the menu (8-bit by
-  default for a model that does not fit in memory). The full-size
+  or a choice of full size, 8-bit or 4-bit in the menu, which marks the
+  sizes that do not fit in memory and defaults to the largest that does. The full-size
   weight files are fetched one at a time, quantized and deleted, so
   Clef 27B in 8-bit needs about 30 GB of disk, not 55. Stored in the
   Hugging Face cache, the copy loads by repo id without fetching the
@@ -38,8 +39,8 @@ change the interface).
 - Loading checks first that the model fits in memory: if its weights
   plus 10% exceed the GPU's recommended working set, it is refused
   before anything is read, with both sizes and, for a model that can be
-  quantized, the `convert` command that makes it fit (instead of the
-  Mac swapping). `--no-memory-check` (or `load(..., check_memory=False)`)
+  quantized, the `convert` command for the largest copy that fits, or
+  that none does (instead of the Mac swapping). `--no-memory-check` (or `load(..., check_memory=False)`)
   loads it anyway. `server` and `mcp` check before they start.
 
 - Clef reuses what it computed for a state: a request with the same

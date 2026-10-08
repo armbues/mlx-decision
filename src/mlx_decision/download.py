@@ -8,16 +8,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from huggingface_hub import HfApi, constants, hf_hub_download, snapshot_download
+from huggingface_hub.errors import (
+    HfHubHTTPError,
+    NotASafetensorsRepoError,
+    SafetensorsParsingError,
+)
 from huggingface_hub.file_download import repo_folder_name
-from huggingface_hub.utils import filter_repo_objects
+from huggingface_hub.utils import (
+    are_progress_bars_disabled,
+    disable_progress_bars,
+    enable_progress_bars,
+    filter_repo_objects,
+)
 
 from .hub import stored_snapshot
-from .memory import MARGIN, working_set
+from .memory import DTYPE_BYTES, MARGIN, QUANTIZED_BITS, element_count, quantized_size, working_set
 from .registry import detect_family, get_family, resolve
-
-QUANTIZED_BITS = (8, 4)
-# Affine quantization with groups of 64 adds a bf16 scale and bias per group.
-GROUP_OVERHEAD_BITS = 0.5
 
 
 @dataclass(frozen=True)
@@ -30,21 +36,33 @@ class RepoCheck:
     revision: str | None = None  # the commit the check saw
     weight_bytes: int = 0  # of the *.safetensors files among them
     largest_weight_file: int = 0
+    quantizable_bytes: int | None = None  # of the weights the converter quantizes; None: all
 
     @property
     def convertible(self) -> bool:
         """Whether the family can store the model quantized."""
         return self.family is not None and get_family(self.family).converter is not None
 
-    def fits(self, budget: int | None = None) -> bool:
-        """Whether the model fits in memory at full size (the fit check's rule)."""
-        return self.weight_bytes * MARGIN <= (working_set() if budget is None else budget)
+    def fits(self, bits: int = 0, budget: int | None = None) -> bool:
+        """Whether the model fits in memory at full size (``bits`` 0) or
+        stored with ``bits`` (the fit check's rule)."""
+        weights = self.quantized_weight_bytes(bits) if bits else self.weight_bytes
+        return weights * MARGIN <= (working_set() if budget is None else budget)
+
+    def fitting_bits(self) -> int | None:
+        """The largest size that fits: 0 for full size, else the bits; None when none fits."""
+        budget = working_set()
+        return next((bits for bits in (0, *QUANTIZED_BITS) if self.fits(bits, budget)), None)
+
+    def quantized_weight_bytes(self, bits: int) -> int:
+        quantizable = (
+            self.weight_bytes if self.quantizable_bytes is None else self.quantizable_bytes
+        )
+        return self.weight_bytes - quantizable + quantized_size(quantizable, bits)
 
     def quantized_bytes(self, bits: int) -> int:
-        """About the size of the model stored with ``bits``: every weight file
-        counted as quantized, which the small unquantized parts barely change."""
-        weights = self.weight_bytes * (bits + GROUP_OVERHEAD_BITS) / 16
-        return round(weights) + self.size_bytes - self.weight_bytes
+        """About the size of the model stored with ``bits``."""
+        return self.quantized_weight_bytes(bits) + self.size_bytes - self.weight_bytes
 
 
 def check_repo(repo_id: str) -> RepoCheck:
@@ -72,6 +90,9 @@ def check_repo(repo_id: str) -> RepoCheck:
             )
         )
     weights = [s.size or 0 for s in fetched if s.rfilename.endswith(".safetensors")]
+    quantizable = None
+    if family.converter is not None and family.quantizable is not None:
+        quantizable = _quantizable_on_hub(repo_id, revision, family.quantizable)
     return RepoCheck(
         repo_id,
         sum(sibling.size or 0 for sibling in fetched),
@@ -80,6 +101,27 @@ def check_repo(repo_id: str) -> RepoCheck:
         revision=revision,
         weight_bytes=sum(weights),
         largest_weight_file=max(weights, default=0),
+        quantizable_bytes=quantizable,
+    )
+
+
+def _quantizable_on_hub(repo_id: str, revision: str | None, rule) -> int | None:
+    """Bytes of the tensors ``rule`` picks, from the weight files' headers on
+    the Hub (a few small range requests); None when they cannot be read."""
+    quiet = are_progress_bars_disabled()
+    disable_progress_bars()  # its bar has no name to turn off on its own
+    try:
+        metadata = HfApi().get_safetensors_metadata(repo_id, revision=revision)
+    except (HfHubHTTPError, NotASafetensorsRepoError, SafetensorsParsingError, OSError):
+        return None
+    finally:
+        if not quiet:
+            enable_progress_bars()
+    return sum(
+        element_count(tensor.shape) * DTYPE_BYTES[tensor.dtype]
+        for file in metadata.files_metadata.values()
+        for name, tensor in file.tensors.items()
+        if rule(name, tensor.shape)
     )
 
 
