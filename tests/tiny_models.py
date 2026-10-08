@@ -167,6 +167,34 @@ PPLX_FILES = (
 )
 
 
+PPLX_CODES = [chr(65 + i) for i in range(26)]
+PPLX_CODES += [a + b for a in PPLX_CODES for b in PPLX_CODES][: 255 - 26]
+PPLX_SPECIAL = ["<|im_start|>", "<|im_end|>", "<think>", "</think>"]
+PPLX_SPECIAL += ["<|vision_start|>", "<|image_pad|>", "<|vision_end|>"]
+PPLX_WORDS = ["[UNK]", "system", "user", "assistant", "State", "Question", "Options", ":"]
+PPLX_WORDS += ["billing", "technical", "sales", "refund", "please", "crash", "now"]
+
+
+def write_pplx_tokenizer(folder: Path) -> None:
+    """A word-level tokenizer and decision config for a pplx folder without release files."""
+    words = PPLX_WORDS + PPLX_SPECIAL + PPLX_CODES
+    tokenizer = Tokenizer(
+        models.WordLevel({word: i for i, word in enumerate(words)}, unk_token="[UNK]")
+    )
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.add_special_tokens(PPLX_SPECIAL)
+    tokenizer.save(str(folder / "tokenizer.json"))
+    config = {
+        "format_version": 1,
+        "codes": PPLX_CODES,
+        "token_ids": [words.index(code) for code in PPLX_CODES],
+        "temperature": 1.0087417621345625,
+        "attention_mode": "noncausal_full_attention",
+        "pooling": "last",
+    }
+    (folder / "decision_config.json").write_text(json.dumps(config, indent=2) + "\n")
+
+
 def _random(name: str, shape: tuple[int, ...], seed: int):
     """Weights drawn with NumPy, seeded by name, so they never depend on the MLX version."""
     import zlib
@@ -187,7 +215,9 @@ def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> P
     no ``lm_head``), the vision tower shares the first shard with the
     embeddings, as in the release. The vocabulary has the release's size;
     ``files_from`` (a release folder) supplies the tokenizer, processor and
-    decision config, which are not written otherwise.
+    decision config. Without it the folder gets a word-level tokenizer
+    (``PPLX_WORDS``, the prompt's special tokens and the answer codes) and a
+    decision config with the release's codes and temperature.
     """
     import shutil
 
@@ -234,8 +264,11 @@ def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> P
     mx.save_safetensors(
         str(folder / "readout.safetensors"), {"weight": mx.array(readout)}, {"format": "pt"}
     )
-    for name in PPLX_FILES if files_from else ():
-        shutil.copy(Path(files_from) / name, folder / name)
+    if files_from:
+        for name in PPLX_FILES:
+            shutil.copy(Path(files_from) / name, folder / name)
+    else:
+        write_pplx_tokenizer(folder)
     (folder / "LICENSE").write_text("test licence\n")
     return folder
 

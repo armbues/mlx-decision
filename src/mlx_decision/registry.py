@@ -146,6 +146,15 @@ register_family(
     ),
 )
 
+register_family(
+    "pplx",
+    detect=lambda path: (
+        (path / "decision_config.json").exists() and (path / "readout.safetensors").exists()
+    ),
+    loader="mlx_decision.models.pplx.model:load",
+    weight_files="mlx_decision.models.pplx.model:weight_files",
+)
+
 # The encoder and tokenizer folders plus the files at the top; the Laya repo
 # also holds other checkpoints in sub-folders, Julia's its PyTorch code.
 _MARKER_FILES = ("model.safetensors", "encoder/*", "tokenizer/*", "README.md", "LICENSE*")
