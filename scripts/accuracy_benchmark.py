@@ -49,7 +49,11 @@ comparable between models run with this script, and only roughly with
 published numbers. Every example has a stable id. ``local`` writes FILE as
 it goes (after each benchmark, every 100 examples and when interrupted)
 and resumes from it: examples already answered are not asked again.
-``report`` prints a Markdown table of one or more result files.
+``report`` prints a Markdown table of one or more result files: accuracy,
+macro-F1 and ECE (expected calibration error of the top probability) in
+percent, for score questions also the mean absolute error of the expected
+level, and how many examples were refused or truncated (``--json``: the
+numbers).
 """
 
 import argparse
@@ -609,32 +613,73 @@ def ece(records: list[dict], bins: int = 10) -> float:
     return total
 
 
+def mae(records: list[dict]) -> float | None:
+    """Mean absolute error of the expected level against the gold level (score)."""
+    errors = [abs(r["score"] - int(r["gold"])) for r in records if "score" in r]
+    return statistics.mean(errors) if errors else None
+
+
+def metrics(records: list[dict]) -> dict:
+    """Accuracy and macro-F1 over all records (refused ones are wrong); ECE and MAE
+    over the answered ones. ``noul`` predictions are yes at 0.5 or more."""
+    result = {
+        "n": len(records),
+        "refused": sum("refused" in r for r in records),
+        "truncated": sum(bool(r.get("truncated")) for r in records),
+        "accuracy": sum(r["predicted"] == r["gold"] for r in records) / len(records),
+        "macro_f1": macro_f1(records),
+        "ece": ece(records),
+    }
+    if any("score" in r for r in records):
+        result["mae"] = mae(records)
+    return result
+
+
+def cell(m: dict) -> str:
+    text = f"{100 * m['accuracy']:.1f} / {100 * m['macro_f1']:.1f} / {100 * m['ece']:.1f}"
+    if "mae" in m:
+        text += f" / MAE {m['mae']:.2f}"
+    count = [str(m["n"])]
+    if m["refused"]:
+        count.append(f"{m['refused']} refused")
+    if m["truncated"]:
+        count.append(f"{m['truncated']} truncated")
+    return f"{text} ({', '.join(count)})"
+
+
 def report(args) -> None:
     runs = [json.loads(Path(path).read_text()) for path in args.results]
+    names = [name for suite in SUITES.values() for name in suite]
+    names = [n for n in names if any(n in run["benchmarks"] for run in runs)]
+    table = [
+        {
+            "model": run["model"],
+            "file": path,
+            "benchmarks": {
+                name: "n/a"
+                if name in run.get("not_applicable", {})
+                else metrics(run["benchmarks"][name])
+                if run["benchmarks"].get(name)
+                else None
+                for name in names
+            },
+        }
+        for path, run in zip(args.results, runs, strict=True)
+    ]
+    if args.json:
+        print(json.dumps(table, indent=2))
+        return
     lines = [
         "| Benchmark | "
         + " | ".join(f"{run['model']}: acc / macro-F1 / ECE (n)" for run in runs)
         + " |",
         "|---|" + "---|" * len(runs),
     ]
-    names = [name for suite in SUITES.values() for name in suite]
-    for name in [n for n in names if any(n in run["benchmarks"] for run in runs)]:
+    for name in names:
         cells = []
-        for run in runs:
-            records = run["benchmarks"].get(name, [])
-            if name in run.get("not_applicable", {}):
-                cells.append("n/a")
-                continue
-            if not records:
-                cells.append("-")
-                continue
-            accuracy = sum(r["predicted"] == r["gold"] for r in records) / len(records)
-            refused = sum("refused" in r for r in records)
-            count = f"{len(records)}, {refused} refused" if refused else f"{len(records)}"
-            cells.append(
-                f"{100 * accuracy:.1f} / {100 * macro_f1(records):.1f} / "
-                f"{100 * ece(records):.1f} ({count})"
-            )
+        for column in table:
+            m = column["benchmarks"][name]
+            cells.append(m if m == "n/a" else cell(m) if m else "-")
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     print("\n".join(lines))
 
@@ -676,6 +721,7 @@ def main() -> None:
     local_parser.add_argument("--out", type=Path, required=True, help="results file (JSON)")
     report_parser = commands.add_parser("report", help="Markdown table of result files")
     report_parser.add_argument("results", nargs="+", help="result files from local")
+    report_parser.add_argument("--json", action="store_true", help="the metrics as JSON")
     args = parser.parse_args()
     try:
         {"local": local, "report": report}[args.command](args)
