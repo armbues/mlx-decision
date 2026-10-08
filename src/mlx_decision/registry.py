@@ -74,12 +74,25 @@ def detect_family(path: Path) -> Family:
     raise ValueError(f"{path}: not a supported decision model (known families: {known})")
 
 
+def loader_parameters(family: Family) -> dict[str, inspect.Parameter] | None:
+    """The loader's parameters by name; None when it takes any keyword."""
+    parameters = inspect.signature(resolve(family.loader)).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return None
+    return dict(parameters)
+
+
+def accepted_options(family: Family, options: dict) -> dict:
+    """The options the family's loader takes."""
+    parameters = loader_parameters(family)
+    if parameters is None:
+        return dict(options)
+    return {name: value for name, value in options.items() if name in parameters}
+
+
 def check_options(family: Family, options: dict) -> None:
     """Fail unless the family's loader takes every option."""
-    accepted = inspect.signature(resolve(family.loader)).parameters
-    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in accepted.values()):
-        return
-    unknown = [name for name in options if name not in accepted]
+    unknown = [name for name in options if name not in accepted_options(family, options)]
     if unknown:
         raise ValueError(f"{family.name} models do not take {', '.join(unknown)}")
 

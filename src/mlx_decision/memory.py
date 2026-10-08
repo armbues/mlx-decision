@@ -92,15 +92,21 @@ def gb(size: int) -> str:
 
 
 def check_fits(
-    path: Path, options: dict | None = None, budget: int | None = None, name: str | None = None
+    path: Path,
+    options: dict | None = None,
+    budget: int | None = None,
+    name: str | None = None,
+    extra: int = 0,
 ) -> int:
     """Raise ``ModelTooLargeError`` unless the model fits; returns the bytes it needs.
 
     ``budget`` defaults to the GPU's recommended working set. ``name`` is
     how the model is named in the message (default: the folder's name).
+    ``extra`` is memory the model takes on top of its weights and margin
+    (kept prefixes).
     """
     weights = weight_bytes(path, options)
-    required = round(weights * MARGIN)
+    required = round(weights * MARGIN) + extra
     limit_name = "the memory budget"
     if budget is None:
         budget, limit_name = working_set(), "this Mac's GPU working set"
@@ -108,8 +114,9 @@ def check_fits(
         return required
     name = name or path.resolve().name
     message = (
-        f"{name} needs about {gb(required)} ({gb(weights)} of weights plus 10%); "
-        f"{limit_name} is {gb(budget)}."
+        f"{name} needs about {gb(required)} ({gb(weights)} of weights plus 10%"
+        + (f", plus {gb(extra)} for kept prefixes" if extra else "")
+        + f"); {limit_name} is {gb(budget)}."
     )
     # A converted folder (marker file) cannot be converted again.
     if detect_family(path).converter is not None and not (path / MARKER_FILE).exists():
