@@ -7,9 +7,12 @@ usage:
 
 Two suites of benchmarks:
 
-- ``coverage`` (default): complete evaluation splits, each checked against
-  the pinned Hub commit it was saved from (row count and a digest of the
-  rows), so results stay comparable as the datasets change on the Hub.
+- ``coverage`` (default): TREC-6 (answer type, ``choice``), TweetEval
+  Offensive (``noul``), ANLI round 3 (``choice``), OpenBookQA (``choice``)
+  and SST-5 (sentiment, ``score``): complete evaluation splits, 5,270
+  examples, each checked against the pinned Hub commit it was saved from
+  (row count and a digest of the rows), so results stay comparable as the
+  datasets change on the Hub.
 - ``classic``: AG News, DAIR Emotion, ANLI r1-r3, BANKING77 and MMLU,
   500 examples of each, sampled with a fixed seed.
 
@@ -23,6 +26,18 @@ dependency of this package; ``pip install datasets``) as ``DIR/<org>/<name>``:
   # coverage suite, at the commits the script checks
   load_dataset("facebook/anli", revision="8e4813d81f46d313dac7892e1c28076917cfcdf9"
                ).save_to_disk("DIR/facebook/anli")  # all splits, also for classic
+  load_dataset("cardiffnlp/tweet_eval", "offensive", split="test",
+               revision="b3a375baf0f409c77e6bc7aa35102b7b3534f8be"
+               ).save_to_disk("DIR/cardiffnlp/tweet_eval")
+  load_dataset("CogComp/trec", split="test",  # the Hub's Parquet conversion
+               revision="65752bf53af25bc935a0dce92fb5b6c930728450"
+               ).save_to_disk("DIR/CogComp/trec")
+  load_dataset("allenai/openbookqa", "main", split="test",
+               revision="388097ea7776314e93a529163e0fea805b8a6454"
+               ).save_to_disk("DIR/allenai/openbookqa")
+  load_dataset("SetFit/sst5", split="test",
+               revision="e51bdcd8cd3a30da231967c1a249ba59361279a3"
+               ).save_to_disk("DIR/SetFit/sst5")
   # classic suite
   load_dataset("fancyzhx/ag_news", split="test").save_to_disk("DIR/fancyzhx/ag_news")
   load_dataset("dair-ai/emotion", split="test").save_to_disk("DIR/dair-ai/emotion")
@@ -70,6 +85,25 @@ NLI = {
     "neutral": "The premise neither proves nor contradicts the hypothesis",
     "contradiction": "The premise shows that the hypothesis is false",
 }
+# TREC's six coarse answer types, in its label order (ABBR, ENTY, DESC, HUM, LOC, NUM).
+TREC_TYPES = {
+    "abbreviation": "An abbreviation, or what an abbreviation stands for",
+    "entity": "A thing: an object, animal, plant, color, event, food, product, "
+    "substance, language, term or other entity",
+    "description": "A description, definition, manner or reason",
+    "human": "A person or a group of people, or a description of one",
+    "location": "A place: a city, country, state, mountain or other location",
+    "numeric": "A number: a count, date, distance, amount of money, percentage, "
+    "period, speed, temperature, size or weight",
+}
+# TweetEval's offensive class follows OffensEval 2019's definition.
+OFFENSIVE_CRITERIA = {
+    "true": "It contains profanity or swear words, or a targeted offense such as an "
+    "insult or a threat, veiled or direct",
+    "false": "It contains no profanity and no targeted offense",
+}
+# SST-5's labels 0 to 4, in order: the score level is the label.
+SENTIMENT = ["Very negative", "Negative", "Neutral", "Positive", "Very positive"]
 
 
 def load(datasets_dir: Path, name: str):
@@ -274,6 +308,106 @@ def mmlu(datasets_dir: Path) -> list[dict]:
     ]
 
 
+def trec(datasets_dir: Path) -> list[dict]:
+    _, rows = load_source(datasets_dir, TREC)
+    types = list(TREC_TYPES)
+    return [
+        {
+            "id": f"trec:{i}",
+            "state": row["text"],
+            "questions": {
+                "answer_type": {
+                    "type": "choice",
+                    "instructions": "What kind of answer does this question ask for?",
+                    "criteria": TREC_TYPES,
+                }
+            },
+            "gold": types[row["coarse_label"]],
+        }
+        for i, row in enumerate(rows)
+    ]
+
+
+def offensive(datasets_dir: Path) -> list[dict]:
+    _, rows = load_source(datasets_dir, OFFENSIVE)
+    return [
+        {
+            "id": f"offensive:{i}",
+            "state": row["text"],
+            "questions": {
+                "offensive": {
+                    "type": "noul",
+                    "instructions": "Is this tweet offensive?",
+                    "criteria": OFFENSIVE_CRITERIA,
+                }
+            },
+            "gold": "true" if row["label"] == 1 else "false",
+        }
+        for i, row in enumerate(rows)
+    ]
+
+
+def anli_r3(datasets_dir: Path) -> list[dict]:
+    data, rows = load_source(datasets_dir, ANLI_R3)
+    labels = data.features["label"].names
+    return [
+        {
+            "id": f"anli_r3:{row['uid']}",
+            "state": {"premise": row["premise"], "hypothesis": row["hypothesis"]},
+            "questions": {
+                "relation": {
+                    "type": "choice",
+                    "instructions": "How does the premise relate to the hypothesis?",
+                    "criteria": NLI,
+                }
+            },
+            "gold": labels[row["label"]],
+        }
+        for row in rows
+    ]
+
+
+def openbookqa(datasets_dir: Path) -> list[dict]:
+    _, rows = load_source(datasets_dir, OPENBOOKQA)
+    return [
+        {
+            "id": f"openbookqa:{row['id']}",
+            "state": row["question_stem"],
+            "questions": {
+                "answer": {
+                    "type": "choice",
+                    "instructions": "Which option answers or completes this science "
+                    "question correctly?",
+                    "criteria": dict(
+                        zip(row["choices"]["label"], row["choices"]["text"], strict=True)
+                    ),
+                }
+            },
+            "gold": row["answerKey"],
+        }
+        for row in rows
+    ]
+
+
+def sst5(datasets_dir: Path) -> list[dict]:
+    _, rows = load_source(datasets_dir, SST5)
+    return [
+        {
+            "id": f"sst5:{i}",
+            "state": row["text"],
+            "questions": {
+                "sentiment": {
+                    "type": "score",
+                    "instructions": "How positive is the sentiment of this movie review?",
+                    "criteria": SENTIMENT,
+                }
+            },
+            "gold": str(row["label"]),
+        }
+        for i, row in enumerate(rows)
+    ]
+
+
 @dataclass(frozen=True)
 class Benchmark:
     make: Callable[[Path], list[dict]]  # every example of the split, in order
@@ -281,7 +415,13 @@ class Benchmark:
 
 
 SUITES: dict[str, dict[str, Benchmark]] = {
-    "coverage": {},
+    "coverage": {
+        "trec": Benchmark(trec, TREC),
+        "offensive": Benchmark(offensive, OFFENSIVE),
+        "anli_r3": Benchmark(anli_r3, ANLI_R3),
+        "openbookqa": Benchmark(openbookqa, OPENBOOKQA),
+        "sst5": Benchmark(sst5, SST5),
+    },
     "classic": {
         "ag_news": Benchmark(ag_news),
         "emotion": Benchmark(emotion),
@@ -313,14 +453,28 @@ def wire(example: dict) -> dict:
 
 
 def record(answer: dict, gold: str) -> dict:
+    """What the metrics need of an answer: ``predicted`` is an option id, a level
+    (as its string key) or "true" / "false" (noul, at 0.5)."""
+    if answer["type"] == "noul":
+        return {
+            "gold": gold,
+            "predicted": "true" if answer["noul"] >= 0.5 else "false",
+            "p_max": max(answer["noul"], 1 - answer["noul"]),
+            "noul": answer["noul"],
+        }
     probabilities = answer["probabilities"]
-    return {
+    result = {
         "gold": gold,
-        "predicted": answer["choice"],
+        "predicted": max(probabilities, key=probabilities.get),
         "p_max": max(probabilities.values()),
         "confidence": answer["confidence"],
         "probabilities": probabilities,
     }
+    if answer["type"] == "score":
+        result["score"] = answer["score"]
+    else:
+        result["predicted"] = answer["choice"]
+    return result
 
 
 def write(path: Path, results: dict) -> None:
