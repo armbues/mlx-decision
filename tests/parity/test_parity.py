@@ -38,7 +38,7 @@ def request(case_id: str):
 
 
 def image_tokens(case_id: str, clef_path: Path) -> list[int]:
-    from mlx_decision.models.clef.model import prepare_images
+    from mlx_decision.models.qwen import prepare_images
 
     if not REQUESTS[case_id].get("images"):
         return []

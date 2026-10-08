@@ -92,7 +92,7 @@ def test_tokens_match():
     for case_id, reference in REFERENCE.items():
         if REQUESTS[case_id].get("images"):
             pytest.importorskip("PIL")
-            from mlx_decision.models.clef.model import prepare_images
+            from mlx_decision.models.qwen import prepare_images
 
             images = prepare_images(request(case_id).images, folder, None)
             counts = [image.tokens for image in images]

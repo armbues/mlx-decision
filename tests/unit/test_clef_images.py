@@ -146,7 +146,7 @@ def test_images_over_the_limit_are_never_decoded(folder, monkeypatch):
 
 
 def test_a_cap_below_the_minimum_lowers_the_minimum(tmp_path):
-    from mlx_decision.models.clef.model import image_config
+    from mlx_decision.models.qwen import image_config
 
     assert image_config(tmp_path, None).min_pixels == 65536  # the processor's default
     config = image_config(tmp_path, 1024)

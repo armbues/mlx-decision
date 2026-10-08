@@ -141,3 +141,61 @@ def test_decision_config_is_checked(folder, tmp_path, changes, message):
 def test_causal_attention_mode(folder, tmp_path):
     model = mlx_decision.load(edit_config(folder, tmp_path, attention_mode="causal"))
     assert model.backend.backbone.language_model.model.causal
+
+
+def png(width: int, height: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (200, 30, 30)).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_images_take_64_to_256_tokens_each(model):
+    question = {"refund": QUESTIONS["refund"]}
+    plain = model.decide("please", question).usage.input_tokens
+    small = model.decide("please", question, images=[png(10, 10)]).usage.input_tokens
+    large = model.decide("please", question, images=[png(2000, 1000)]).usage.input_tokens
+    both = model.decide("please", question, images=[png(10, 10), png(2000, 1000)])
+    # Each image adds its pad tokens plus the start and end markers.
+    assert small - plain == 64 + 2
+    assert 200 < large - plain - 2 <= 256
+    assert both.usage.input_tokens - plain == (small - plain) + (large - plain)
+
+
+def test_vision_tower_loads_on_request(folder):
+    model = mlx_decision.load(folder)
+    assert model.info()["supports_images"]
+    assert model.backend.vision is None
+    model.decide("please", {"refund": QUESTIONS["refund"]})
+    assert model.backend.vision is None
+    model.decide("please", {"refund": QUESTIONS["refund"]}, images=[png(64, 64)])
+    assert model.backend.vision is not None
+    assert mlx_decision.load(folder, vision=True).backend.vision is not None
+
+
+@pytest.mark.parametrize(
+    ("state", "instructions", "param"),
+    [
+        ("look at <|image_pad|> here", "refund", "state"),
+        ("please", "what is <|vision_start|>?", "questions.refund"),
+    ],
+)
+def test_image_markers_in_text_are_refused_with_images(model, state, instructions, param):
+    question = {"refund": {"type": "noul", "instructions": instructions}}
+    with pytest.raises(DecisionError, match="image markers") as error:
+        model.decide(state, question, images=[png(64, 64)])
+    assert error.value.param == param
+    assert model.decide(state, question).answers  # fine without images
+
+
+def test_images_count_against_the_limit(folder):
+    question = {"refund": QUESTIONS["refund"]}
+    model = mlx_decision.load(folder)
+    tokens = model.decide("please", question, images=[png(64, 64)]).usage.input_tokens
+    model = mlx_decision.load(folder, max_input_tokens=tokens - 1)
+    assert model.decide("please", question).answers
+    with pytest.raises(DecisionError, match="the limit is"):
+        model.decide("please", question, images=[png(64, 64)])

@@ -17,11 +17,13 @@ from pathlib import Path
 
 import mlx.core as mx
 import pytest
+from parity_images import open_image
 
 import mlx_decision
 from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
 from mlx_decision.models.pplx.model import PplxBackend, read_decision_config
+from mlx_decision.models.qwen import count_image_tokens, open_images, prepare
 from mlx_decision.types import parse_request
 from tiny_models import write_pplx
 
@@ -31,6 +33,7 @@ CASES += json.loads((HERE / "marker" / "requests.json").read_text())
 REQUESTS = {case["id"]: case for case in CASES}
 FIXTURE = json.loads((HERE / "pplx" / "reference.json").read_text())
 REFERENCE = FIXTURE["results"]
+CASE_IDS = [case["id"] for case in CASES]
 TEXT_IDS = [case["id"] for case in CASES if not case.get("images")]
 # Largest allowed difference of any probability against the reference (CPU,
 # float32; measured about 1e-6).
@@ -47,6 +50,12 @@ END_TO_END = [
     "special_tokens_in_state",
     "number_state",
     "empty_string_state",
+    "image_dog_claim",
+    "image_tall_painting",
+    "image_three",
+    "image_no_state_text",
+    "image_enlarged",
+    "image_tiny",
 ]
 
 
@@ -74,31 +83,45 @@ def release() -> Path:
 
 @pytest.fixture(scope="module")
 def encoder(release) -> PplxBackend:
-    """A backend without weights: enough to tokenize."""
+    """A backend without weights: enough to tokenize and prepare images."""
     codes, temperature, _ = read_decision_config(release)
     tokenizer = load_tokenizer(release)
-    return PplxBackend("tokens", None, None, tokenizer, codes, temperature, 8192)
+    return PplxBackend("tokens", None, None, tokenizer, codes, temperature, 8192, release)
+
+
+def request(case_id: str):
+    case = REQUESTS[case_id]
+    body = {"state": case["state"], "questions": case["questions"]}
+    if case.get("images"):
+        body["images"] = [open_image(spec) for spec in case["images"]]
+    return parse_request(body)
 
 
 def digest(ids: list[int]) -> str:
     return hashlib.sha256(json.dumps(ids).encode()).hexdigest()
 
 
-@pytest.mark.parametrize("case_id", TEXT_IDS)
+@pytest.mark.parametrize("case_id", CASE_IDS)
 def test_token_ids_equal_the_release(encoder, case_id):
-    case = REQUESTS[case_id]
+    """Token ids as the release's processor makes them, image grids included."""
     expected = REFERENCE[case_id]
-    request = parse_request({"state": case["state"], "questions": case["questions"]})
+    body = request(case_id)
+    config = encoder.image_config()
+    opened = open_images(body.images or [])
+    counts = [count_image_tokens(image, index, config) for index, image in opened]
+    grids = [list(prepare(image, index, config).grid) for index, image in opened]
+    for reference in expected.values():
+        assert grids == reference.get("image_grids", [])
     over = [qid for qid, e in expected.items() if "refused" in e]
     if over:
         # The whole request is refused, naming the first question over the limit.
         with pytest.raises(DecisionError, match="the limit is 8192") as error:
-            encoder.encode(request)
+            encoder.encode(body, counts)
         assert error.value.param == f"questions.{over[0]}"
-        request.questions = {q: v for q, v in request.questions.items() if q not in over}
-        if not request.questions:
+        body.questions = {q: v for q, v in body.questions.items() if q not in over}
+        if not body.questions:
             return
-    for question in encoder.encode(request):
+    for question in encoder.encode(body, counts):
         reference = expected[question.question_id]
         assert len(question.input_ids) == reference["tokens"], question.question_id
         assert digest(question.input_ids) == reference["ids_sha256"], question.question_id
@@ -143,10 +166,9 @@ def tiny_with_tokenizer(release, tmp_path_factory):
 
 @pytest.mark.parametrize("case_id", END_TO_END)
 def test_tiny_model_end_to_end(tiny_with_tokenizer, case_id):
-    """The whole path: prompt, real tokenizer, passes, answers."""
-    case = REQUESTS[case_id]
+    """The whole path: prompt, real tokenizer, images, passes, answers."""
     with mx.stream(mx.cpu):
-        result = tiny_with_tokenizer.decide(case["state"], case["questions"])
+        result = tiny_with_tokenizer.decide_request(request(case_id))
     assert not result.truncated
     tokens = 0
     for question_id, answer in result.answers.items():
