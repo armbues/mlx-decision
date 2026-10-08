@@ -16,17 +16,17 @@ SHARD_BYTES = 5 * 2**30
 VISION_PREFIXES = ("model.visual.", "visual.")
 
 
-def load_text_model(path: str | Path) -> Model:
+def load_text_model(path: str | Path, lm_head: bool = True, causal: bool = True) -> Model:
     """Build the text model described by ``config.json`` and load its weights.
 
     Vision weights in the folder are ignored. Weights keep the precision they
     are stored in. A folder written by ``save_text_model`` with quantization
     has a ``quantization`` entry in its config; layers are quantized where
-    the saved weights have scales.
+    the saved weights have scales. ``lm_head`` and ``causal`` as for ``Model``.
     """
     path = Path(path)
     config = json.loads((path / "config.json").read_text())
-    model = Model(ModelArgs.from_dict(config))
+    model = Model(ModelArgs.from_dict(config), lm_head=lm_head, causal=causal)
 
     weight_files = sorted(path.glob("model*.safetensors"))
     if not weight_files:

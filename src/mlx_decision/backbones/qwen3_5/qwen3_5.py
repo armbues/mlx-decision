@@ -10,7 +10,9 @@
 # support, and mixture-of-experts layers.
 # Added: optional per-axis position ids for image and video tokens, and a row
 # lookup into the output embeddings that also works when they are quantized,
-# and sanitizing a part of the weights (one shard) with the layout given.
+# and sanitizing a part of the weights (one shard) with the layout given; a
+# non-causal mode for the full-attention layers, a model without lm_head,
+# and the weight names of checkpoints saved without the ``model.`` prefix.
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
@@ -220,8 +222,11 @@ class DecoderLayer(nn.Module):
 
 
 class Qwen3_5TextModel(nn.Module):
-    def __init__(self, args: TextModelArgs):
+    def __init__(self, args: TextModelArgs, causal: bool = True):
         super().__init__()
+        # Non-causal: the full-attention layers see the whole sequence; the
+        # Gated DeltaNet layers stay causal (they are recurrent).
+        self.causal = causal
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
             DecoderLayer(args=args, layer_idx=i) for i in range(args.num_hidden_layers)
@@ -251,7 +256,11 @@ class Qwen3_5TextModel(nn.Module):
             hidden_states = self.embed_tokens(inputs)
         if cache is None:
             cache = [None] * len(self.layers)
-        mask = create_attention_mask(hidden_states, cache[self.fa_idx])
+        elif not self.causal:
+            raise ValueError("a non-causal pass cannot continue from a cache")
+        mask = None
+        if self.causal:
+            mask = create_attention_mask(hidden_states, cache[self.fa_idx])
         for layer, c in zip(self.layers, cache):
             hidden_states = layer(
                 hidden_states, mask=mask, position_ids=position_ids, cache=c
@@ -265,12 +274,12 @@ class Qwen3_5TextModel(nn.Module):
 
 
 class TextModel(nn.Module):
-    def __init__(self, args: TextModelArgs):
+    def __init__(self, args: TextModelArgs, lm_head: bool = True, causal: bool = True):
         super().__init__()
         self.args = args
         self.model_type = args.model_type
-        self.model = Qwen3_5TextModel(args)
-        if not args.tie_word_embeddings:
+        self.model = Qwen3_5TextModel(args, causal)
+        if lm_head and not args.tie_word_embeddings:
             self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
     def __call__(
@@ -350,11 +359,16 @@ class ModelArgs(BaseModelArgs):
 
 
 class Model(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: ModelArgs, lm_head: bool = True, causal: bool = True):
+        """``lm_head=False`` leaves out the output embeddings (untied models
+        saved without them); ``causal=False`` lets the full-attention layers
+        see the whole sequence."""
         super().__init__()
         self.args = args
         self.model_type = args.model_type
-        self.language_model = TextModel(TextModelArgs.from_dict(args.text_config))
+        self.language_model = TextModel(
+            TextModelArgs.from_dict(args.text_config), lm_head, causal
+        )
 
     def __call__(
         self,
@@ -371,12 +385,15 @@ class Model(nn.Module):
     def sanitize(self, weights, release: Optional[bool] = None):
         sanitized = {}
         for key, value in weights.items():
-            if key.startswith("vision_tower") or key.startswith("model.visual"):
+            if key.startswith(("vision_tower", "model.visual", "visual.")):
                 continue
             if key.startswith("model.language_model"):
                 key = key.replace("model.language_model", "language_model.model")
-            elif key.startswith("language_model."):
+            elif key.startswith(("language_model.model.", "language_model.lm_head.")):
                 pass
+            elif key.startswith("language_model."):
+                # Saved from the bare backbone, without the ``model.`` prefix.
+                key = key.replace("language_model.", "language_model.model.", 1)
             else:
                 key = "language_model." + key
             sanitized[key] = value
