@@ -21,6 +21,19 @@ change the interface).
   token for token; probabilities were compared with that code on a small
   random model in the release's layout.
 
+### Changed
+
+- The accuracy results in the README and `docs/BENCHMARKS.md` now come
+  from five complete public test splits that cover all three question
+  types: TREC (`choice`), TweetEval Offensive (`noul`), ANLI round 3,
+  OpenBookQA (`choice`) and SST-5 (`score`), 5,270 examples per model,
+  for every supported model including pplx, and Jev for comparison.
+  They replace the earlier table of 500 examples from five `choice`
+  benchmarks. `scripts/accuracy_benchmark.py` runs this suite by default
+  (`--suite classic` for the earlier one), checks each dataset against
+  the Hub commit it was saved from, reports macro-F1 for `noul` and the
+  mean absolute error for `score`, and resumes an interrupted run.
+
 ### Fixed
 
 - Clef split text with combining marks (Hindi, Bengali, Thai, Arabic

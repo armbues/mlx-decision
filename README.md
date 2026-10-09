@@ -12,9 +12,9 @@ or the command line, serve it over HTTP with an API compatible with
 
 | Model | Size | Input | Limit | Memory | Short request | Speedup | Good at |
 |---|---|---|---|---|---|---|---|
-| Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | 3.5x | knowledge, entailment, many options, images |
-| Cloudflare's [clef](https://huggingface.co/Cloudflare/clef) | 27B | text, images | 16,384 tokens | 54 GB (8-bit: 32 GB, 4-bit: 19 GB) | 1.1 s (8-bit) | 3.7x (bf16) | as clef-flash, no more accurate on our benchmarks (8-bit) |
-| Perplexity's [pplx-decider-v1.1-27b](https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b) | 27B | text, images | 8,192 tokens per question | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | 0.83 s (8-bit) | - | as clef in a first spot check (8-bit) |
+| Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | 3.5x | knowledge, classification, many options, images |
+| Cloudflare's [clef](https://huggingface.co/Cloudflare/clef) | 27B | text, images | 16,384 tokens | 54 GB (8-bit: 32 GB, 4-bit: 19 GB) | 1.1 s (8-bit) | 3.7x (bf16) | as clef-flash, a little better on entailment (8-bit) |
+| Perplexity's [pplx-decider-v1.1-27b](https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b) | 27B | text, images | 8,192 tokens per question | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | 0.83 s (8-bit) | - | knowledge, entailment, images; the most accurate here (8-bit) |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
 | [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | English text | 1,024 tokens per question | 1.7 GB | 16 ms | 2.9x | as laya, tuned for typed decision workflows |
 | [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | text, 100+ languages | 1,024 tokens per question | 1.6 GB | 8 ms | 2.5x | topic classification in many languages |
@@ -438,26 +438,34 @@ state once and answers all questions together; pplx, Laya and Julia read
 each question on its own, with the whole state, so their input limit
 applies per question and their time grows with the number of questions.
 
-Accuracy on five public benchmarks, 500 test examples each, with the same
-questions and option descriptions for every model (preliminary; Jev is
-TypeSafe AI's hosted model, for comparison):
+Accuracy on five public benchmarks, the complete test split of each
+(5,270 examples), covering the three question types, with the same
+questions and option descriptions for every model (Jev is TypeSafe AI's
+hosted model, for comparison):
 
-| Model | AG News (topic, 4 options) | DAIR Emotion (6) | ANLI (entailment, 3) | BANKING77 (intent, 77) | MMLU (knowledge, 4) |
+| Model | TREC (answer type, `choice`, 6 options) | TweetEval Offensive (`noul`) | ANLI round 3 (entailment, `choice`, 3) | OpenBookQA (science, `choice`, 4) | SST-5 (sentiment, `score`, 5 levels) |
 |---|---|---|---|---|---|
-| clef-flash | 91.4 | 60.0 | 58.2 | **96.0** | **93.0** |
-| clef (8-bit) | 91.4 | 62.2 | 60.2 | 93.2 | 91.2 |
-| laya | **94.6** | 59.8 | 48.6 | 36.0 | 35.2 |
-| laya-typed-decisions | **94.6** | 61.2 | 47.4 | 36.2 | 37.6 |
-| laya-multilingual | 93.8 | 49.0 | 39.2 | 35.0 | 30.2 |
-| Julia-1 | 83.0 | **73.8** | 33.0 | n/a | 32.2 |
-| Jev | 86.4 | 62.2 | **71.6** | 80.2 | 91.6 |
+| clef-flash | **96.8** | 78.1 | 50.8 | 95.4 | 57.6 / 0.51 |
+| clef (8-bit) | 96.4 | **81.0** | 55.2 | 95.4 | 57.6 / 0.51 |
+| pplx (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | **58.0** / **0.47** |
+| laya | 79.0 | 61.9 | 39.5 | 39.2 | 35.1 / 0.99 |
+| laya-typed-decisions | 78.8 | 68.4 | 38.5 | 41.4 | 44.3 / 0.68 |
+| laya-multilingual | 89.8 | 71.9 | 35.5 | 29.2 | 27.7 / 1.40 |
+| Julia-1 | 16.0 | 37.9 | 33.2 | 33.2 | 36.7 / 0.82 |
+| Jev | 92.8 | 77.7 | **69.2** | 96.0 | 57.7 / 0.49 |
 
-Accuracy in percent; macro-F1 and calibration error are in
-[docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md). The small models match or beat
-clef-flash on topic and emotion and are near chance on knowledge and
-entailment, as their model cards say. pplx is not in the table yet: on
-50 examples per benchmark its 8-bit copy got 80% right, Clef 27B (8-bit)
-83% of the same examples ([pplx](#pplx)). Each model matches its own
+Accuracy in percent for `choice`, macro-F1 in percent for `noul` (yes at
+a probability of 0.5 or more), and for `score` the accuracy of the most
+likely level and the mean absolute error of the expected level (in
+levels, lower is better). Macro-F1 and calibration error for every cell
+are in
+[docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md).
+The three large models are level with Jev or ahead of it on four of the
+five benchmarks; on entailment pplx comes close to Jev, Clef does not.
+The small models are near chance on entailment and science questions,
+as their model cards lead one to expect; Julia, made for emotion and
+routing, answers TREC almost only with its first two options and calls
+most tweets offensive. Each model matches its own
 reference code token for token on a fixed test set, with probabilities
 within 0.035 (clef-flash), 0.031 (clef), 0.004 (Laya) and 0.018 (Julia);
 pplx's probabilities were compared on a small random model in its layout
@@ -487,8 +495,9 @@ Peak memory at the full 16,384 tokens: clef-flash 19.0 GB in bf16 and
 [convert](#quantizing-clef-and-pplx-convert) makes one from a full download and
 offers mixed precision, which changes fewer answers than uniform 4-bit.
 
-Clef 27B is three to four times slower than clef-flash and was not more
-accurate on our benchmarks (8-bit, see the table above). In bf16 it
+Clef 27B is three to four times slower than clef-flash and only a little
+more accurate on our benchmarks, mainly on entailment, with better
+calibrated probabilities (8-bit, see the table above). In bf16 it
 matches Cloudflare's reference within 0.031 per probability (measured
 on an M2 Ultra, where it is 3.7 times faster than the reference); the
 8-bit copy changed one of 177 answers, the 4-bit copy three.
@@ -557,10 +566,11 @@ between 64 and 256 tokens (the release's fixed bounds, so
 `--max-image-mp` does not apply), and the vision tower loads with the
 first image request.
 
-How accurate it is here has only been spot-checked: on 50 examples of
-each benchmark in [Models](#models), the 8-bit copy and Clef 27B (8-bit)
-got AG News 44 / 43, DAIR Emotion 33 / 32, ANLI 37 / 36, BANKING77 43 /
-48 and MMLU 43 / 48 right. Perplexity reports a Decision Index of 61.6
+On the benchmarks in [Models](#models) the 8-bit copy is the most
+accurate local model overall: as good as Clef 27B (8-bit) on answer type,
+offensive language and sentiment, a little better on science questions,
+and well ahead on entailment (ANLI round 3: 66.8% against 55.2%; Jev
+69.2%). Perplexity reports a Decision Index of 61.6
 for the release (Jev: 57.9). Its prompt and token ids match the
 release's code exactly; its probabilities were compared with that code on
 a small random model in the same layout, since the release's code needs
@@ -572,8 +582,8 @@ Encoder models from Convai Innovations: laya and laya-typed-decisions
 (ModernBERT-large, English; non-Latin scripts fail, per Laya's README) and
 laya-multilingual (mmBERT-base). A state that does not fit is cut, keeping
 the end of a list such as a conversation, and long option lists are
-shortened to fit the model's question budget (which is why BANKING77's 77
-options cost so much). `--max-input-tokens` raises the limit up to 8,192.
+shortened to fit the model's question budget (which costs accuracy when
+there are many options). `--max-input-tokens` raises the limit up to 8,192.
 Probabilities use Laya's calibrated temperatures, as its own package
 applies them.
 

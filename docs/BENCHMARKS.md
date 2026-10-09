@@ -287,35 +287,52 @@ largest difference 0.059), and bfloat16 was furthest off (Julia: 0.148).
 
 ## Accuracy
 
-Five public benchmarks, 500 test examples each (a fixed sample, seed 1234),
-with the same questions and option descriptions for every model
-(`scripts/accuracy_benchmark.py`). Accuracy / macro-F1 / ECE (expected
-calibration error of the top probability, lower is better), in percent.
-Jev is TypeSafe AI's hosted model; its column needs a Jev account.
+Five public benchmarks that together cover the three question types, each
+with its complete test split (5,270 examples per model), with the same
+questions and option descriptions for every model
+(`scripts/accuracy_benchmark.py`, suite `coverage`). Each split is checked
+against the Hub commit it was saved from (row count and a digest of the
+rows), so later changes on the Hub cannot change the numbers silently.
 
-| Benchmark | Options | clef-flash | clef (8-bit) | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
+| Benchmark | Split | Commit | Examples | Question |
+|---|---|---|---|---|
+| TREC (`CogComp/trec`) | test | `65752bf` | 500 | `choice`: kind of answer the question asks for, 6 coarse labels in words |
+| TweetEval Offensive (`cardiffnlp/tweet_eval`, `offensive`) | test | `b3a375b` | 860 | `noul`: is this tweet offensive? |
+| ANLI round 3 (`facebook/anli`) | test_r3 | `8e4813d` | 1,200 | `choice`: entailment, neutral or contradiction |
+| OpenBookQA (`allenai/openbookqa`, `main`) | test | `388097e` | 500 | `choice`: 4 answers, without the supporting fact |
+| SST-5 (`SetFit/sst5`) | test | `e51bdcd` | 2,210 | `score`: 5 levels from very negative to very positive |
+
+Accuracy / macro-F1 / ECE (expected calibration error of the top
+probability, lower is better), in percent; for SST-5 also the mean
+absolute error of the expected level, in levels. A `noul` answer counts
+as yes at a probability of 0.5 or more; a `score` answer's most likely
+level is its prediction. clef-flash ran in bf16, Clef 27B and pplx as
+8-bit copies; Jev is TypeSafe AI's hosted model (`typesafe/jev`, run on
+2026-10-08), and its column needs a Jev account.
+
+| Benchmark | clef-flash | clef (8-bit) | pplx (8-bit) | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
 |---|---|---|---|---|---|---|---|---|
-| AG News (topic) | 4 | 91.4 / 91.5 / 2.5 | 91.4 / 91.4 / 1.5 | 94.6 / 94.7 / 6.8 | 94.6 / 94.6 / 18.2 | 93.8 / 93.8 / 3.0 | 83.0 / 83.4 / 6.3 | 86.4 / 86.4 / 9.5 |
-| DAIR Emotion | 6 | 60.0 / 54.6 / 19.4 | 62.2 / 55.3 / 16.5 | 59.8 / 50.5 / 25.0 | 61.2 / 52.5 / 10.8 | 49.0 / 40.9 / 29.8 | 73.8 / 74.4 / 20.3 | 62.2 / 56.2 / 26.0 |
-| ANLI r1-r3 (entailment) | 3 | 58.2 / 57.9 / 14.1 | 60.2 / 59.9 / 14.6 | 48.6 / 48.5 / 34.6 | 47.4 / 46.9 / 25.2 | 39.2 / 38.7 / 48.7 | 33.0 / 31.0 / 52.2 | 71.6 / 71.9 / 11.5 |
-| BANKING77 (intent) | 77 | 96.0 / 95.8 / 3.5 | 93.2 / 92.9 / 2.8 | 36.0 / 31.5 / 51.9 | 36.2 / 31.7 / 15.3 | 35.0 / 32.7 / 44.7 | n/a | 80.2 / 79.4 / 8.2 |
-| MMLU | 4 | 93.0 / 93.0 / 6.0 | 91.2 / 91.2 / 3.2 | 35.2 / 34.5 / 11.1 | 37.6 / 37.5 / 2.7 | 30.2 / 29.9 / 16.2 | 32.2 / 32.2 / 51.2 | 91.6 / 91.6 / 3.7 |
+| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.8 / 4.3 |
+| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.5 / 77.7 / 3.6 |
+| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 69.2 / 69.4 / 13.0 |
+| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 3.1 |
+| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.7 / 55.3 / 17.2 / 0.49 |
 
 Notes:
-- Cloudflare publishes macro-F1 for clef-flash / Jev from its own prompts:
-  ANLI 59.1 / 74.8, BANKING77 90.9 / 79.7, MMLU (accuracy) 91.8 / 91.7.
-- Julia answers 2 to 20 options, so BANKING77 does not apply; 4 MMLU
-  examples have an option over its 48-token limit and count as wrong.
-- Laya cuts BANKING77's 77 options to a few tokens each to fit its question
-  budget, which costs most of the accuracy.
-- pplx has no full run yet. A spot check of its 8-bit copy on 50
-  examples of each benchmark (`--samples 50`; all of them are in the
-  500-example sample), against Clef 27B (8-bit) on the same examples,
-  correct answers: AG News 44 / 43, DAIR Emotion 33 / 32,
-  ANLI 37 / 36, BANKING77 43 / 48, MMLU 43 / 48 (80% / 83% overall; the
-  two gave the same answer on 213 of 250).
+- No model refused an example or had its input cut: every state fits
+  every model's limit, and every option list fits Julia's 2 to 20 options.
+- Clef 27B gains on clef-flash mainly on entailment and calibration; pplx
+  is the only local model close to Jev on ANLI round 3.
+- About 28% of the Offensive tweets are offensive. Laya marks too few of
+  them (laya: 65 of 860), Julia too many (726 of 860). On TREC, Julia
+  answers 453 of 500 questions with its first two options.
+- Run times on the M5 Pro, for the whole suite: Laya and Julia under a
+  minute, clef-flash 22 minutes, pplx (8-bit) 44, Clef 27B (8-bit) 74.
 
 ```bash
 python scripts/accuracy_benchmark.py local --datasets DIR --model MODEL --out results.json
 python scripts/accuracy_benchmark.py report results.json [more.json ...]
 ```
+
+How to save the datasets at the checked commits is in the script's
+docstring. `local` writes the result file as it goes and resumes from it.
