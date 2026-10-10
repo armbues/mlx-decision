@@ -12,7 +12,9 @@ the parity set is unchanged, so adding a model only runs that model
 (``--rerun`` ignores the cache). ``--reference`` takes another reference
 fixture, such as ``tests/parity/reference-clef.json`` from a larger Mac; when
 it also holds mlx-decision's bf16 results, those are the baseline (the first
-row), so only the quantized copies need to run here.
+row), so only the quantized copies need to run here. H2O-Lightning:
+``--reference tests/parity/h2o/reference-bf16.json`` (its parity set, images
+in states lifted out; answers compared before the yes/no floor).
 """
 
 import argparse
@@ -28,46 +30,95 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PARITY = ROOT / "tests" / "parity"
 MARGIN = 0.04
+# The request files of each parity set: Clef's, and H2O-Lightning's.
+SETS = {
+    "clef": ["requests.json"],
+    "h2o": ["requests.json", "marker/requests.json", "h2o/requests.json"],
+}
 
 
-def requests_digest() -> str:
+def requests_digest(kind: str = "clef") -> str:
     """Identifies the parity set a cached result was computed on."""
-    return hashlib.sha256((PARITY / "requests.json").read_bytes()).hexdigest()[:16]
+    digest = hashlib.sha256()
+    for name in SETS[kind]:
+        digest.update((PARITY / name).read_bytes())
+    return digest.hexdigest()[:16] if kind == "clef" else f"{kind}-{digest.hexdigest()[:16]}"
 
 
-def run_model(model: str, out: Path) -> None:
+def h2o_reference(fixture: dict) -> dict:
+    """H2O-Lightning's reference in the shape of Clef's: questions with option
+    ids and probabilities, before the floor; refused requests and questions left out."""
+    reference = {}
+    for case_id, entry in fixture["results"].items():
+        if "refused" in entry:
+            continue
+        questions = []
+        for question_id, result in entry.items():
+            if "refused" in result:
+                continue
+            answer = result["answer_no_floor"]
+            if answer["type"] == "noul":
+                probabilities = {"true": answer["noul"], "false": 1 - answer["noul"]}
+            else:
+                probabilities = answer["probabilities"]
+            questions.append(
+                {
+                    "id": question_id,
+                    "option_ids": list(probabilities),
+                    "probabilities": list(probabilities.values()),
+                }
+            )
+        reference[case_id] = {"questions": questions}
+    return reference
+
+
+def run_model(model: str, out: Path, kind: str = "clef") -> None:
     """Worker: answer the parity set with one model and write the numbers."""
     import mlx.core as mx
 
     import mlx_decision
     from mlx_decision.benchmark import forget_prefixes
+    from mlx_decision.errors import DecisionError
     from mlx_decision.types import parse_request
 
     sys.path.insert(0, str(PARITY))
     from parity_images import open_image
 
-    cases = json.loads((PARITY / "requests.json").read_text())
+    cases = []
+    for name in SETS[kind]:
+        cases += json.loads((PARITY / name).read_text())
     from mlx_decision.hub import resolve_model_path
     from mlx_decision.registry import detect_family
 
+    family = detect_family(resolve_model_path(model)).name
     # Clef: no image cap beyond the processor's own, as the reference.
-    clef = detect_family(resolve_model_path(model)).name == "clef"
-    options = {"max_image_pixels": None} if clef else {}
+    # H2O-Lightning: the answers before the floor, as compared.
+    options = {"clef": {"max_image_pixels": None}, "h2o": {"noul_floor": 0}}.get(family, {})
     start = time.perf_counter()
     loaded = mlx_decision.load(model, **options)
     load_seconds = time.perf_counter() - start
     active_after_load = mx.get_active_memory()
     # Image requests carry their images, as when the reference was computed.
-    requests = {
-        c["id"]: parse_request(
-            {
-                "state": c["state"],
-                "questions": c["questions"],
-                **({"images": [open_image(s) for s in c["images"]]} if c.get("images") else {}),
-            }
-        )
+    bodies = {
+        c["id"]: {
+            "state": c["state"],
+            "questions": c["questions"],
+            **({"images": [open_image(s) for s in c["images"]]} if c.get("images") else {}),
+        }
         for c in cases
     }
+    if kind == "clef":
+        requests = {case_id: parse_request(body) for case_id, body in bodies.items()}
+    else:
+        # As served: images in states lifted out; what the model refuses, left out.
+        requests = {}
+        for case_id, body in bodies.items():
+            try:
+                request = loaded.check(body)
+                loaded.backend.open_images(request)
+            except DecisionError:
+                continue
+            requests[case_id] = request
     loaded.backend.score(requests[cases[0]["id"]])  # warm-up
     mx.reset_peak_memory()
     probabilities, seconds = {}, {}
@@ -81,7 +132,7 @@ def run_model(model: str, out: Path) -> None:
         json.dumps(
             {
                 "model": Path(model).name,
-                "requests": requests_digest(),
+                "requests": requests_digest(kind),
                 "disk_gb": folder_gb(model),
                 "load_seconds": load_seconds,
                 "active_gb": active_after_load / 2**30,
@@ -155,12 +206,17 @@ def main() -> None:
         default=PARITY / "reference.json",
         help="reference fixture (default: clef-flash's); one with mlx results gives the baseline",
     )
-    parser.add_argument("--worker", nargs=2, metavar=("MODEL", "OUT"), help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--worker", nargs=3, metavar=("MODEL", "OUT", "SET"), help=argparse.SUPPRESS
+    )
     args = parser.parse_args()
     if args.worker:
-        run_model(args.worker[0], Path(args.worker[1]))
+        run_model(args.worker[0], Path(args.worker[1]), args.worker[2])
         return
     fixture = json.loads(args.reference.read_text())
+    kind = "h2o" if fixture.get("meta", {}).get("repo_id") == "h2oai/h2o-lightning-4b" else "clef"
+    if kind == "h2o":
+        fixture = {"results": h2o_reference(fixture)}
     if (
         "requests_sha256" in fixture
         and fixture["requests_sha256"]
@@ -190,14 +246,14 @@ def main() -> None:
                 cached
                 and cached.exists()
                 and not args.rerun
-                and json.loads(cached.read_text()).get("requests") == requests_digest()
+                and json.loads(cached.read_text()).get("requests") == requests_digest(kind)
             ):
                 print(f"cached {model}", file=sys.stderr, flush=True)
                 results[model] = json.loads(cached.read_text())
                 continue
             out = cached or Path(scratch) / "result.json"
             print(f"running {model} ...", file=sys.stderr, flush=True)
-            command = [sys.executable, __file__, "--worker", model, str(out)]
+            command = [sys.executable, __file__, "--worker", model, str(out), kind]
             subprocess.run(command, check=True)
             results[model] = json.loads(out.read_text())
 

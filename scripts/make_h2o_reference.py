@@ -1,6 +1,7 @@
-"""Run H2O-Lightning's serving code on the parity set; store token ids and tiny-model answers.
+"""Run H2O-Lightning's serving code on the parity set; store token ids and answers.
 
 usage: python scripts/make_h2o_reference.py [--release PATH] [--only ID,ID]
+       python scripts/make_h2o_reference.py --model PATH [--only ID,ID]
 
 The parity set is tests/parity/requests.json (text and image requests),
 tests/parity/marker/requests.json and tests/parity/h2o/requests.json
@@ -31,6 +32,15 @@ the image grids, and for questions of at most 4,096 tokens also the token
 ids, the label token ids, the tiny model's log-probabilities of the labels
 and the shim's answer with and without the yes/no floor. Existing entries
 are kept, so a run can be continued with --only.
+
+With --model (the release folder with its weights, at the pinned revision)
+the real model runs instead, as the release serves it: bfloat16 on MPS, the
+logits in float32 (the release's config has `"head_dtype": "float32"`: the
+last hidden state in float32 times the tied embeddings in float32). It
+answers every question within vLLM's limit and writes
+tests/parity/h2o/reference-bf16.json with, per question, the token count and
+digest, the label log-probabilities and the shim's answers with and without
+the floor (about 25 minutes; 21 GB at the longest prompt).
 """
 
 import argparse
@@ -49,6 +59,7 @@ REVISION = "acaf0d4ea251e54de928c75ef4352670d33192d3"  # tag v1.2.3
 MAX_TOKENS = 40960  # vLLM's --max-model-len in the release's serve.sh
 TINY_TOKENS = 4096
 SEED = 0
+MEMORY_FRACTION = 0.7  # of the GPU's working set, on MPS
 
 
 def parity_set() -> list[dict]:
@@ -96,7 +107,14 @@ def fetch_release() -> Path:
 
 
 class Reference:
-    def __init__(self, release: Path, tiny: Path):
+    """The shim with transformers in vLLM's place, for the model in ``folder``.
+
+    ``real``: the release's own weights in bfloat16 on ``device`` (every
+    question within vLLM's limit is answered, no token ids kept); otherwise
+    the tiny model in float32 on the CPU.
+    """
+
+    def __init__(self, release: Path, folder: Path, real: bool = False, device: str = "cpu"):
         import torch
         from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
         from transformers.models.qwen2_vl.image_processing_qwen2_vl import (
@@ -108,15 +126,20 @@ class Reference:
 
         self.torch = torch
         self.shim = shim
-        self.config = json.loads((tiny / "serve_config.json").read_text())
+        self.real = real
+        self.device = device
+        self.config = json.loads((folder / "serve_config.json").read_text())
         self.contract = shim.Contract(self.config, env={})
-        self.tokenizer = AutoTokenizer.from_pretrained(tiny)
-        self.model = Qwen3_5ForConditionalGeneration.from_pretrained(
-            tiny, dtype=torch.float32
-        ).eval()
+        self.tokenizer = AutoTokenizer.from_pretrained(folder)
+        dtype = torch.bfloat16 if real else torch.float32
+        self.model = (
+            Qwen3_5ForConditionalGeneration.from_pretrained(folder, dtype=dtype).to(device).eval()
+        )
+        # The logits in float32, as the release's head_dtype has vLLM compute them.
+        self.head = self.model.get_input_embeddings().weight.float()
         # What vLLM's processor does with the shim's mm_processor_kwargs.
         self.processor = Qwen2VLImageProcessor.from_pretrained(
-            tiny, max_pixels=self.contract.max_pixels
+            folder, max_pixels=self.contract.max_pixels
         )
         self.label_ids = self.read_label_ids()
 
@@ -158,13 +181,19 @@ class Reference:
 
     def logprobs(self, ids: list[int], labels: list[str], pixels=None, grid=None) -> list[float]:
         torch = self.torch
+        device = self.device
         kwargs = {}
         if pixels is not None:
             pad = self.model.config.image_token_id
-            kinds = torch.tensor([[int(i == pad) for i in ids]])
-            kwargs = {"pixel_values": pixels, "image_grid_thw": grid, "mm_token_type_ids": kinds}
+            kinds = torch.tensor([[int(i == pad) for i in ids]], device=device)
+            kwargs = {
+                "pixel_values": pixels.to(device, self.model.dtype),
+                "image_grid_thw": grid.to(device),
+                "mm_token_type_ids": kinds,
+            }
         with torch.no_grad():
-            logits = self.model(input_ids=torch.tensor([ids]), **kwargs).logits[0, -1].float()
+            output = self.model.model(input_ids=torch.tensor([ids], device=device), **kwargs)
+            logits = self.head @ output.last_hidden_state[0, -1].float()
         logp = torch.log_softmax(logits, -1)
         return [float(logp[self.label_ids[label]]) for label in labels]
 
@@ -213,15 +242,16 @@ class Reference:
             result["image_grids"] = grid.tolist()
         if len(ids) > MAX_TOKENS:
             result["refused"] = f"over the {MAX_TOKENS}-token limit"
-        elif len(ids) <= TINY_TOKENS:
+        elif self.real or len(ids) <= TINY_TOKENS:
             logprobs = self.logprobs(ids, labels, pixels, grid)
             t = contract.image_temperature if images else contract.temperature_by_type[kind]
             threshold = shim.noul_threshold(question)
             floor = contract.noul_floor
             answer = shim.format_answer(kind, names, descs, logprobs, t, floor, threshold)
             plain = shim.format_answer(kind, names, descs, logprobs, t, 0, threshold)
+            if not self.real:
+                result |= {"ids": ids}
             result |= {
-                "ids": ids,
                 "label_ids": [self.label_ids[label] for label in labels],
                 "logprobs": logprobs,
                 "temperature": t,
@@ -234,9 +264,13 @@ class Reference:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--release", type=Path, help="release folder (default: fetch)")
+    parser.add_argument("--model", type=Path, help="run the real model in this release folder")
+    parser.add_argument("--device", default="mps", help="device for --model (default: mps)")
     parser.add_argument("--only", help="comma-separated request ids")
-    parser.add_argument("--out", type=Path, default=PARITY / "h2o" / "reference.json")
+    parser.add_argument("--out", type=Path)
     args = parser.parse_args()
+    name = "reference-bf16.json" if args.model else "reference.json"
+    args.out = args.out or PARITY / "h2o" / name
     import torch
     import transformers
 
@@ -249,7 +283,9 @@ def main() -> None:
     from tiny_models import write_h2o
 
     torch.set_grad_enabled(False)
-    release = (args.release or fetch_release()).resolve()
+    if args.model and args.device == "mps":
+        torch.mps.set_per_process_memory_fraction(MEMORY_FRACTION)
+    release = (args.model or args.release or fetch_release()).resolve()
     existing = json.loads(args.out.read_text())["results"] if args.out.exists() else {}
     cases = parity_set()
     if args.only:
@@ -258,8 +294,11 @@ def main() -> None:
 
     results = dict(existing)
     with tempfile.TemporaryDirectory() as folder:
-        tiny = write_h2o(Path(folder), seed=SEED, files_from=release)
-        reference = Reference(release, tiny)
+        if args.model:
+            reference = Reference(release, release, real=True, device=args.device)
+        else:
+            tiny = write_h2o(Path(folder), seed=SEED, files_from=release)
+            reference = Reference(release, tiny)
         for case in cases:
             start = time.perf_counter()
             body = {"state": case["state"], "questions": case["questions"]}
@@ -275,7 +314,7 @@ def main() -> None:
         meta = {
             "repo_id": REPO_ID,
             "revision": REVISION,
-            "seed": SEED,
+            **({"model": "release"} if args.model else {"seed": SEED}),
             "label_ids": reference.label_ids,
             "temperature": contract.temperature_by_type,
             "image_temperature": contract.image_temperature,
@@ -283,9 +322,10 @@ def main() -> None:
             "max_state_tokens": contract.max_state_tokens,
             "max_pixels": contract.max_pixels,
             "max_tokens": MAX_TOKENS,
-            "tiny_tokens": TINY_TOKENS,
-            "device": "cpu",
-            "dtype": str(next(reference.model.parameters()).dtype),
+            **({} if args.model else {"tiny_tokens": TINY_TOKENS}),
+            "device": reference.device,
+            "dtype": str(reference.model.dtype),
+            "logits": "float32",
             "torch": torch.__version__,
             "transformers": transformers.__version__,
         }

@@ -6,7 +6,9 @@ question (its real tokenizer) and the answers of the tiny random model of
 ``tiny_models.write_h2o`` (CPU, float32). The token and end-to-end tests
 need the release's small files in the Hugging Face cache (the script
 fetches them) and skip otherwise; the tiny-model test feeds the stored ids
-and always runs.
+and always runs. ``h2o/reference-bf16.json`` is the same script with
+``--model``: the release's weights in bfloat16 on MPS; the slow test
+compares the release folder in ``MLX_DECISION_MODELS`` with it.
 
 The model runs on the CPU here: on the GPU, float32 matmuls use TF32, which
 moves the tiny model's probabilities by up to about 1e-3.
@@ -14,11 +16,14 @@ moves the tiny model's probabilities by up to about 1e-3.
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import mlx.core as mx
 import pytest
 from parity_images import open_image
+from test_parity import MARGIN, MEAN_TOLERANCE
+from test_parity import TOLERANCE as BF16_TOLERANCE
 
 import mlx_decision
 from mlx_decision.backbones.qwen3_5.load import load_text_model
@@ -292,3 +297,64 @@ def test_tiny_model_answers_images_as_the_release(tiny_with_tokenizer, case_id):
                 expected["answer"]["probabilities"], abs=TOLERANCE
             )
     assert result.usage.input_tokens == tokens
+
+
+BF16 = json.loads((HERE / "h2o" / "reference-bf16.json").read_text())
+
+
+def test_the_bf16_reference_is_for_the_same_prompts():
+    """Every request, with the token ids of the tiny reference (same tokenizer)."""
+    assert BF16["meta"]["revision"] == FIXTURE["meta"]["revision"]
+    assert BF16["meta"]["dtype"] == "torch.bfloat16"
+    assert set(BF16["results"]) == set(REFERENCE)
+    for case_id, expected in BF16["results"].items():
+        tiny = REFERENCE[case_id]
+        assert ("refused" in expected) == ("refused" in tiny), case_id
+        if "refused" in expected:
+            continue
+        for question_id, entry in expected.items():
+            assert entry["ids_sha256"] == tiny[question_id]["ids_sha256"], case_id
+            assert ("answer_no_floor" in entry) == ("refused" not in entry), case_id
+
+
+def option_probabilities(answer: dict) -> dict[str, float]:
+    """An answer (the shim's or ours, as JSON) as probabilities by option id."""
+    if answer["type"] == "noul":
+        return {"true": answer["noul"], "false": 1 - answer["noul"]}
+    return answer["probabilities"]
+
+
+@pytest.mark.slow
+@pytest.mark.weights
+def test_bf16_answers_as_the_release():
+    """About 2 minutes: the release folder answers the whole parity set.
+
+    Measured 2026-10-10: max 0.0195, mean 0.0014; 3 changed top answers,
+    all where the reference's top-two margin is within 0.04.
+    """
+    root = os.environ.get("MLX_DECISION_MODELS")
+    path = Path(root) / "h2o-lightning-4b" if root else None
+    if path is None or not path.is_dir():
+        pytest.skip("no h2o-lightning-4b in MLX_DECISION_MODELS")
+    # Before the floor, as the reference's answer_no_floor.
+    model = mlx_decision.load(path, noul_floor=0)
+    differences, worst, decided_flips = [], (0.0, None), []
+    for case_id, expected in BF16["results"].items():
+        if "refused" in expected:
+            continue
+        result = model.decide_request(request(case_id))
+        assert result.usage.input_tokens == sum(e["tokens"] for e in expected.values()), case_id
+        for question_id, entry in expected.items():
+            want = option_probabilities(entry["answer_no_floor"])
+            got = option_probabilities(result.answers[question_id].model_dump())
+            pairs = [(got[option], p) for option, p in want.items()]
+            differences += [abs(a - b) for a, b in pairs]
+            worst = max(worst, (max(abs(a - b) for a, b in pairs), f"{case_id}.{question_id}"))
+            first, second = sorted(want.values(), reverse=True)[:2]
+            top = max(want, key=want.get)
+            if first - second > MARGIN and max(got, key=got.get) != top:
+                decided_flips.append(f"{case_id}.{question_id}")
+    mean = sum(differences) / len(differences)
+    assert worst[0] <= BF16_TOLERANCE, f"max |dp| {worst[0]:.4f} at {worst[1]}"
+    assert mean <= MEAN_TOLERANCE, f"mean |dp| {mean:.5f}"
+    assert not decided_flips
