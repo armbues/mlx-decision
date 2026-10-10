@@ -317,6 +317,19 @@ PrefixCacheOption = Annotated[
 ]
 
 
+NoulFloorOption = Annotated[
+    float | None,
+    typer.Option(
+        "--noul-floor",
+        min=0,
+        max=0.999,
+        help="Yes/no answers less sure than this are reported at it, on their side "
+        "(H2O-Lightning; default: the release's 0.801, as evaluated). 0 turns it off, "
+        "for routing uncertain answers elsewhere.",
+    ),
+]
+
+
 NoMemoryCheckOption = Annotated[
     bool,
     typer.Option(
@@ -328,7 +341,10 @@ NoMemoryCheckOption = Annotated[
 
 
 def load_options(
-    max_image_mp: float | None, max_input_tokens: int | None, prefix_cache: float | None = None
+    max_image_mp: float | None,
+    max_input_tokens: int | None,
+    prefix_cache: float | None = None,
+    noul_floor: float | None = None,
 ) -> dict[str, Any]:
     """Load options for the flags that were given."""
     options = image_options(max_image_mp)
@@ -336,6 +352,8 @@ def load_options(
         options["max_input_tokens"] = max_input_tokens
     if prefix_cache is not None:
         options["prefix_cache_gb"] = prefix_cache
+    if noul_floor is not None:
+        options["noul_floor"] = noul_floor
     return options
 
 
@@ -381,6 +399,7 @@ def run(
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
+    noul_floor: NoulFloorOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     states: Annotated[
         str | None,
@@ -423,7 +442,7 @@ def run(
                 loaded = load(
                     model,
                     check_memory=not no_memory_check,
-                    **load_options(max_image_mp, max_input_tokens, prefix_cache),
+                    **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor),
                 )
             except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
                 fail(str(error))
@@ -437,7 +456,7 @@ def run(
         loaded = load(
             model,
             check_memory=not no_memory_check,
-            **load_options(max_image_mp, max_input_tokens, prefix_cache),
+            **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor),
         )
         if bare := undescribed_choices(loaded, body.get("questions")):
             typer.echo(describe_options_hint(bare, RUN_DESCRIBE_HOW), err=True)
@@ -465,6 +484,7 @@ def chat(
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
+    noul_floor: NoulFloorOption = None,
     no_memory_check: NoMemoryCheckOption = False,
 ) -> None:
     """Load a model once, then answer states typed one after another.
@@ -489,7 +509,7 @@ def chat(
         loaded = load(
             model,
             check_memory=not no_memory_check,
-            **load_options(max_image_mp, max_input_tokens, prefix_cache),
+            **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor),
         )
         if body.get("images"):
             loaded.check({"state": "", "questions": {"q": {"type": "noul"}}, **body})
@@ -720,6 +740,7 @@ def server(
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
+    noul_floor: NoulFloorOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: Annotated[
         str | None,
@@ -754,7 +775,7 @@ def server(
         handler.setFormatter(logging.Formatter("%(message)s"))
         package_logger.addHandler(handler)
     package_logger.setLevel(logging.INFO)
-    options = load_options(max_image_mp, max_input_tokens, prefix_cache)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
     budget = round(memory_budget * 1e9) if memory_budget is not None else None
     try:
         # Fail here, not inside the server: folders, options, the default model's size.
@@ -801,6 +822,7 @@ def mcp(
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
+    noul_floor: NoulFloorOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: Annotated[
         str | None,
@@ -832,7 +854,7 @@ def mcp(
 
     # stdout carries the protocol: everything else goes to stderr.
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(message)s")
-    options = load_options(max_image_mp, max_input_tokens, prefix_cache)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
     try:
         # Fail here, before a client is waiting for the handshake.
         path = resolve_model_path(model)

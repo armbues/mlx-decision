@@ -207,3 +207,72 @@ def test_one_temperature_for_every_type(folder, tmp_path):
     model = mlx_decision.load(edit_config(folder, tmp_path, temperature=0.5, noul_floor=0))
     assert model.backend.config.temperatures == {"choice": 0.5, "noul": 0.5, "score": 0.5}
     assert model.backend.noul_floor == 0
+
+
+def raw_noul(model, state="please refund") -> float:
+    """P(true) before the floor, from the backend's probabilities."""
+    request = parse_request({"state": state, "questions": {"refund": QUESTIONS["refund"]}})
+    (encoded,), _ = model.backend.encode(request)
+    return model.backend.probabilities(encoded.input_ids, 2, "noul")[0]
+
+
+def test_the_floor_can_be_changed_or_turned_off(folder, model):
+    raw = raw_noul(model)
+    assert max(raw, 1 - raw) < 0.801  # the tiny model is unsure: the floor applies
+    question = {"refund": QUESTIONS["refund"]}
+    floored = model.decide("please refund", question).answers["refund"].noul
+    assert floored == pytest.approx(0.801 if raw >= 0.5 else 0.199)
+    off = mlx_decision.load(folder, noul_floor=0)
+    assert off.decide("please refund", question).answers["refund"].noul == pytest.approx(raw)
+    high = mlx_decision.load(folder, noul_floor=0.95)
+    assert high.decide("please refund", question).answers["refund"].noul == pytest.approx(
+        0.95 if raw >= 0.5 else 0.05
+    )
+
+
+@pytest.mark.parametrize("floor", [0.3, 0.5, 1.0])
+def test_the_floor_is_checked(folder, floor):
+    with pytest.raises(ValueError, match="noul_floor must be between 0.5 and 1, or 0"):
+        mlx_decision.load(folder, noul_floor=floor)
+
+
+def test_other_families_refuse_the_floor(tmp_path):
+    from tiny_models import write_marker
+
+    laya = write_marker(tmp_path / "laya", "laya")
+    with pytest.raises(ValueError, match="laya models do not take noul_floor"):
+        mlx_decision.load(laya, noul_floor=0)
+
+
+def test_the_floor_flag(folder, tmp_path):
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+    from tiny_models import write_marker
+
+    def run(model, *flags):
+        args = ["run", "-m", str(model), "-s", "please refund", "--noul", "refund", "--json"]
+        return CliRunner().invoke(app, [*args, *flags])
+
+    def noul(result):
+        return json.loads(result.stdout)["answers"]["noul_1"]["noul"]
+
+    floored, off = run(folder), run(folder, "--noul-floor", "0")
+    assert floored.exit_code == off.exit_code == 0
+    assert noul(floored) in (0.801, 0.199)
+    assert noul(off) not in (0.801, 0.199)
+    refused = run(write_marker(tmp_path / "laya", "laya"), "--noul-floor", "0")
+    assert refused.exit_code == 1
+    assert "laya models do not take noul_floor" in refused.stderr
+
+
+def test_in_a_pool_only_h2o_models_take_the_floor(folder, tmp_path):
+    from mlx_decision.pool import discover
+    from tiny_models import write_marker
+
+    laya = write_marker(tmp_path / "laya", "laya")
+    specs = discover([folder, laya], {"noul_floor": 0})
+    assert {spec.name: spec.options for spec in specs} == {
+        "tiny-h2o": {"noul_floor": 0},
+        "laya": {},
+    }

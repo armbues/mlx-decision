@@ -194,13 +194,20 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     return [(file, None) for file in sorted(path.glob("model*.safetensors"))]
 
 
-def load(path: Path, max_input_tokens: int | None = None) -> H2OBackend:
+def load(
+    path: Path, max_input_tokens: int | None = None, noul_floor: float | None = None
+) -> H2OBackend:
     """Load H2O-Lightning from a release folder or a converted copy.
 
     ``max_input_tokens`` lowers the limit per question's prompt (default and
     maximum 40,960, the release's); states over the release's cap (32,000
     tokens) are cut around a "..." line, longer prompts refused.
+    ``noul_floor`` replaces the release's yes/no floor (0.801): a yes/no
+    answer less sure than it is reported at it, on its own side; 0 turns it
+    off (the raw probability, for routing uncertain answers elsewhere).
     """
+    if noul_floor is not None and noul_floor != 0 and not 0.5 < noul_floor < 1:
+        raise ValueError("noul_floor must be between 0.5 and 1, or 0 to turn it off")
     if max_input_tokens is None:
         max_input_tokens = MAX_INPUT_TOKENS
     if not 1 <= max_input_tokens <= MAX_INPUT_TOKENS:
@@ -219,5 +226,7 @@ def load(path: Path, max_input_tokens: int | None = None) -> H2OBackend:
         raise ValueError(f"{path}: the label readout needs tied embeddings")
     tokenizer = load_tokenizer(path)
     backend = H2OBackend(path.resolve().name, backbone, tokenizer, config, max_input_tokens, path)
+    if noul_floor is not None:
+        backend.noul_floor = float(noul_floor)
     backend.precision = precision(path, backbone)
     return backend

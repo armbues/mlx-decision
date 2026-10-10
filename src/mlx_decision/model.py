@@ -137,7 +137,9 @@ def load(model: str | Path, check_memory: bool = True, **options) -> DecisionMod
     only the processor's own maximum). For pplx: ``max_input_tokens`` (default
     and maximum 8,192 per question; longer input is refused). For
     H2O-Lightning: ``max_input_tokens`` (default and maximum 40,960 per
-    question; states over 32,000 tokens are cut, longer prompts refused). For Laya and
+    question; states over 32,000 tokens are cut, longer prompts refused) and
+    ``noul_floor`` (default the release's 0.801: less sure yes/no answers are
+    reported at it; 0 turns it off). For Laya and
     Julia: ``max_input_tokens`` (default: the release's own limit, at most
     8,192) and ``dtype`` (``"float32"``, ``"float16"`` or ``"bfloat16"``;
     default float16); for Julia also ``strict_encoding`` (default True, as its release: refuse
