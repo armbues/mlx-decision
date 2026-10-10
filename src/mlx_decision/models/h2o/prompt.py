@@ -139,3 +139,14 @@ def render(
     text = "" if settings.system is None else CHAT["system"].format(content=settings.system.strip())
     text += CHAT["user"].format(content=IMAGE * images + user.strip())
     return text + CHAT["generation"] + settings.prefill, names
+
+
+def shared_prefix(state_text: str, settings: PromptSettings, images: int = 0) -> str:
+    """The start every question's prompt has in common: up to ``question:``.
+
+    The instructions after it never start with a space (they are stripped),
+    so the tokens up to here are the same in every question's prompt.
+    """
+    text = "" if settings.system is None else CHAT["system"].format(content=settings.system.strip())
+    user = f"record: {state_text}\nquestion:"
+    return text + "<|im_start|>user\n" + IMAGE * images + user.lstrip()

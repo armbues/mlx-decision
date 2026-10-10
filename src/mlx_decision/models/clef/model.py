@@ -9,10 +9,10 @@ from ...backbones.qwen3_5.load import has_vision_weights, load_text_model
 from ...backbones.qwen3_5.tokenizer import load_tokenizer
 from ...backend import BackendOutput, Capabilities
 from ...types import Request
+from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
 from ..qwen import count_image_tokens, image_config, image_inputs, open_images, precision, prepare
 from .encode import DEFAULT_MAX_LENGTH, IMAGE_PAD, encode_request
 from .head import JointSchemaHead
-from .prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
 
 # Larger images are shrunk to about this many pixels (2,048 tokens): measured
 # to keep answers while bounding time and room in the input limit.

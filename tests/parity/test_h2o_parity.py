@@ -59,6 +59,12 @@ END_TO_END = [
     "whitespace_and_newlines",
     "h2o_empty_instructions",
     "h2o_choice_empty_description",
+    # several questions: the shared prefix once, each question from a copy
+    "ten_nouls",
+    "twenty_mixed",
+    "log_1k",
+    "thread_2k",
+    "ledger_3k",
 ]
 
 
@@ -119,6 +125,15 @@ def test_token_ids_equal_the_release(encoder, case_id):
         assert len(question.input_ids) == reference["tokens"], question.question_id
         assert digest(question.input_ids) == reference["ids_sha256"], question.question_id
         assert len(question.option_ids) == reference["options"]
+
+
+@pytest.mark.parametrize("case_id", TEXT_IDS)
+def test_every_prompt_starts_with_the_shared_prefix(encoder, case_id):
+    if "refused" in REFERENCE[case_id]:
+        return
+    encoded, _, prefix = encoder.encode_with_prefix(request(case_id))
+    assert prefix
+    assert all(len(prefix) < len(e.input_ids) for e in encoded)
 
 
 @pytest.mark.parametrize("limit", [1024, 8192])

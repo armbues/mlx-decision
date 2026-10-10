@@ -312,8 +312,9 @@ PrefixCacheOption = Annotated[
         "--prefix-cache",
         min=0,
         metavar="GB",
-        help="Memory for kept states (Clef): a request whose state came recently, with "
-        "other questions, computes only the questions. Default 2; 0 turns it off.",
+        help="Memory for kept states (Clef, H2O-Lightning): a request whose state came "
+        "recently, with other questions, computes only the questions. Default 2; 0 turns "
+        "it off.",
     ),
 ]
 

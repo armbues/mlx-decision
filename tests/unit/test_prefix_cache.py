@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 import mlx_decision
 from mlx_decision.cli import app
-from mlx_decision.models.clef.prefix import PrefixCache, prefix_key
+from mlx_decision.models.prefix import PrefixCache, prefix_key
 from tiny_models import write_clef, write_marker
 
 STATE = "billing yes technical no sales billing yes sales technical no billing"

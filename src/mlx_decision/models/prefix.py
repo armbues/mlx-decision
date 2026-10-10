@@ -1,11 +1,12 @@
 """Prefix reuse: the computed state after a request's state, kept for later requests.
 
-Clef reads the system prompt, the images and the state before the questions,
-and the backbone is causal, so everything it computes up to the state's last
-token depends only on that prefix. A request whose prefix matches a kept one
-continues from it and computes only its questions. An entry holds the
-backbone's cache at that point and the prefix's final hidden states (the head
-attends over every hidden state, the state's included).
+The causal Qwen3.5 families (Clef, H2O-Lightning) read the system prompt,
+the images and the state before the questions, so everything the backbone
+computes up to the state's end depends only on that prefix. A request whose
+prefix matches a kept one continues from it and computes only its questions.
+An entry holds the backbone's cache at that point and, for a family whose
+head reads them (Clef's attends over every hidden state), the prefix's final
+hidden states.
 """
 
 import hashlib
@@ -17,7 +18,7 @@ from typing import Any
 
 import mlx.core as mx
 
-from ...backbones.qwen3_5.cache import Cache, fork_cache
+from ..backbones.qwen3_5.cache import Cache, fork_cache
 
 DEFAULT_PREFIX_CACHE_GB = 2.0
 
@@ -40,11 +41,12 @@ def prefix_key(input_ids: Sequence[int], pixel_values: Sequence[Any] = ()) -> st
 @dataclass
 class PrefixEntry:
     cache: list[Cache]
-    hidden: mx.array  # [prefix length, hidden size]
+    hidden: mx.array | None = None  # [prefix length, hidden size], if kept
 
     @property
     def nbytes(self) -> int:
-        return sum(c.nbytes for c in self.cache) + self.hidden.nbytes
+        hidden = 0 if self.hidden is None else self.hidden.nbytes
+        return sum(c.nbytes for c in self.cache) + hidden
 
 
 class PrefixCache:
@@ -73,7 +75,7 @@ class PrefixCache:
         self._entries.move_to_end(key)
         return PrefixEntry(fork_cache(entry.cache), entry.hidden)
 
-    def put(self, key: str, cache: list[Cache], hidden: mx.array) -> PrefixEntry:
+    def put(self, key: str, cache: list[Cache], hidden: mx.array | None = None) -> PrefixEntry:
         """Keep a computed prefix (if it fits); returns an entry to continue from."""
         entry = PrefixEntry(cache, hidden)
         size = entry.nbytes

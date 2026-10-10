@@ -293,3 +293,53 @@ def test_a_lowered_limit_cuts_long_states_to_fit(folder):
     assert "\n...\n" in state_text
     # At the release's limit the same state is short enough to keep whole.
     assert not mlx_decision.load(folder).decide(state, QUESTIONS).truncated
+
+
+def test_questions_share_their_prefix_within_and_across_requests(folder):
+    import mlx.core as mx
+
+    model = mlx_decision.load(folder)
+    cache = model.backend.prefix_cache
+    request = parse_request({"state": "please refund now", "questions": QUESTIONS})
+    encoded, _, prefix = model.backend.encode_with_prefix(request)
+    assert prefix and all(e.input_ids[: len(prefix)] == prefix for e in encoded)
+    with mx.stream(mx.cpu):
+        first = model.decide_request(request)
+        again = model.decide_request(
+            {"state": "please refund now", "questions": {"q": QUESTIONS["team"]}}
+        )
+        whole = {
+            e.question_id: model.backend.probabilities(
+                e.input_ids, len(e.option_ids), e.question_type
+            )
+            for e in encoded
+        }
+    assert (cache.misses, cache.hits, len(cache)) == (1, 1, 1)
+    assert again.answers["q"].probabilities == pytest.approx(
+        first.answers["team"].probabilities, abs=1e-6
+    )
+    assert list(first.answers["team"].probabilities.values()) == pytest.approx(
+        whole["team"], abs=1e-6
+    )
+    assert list(first.answers["urgency"].probabilities.values()) == pytest.approx(
+        whole["urgency"], abs=1e-6
+    )
+
+
+def test_without_kept_prefixes_a_request_still_shares_its_prefix(folder, monkeypatch):
+    model = mlx_decision.load(folder, prefix_cache_gb=0)
+    assert model.backend.prefix_cache is None
+    calls = []
+    original = model.backend.prefix_state
+    monkeypatch.setattr(
+        model.backend, "prefix_state", lambda ids: calls.append(ids) or original(ids)
+    )
+    model.decide("please refund", QUESTIONS)
+    assert len(calls) == 1
+    model.decide("please refund", {"refund": QUESTIONS["refund"]})  # one question: one pass
+    assert len(calls) == 1
+
+
+def test_the_prefix_cache_size_is_checked(folder):
+    with pytest.raises(ValueError, match="prefix_cache_gb must be 0"):
+        mlx_decision.load(folder, prefix_cache_gb=-1)
