@@ -458,3 +458,52 @@ def test_a_lowered_limit_leaves_room_for_the_images(folder):
     result = model.decide(state, {"refund": QUESTIONS["refund"]}, images=[png(256, 256)])
     assert result.truncated
     assert result.usage.input_tokens <= 300
+
+
+@pytest.mark.parametrize("bits", [8, 4])
+def test_a_quantized_copy_answers_like_the_release(folder, tmp_path, bits):
+    from mlx_decision.convert import convert
+    from mlx_decision.registry import MARKER_FILE
+
+    out = convert(folder, tmp_path / f"q{bits}", bits=bits)
+    marker = json.loads((out / MARKER_FILE).read_text())
+    assert marker["family"] == "h2o" and marker["vision"]
+    assert marker["quantization"]["bits"] == bits
+    for name in ("serve_config.json", "tokenizer.json", "LICENSE"):
+        assert (out / name).read_bytes() == (folder / name).read_bytes(), name
+    quantized = mlx_decision.load(out)
+    info = quantized.info()
+    assert info["family"] == "h2o" and info["precision"] == f"{bits}-bit"
+    assert info["supports_images"]
+    # The tied embeddings are quantized; the label rows come out dequantized.
+    embed = quantized.backend.backbone.language_model.model.embed_tokens
+    assert embed.bits == bits
+    original = mlx_decision.load(folder)
+    a = original.decide("please refund", QUESTIONS, images=[png(64, 64)]).answers
+    b = quantized.decide("please refund", QUESTIONS, images=[png(64, 64)]).answers
+    error = max(abs(a["team"].probabilities[k] - p) for k, p in b["team"].probabilities.items())
+    assert error < (0.02 if bits == 8 else 0.15)
+
+
+def test_mixed_precision_sweeps_without_the_floor(folder, tmp_path, monkeypatch):
+    from mlx_decision.convert import convert
+    from mlx_decision.models import qwen_convert
+    from mlx_decision.models.h2o import model as h2o_model
+    from mlx_decision.models.qwen_convert import SENSITIVITY_FILE
+
+    monkeypatch.setattr(
+        qwen_convert,
+        "calibration_requests",
+        lambda: [{"state": "please refund", "questions": QUESTIONS}],
+    )
+    loaded = []
+    original = h2o_model.load
+    monkeypatch.setattr(h2o_model, "load", lambda *a, **k: loaded.append(k) or original(*a, **k))
+    out = convert(folder, tmp_path / "mixed", target_bits=4.5, group_size=32)
+    assert loaded == [{"prefix_cache_gb": 0, "noul_floor": 0}]
+    report = json.loads((out / SENSITIVITY_FILE).read_text())
+    assert report["average_bits"] <= 4.5
+    model = mlx_decision.load(out)
+    assert model.info()["precision"] == "mixed 4.5-bit"
+    assert model.backend.noul_floor == 0.801  # the release's, in the copy
+    assert model.decide("please refund", QUESTIONS).answers

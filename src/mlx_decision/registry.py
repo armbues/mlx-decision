@@ -197,6 +197,7 @@ register_family(
     "h2o",
     detect=_h2o_detect,
     loader="mlx_decision.models.h2o.model:load",
+    converter="mlx_decision.models.h2o.convert:convert",
     known_models=(
         KnownModel(
             "h2oai/h2o-lightning-4b",

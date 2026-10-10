@@ -65,20 +65,24 @@ def sanitize_vision_weights(weights: Mapping[str, mx.array]) -> dict[str, mx.arr
     return sanitized
 
 
-def vision_shards(path: str | Path) -> set[str]:
+def vision_shards(path: str | Path) -> set[str] | None:
     """Names of the weight files that hold vision weights.
 
     From the index, or without one (a single-file release) from the files'
-    safetensors headers.
+    safetensors headers. None when neither is there yet: a download that
+    streams the weight files, each to be checked as it is read.
     """
     path = Path(path)
     index = path / "model.safetensors.index.json"
     if index.exists():
         weight_map = json.loads(index.read_text())["weight_map"]
         return {f for name, f in weight_map.items() if name.startswith(VISION_PREFIXES)}
+    files = list(path.glob("model*.safetensors"))
+    if not files:
+        return None
     return {
         file.name
-        for file in path.glob("model*.safetensors")
+        for file in files
         if any(name.startswith(VISION_PREFIXES) for name in _safetensors_header(file))
     }
 
@@ -87,7 +91,7 @@ def read_vision_weights(path: str | Path) -> dict[str, mx.array]:
     """The vision tower's weights of a folder (see ``sanitize_vision_weights``); no NumPy."""
     path = Path(path)
     weights = {}
-    for file in sorted(vision_shards(path)):
+    for file in sorted(vision_shards(path) or ()):
         weights.update(sanitize_vision_weights(mx.load(str(path / file))))
     if not weights:
         raise FileNotFoundError(f"no vision weights in {path}")
@@ -113,24 +117,32 @@ def write_vision_weights(weights: Mapping[str, mx.array], path: str | Path) -> N
 
 
 def keeping_vision_weights(
-    shards: Iterable[Path], vision_files: set[str], into: dict[str, mx.array]
+    shards: Iterable[Path], vision_files: set[str] | None, into: dict[str, mx.array]
 ) -> Iterator[Path]:
     """Hand over ``shards``; once one is read, keep the vision weights in it.
 
     They are taken when the converter asks for the next shard, so before a
-    fetching generator deletes the file.
+    fetching generator deletes the file. ``vision_files`` None: look in
+    every shard.
     """
     for shard in shards:
         yield shard
-        if shard.name in vision_files:
+        if vision_files is None or shard.name in vision_files:
             weights = sanitize_vision_weights(mx.load(str(shard)))
             mx.eval(weights)
             into.update(weights)
 
 
 def has_vision_weights(path: str | Path) -> bool:
-    """Whether the folder holds vision tower weights (see ``vision_shards``)."""
-    return bool(vision_shards(path))
+    """Whether the folder holds vision tower weights (see ``vision_shards``).
+
+    Before a streamed download's weight files are there, the config tells.
+    """
+    shards = vision_shards(path)
+    if shards is None:
+        config = Path(path) / "config.json"
+        return config.exists() and "vision_config" in json.loads(config.read_text())
+    return bool(shards)
 
 
 def quantize_like(model: nn.Module, quantization: dict, weights: dict) -> None:

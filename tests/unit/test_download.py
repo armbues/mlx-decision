@@ -292,6 +292,18 @@ def remote_pplx(monkeypatch, tmp_path):
     return serve(monkeypatch, tmp_path, release)
 
 
+@pytest.fixture
+def remote_h2o(monkeypatch, tmp_path):
+    """The same for a tiny H2O-Lightning release: one model.safetensors, no index."""
+    from tiny_models import write_h2o
+
+    release = write_h2o(tmp_path / "release")
+    for name in ("README.md", "h2o_lightning_shim.py", "serve.sh", "adapter/adapter_config.json"):
+        (release / name).parent.mkdir(parents=True, exist_ok=True)
+        (release / name).write_text("x\n")
+    return serve(monkeypatch, tmp_path, release)
+
+
 def serve(monkeypatch, tmp_path, release):
     import shutil
 
@@ -431,6 +443,33 @@ def test_a_quantized_pplx_download_equals_a_converted_copy(remote_pplx, tmp_path
     weights = download._weight_files(remote_pplx.release)
     assert remote_pplx.events == [(name, []) for name in weights]
     assert not (out / "source").exists() and not (out / "chat_template.jinja").exists()
+    result = mlx_decision.load(out).decide("refund please", {"q": {"type": "noul"}})
+    assert 0 <= result.answers["q"].noul <= 1
+
+
+def test_a_quantized_h2o_download_streams_its_single_weight_file(remote_h2o, tmp_path):
+    import json
+
+    import mlx_decision
+    from mlx_decision.convert import convert
+    from mlx_decision.registry import MARKER_FILE
+
+    check = download.check_repo("h2oai/tiny-h2o")
+    assert check.family == "h2o" and check.convertible
+    assert check.model_files == ("model.safetensors",)
+    out = download.download_quantized(check, 8, tmp_path / "models" / "tiny-h2o")
+    assert remote_h2o.events == [("model.safetensors", [])]
+    assert_same_model(out, convert(remote_h2o.release, tmp_path / "converted", bits=8))
+    assert sorted(p.name for p in out.iterdir() if not p.name.endswith(".safetensors")) == [
+        "LICENSE",
+        "config.json",
+        "mlx_decision.json",
+        "model.safetensors.index.json",
+        "serve_config.json",
+        "tokenizer.json",
+    ]
+    marker = json.loads((out / MARKER_FILE).read_text())
+    assert marker["family"] == "h2o" and marker["revision"] == SHA and marker["vision"]
     result = mlx_decision.load(out).decide("refund please", {"q": {"type": "noul"}})
     assert 0 <= result.answers["q"].noul <= 1
 

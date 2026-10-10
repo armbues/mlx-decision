@@ -158,7 +158,7 @@ def test_cli(release, tmp_path):
 @pytest.fixture
 def short_calibration(monkeypatch):
     """Two short requests instead of the built-in set, to keep the sweep quick."""
-    from mlx_decision.models.clef import convert as clef_convert
+    from mlx_decision.models import qwen_convert as clef_convert
 
     requests = [
         {"state": "billing yes", "questions": QUESTIONS},
@@ -169,7 +169,7 @@ def short_calibration(monkeypatch):
 
 @pytest.mark.usefixtures("short_calibration")
 def test_mixed_precision(release, tmp_path):
-    from mlx_decision.models.clef.convert import SENSITIVITY_FILE
+    from mlx_decision.models.qwen_convert import SENSITIVITY_FILE
 
     seen = []
     out = convert(
@@ -259,7 +259,7 @@ def test_bits_imply_quantize_and_flags_are_checked(release, tmp_path):
 
 
 def test_a_failed_conversion_leaves_nothing_behind(release, tmp_path, monkeypatch):
-    from mlx_decision.models.clef import convert as clef_convert
+    from mlx_decision.models import qwen_convert as clef_convert
 
     def broken(*args, **kwargs):
         raise OSError("disk full")

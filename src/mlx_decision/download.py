@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 
 from huggingface_hub import HfApi, constants, hf_hub_download, snapshot_download
@@ -37,6 +38,9 @@ class RepoCheck:
     weight_bytes: int = 0  # of the *.safetensors files among them
     largest_weight_file: int = 0
     quantizable_bytes: int | None = None  # of the weights the converter quantizes; None: all
+    # The backbone's weight files (model*.safetensors) among them, for a
+    # repository without an index (a single model.safetensors).
+    model_files: tuple[str, ...] = ()
 
     @property
     def convertible(self) -> bool:
@@ -90,6 +94,9 @@ def check_repo(repo_id: str) -> RepoCheck:
             )
         )
     weights = [s.size or 0 for s in fetched if s.rfilename.endswith(".safetensors")]
+    model_files = tuple(
+        sorted(s.rfilename for s in fetched if fnmatch(s.rfilename, "model*.safetensors"))
+    )
     quantizable = None
     if family.converter is not None and family.quantizable is not None:
         quantizable = _quantizable_on_hub(repo_id, revision, family.quantizable)
@@ -102,6 +109,7 @@ def check_repo(repo_id: str) -> RepoCheck:
         weight_bytes=sum(weights),
         largest_weight_file=max(weights, default=0),
         quantizable_bytes=quantizable,
+        model_files=model_files,
     )
 
 
@@ -182,7 +190,7 @@ def download_quantized(
         shutil.rmtree(folder, ignore_errors=True)
     try:
         snapshot_download(repo_id, revision=revision, local_dir=source, allow_patterns=["*.json"])
-        names = _weight_files(source)
+        names = _weight_files(source, check.model_files)
         snapshot_download(
             repo_id,
             revision=revision,
@@ -215,15 +223,18 @@ def download_quantized(
     return destination
 
 
-def _weight_files(folder: Path) -> list[str]:
-    """The weight files the index lists, in its order."""
+def _weight_files(folder: Path, model_files: tuple[str, ...] = ()) -> list[str]:
+    """The weight files the index lists, in its order; without an index, the
+    repository's ``model*.safetensors`` (``model_files``, from the check)."""
     index = folder / "model.safetensors.index.json"
-    if not index.exists():
-        raise ValueError(
-            "the repository has no model.safetensors.index.json, so it cannot be stored "
-            "quantized; download it at full size and use convert"
-        )
-    return list(dict.fromkeys(json.loads(index.read_text())["weight_map"].values()))
+    if index.exists():
+        return list(dict.fromkeys(json.loads(index.read_text())["weight_map"].values()))
+    if model_files:
+        return list(model_files)
+    raise ValueError(
+        "the repository has neither model.safetensors.index.json nor model*.safetensors "
+        "files, so it cannot be stored quantized; download it at full size and use convert"
+    )
 
 
 def _check_disk(folder: Path, needed: int) -> None:
