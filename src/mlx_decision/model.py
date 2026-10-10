@@ -1,6 +1,7 @@
 """The public entry points: ``load`` a model and ask it to ``decide``."""
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from .errors import DecisionError, require_metal
 from .hub import is_repo_id, resolve_model_path
 from .memory import check_fits
 from .registry import load_backend
+from .state_images import lift_images
 from .types import Choice, Request, Result, Score, Usage, parse_request
 
 
@@ -60,8 +62,11 @@ class DecisionModel:
 
     def decide_request(self, request: Request | Mapping[str, Any]) -> Result:
         """Answer a whole request body in the wire format."""
-        request = self.check(request)
-        output = self.backend.score(request)
+        request, lifted = self._checked(request)
+        try:
+            output = self.backend.score(request)
+        except DecisionError as error:
+            raise _in_state(error, lifted) from None
         for question_id, probabilities in output.probabilities.items():
             if not all(math.isfinite(p) for p in probabilities.values()):
                 raise RuntimeError(f"{self.name} gave non-finite probabilities for {question_id!r}")
@@ -82,9 +87,17 @@ class DecisionModel:
         Raises ``DecisionError`` for an invalid body and for what the model
         does not support (question types, limits, media).
         """
+        return self._checked(request)[0]
+
+    def _checked(self, request: Request | Mapping[str, Any]) -> tuple[Request, dict[int, str]]:
+        """The request validated, with the images in its state lifted out (for a
+        model that reads images), and where each lifted image was by its index."""
         request = parse_request(request)
+        lifted = {}
+        if self.backend.capabilities.supports_images:
+            request, lifted = _lift_state_images(request)
         self._check_supported(request)
-        return request
+        return request, lifted
 
     def _check_supported(self, request: Request) -> None:
         caps = self.backend.capabilities
@@ -159,3 +172,22 @@ def load(model: str | Path, check_memory: bool = True, **options) -> DecisionMod
         # Named after the repo, not the cache's snapshot folder.
         backend.name = str(model).rstrip("/").rsplit("/", 1)[-1]
     return DecisionModel(backend)
+
+
+def _lift_state_images(request: Request) -> tuple[Request, dict[int, str]]:
+    """Images in the state replaced by ``[image N]`` and added after ``images``."""
+    first = len(request.images or [])
+    state, found = lift_images(request.state, first)
+    if not found:
+        return request, {}
+    images = [*(request.images or []), *(image for image, _ in found)]
+    lifted = {first + index: where for index, (_, where) in enumerate(found)}
+    return request.model_copy(update={"state": state, "images": images}), lifted
+
+
+def _in_state(error: DecisionError, lifted: dict[int, str]) -> DecisionError:
+    """An error about a lifted image, naming where it was in the state."""
+    match = re.fullmatch(r"images\.(\d+)", error.param or "")
+    if match is None or int(match[1]) not in lifted:
+        return error
+    return DecisionError(error.message, param=lifted[int(match[1])], code=error.code)

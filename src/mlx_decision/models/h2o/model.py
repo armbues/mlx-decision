@@ -4,29 +4,41 @@ Each question is its own sequence (see ``prompt``), ending in the answer
 prefill. The sequences start alike, up to the state and ``question:``; that
 prefix is computed once per request and each question continues from a copy
 of the backbone's cache there, and the prefix is kept for later requests
-with the same state (``prefix``). The last token's hidden state times the tied embedding rows of the
-option labels' tokens gives one logit per option, divided by the question
-type's temperature and normalized; a yes/no answer is then moved to the
-release's floor when it is less sure than that. As the release does it with
+with the same state and images (``prefix``). Images come first in the user
+message, so they are part of the prefix. The last token's hidden state
+times the tied embedding rows of the option labels' tokens gives one logit
+per option, divided by the question type's temperature (the image
+temperature for every question of a request with images) and normalized;
+a yes/no answer is then moved to the release's floor when it is less sure
+than that. As the release does it with
 vLLM's log-probabilities over the whole vocabulary: the log-softmax shifts
 every label's logit by the same amount, so the answer is the same.
 """
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import mlx.core as mx
 
 from ...backbones.qwen3_5.cache import fork_cache
-from ...backbones.qwen3_5.load import load_text_model
+from ...backbones.qwen3_5.load import has_vision_weights, load_text_model
 from ...backbones.qwen3_5.tokenizer import load_tokenizer
 from ...backend import BackendOutput, Capabilities
 from ...errors import DecisionError
 from ...types import Noul, Request
 from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
-from ..qwen import precision
+from ..qwen import (
+    IMAGE_PAD,
+    count_image_tokens,
+    image_config,
+    image_features,
+    image_inputs,
+    open_images,
+    precision,
+    prepare,
+)
 from .prompt import PromptSettings, cut_state, render, render_state, shared_prefix
 
 # vLLM's --max-model-len in the release's serve.sh: a longer prompt is refused.
@@ -36,6 +48,7 @@ MAX_INPUT_TOKENS = 40960
 CUT_MARGIN = 8
 REQUIRED_FILES = ("config.json", "tokenizer.json", "serve_config.json")
 QUESTION_TYPES = ("choice", "noul", "score")
+IMAGE_MARKERS = ("<|vision_start|>", IMAGE_PAD, "<|vision_end|>")
 
 
 @dataclass
@@ -46,6 +59,24 @@ class Encoded:
     input_ids: list[int]
 
 
+@dataclass
+class Images:
+    """A request's images: each one's token count, and once decoded, its patches."""
+
+    tokens: list[int] = field(default_factory=list)
+    prepared: list = field(default_factory=list)
+    merge_size: int = 2
+
+
+@dataclass(frozen=True)
+class ImageSettings:
+    """The ``image`` block of ``serve_config.json``: the release reads images with it."""
+
+    max_images: int = 4
+    max_pixels: int = 1048576  # 0: the image processor's own maximum
+    temperature: float = 0.65
+
+
 @dataclass(frozen=True)
 class ServeConfig:
     """What the release's ``serve_config.json`` sets for answering."""
@@ -54,6 +85,7 @@ class ServeConfig:
     temperatures: dict[str, float]
     noul_floor: float
     prompt: PromptSettings
+    image: ImageSettings | None = None
 
     @classmethod
     def read(cls, path: Path) -> "ServeConfig":
@@ -74,7 +106,17 @@ class ServeConfig:
         floor = float(config.get("noul_floor", 0) or 0)
         if floor and not 0.5 < floor < 1:
             raise ValueError(f"{path}: noul_floor must be between 0.5 and 1, or 0 (off)")
-        return cls(labels, temperatures, floor, PromptSettings.from_config(config["prompt"]))
+        image = None
+        if isinstance(block := config.get("image"), dict):
+            image = ImageSettings(
+                max_images=int(block.get("max_images", 4)),
+                max_pixels=int(block.get("max_pixels") or 0),
+                temperature=float(block.get("temperature", temperatures["choice"])),
+            )
+            if not 1 <= image.max_images <= 16 or not image.temperature > 0:
+                raise ValueError(f"{path}: the image block's limits are out of range")
+        prompt = PromptSettings.from_config(config["prompt"])
+        return cls(labels, temperatures, floor, prompt, image)
 
 
 def commit_noul(p_true: float, floor: float) -> float:
@@ -111,6 +153,7 @@ class H2OBackend:
         self.path = path
         self.label_ids = label_ids or label_token_ids(tokenizer, config.labels)
         self.label_rows = None
+        self.vision = None
         self.prefix_cache = (
             PrefixCache(round(prefix_cache_gb * 1e9)) if prefix_cache_gb > 0 else None
         )
@@ -123,7 +166,23 @@ class H2OBackend:
             max_choice_options=len(config.labels),
             max_score_levels=len(config.labels),
             truncates_input=True,
+            supports_images=(
+                config.image is not None and path is not None and has_vision_weights(path)
+            ),
         )
+
+    def load_vision(self):
+        """The vision tower, loaded on first use (it stays in its stored precision)."""
+        if self.vision is None:
+            # Imported here: the vision code needs numpy (the images extra).
+            from ...backbones.qwen3_5.vision import load_vision_model
+
+            self.vision = load_vision_model(self.path)
+        return self.vision
+
+    def image_config(self):
+        """The release's processor settings at the serve config's pixel limit."""
+        return image_config(self.path, self.config.image.max_pixels or None)
 
     def _encode_text(self, text: str) -> list[int]:
         return self.tokenizer.encode(text, add_special_tokens=False).ids
@@ -131,51 +190,69 @@ class H2OBackend:
     def _decode(self, ids: list[int]) -> str:
         return self.tokenizer.decode(ids, skip_special_tokens=False)
 
-    def state_cap(self, request: Request) -> int:
+    def state_cap(self, request: Request, image_tokens: list[int] = ()) -> int:
         """The most tokens of state the request's prompts show.
 
         At the release's limit, the release's cap (32,000). Under a lowered
-        limit, also no more than leaves room for the longest question with
-        its options, so that a long state is cut rather than refused.
+        limit, also no more than leaves room for the images and the longest
+        question with its options, so that a long state is cut rather than
+        refused.
         """
         cap = self.config.prompt.max_state_tokens
         limit = self.capabilities.max_input_tokens
         if limit >= MAX_INPUT_TOKENS:
             return cap
+        settings, count = self.config.prompt, len(image_tokens)
         longest = max(
-            len(self._encode_text(render("", question, self.labels, self.config.prompt)[0]))
+            len(self._encode_text(render("", question, self.labels, settings, count)[0]))
             for question in request.questions.values()
         )
+        # Each image's pad becomes its tokens.
+        longest += sum(image_tokens) - count
         room = limit - longest - CUT_MARGIN
         # Without room the questions alone are over the limit: refused below.
         return min(cap, room) if room > 0 else cap
 
-    def state_text(self, request: Request) -> tuple[str, bool]:
+    def state_text(self, request: Request, image_tokens: list[int] = ()) -> tuple[str, bool]:
         """The rendered state, cut around a "..." line when over the cap."""
         text = render_state(request.state, self.config.prompt.state_compact)
-        return cut_state(text, self.state_cap(request), self._encode_text, self._decode)
+        cap = self.state_cap(request, image_tokens)
+        return cut_state(text, cap, self._encode_text, self._decode)
 
-    def encode(self, request: Request) -> tuple[list[Encoded], bool]:
+    def encode(self, request: Request, image_tokens: list[int] = ()) -> tuple[list[Encoded], bool]:
         """Every question's token ids and whether the state was cut.
 
+        ``image_tokens`` holds each image's token count: its pad in the
+        prompt becomes that many pad tokens, as vLLM's processor does.
         Refuses the request if a question's prompt is over the input limit.
         """
-        encoded, cut, _ = self.encode_with_prefix(request)
+        encoded, cut, _ = self.encode_with_prefix(request, image_tokens)
         return encoded, cut
 
-    def encode_with_prefix(self, request: Request) -> tuple[list[Encoded], bool, list[int]]:
+    def encode_with_prefix(
+        self, request: Request, image_tokens: list[int] = ()
+    ) -> tuple[list[Encoded], bool, list[int]]:
         """``encode``, plus the token ids every question's prompt starts with.
 
         The shared ids are empty if a prompt does not start with them (the
         questions then run as whole passes).
         """
-        limit = self.capabilities.max_input_tokens
-        state_text, cut = self.state_text(request)
-        prefix = self._encode_text(shared_prefix(state_text, self.config.prompt))
+        limit, settings, count = (
+            self.capabilities.max_input_tokens,
+            self.config.prompt,
+            len(image_tokens),
+        )
+        state_text, cut = self.state_text(request, image_tokens)
+        prefix = self._encode_text(shared_prefix(state_text, settings, count))
+        if image_tokens:
+            prefix = self._expand_images(prefix, image_tokens, request.state, "state")
         encoded = []
         for question_id, question in request.questions.items():
-            text, option_ids = render(state_text, question, self.labels, self.config.prompt)
+            where = f"questions.{question_id}"
+            text, option_ids = render(state_text, question, self.labels, settings, count)
             ids = self._encode_text(text)
+            if image_tokens:
+                ids = self._expand_images(ids, image_tokens, request.state, where)
             if len(ids) > limit:
                 raise DecisionError(
                     f"the question with its state needs {len(ids)} tokens "
@@ -187,30 +264,84 @@ class H2OBackend:
             prefix = []
         return encoded, cut, prefix
 
-    def prefix_state(self, prefix: list[int]):
+    def _expand_images(self, ids, image_tokens, state, where) -> list[int]:
+        start, pad, end = (self.tokenizer.token_to_id(t) for t in IMAGE_MARKERS)
+        count = len(image_tokens)
+        if (ids.count(start), ids.count(pad), ids.count(end)) != (count, count, count):
+            # The tokenizer reads the markers as special tokens even in user
+            # text, where they would be taken for image slots.
+            state_ids = self._encode_text(render_state(state, self.config.prompt.state_compact))
+            raise DecisionError(
+                f"the text contains image markers ({', '.join(IMAGE_MARKERS)}), "
+                "which cannot be used in a request with images",
+                param="state" if {start, pad, end} & set(state_ids) else where,
+            )
+        expanded, tokens = [], iter(image_tokens)
+        for token in ids:
+            expanded += [pad] * next(tokens) if token == pad else [token]
+        return expanded
+
+    def open_images(self, request: Request) -> tuple[list, Images]:
+        """The request's images opened (headers only) and their token counts."""
+        if not request.images:
+            return [], Images()
+        limit = self.config.image.max_images
+        if len(request.images) > limit:
+            raise DecisionError(
+                f"{len(request.images)} images; this model reads at most {limit} per request",
+                param="images",
+            )
+        config = self.image_config()
+        opened = open_images(request.images)
+        tokens = [count_image_tokens(image, index, config) for index, image in opened]
+        return opened, Images(tokens=tokens, merge_size=config.merge_size)
+
+    def prefix_state(self, prefix: list[int], images: Images | None = None):
         """The backbone's cache after ``prefix``: kept from an earlier request, or computed."""
-        key = prefix_key(prefix) if self.prefix_cache is not None else None
-        if key is not None and (entry := self.prefix_cache.get(key)) is not None:
-            return entry.cache
+        prepared = images.prepared if images else []
+        key = None
+        if self.prefix_cache is not None:
+            key = prefix_key(prefix, [image.pixel_values for image in prepared])
+            if (entry := self.prefix_cache.get(key)) is not None:
+                return entry.cache
         cache = self.backbone.make_cache()
-        self.backbone(mx.array(prefix)[None], cache=cache)
+        if prepared:
+            embeddings, positions = image_inputs(
+                self.backbone, self.load_vision(), self.tokenizer, prefix, prepared
+            )
+            self.backbone(mx.array(prefix)[None], embeddings[None], positions, cache=cache)
+        else:
+            self.backbone(mx.array(prefix)[None], cache=cache)
         mx.eval([c.state for c in cache])
         if key is not None:
             self.prefix_cache.put(key, cache)
         return cache
 
     def score(self, request: Request) -> BackendOutput:
-        encoded, cut, prefix = self.encode_with_prefix(request)
+        # Image sizes come from the file headers, so the input limit is checked
+        # before any image is decoded or cut into patches.
+        opened, images = self.open_images(request)
+        encoded, cut, prefix = self.encode_with_prefix(request, images.tokens)
+        config = self.image_config() if opened else None
+        images.prepared = [prepare(image, index, config) for index, image in opened]
         # A single question without kept prefixes is one pass; otherwise the
-        # prefix runs once (or comes from the cache) and each question
-        # continues from it, so a request answers the same whether its prefix
-        # is new or kept.
+        # prefix (the images included) runs once or comes from the cache, and
+        # each question continues from it, so a request answers the same
+        # whether its prefix is new or kept.
         reuse = bool(prefix) and (len(encoded) > 1 or self.prefix_cache is not None)
-        state = (len(prefix), self.prefix_state(prefix)) if reuse else None
+        state = (len(prefix), self.prefix_state(prefix, images)) if reuse else None
+        features = None
+        if images.prepared and state is None:
+            features = image_features(self.load_vision(), images.prepared)
         probabilities = {}
         for question in encoded:
             values = self.probabilities(
-                question.input_ids, len(question.option_ids), question.question_type, state
+                question.input_ids,
+                len(question.option_ids),
+                question.question_type,
+                state,
+                images if images.prepared else None,
+                features,
             )
             if isinstance(request.questions[question.question_id], Noul):
                 p_true = commit_noul(values[0], self.noul_floor)
@@ -224,25 +355,59 @@ class H2OBackend:
             truncated=cut,
         )
 
-    def logits(self, input_ids: list[int], count: int, prefix=None) -> mx.array:
+    def logits(
+        self, input_ids: list[int], count: int, prefix=None, images=None, features=None
+    ) -> mx.array:
         """One pass: the first ``count`` labels' logits at the last token, in float32.
 
         ``prefix`` (its length and the backbone's cache after it) continues
-        from there: only the rest of ``input_ids`` is computed.
+        from there: only the rest of ``input_ids`` is computed. ``images``
+        (an ``Images`` with prepared patches) fill the image pad tokens;
+        ``features`` are their vision outputs when already computed.
         """
-        if prefix is None:
-            hidden = self.backbone(mx.array(input_ids)[None])
+        ids = mx.array(input_ids)[None]
+        if prefix is None and images is None:
+            hidden = self.backbone(ids)
+        elif prefix is None:
+            embeddings, positions = image_inputs(
+                self.backbone,
+                self.load_vision(),
+                self.tokenizer,
+                input_ids,
+                images.prepared,
+                features,
+            )
+            hidden = self.backbone(ids, embeddings[None], positions)
         else:
             length, cache = prefix
-            hidden = self.backbone(mx.array(input_ids[length:])[None], cache=fork_cache(cache))
+            positions = None
+            if images is not None:
+                # The rest is text; its positions continue after the images'.
+                from ...backbones.qwen3_5.positions import position_ids
+
+                pad = self.tokenizer.token_to_id(IMAGE_PAD)
+                grids = [image.grid for image in images.prepared]
+                positions = position_ids(input_ids, pad, grids, images.merge_size)[:, :, length:]
+            hidden = self.backbone(ids[:, length:], None, positions, cache=fork_cache(cache))
         return self.label_rows[:count] @ hidden[0, -1].astype(mx.float32)
 
     def probabilities(
-        self, input_ids: list[int], count: int, question_type: str, prefix=None
+        self,
+        input_ids: list[int],
+        count: int,
+        question_type: str,
+        prefix=None,
+        images=None,
+        features=None,
     ) -> list[float]:
-        """The first ``count`` options' probabilities at the type's temperature."""
-        logits = self.logits(input_ids, count, prefix)
-        values = mx.softmax(logits / self.config.temperatures[question_type])
+        """The first ``count`` options' probabilities at the temperature: the
+        question type's, or the image temperature with ``images``."""
+        logits = self.logits(input_ids, count, prefix, images, features)
+        if images is not None:
+            temperature = self.config.image.temperature
+        else:
+            temperature = self.config.temperatures[question_type]
+        values = mx.softmax(logits / temperature)
         mx.eval(values)
         return values.tolist()
 
@@ -270,6 +435,7 @@ def load(
     max_input_tokens: int | None = None,
     noul_floor: float | None = None,
     prefix_cache_gb: float = DEFAULT_PREFIX_CACHE_GB,
+    vision: bool = False,
 ) -> H2OBackend:
     """Load H2O-Lightning from a release folder or a converted copy.
 
@@ -284,7 +450,9 @@ def load(
     ``prefix_cache_gb`` is the memory for kept prefixes (the computed state
     after a request's state), so a request with a state seen recently and
     other questions computes only its questions; 0 turns keeping off (the
-    questions of one request still share their prefix).
+    questions of one request still share their prefix). ``vision=True``
+    loads the vision tower now, not with the first image. Images are scaled
+    to at most the serve config's pixels (1,048,576), at most 4 a request.
     """
     if prefix_cache_gb < 0:
         raise ValueError("prefix_cache_gb must be 0 (off) or more")
@@ -319,4 +487,8 @@ def load(
     if noul_floor is not None:
         backend.noul_floor = float(noul_floor)
     backend.precision = precision(path, backbone)
+    if vision:
+        if not backend.capabilities.supports_images:
+            raise ValueError(f"{path} has no vision weights or image settings")
+        backend.load_vision()
     return backend

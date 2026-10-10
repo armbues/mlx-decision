@@ -3,7 +3,8 @@
 usage: python scripts/make_h2o_reference.py [--release PATH] [--only ID,ID]
 
 The parity set is tests/parity/requests.json (text and image requests),
-tests/parity/marker/requests.json and tests/parity/h2o/requests.json.
+tests/parity/marker/requests.json and tests/parity/h2o/requests.json
+(with images inside a state, lifted out by the shim's own code).
 Needs torch, torchvision, transformers and Pillow (not dependencies of the
 package) and the release's small files: without --release they are fetched
 into the Hugging Face cache at the pinned revision (everything but the
@@ -65,6 +66,16 @@ def dump(data: dict) -> str:
 
 def ids_digest(ids: list[int]) -> str:
     return hashlib.sha256(json.dumps(ids).encode()).hexdigest()
+
+
+def decode_data_url(url: str):
+    """An image the shim lifted out of a state (a data URL), opened with Pillow."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    return Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))).convert("RGB")
 
 
 def fetch_release() -> Path:
@@ -160,9 +171,11 @@ class Reference:
     def request(self, body: dict, images: list) -> dict:
         """Every question's result, or the shim's refusal of the whole request."""
         shim, contract = self.shim, self.contract
-        state, lifted = shim.extract_images({"state": body["state"]})
-        if lifted:
-            raise NotImplementedError("images inside state are not in the parity set yet")
+        # The shim numbers the images in the state after the top-level ones;
+        # stand-ins for those (it takes URLs there unread) keep the count.
+        stand_ins = ["https://example.com/image.png"] * len(images)
+        state, found = shim.extract_images({"state": body["state"], "images": stand_ins})
+        images = images + [decode_data_url(url) for url in found[len(images) :]]
         if len(images) > contract.max_images:
             return {"refused": f"{len(images)} images; at most {contract.max_images}"}
         rendered = shim.render_state(state, contract.state_compact)

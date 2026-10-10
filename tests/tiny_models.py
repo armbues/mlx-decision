@@ -310,6 +310,7 @@ H2O_SERVE_CONFIG = {
     },
     "labels": PPLX_CODES,
     "max_options": 255,
+    "image": {"max_images": 4, "max_pixels": 1048576, "temperature": 0.65},
 }
 H2O_WORDS = ["[UNK]", "record:", "question:", "options:", "Answer:", "billing", "technical"]
 H2O_WORDS += ["sales", "refund", "please", "crash", "now", "true", "false"]

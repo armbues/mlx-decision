@@ -83,7 +83,7 @@ def test_info(model):
     assert info["truncates_input"]
     assert info["max_choice_options"] == info["max_score_levels"] == 255
     assert info["precision"] == "float32"
-    assert not info["supports_images"]
+    assert info["supports_images"]
 
 
 def test_answers_every_question(model):
@@ -332,7 +332,7 @@ def test_without_kept_prefixes_a_request_still_shares_its_prefix(folder, monkeyp
     calls = []
     original = model.backend.prefix_state
     monkeypatch.setattr(
-        model.backend, "prefix_state", lambda ids: calls.append(ids) or original(ids)
+        model.backend, "prefix_state", lambda *args: calls.append(args) or original(*args)
     )
     model.decide("please refund", QUESTIONS)
     assert len(calls) == 1
@@ -343,3 +343,118 @@ def test_without_kept_prefixes_a_request_still_shares_its_prefix(folder, monkeyp
 def test_the_prefix_cache_size_is_checked(folder):
     with pytest.raises(ValueError, match="prefix_cache_gb must be 0"):
         mlx_decision.load(folder, prefix_cache_gb=-1)
+
+
+def png(width: int, height: int, color=(200, 30, 30)) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), color).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_the_vision_tower_loads_on_request(folder):
+    model = mlx_decision.load(folder)
+    model.decide("please", {"refund": QUESTIONS["refund"]})
+    assert model.backend.vision is None
+    model.decide("please", {"refund": QUESTIONS["refund"]}, images=[png(64, 64)])
+    assert model.backend.vision is not None
+    assert mlx_decision.load(folder, vision=True).backend.vision is not None
+
+
+def test_images_come_first_and_take_their_tokens(model):
+    question = {"refund": QUESTIONS["refund"]}
+    plain = model.decide("please", question).usage.input_tokens
+    one = model.decide("please", question, images=[png(256, 256)]).usage.input_tokens
+    # 256 x 256 pixels in patches of 16 merged 2 x 2: 64 tokens, plus the two markers
+    assert one - plain == 64 + 2
+    request = parse_request({"state": "please", "questions": question})
+    text, _ = render("please", request.questions["refund"], ["A", "B"], SETTINGS, images=2)
+    slot = "<|vision_start|><|image_pad|><|vision_end|>"
+    assert user_of(text).startswith(slot * 2 + "record: please\n")
+
+
+def test_large_images_are_scaled_to_the_serve_configs_pixels(model):
+    request = parse_request(
+        {"state": "please", "questions": QUESTIONS, "images": [png(4000, 3000)]}
+    )
+    _, images = model.backend.open_images(request)
+    assert images.tokens[0] * 32 * 32 <= 1048576
+
+
+def test_at_most_four_images(model):
+    with pytest.raises(DecisionError, match="5 images; this model reads at most 4") as error:
+        model.decide("please", QUESTIONS, images=[png(32, 32)] * 5)
+    assert error.value.param == "images"
+
+
+def test_image_markers_in_text_are_refused_with_images(model):
+    question = {"refund": {"type": "noul", "instructions": "refund"}}
+    with pytest.raises(DecisionError, match="image markers") as error:
+        model.decide("look at <|image_pad|> here", question, images=[png(64, 64)])
+    assert error.value.param == "state"
+    assert model.decide("look at <|image_pad|> here", question).answers
+
+
+def test_requests_with_images_use_the_image_temperature(folder, tmp_path):
+    question = {"team": QUESTIONS["team"]}
+    image = png(64, 64)
+    model = mlx_decision.load(folder)
+    hot = mlx_decision.load(
+        edit_config(
+            folder, tmp_path, image={"max_images": 4, "max_pixels": 1048576, "temperature": 5}
+        )
+    )
+    assert hot.decide("please", question).answers == model.decide("please", question).answers
+    a = model.decide("please", question, images=[image]).answers["team"].probabilities
+    b = hot.decide("please", question, images=[image]).answers["team"].probabilities
+    assert max(b.values()) < max(a.values())  # flatter at 5 than at 0.65
+
+
+def test_without_an_image_block_images_are_refused(folder, tmp_path):
+    import shutil
+
+    copy = tmp_path / "copy"
+    shutil.copytree(folder, copy)
+    config = json.loads((copy / "serve_config.json").read_text())
+    del config["image"]
+    (copy / "serve_config.json").write_text(json.dumps(config))
+    model = mlx_decision.load(copy)
+    assert not model.info()["supports_images"]
+    with pytest.raises(DecisionError, match="does not support images"):
+        model.decide("please", QUESTIONS, images=[png(32, 32)])
+
+
+def test_images_share_the_prefix_and_are_kept_with_it(folder):
+    import mlx.core as mx
+
+    model = mlx_decision.load(folder)
+    image = png(64, 96)
+    body = {"state": "please refund", "questions": QUESTIONS, "images": [image]}
+    request = parse_request(body)
+    _, images = model.backend.open_images(request)
+    encoded, _, prefix = model.backend.encode_with_prefix(request, images.tokens)
+    assert prefix and all(e.input_ids[: len(prefix)] == prefix for e in encoded)
+    alone = mlx_decision.load(folder, prefix_cache_gb=0)
+    with mx.stream(mx.cpu):
+        first = model.decide_request(body)
+        again = model.decide_request({**body, "questions": {"q": QUESTIONS["urgency"]}})
+        other = model.decide_request({**body, "images": [png(64, 96, (0, 0, 255))]})
+        whole = alone.decide_request({**body, "questions": {"q": QUESTIONS["urgency"]}})
+    cache = model.backend.prefix_cache
+    assert (cache.misses, cache.hits) == (2, 1)  # another image is another prefix
+    assert again.answers["q"] == first.answers["urgency"]
+    assert whole.answers["q"].probabilities == pytest.approx(
+        first.answers["urgency"].probabilities, abs=1e-5
+    )
+    assert other.answers != first.answers
+
+
+def test_a_lowered_limit_leaves_room_for_the_images(folder):
+    model = mlx_decision.load(folder, max_input_tokens=300)
+    state = " ".join(["please"] * 400)
+    result = model.decide(state, {"refund": QUESTIONS["refund"]}, images=[png(256, 256)])
+    assert result.truncated
+    assert result.usage.input_tokens <= 300

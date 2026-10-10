@@ -18,6 +18,7 @@ from pathlib import Path
 
 import mlx.core as mx
 import pytest
+from parity_images import open_image
 
 import mlx_decision
 from mlx_decision.backbones.qwen3_5.load import load_text_model
@@ -25,6 +26,7 @@ from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
 from mlx_decision.models.h2o.model import H2OBackend, ServeConfig
 from mlx_decision.models.h2o.prompt import PromptSettings
+from mlx_decision.state_images import lift_images
 from mlx_decision.types import parse_request
 from tiny_models import write_h2o
 
@@ -36,6 +38,7 @@ REQUESTS = {case["id"]: case for case in CASES}
 FIXTURE = json.loads((HERE / "h2o" / "reference.json").read_text())
 REFERENCE = FIXTURE["results"]
 TEXT_IDS = [case["id"] for case in CASES if not case.get("images")]
+IMAGE_IDS = [case["id"] for case in CASES if case.get("images")]
 # Largest allowed difference of any probability against the reference (CPU,
 # float32).
 TOLERANCE = 1e-5
@@ -98,8 +101,16 @@ def encoder(release) -> H2OBackend:
 
 
 def request(case_id: str):
+    """The case as a request, images in its state lifted out as ``load`` does."""
     case = REQUESTS[case_id]
-    return parse_request({"state": case["state"], "questions": case["questions"]})
+    body = {"state": case["state"], "questions": case["questions"]}
+    if case.get("images"):
+        body["images"] = [open_image(spec) for spec in case["images"]]
+    images = body.get("images", [])
+    body["state"], found = lift_images(case["state"], len(images))
+    if found:
+        body["images"] = images + [image for image, _ in found]
+    return parse_request(body)
 
 
 def digest(ids: list[int]) -> str:
@@ -125,6 +136,30 @@ def test_token_ids_equal_the_release(encoder, case_id):
         assert len(question.input_ids) == reference["tokens"], question.question_id
         assert digest(question.input_ids) == reference["ids_sha256"], question.question_id
         assert len(question.option_ids) == reference["options"]
+
+
+@pytest.mark.parametrize("case_id", IMAGE_IDS)
+def test_image_token_ids_equal_the_release(encoder, case_id):
+    """Token ids and image grids as the release's processor makes them."""
+    from mlx_decision.models.qwen import prepare
+
+    expected = REFERENCE[case_id]
+    body = request(case_id)
+    if "refused" in expected:
+        with pytest.raises(DecisionError, match="at most 4") as error:
+            encoder.open_images(body)
+        assert error.value.param == "images"
+        return
+    opened, images = encoder.open_images(body)
+    config = encoder.image_config()
+    grids = [list(prepare(image, index, config).grid) for index, image in opened]
+    encoded, cut = encoder.encode(body, images.tokens)
+    assert cut == any(e.get("state_cut") for e in expected.values())
+    for question in encoded:
+        reference = expected[question.question_id]
+        assert grids == reference["image_grids"]
+        assert len(question.input_ids) == reference["tokens"], question.question_id
+        assert digest(question.input_ids) == reference["ids_sha256"], question.question_id
 
 
 @pytest.mark.parametrize("case_id", TEXT_IDS)
@@ -226,4 +261,34 @@ def test_tiny_model_end_to_end(tiny_with_tokenizer, case_id):
             )
             if answer.type == "choice":
                 assert answer.choice == expected["answer"]["choice"]
+    assert result.usage.input_tokens == tokens
+
+
+IMAGE_END_TO_END = [
+    "image_dog_claim",
+    "image_tall_painting",
+    "image_two",
+    "image_three",
+    "image_no_state_text",
+    "image_enlarged",
+    "image_tiny",
+    "h2o_state_images",
+]
+
+
+@pytest.mark.parametrize("case_id", IMAGE_END_TO_END)
+def test_tiny_model_answers_images_as_the_release(tiny_with_tokenizer, case_id):
+    """Images through the whole path (measured within 3.4e-6 of the release)."""
+    with mx.stream(mx.cpu):
+        result = tiny_with_tokenizer.decide_request(request(case_id))
+    tokens = 0
+    for question_id, answer in result.answers.items():
+        expected = REFERENCE[case_id][question_id]
+        tokens += expected["tokens"]
+        if answer.type == "noul":
+            assert answer.noul == pytest.approx(expected["answer"]["noul"], abs=TOLERANCE)
+        else:
+            assert answer.probabilities == pytest.approx(
+                expected["answer"]["probabilities"], abs=TOLERANCE
+            )
     assert result.usage.input_tokens == tokens
