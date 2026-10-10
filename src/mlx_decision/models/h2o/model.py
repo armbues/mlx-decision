@@ -26,6 +26,9 @@ from .prompt import PromptSettings, cut_state, render, render_state
 
 # vLLM's --max-model-len in the release's serve.sh: a longer prompt is refused.
 MAX_INPUT_TOKENS = 40960
+# Under a lowered limit, tokens kept free beyond a question's own: the "..."
+# line and words that tokenize differently where the state is cut or joined.
+CUT_MARGIN = 8
 REQUIRED_FILES = ("config.json", "tokenizer.json", "serve_config.json")
 QUESTION_TYPES = ("choice", "noul", "score")
 
@@ -118,11 +121,29 @@ class H2OBackend:
     def _decode(self, ids: list[int]) -> str:
         return self.tokenizer.decode(ids, skip_special_tokens=False)
 
+    def state_cap(self, request: Request) -> int:
+        """The most tokens of state the request's prompts show.
+
+        At the release's limit, the release's cap (32,000). Under a lowered
+        limit, also no more than leaves room for the longest question with
+        its options, so that a long state is cut rather than refused.
+        """
+        cap = self.config.prompt.max_state_tokens
+        limit = self.capabilities.max_input_tokens
+        if limit >= MAX_INPUT_TOKENS:
+            return cap
+        longest = max(
+            len(self._encode_text(render("", question, self.labels, self.config.prompt)[0]))
+            for question in request.questions.values()
+        )
+        room = limit - longest - CUT_MARGIN
+        # Without room the questions alone are over the limit: refused below.
+        return min(cap, room) if room > 0 else cap
+
     def state_text(self, request: Request) -> tuple[str, bool]:
-        """The rendered state, cut around a "..." line when over the release's cap."""
-        settings = self.config.prompt
-        text = render_state(request.state, settings.state_compact)
-        return cut_state(text, settings.max_state_tokens, self._encode_text, self._decode)
+        """The rendered state, cut around a "..." line when over the cap."""
+        text = render_state(request.state, self.config.prompt.state_compact)
+        return cut_state(text, self.state_cap(request), self._encode_text, self._decode)
 
     def encode(self, request: Request) -> tuple[list[Encoded], bool]:
         """Every question's token ids and whether the state was cut.
@@ -200,8 +221,10 @@ def load(
     """Load H2O-Lightning from a release folder or a converted copy.
 
     ``max_input_tokens`` lowers the limit per question's prompt (default and
-    maximum 40,960, the release's); states over the release's cap (32,000
-    tokens) are cut around a "..." line, longer prompts refused.
+    maximum 40,960, the release's). States over the release's cap (32,000
+    tokens) are cut around a "..." line, under a lowered limit also states
+    that would not leave room for the questions; prompts still over the
+    limit are refused.
     ``noul_floor`` replaces the release's yes/no floor (0.801): a yes/no
     answer less sure than it is reported at it, on its own side; 0 turns it
     off (the raw probability, for routing uncertain answers elsewhere).

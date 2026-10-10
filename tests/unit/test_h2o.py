@@ -276,3 +276,20 @@ def test_in_a_pool_only_h2o_models_take_the_floor(folder, tmp_path):
         "tiny-h2o": {"noul_floor": 0},
         "laya": {},
     }
+
+
+def test_a_lowered_limit_cuts_long_states_to_fit(folder):
+    model = mlx_decision.load(folder, max_input_tokens=200)
+    state = " ".join(["please"] * 300 + ["refund"] * 300)
+    result = model.decide(state, QUESTIONS)
+    assert result.truncated
+    request = parse_request({"state": state, "questions": QUESTIONS})
+    encoded, cut = model.backend.encode(request)
+    assert cut
+    assert 150 < max(len(e.input_ids) for e in encoded) <= 200
+    # The cut keeps both ends.
+    state_text, _ = model.backend.state_text(request)
+    assert state_text.startswith("please") and state_text.endswith("refund")
+    assert "\n...\n" in state_text
+    # At the release's limit the same state is short enough to keep whole.
+    assert not mlx_decision.load(folder).decide(state, QUESTIONS).truncated

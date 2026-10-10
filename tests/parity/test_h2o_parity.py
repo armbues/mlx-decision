@@ -121,6 +121,32 @@ def test_token_ids_equal_the_release(encoder, case_id):
         assert len(question.option_ids) == reference["options"]
 
 
+@pytest.mark.parametrize("limit", [1024, 8192])
+def test_a_lowered_limit_cuts_states_so_prompts_fit(release, limit):
+    backend = H2OBackend("tokens", None, load_tokenizer(release), ServeConfig.read(release), limit)
+
+    def tokens(case_id):
+        return max((e["tokens"] for e in REFERENCE[case_id].values() if "tokens" in e), default=0)
+
+    long = [
+        case_id
+        for case_id in TEXT_IDS
+        if "refused" not in REFERENCE[case_id]
+        and tokens(case_id) > limit
+        # long for its options, which are never cut: checked below
+        and case_id != "choice_255_options"
+    ]
+    assert len(long) >= 5
+    for case_id in long:
+        encoded, cut = backend.encode(request(case_id))
+        assert cut, case_id
+        assert limit - 16 < max(len(e.input_ids) for e in encoded) <= limit, case_id
+    # The questions alone over the limit: refused, not cut away.
+    if limit == 1024:
+        with pytest.raises(DecisionError, match="the limit is 1024"):
+            backend.encode(request("choice_255_options"))
+
+
 @pytest.fixture(scope="module")
 def tiny(tmp_path_factory) -> H2OBackend:
     """The tiny model with the release's labels, temperatures and floor, no tokenizer."""
