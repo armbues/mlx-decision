@@ -7,8 +7,8 @@
 # LICENSES/transformers-Apache-2.0.txt.
 #
 # Modified for mlx-decision: one image at a time, Pillow and NumPy only, the
-# settings read from the release's processor_config.json; images only (no
-# video frames).
+# settings read from the release's processor_config.json or
+# preprocessor_config.json; images only (no video frames).
 """Turn an RGB image into the vision tower's patches, as the reference does."""
 
 import json
@@ -38,11 +38,19 @@ class ImageConfig:
 
     @classmethod
     def from_folder(cls, path: str | Path) -> "ImageConfig":
-        """The image settings of ``processor_config.json``, or the defaults without one."""
-        file = Path(path) / "processor_config.json"
-        if not file.exists():
+        """The folder's image settings, or the defaults without them.
+
+        From ``processor_config.json`` (its ``image_processor`` entry, as
+        Clef and pplx ship it), else from the flat ``preprocessor_config.json``
+        that transformers writes for the image processor alone.
+        """
+        path = Path(path)
+        if (file := path / "processor_config.json").exists():
+            config = json.loads(file.read_text()).get("image_processor", {})
+        elif (file := path / "preprocessor_config.json").exists():
+            config = json.loads(file.read_text())
+        else:
             return cls()
-        config = json.loads(file.read_text()).get("image_processor", {})
         size = config.get("size", {})
         return cls(
             patch_size=config.get("patch_size", cls.patch_size),

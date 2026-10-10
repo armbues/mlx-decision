@@ -66,13 +66,21 @@ def sanitize_vision_weights(weights: Mapping[str, mx.array]) -> dict[str, mx.arr
 
 
 def vision_shards(path: str | Path) -> set[str]:
-    """Names of the weight files that hold vision weights (all of them without an index)."""
+    """Names of the weight files that hold vision weights.
+
+    From the index, or without one (a single-file release) from the files'
+    safetensors headers.
+    """
     path = Path(path)
     index = path / "model.safetensors.index.json"
     if index.exists():
         weight_map = json.loads(index.read_text())["weight_map"]
         return {f for name, f in weight_map.items() if name.startswith(VISION_PREFIXES)}
-    return {file.name for file in path.glob("model*.safetensors")}
+    return {
+        file.name
+        for file in path.glob("model*.safetensors")
+        if any(name.startswith(VISION_PREFIXES) for name in _safetensors_header(file))
+    }
 
 
 def read_vision_weights(path: str | Path) -> dict[str, mx.array]:
@@ -121,12 +129,8 @@ def keeping_vision_weights(
 
 
 def has_vision_weights(path: str | Path) -> bool:
-    """Whether the folder's weight index lists vision tower weights."""
-    index = Path(path) / "model.safetensors.index.json"
-    if not index.exists():
-        return False
-    names = json.loads(index.read_text())["weight_map"]
-    return any(name.startswith(VISION_PREFIXES) for name in names)
+    """Whether the folder holds vision tower weights (see ``vision_shards``)."""
+    return bool(vision_shards(path))
 
 
 def quantize_like(model: nn.Module, quantization: dict, weights: dict) -> None:
@@ -217,12 +221,16 @@ def source_shards(path: str | Path) -> list[Path]:
     return sorted(path.glob("model*.safetensors"))
 
 
-def _safetensors_format(file: Path) -> str | None:
-    """The ``format`` entry of a safetensors file's metadata ("pt", "mlx", ...)."""
+def _safetensors_header(file: Path) -> dict:
+    """A safetensors file's header: tensor names to dtype, shape and offsets, and metadata."""
     with open(file, "rb") as handle:
         (length,) = struct.unpack("<Q", handle.read(8))
-        header = json.loads(handle.read(length))
-    return (header.get("__metadata__") or {}).get("format")
+        return json.loads(handle.read(length))
+
+
+def _safetensors_format(file: Path) -> str | None:
+    """The ``format`` entry of a safetensors file's metadata ("pt", "mlx", ...)."""
+    return (_safetensors_header(file).get("__metadata__") or {}).get("format")
 
 
 def convert_text_weights(

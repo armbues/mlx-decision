@@ -56,6 +56,18 @@ def test_config_from_the_release_file(tmp_path):
     assert ImageConfig.from_folder(tmp_path / "missing") == ImageConfig()
 
 
+def test_config_from_a_flat_preprocessor_config(tmp_path):
+    import json
+
+    flat = {**CONFIG, "patch_size": 14, "size": {"longest_edge": 1003520, "shortest_edge": 3136}}
+    (tmp_path / "preprocessor_config.json").write_text(json.dumps(flat))
+    config = ImageConfig.from_folder(tmp_path)
+    assert (config.patch_size, config.min_pixels, config.max_pixels) == (14, 3136, 1003520)
+    # processor_config.json, where a release has both, wins
+    (tmp_path / "processor_config.json").write_text(json.dumps({"image_processor": CONFIG}))
+    assert ImageConfig.from_folder(tmp_path) == ImageConfig()
+
+
 def test_smart_resize_matches_the_reference(reference):
     config = ImageConfig()
     for height in (1, 10, 31, 32, 33, 100, 255, 479, 1080, 3000, 5000, 9999):

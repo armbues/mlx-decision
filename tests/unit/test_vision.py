@@ -87,3 +87,13 @@ def test_loads_from_a_release_folder(reference, tmp_path):
     assert has_vision_weights(tmp_path)
     model = load_vision_model(tmp_path)
     assert model.patch_embed.proj.weight.shape == (32, 96)
+
+
+def test_found_in_a_single_file_without_index(reference, tmp_path):
+    text = {"model.language_model.norm.weight": mx.ones(4)}
+    mx.save_safetensors(str(tmp_path / "model.safetensors"), text)
+    assert not has_vision_weights(tmp_path)
+    mx.save_safetensors(str(tmp_path / "model.safetensors"), {**text, **weights_of(reference)})
+    (tmp_path / "config.json").write_text(json.dumps({"vision_config": TINY}))
+    assert has_vision_weights(tmp_path)
+    assert load_vision_model(tmp_path).patch_embed.proj.weight.shape == (32, 96)
