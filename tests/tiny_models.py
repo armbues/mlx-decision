@@ -273,6 +273,71 @@ def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> P
     return folder
 
 
+H2O_TEXT = {**PPLX_TEXT, "tie_word_embeddings": True}
+H2O_CONFIG = {
+    "architectures": ["Qwen3_5ForConditionalGeneration"],
+    "model_type": "qwen3_5",
+    "image_token_id": 248056,
+    "video_token_id": 248057,
+    "vision_start_token_id": 248053,
+    "vision_end_token_id": 248054,
+    "tie_word_embeddings": True,
+    "text_config": {**PPLX_CONFIG["text_config"], "tie_word_embeddings": True},
+    "vision_config": PPLX_VISION,
+}
+# The release's small files that describe its prompt, answers and images.
+H2O_FILES = (
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "chat_template.jinja",
+    "preprocessor_config.json",
+    "serve_config.json",
+)
+
+
+def write_h2o(folder: Path, seed: int = 0, files_from: Path | None = None) -> Path:
+    """An H2O-Lightning release folder: tiny backbone with vision tower, float32.
+
+    As the release: one ``model.safetensors`` without an index, the
+    transformers names (``model.language_model.*``, ``model.visual.*``),
+    PyTorch's convolution kernels, tied embeddings (no ``lm_head``) and the
+    release's vocabulary size. ``files_from`` (a release folder) supplies
+    the tokenizer, chat template, image processor and serve config.
+    """
+    import shutil
+
+    from mlx.utils import tree_flatten
+
+    from mlx_decision.backbones.qwen3_5.vision import VisionArgs, VisionModel
+
+    # Lazily built: only the names and shapes are used, nothing is allocated.
+    text = Model(ModelArgs.from_dict({"model_type": "qwen3_5", "text_config": H2O_TEXT}))
+    vision = VisionModel(VisionArgs.from_config(H2O_CONFIG))
+    shapes = {}
+    for name, value in tree_flatten(text.parameters()):
+        shape = tuple(value.shape)
+        if "conv1d.weight" in name:
+            shape = (shape[0], shape[2], shape[1])
+        shapes[name.replace("language_model.model.", "model.language_model.", 1)] = shape
+    assert not any("lm_head" in name for name in shapes)
+    for name, value in tree_flatten(vision.parameters()):
+        shape = tuple(value.shape)
+        if name == "patch_embed.proj.weight":
+            v = PPLX_VISION
+            patch = (v["in_channels"], v["temporal_patch_size"], v["patch_size"], v["patch_size"])
+            shape = (shape[0], *patch)
+        shapes[f"model.visual.{name}"] = shape
+    folder.mkdir(parents=True, exist_ok=True)
+    tensors = {name: mx.array(_random(name, shape, seed)) for name, shape in sorted(shapes.items())}
+    mx.save_safetensors(str(folder / "model.safetensors"), tensors, metadata={"format": "pt"})
+    (folder / "config.json").write_text(json.dumps(H2O_CONFIG, indent=2) + "\n")
+    if files_from:
+        for name in H2O_FILES:
+            shutil.copy(Path(files_from) / name, folder / name)
+    (folder / "LICENSE").write_text("test licence\n")
+    return folder
+
+
 MODERNBERT = {
     "vocab_size": 64,
     "hidden_size": 64,

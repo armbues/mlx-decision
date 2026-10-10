@@ -1,0 +1,11 @@
+[
+  {"id": "h2o_noul_yes_no_keys", "state": "The invoice was paid twice.", "questions": {
+    "dup": {"type": "noul", "instructions": "A payment was duplicated.", "criteria": {"yes": "Paid twice", "no": "Paid once"}}}},
+  {"id": "h2o_empty_instructions", "state": "  padded state with spaces  \n", "questions": {
+    "q": {"type": "noul", "instructions": "", "criteria": {"true": "It holds", "false": ""}},
+    "s": {"type": "score", "instructions": "   ", "criteria": ["bad", {"level": "ok"}, "good\n"]}}},
+  {"id": "h2o_choice_empty_description", "state": "Route this ticket: the app crashes on start.", "questions": {
+    "team": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "", "tech": null, "sales": "New accounts"}}}},
+  {"id": "h2o_image_five", "state": "Five photos of the damage.", "images": ["dog.jpg", "lake.jpg", "chart.png", "laptop.jpg", "error-dialog.png"], "questions": {
+    "damage": {"type": "noul", "instructions": "The photos show damage."}}}
+]
