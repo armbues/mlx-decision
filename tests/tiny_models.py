@@ -295,6 +295,38 @@ H2O_FILES = (
 )
 
 
+H2O_SERVE_CONFIG = {
+    "model": "h2oai/h2o-lightning-4b",
+    "temperature": {"choice": 0.75, "noul": 0.8, "score": 0.65},
+    "noul_floor": 0.801,
+    "prompt": {
+        "chat_template": True,
+        "enable_thinking": False,
+        "system": "You are a decision engine.",
+        "layout": "plain",
+        "state_compact": True,
+        "prefill": "Answer:",
+        "max_state_tokens": 32000,
+    },
+    "labels": PPLX_CODES,
+    "max_options": 255,
+}
+H2O_WORDS = ["[UNK]", "record:", "question:", "options:", "Answer:", "billing", "technical"]
+H2O_WORDS += ["sales", "refund", "please", "crash", "now", "true", "false"]
+
+
+def write_h2o_tokenizer(folder: Path) -> None:
+    """A word-level tokenizer and serve config for an H2O folder without release files."""
+    words = H2O_WORDS + PPLX_SPECIAL + PPLX_CODES
+    tokenizer = Tokenizer(
+        models.WordLevel({word: i for i, word in enumerate(words)}, unk_token="[UNK]")
+    )
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.add_special_tokens(PPLX_SPECIAL)
+    tokenizer.save(str(folder / "tokenizer.json"))
+    (folder / "serve_config.json").write_text(json.dumps(H2O_SERVE_CONFIG, indent=1) + "\n")
+
+
 def write_h2o(folder: Path, seed: int = 0, files_from: Path | None = None) -> Path:
     """An H2O-Lightning release folder: tiny backbone with vision tower, float32.
 
@@ -302,7 +334,10 @@ def write_h2o(folder: Path, seed: int = 0, files_from: Path | None = None) -> Pa
     transformers names (``model.language_model.*``, ``model.visual.*``),
     PyTorch's convolution kernels, tied embeddings (no ``lm_head``) and the
     release's vocabulary size. ``files_from`` (a release folder) supplies
-    the tokenizer, chat template, image processor and serve config.
+    the tokenizer, chat template, image processor and serve config; without
+    it the folder gets a word-level tokenizer (``H2O_WORDS``, the prompt's
+    special tokens and pplx's 255 codes as labels) and a serve config with
+    the release's settings and those labels.
     """
     import shutil
 
@@ -334,6 +369,8 @@ def write_h2o(folder: Path, seed: int = 0, files_from: Path | None = None) -> Pa
     if files_from:
         for name in H2O_FILES:
             shutil.copy(Path(files_from) / name, folder / name)
+    else:
+        write_h2o_tokenizer(folder)
     (folder / "LICENSE").write_text("test licence\n")
     return folder
 

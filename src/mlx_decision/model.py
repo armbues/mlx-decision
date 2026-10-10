@@ -135,7 +135,9 @@ def load(model: str | Path, check_memory: bool = True, **options) -> DecisionMod
     vision tower now rather than with the first image request, and
     ``max_image_pixels`` (default 2**21; larger images are shrunk, None keeps
     only the processor's own maximum). For pplx: ``max_input_tokens`` (default
-    and maximum 8,192 per question; longer input is refused). For Laya and
+    and maximum 8,192 per question; longer input is refused). For
+    H2O-Lightning: ``max_input_tokens`` (default and maximum 40,960 per
+    question; states over 32,000 tokens are cut, longer prompts refused). For Laya and
     Julia: ``max_input_tokens`` (default: the release's own limit, at most
     8,192) and ``dtype`` (``"float32"``, ``"float16"`` or ``"bfloat16"``;
     default float16); for Julia also ``strict_encoding`` (default True, as its release: refuse

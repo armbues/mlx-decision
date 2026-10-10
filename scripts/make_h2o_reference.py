@@ -23,7 +23,8 @@ to the shim as they appear in the request; a request the wire format
 refuses is recorded as refused.
 
 Writes tests/parity/h2o/reference.json with, per question: the token
-count and a SHA-256 of the token ids, whether the release refuses it (over
+count and a SHA-256 of the token ids, whether the state was cut, whether
+the release refuses it (over
 vLLM's 40,960-token limit, more than 255 options or more than 4 images),
 the image grids, and for questions of at most 4,096 tokens also the token
 ids, the label token ids, the tiny model's log-probabilities of the labels
@@ -164,13 +165,16 @@ class Reference:
             raise NotImplementedError("images inside state are not in the parity set yet")
         if len(images) > contract.max_images:
             return {"refused": f"{len(images)} images; at most {contract.max_images}"}
-        state_text = self.truncate(shim.render_state(state, contract.state_compact))
+        rendered = shim.render_state(state, contract.state_compact)
+        state_text = self.truncate(rendered)
         pixels = grid = counts = None
         if images:
             pixels, grid, counts = self.images(images)
         results = {}
         for qid, question in body["questions"].items():
             results[qid] = self.question(qid, question, state_text, images, pixels, grid, counts)
+            if state_text != rendered:
+                results[qid]["state_cut"] = True
         return results
 
     def question(self, qid, question, state_text, images, pixels, grid, counts) -> dict:

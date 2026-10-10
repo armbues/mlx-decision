@@ -3520,12 +3520,14 @@
    "stars": {
     "options": 5,
     "tokens": 32111,
-    "ids_sha256": "3dfe76f8af1e907bc4c5066b1e6dde1c38c5c4092e8a26ad9b51fdbaec28ff64"
+    "ids_sha256": "3dfe76f8af1e907bc4c5066b1e6dde1c38c5c4092e8a26ad9b51fdbaec28ff64",
+    "state_cut": true
    },
    "recommends": {
     "options": 2,
     "tokens": 32080,
-    "ids_sha256": "7e14d9ea7c1ff8a636743df45135797357bbb819167103022aeae07d67bd840e"
+    "ids_sha256": "7e14d9ea7c1ff8a636743df45135797357bbb819167103022aeae07d67bd840e",
+    "state_cut": true
    }
   },
   "thread_6k_twenty_questions": {

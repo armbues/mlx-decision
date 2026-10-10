@@ -138,12 +138,13 @@ def test_the_menu_lists_known_models_and_other():
         "Cloudflare/clef-flash",
         "Cloudflare/clef",
         "perplexity-ai/pplx-decider-v1.1-27b",
+        "h2oai/h2o-lightning-4b",
         "convaiinnovations/laya",
         "convaiinnovations/laya-multilingual",
         "convaiinnovations/laya-typed-decisions",
         "SupersonicLabs/Julia-1",
     ]
-    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("8\rorg/model\r", "org/model")]:
+    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("9\rorg/model\r", "org/model")]:
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             pipe.send_text(typed)
             assert pick_repo() == expected

@@ -180,6 +180,45 @@ register_family(
     quantizable=_qwen_text_matrix,
 )
 
+
+def _h2o_detect(path: Path) -> bool:
+    """``serve_config.json`` with the option labels (the JSON alone, for ``download``)."""
+    file = path / "serve_config.json"
+    if not file.exists():
+        return False
+    try:
+        config = json.loads(file.read_text())
+    except ValueError:
+        return False
+    return isinstance(config, dict) and isinstance(config.get("labels"), list)
+
+
+register_family(
+    "h2o",
+    detect=_h2o_detect,
+    loader="mlx_decision.models.h2o.model:load",
+    known_models=(
+        KnownModel(
+            "h2oai/h2o-lightning-4b",
+            "H2O-Lightning: H2O.ai's 4B decision model (Qwen3.5), text",
+            "9 GB",
+        ),
+    ),
+    # Not the serving shim, its tests, the adapter or the chart images.
+    files=(
+        "config.json",
+        "serve_config.json",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "model*.safetensors",
+        "LICENSE",
+        "README.md",
+    ),
+    weight_files="mlx_decision.models.h2o.model:weight_files",
+    quantizable=_qwen_text_matrix,
+)
+
+
 # The encoder and tokenizer folders plus the files at the top; the Laya repo
 # also holds other checkpoints in sub-folders, Julia's its PyTorch code.
 _MARKER_FILES = ("model.safetensors", "encoder/*", "tokenizer/*", "README.md", "LICENSE*")
