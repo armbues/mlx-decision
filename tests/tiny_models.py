@@ -475,6 +475,17 @@ D1_TEXT = {
     "layer_types": ["conv", "conv", "full_attention", "conv"],
     "tie_word_embeddings": True,
 }
+D1_VISION = {
+    "model_type": "siglip2_vision_model",
+    "hidden_size": 32,
+    "intermediate_size": 64,
+    "num_hidden_layers": 1,
+    "num_attention_heads": 2,
+    "num_patches": 16,
+    "patch_size": 16,
+    "num_channels": 3,
+    "vision_use_head": False,
+}
 # The release's tokenizer and its settings, copied by ``write_d1(files_from=...)``.
 D1_FILES = ("tokenizer.json", "tokenizer_config.json")
 
@@ -538,7 +549,13 @@ def write_d1(folder: Path, seed: int = 0, files_from: Path | None = None) -> Pat
         "auto_map": {"AutoModel": "modeling_d1.D1Model"},
         "model_type": "lfm2_vl",
         "text_config": text,
-        "vision_config": {"model_type": "siglip2_vision_model", "hidden_size": 32},
+        # Small enough for transformers to build the release's class around it.
+        "vision_config": D1_VISION,
+        "downsample_factor": 2,
+        "projector_hidden_size": 64,
+        "projector_bias": True,
+        "projector_hidden_act": "gelu",
+        "projector_use_layernorm": False,
         "tie_word_embeddings": True,
     }
     (folder / "config.json").write_text(json.dumps(config, indent=2) + "\n")

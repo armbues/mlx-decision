@@ -1,22 +1,34 @@
-"""d1-3B's prompt and readout (``models/d1``) against the release's own prompt code.
+"""d1-3B (``models/d1``) against the release's own code, on the text parity sets.
 
-``d1/reference.json`` is written by ``scripts/make_d1_reference.py``: per
-question of the text parity sets, the prompt text, the token ids and the
-token ids each option is scored by, as the release produces them. The tests
-need the release's small files in the Hugging Face cache (the script fetches
-them) and skip otherwise.
+``scripts/make_d1_reference.py`` writes the fixtures in ``d1/``:
+``reference.json`` (per question the prompt text, the token ids and the
+token ids each option is scored by, as the release produces them),
+``reference-tiny.json`` (the release's answers for the tiny random model of
+``tiny_models.write_d1`` with its real tokenizer, CPU, float32) and, with
+``--model``, ``reference-bf16.json`` (its weights in bfloat16 on MPS, every
+question alone). The tests need the release's small files in the Hugging
+Face cache (the script fetches them) and skip otherwise; the slow test
+compares the release folder in ``MLX_DECISION_MODELS`` with the bf16
+fixture.
+
+The tiny model runs on the CPU here: on the GPU, float32 matmuls use TF32.
 """
 
 import hashlib
 import json
 import math
+import os
+import statistics
 from pathlib import Path
 
+import mlx.core as mx
 import numpy as np
 import pytest
 
+import mlx_decision
 from mlx_decision.models.d1.prompt import prefix, suffix
 from mlx_decision.models.d1.readout import option_token_ids, probabilities
+from tiny_models import write_d1
 
 HERE = Path(__file__).parent
 CASES = []
@@ -34,14 +46,21 @@ ANSWERED = [
 REFUSED = [rid for rid, entry in REFERENCE.items() if "error" in entry]
 
 
+TINY = json.loads((HERE / "d1" / "reference-tiny.json").read_text())["results"]
+BF16_FILE = HERE / "d1" / "reference-bf16.json"
+# Largest allowed difference of any probability against the tiny reference (CPU, float32).
+TOLERANCE = 1e-5
+# Against the release in bf16 (D1-7): its own two code paths differ by up to 0.061.
+BF16_MAX, BF16_MEAN, BF16_MARGIN = 0.05, 0.0075, 0.04
+
+
 @pytest.fixture(scope="module")
-def tokenizer():
+def release() -> Path:
     from huggingface_hub import snapshot_download
-    from tokenizers import Tokenizer
 
     meta = FIXTURE["meta"]
     try:
-        path = Path(
+        return Path(
             snapshot_download(
                 meta["repo_id"],
                 revision=meta["revision"],
@@ -51,7 +70,98 @@ def tokenizer():
         )
     except Exception:
         pytest.skip("d1-3B release files not cached (scripts/make_d1_reference.py fetches them)")
-    return Tokenizer.from_file(str(path / "tokenizer.json"))
+
+
+@pytest.fixture(scope="module")
+def tokenizer(release):
+    from tokenizers import Tokenizer
+
+    return Tokenizer.from_file(str(release / "tokenizer.json"))
+
+
+def answer_values(answer) -> list[float]:
+    """An answer's probabilities in the release's order (noul: yes, then no)."""
+    if answer.type == "noul":
+        return [answer.noul, 1 - answer.noul]
+    return list(answer.probabilities.values())
+
+
+@pytest.fixture(scope="module")
+def tiny(release, tmp_path_factory):
+    with mx.stream(mx.cpu):
+        folder = write_d1(tmp_path_factory.mktemp("d1") / "tiny-d1", files_from=release)
+        yield mlx_decision.load(folder, prefix_cache_gb=0, check_memory=False)
+
+
+TINY_IDS = [rid for rid, entry in TINY.items() if "skipped" not in entry]
+MAX_SCORE_LEVELS = 10  # the model card's range; the release itself takes more
+
+
+def over_our_limits(case: dict) -> bool:
+    return any(
+        q["type"] == "score" and len(q["criteria"]) > MAX_SCORE_LEVELS
+        for q in case["questions"].values()
+    )
+
+
+@pytest.mark.parametrize("rid", TINY_IDS)
+def test_tiny_model_answers_as_the_release(tiny, rid):
+    from mlx_decision.errors import DecisionError
+
+    case = REQUESTS[rid]
+    if over_our_limits(case):
+        with pytest.raises(DecisionError, match=f"at most {MAX_SCORE_LEVELS} levels"):
+            tiny.decide(case["state"], case["questions"])
+        return
+    with mx.stream(mx.cpu):
+        result = tiny.decide(case["state"], case["questions"])
+    assert not result.truncated
+    for qid, expected in TINY[rid].items():
+        got = answer_values(result.answers[qid])
+        assert max(abs(a - b) for a, b in zip(got, expected, strict=True)) < TOLERANCE, qid
+
+
+def test_the_fixtures_are_for_the_same_requests():
+    assert set(TINY) == {rid for rid, entry in REFERENCE.items() if "questions" in entry}
+    if BF16_FILE.exists():
+        bf16 = json.loads(BF16_FILE.read_text())
+        assert bf16["meta"]["revision"] == FIXTURE["meta"]["revision"]
+        assert set(bf16["results"]) == set(TINY)
+
+
+@pytest.mark.slow
+@pytest.mark.weights
+def test_bf16_answers_as_the_release():
+    """A few minutes: the release folder answers every question alone, against the
+    release's own code in bf16 on MPS."""
+    root = os.environ.get("MLX_DECISION_MODELS")
+    path = Path(root) / "d1-3B" if root else None
+    if path is None or not path.is_dir():
+        pytest.skip("no d1-3B in MLX_DECISION_MODELS")
+    if not BF16_FILE.exists():
+        pytest.skip("no reference-bf16.json (scripts/make_d1_reference.py --model)")
+    reference = json.loads(BF16_FILE.read_text())["results"]
+    model = mlx_decision.load(path, prefix_cache_gb=0)
+    differences, worst, decided = [], (0.0, None), []
+    for rid, entry in reference.items():
+        case = REQUESTS[rid]
+        if "skipped" in entry or over_our_limits(case):
+            continue
+        for qid, expected in entry.items():
+            answer = model.decide(case["state"], {qid: case["questions"][qid]}).answers[qid]
+            got = answer_values(answer)
+            difference = max(abs(a - b) for a, b in zip(got, expected, strict=True))
+            differences.append(difference)
+            worst = max(worst, (difference, f"{rid}.{qid}"))
+            ranked = sorted(expected, reverse=True) + [0.0]  # one option: no runner-up
+            margin = ranked[0] - ranked[1]
+            if got.index(max(got)) != expected.index(max(expected)) and margin > BF16_MARGIN:
+                decided.append(f"{rid}.{qid}")
+    mean = statistics.mean(differences)
+    print(f"{len(differences)} questions: max {worst[0]:.4f} ({worst[1]}), mean {mean:.4f}")
+    assert worst[0] <= BF16_MAX, worst
+    assert mean <= BF16_MEAN, mean
+    assert not decided, decided
 
 
 def encode(tokenizer, text: str) -> list[int]:
