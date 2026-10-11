@@ -66,6 +66,7 @@ line-length = 100
 src = ["src", "tests"]
 # Copied from mlx-lm; kept close to upstream so they can be diffed.
 extend-exclude = [
+    "src/mlx_decision/backbones/lfm2/lfm2.py",
     "src/mlx_decision/backbones/qwen3_5/activations.py",
     "src/mlx_decision/backbones/qwen3_5/base.py",
     "src/mlx_decision/backbones/qwen3_5/cache.py",
