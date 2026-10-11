@@ -911,7 +911,8 @@ def convert(
         bool,
         typer.Option(
             "--keep-output-embeddings",
-            help="Leave the output embedding matrix (lm_head) unquantized (Clef).",
+            help="Leave the output embedding matrix (lm_head; for H2O-Lightning the tied "
+            "embeddings) unquantized (Clef, H2O-Lightning).",
         ),
     ] = False,
     target_bits: Annotated[
@@ -920,7 +921,7 @@ def convert(
             min=2,
             max=8,
             help="Mixed precision: average bits per weight, allocated by measured "
-            "sensitivity (Clef; implies --quantize; takes a few minutes).",
+            "sensitivity (Clef, H2O-Lightning; implies --quantize; takes a few minutes).",
         ),
     ] = None,
 ) -> None:

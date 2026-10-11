@@ -7,6 +7,38 @@ change the interface).
 
 ## [Unreleased]
 
+### Added
+
+- H2O.ai's H2O-Lightning-4B (`h2oai/h2o-lightning-4b`, release `v1.2.3`),
+  a 4B model with text and images, through the same API, `run`, `chat`,
+  `server`, `mcp` and `benchmark`, and in the `download` menu after pplx.
+  It reads up to 40,960 tokens per question and answers up to 255
+  options; a state over 32,000 tokens is cut as the release cuts it
+  (`truncated` is set). The questions of a request share the computed
+  state, and recent states are kept for later requests as for Clef
+  (`--prefix-cache`), so five questions on a 28,800-token state take
+  12.7 s, and 0.7 s once the state is kept. Up to 4 images per request.
+  It runs in bf16 as released (9.1 GB, 12.6 GB peak on long states);
+  `convert` writes 8-bit, 4-bit and mixed-precision copies with the
+  vision tower kept, and `download --bits` stores them without the
+  full-size files. Its prompt matches the release's code token for
+  token, and in bf16 its probabilities are within 0.020 of that code
+  run on the same Mac.
+
+- `--noul-floor` on `run`, `chat`, `server` and `mcp` (Python:
+  `noul_floor`) sets H2O-Lightning's yes/no floor. As released, a yes/no
+  answer less sure than 0.801 is reported at 0.801 on its side; 0 turns
+  that off, to route uncertain answers elsewhere. Other models refuse
+  the option.
+
+- Images can come inside the state, for every model that reads images
+  (Clef, pplx, H2O-Lightning): a string value that is a data URL or
+  bare base64 of an image, or a chat-style image part (`image_url`,
+  `image`, `input_image`, `base64`), anywhere in the state. Each is replaced by
+  `[image N]`, numbered after the images in `images`, and read as if it
+  had been given there; errors name its place (`state.photos.1`). Image
+  URLs are refused, not fetched.
+
 ## [0.7.0] - 2026-10-09
 
 ### Added

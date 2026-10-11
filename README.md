@@ -15,6 +15,7 @@ or the command line, serve it over HTTP with an API compatible with
 | Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | 3.5x | knowledge, classification, many options, images |
 | Cloudflare's [clef](https://huggingface.co/Cloudflare/clef) | 27B | text, images | 16,384 tokens | 54 GB (8-bit: 32 GB, 4-bit: 19 GB) | 1.1 s (8-bit) | 3.7x (bf16) | as clef-flash, a little better on entailment (8-bit) |
 | Perplexity's [pplx-decider-v1.1-27b](https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b) | 27B | text, images | 8,192 tokens per question | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | 0.83 s (8-bit) | - | knowledge, entailment, images; the most accurate here (8-bit) |
+| H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 40,960 tokens per question | 13 GB (8-bit: 9 GB, 4-bit: 7 GB) | 0.18 s | - | fast with long states and many questions, images, calibrated scores |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
 | [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | English text | 1,024 tokens per question | 1.7 GB | 16 ms | 2.9x | as laya, tuned for typed decision workflows |
 | [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | text, 100+ languages | 1,024 tokens per question | 1.6 GB | 8 ms | 2.5x | topic classification in many languages |
@@ -25,8 +26,8 @@ Apple M5 Pro. "Speedup": the same request against the model's own PyTorch
 code on the same Mac (MPS), with the same answers; across all measured
 requests it ranges from 1.4 to 6 times ([Speed](#speed)). Clef 27B's
 reference does not fit that Mac in bf16, so its speedup was measured on
-an M2 Ultra; pplx's was not measured. How the models differ is in
-[Models](#models).
+an M2 Ultra; pplx's was not measured, nor H2O-Lightning's, whose release
+runs on vLLM with CUDA. How the models differ is in [Models](#models).
 
 This is alpha software: the interface may still change. Questions and bug
 reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues).
@@ -35,7 +36,8 @@ reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues
 
 Requirements: a Mac with Apple Silicon (M1 or later) and macOS 14 or newer,
 Python 3.12 or newer, and the memory the model needs (see the table; which
-copy fits which Mac is in [Clef](#which-copy-fits) and [pplx](#pplx)).
+copy fits which Mac is in [Clef](#which-copy-fits), [pplx](#pplx) and
+[H2O-Lightning](#h2o-lightning)).
 
 ```bash
 pip install mlx-decision                    # library and the mlx-decision command
@@ -68,7 +70,7 @@ cache); `--local-dir` names the folder directly. It warns before
 downloading a repository no supported model family can load. Private or
 gated repos need `HF_TOKEN`.
 
-Clef and pplx models can also be stored quantized. After the model, the menu asks
+Clef, pplx and H2O-Lightning models can also be stored quantized. After the model, the menu asks
 for full size, 8-bit or 4-bit, with the size of each and which of them fit
 in the Mac's memory (the largest that fits is the default); `--bits 8` or
 `--bits 4` chooses without asking:
@@ -82,7 +84,7 @@ The full-size weight files are then fetched one at a time, quantized and
 deleted, so the full-size model never has to fit in memory or on disk:
 Clef 27B in 8-bit takes about 30 GB on disk, plus one 5 GB file while
 the download runs. The result is the same as running
-[convert](#quantizing-clef-and-pplx-convert) on a full download. In the Hugging
+[convert](#quantizing-convert) on a full download. In the Hugging
 Face cache it takes the place of the repo's files, so `-m
 Cloudflare/clef` loads it without fetching anything. `hf cache ls` and
 `hf cache rm` treat it like any download; `hf cache verify` reports it
@@ -91,7 +93,8 @@ as changed, since it no longer holds the repo's files.
 Before reading the weights, loading checks that the model fits: its
 weights plus 10% must be within the GPU's recommended working set
 (macOS swaps beyond it). A model that does not fit is refused with both
-sizes and, for Clef and pplx, the `convert` command for a smaller copy that fits.
+sizes and, for Clef, pplx and H2O-Lightning, the `convert` command for a
+smaller copy that fits.
 `--no-memory-check` loads it anyway.
 
 ## Python
@@ -152,18 +155,20 @@ the state was cut to fit the model's input limit. The answer types
 from `mlx_decision`.
 
 `load` takes options per model: `max_input_tokens` changes the input limit
-(Laya and Julia up to 8,192; pplx only lower), `strict_encoding=False` lets Julia cut what it
-would otherwise refuse, `dtype` sets Laya's and Julia's precision (default
-float16), `max_image_pixels` caps image size for Clef, and
-`prefix_cache_gb` sets how much memory Clef keeps for
+(Laya and Julia up to 8,192; pplx and H2O-Lightning only lower),
+`strict_encoding=False` lets Julia cut what it would otherwise refuse,
+`dtype` sets Laya's and Julia's precision (default float16),
+`max_image_pixels` caps image size for Clef, `noul_floor` sets
+H2O-Lightning's [yes/no floor](#h2o-lightning), and `prefix_cache_gb` sets
+how much memory Clef and H2O-Lightning keep for
 [recent states](#reusing-a-state) (default 2, 0 turns it off).
 `check_memory=False` skips the memory check; a model that does not fit
 raises `mlx_decision.ModelTooLargeError` otherwise.
 `model.info()` describes the loaded model as JSON data: family,
 precision, input limit, option limits and whether it takes images.
 
-With the `images` extra, Clef and pplx take images as file paths, bytes,
-PIL images or data URLs:
+With the `images` extra, Clef, pplx and H2O-Lightning take images as file
+paths, bytes, PIL images or data URLs:
 
 ```python
 result = model.decide(
@@ -172,6 +177,17 @@ result = model.decide(
     images=["screenshot.png"],
 )
 ```
+
+Images can also come inside the state, as H2O-Lightning's release takes
+them: a string value that is a data URL (`data:image/png;base64,...`) or
+bare base64 of an image, or a chat-style image part such as
+`{"type": "image_url", "image_url": {"url": "data:..."}}`, anywhere in a
+string, object or list state. Each is taken out of the state, replaced
+by `[image N]` (numbered after the images in `images`) and read as if it
+had been given in `images`; errors name its place in the state
+(`state.photos.1`). Image URLs are refused, not fetched. This works the
+same in `run`, `server` and `mcp`; models without images read such a
+state as text.
 
 ## Command line
 
@@ -209,8 +225,10 @@ The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body. `--image FILE` (repeatable) sends images along with the
-state (Clef, pplx). `--max-input-tokens N` (also on `chat` and `server`)
-changes the model's input limit, e.g. to give Laya up to 8,192 tokens.
+state (Clef, pplx, H2O-Lightning). `--max-input-tokens N` (also on `chat`,
+`server` and `mcp`) changes the model's input limit, e.g. to give Laya up
+to 8,192 tokens; `--noul-floor` changes H2O-Lightning's
+[yes/no floor](#h2o-lightning).
 
 `mlx-decision --version` prints the installed version.
 
@@ -321,7 +339,8 @@ Images go in the request's `images` list as base64 data URLs
 (`data:image/png;base64,...`; PNG, JPEG or WebP). The server reads no files
 and fetches no URLs, so anything else is refused with `422` naming the
 image (`images.0`). With the SDK, pass them as
-`extra_body={"images": [...]}`.
+`extra_body={"images": [...]}`, or put them in the state as data URLs
+([images inside the state](#python)).
 
 To require a key, start it with `--api-key KEY` (or set
 `MLX_DECISION_API_KEY`). Requests to `/v1/*` then need
@@ -361,7 +380,7 @@ decision as a tool, answered on your Mac. It needs the `mcp` extra.
 The server has two tools:
 
 - `decide` takes the fields of a request body (`state`, `questions`, and
-  `images` for Clef and pplx) and returns the response body as structured
+  `images` for Clef, pplx and H2O-Lightning) and returns the response body as structured
   content, plus `truncated`. An invalid request comes back as a tool
   error naming the field, which the agent can read and correct.
 - `model_info` describes the loaded model: family, precision, input
@@ -437,6 +456,8 @@ The models differ in size and in how they read a request. Clef reads the
 state once and answers all questions together; pplx, Laya and Julia read
 each question on its own, with the whole state, so their input limit
 applies per question and their time grows with the number of questions.
+H2O-Lightning also reads each question on its own, but after the state,
+which it computes once per request, so more questions cost little.
 
 Accuracy on five public benchmarks, the complete test split of each
 (5,270 examples), covering the three question types, with the same
@@ -448,6 +469,7 @@ hosted model, for comparison):
 | clef-flash | **96.8** | 78.1 | 50.8 | 95.4 | 57.6 / 0.51 |
 | clef (8-bit) | 96.4 | **81.0** | 55.2 | 95.4 | 57.6 / 0.51 |
 | pplx (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | **58.0** / **0.47** |
+| H2O-Lightning-4B | 85.2 | 76.3 | 59.9 | 84.6 | 57.3 / 0.52 |
 | laya | 79.0 | 61.9 | 39.5 | 39.2 | 35.1 / 0.99 |
 | laya-typed-decisions | 78.8 | 68.4 | 38.5 | 41.4 | 44.3 / 0.68 |
 | laya-multilingual | 89.8 | 71.9 | 35.5 | 29.2 | 27.7 / 1.40 |
@@ -462,14 +484,18 @@ are in
 [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md).
 The three large models are level with Jev or ahead of it on four of the
 five benchmarks; on entailment pplx comes close to Jev, Clef does not.
+H2O-Lightning, at 4B about a seventh of the size of the 27B models, trails them on
+answer type and science questions, is ahead of clef-flash on entailment
+and about level on sentiment, with the best calibrated scores of all
+(calibration error 1.6%).
 The small models are near chance on entailment and science questions,
 as their model cards lead one to expect; Julia, made for emotion and
 routing, answers TREC almost only with its first two options and calls
 most tweets offensive. Each model matches its own
 reference code token for token on a fixed test set, with probabilities
-within 0.035 (clef-flash), 0.031 (clef), 0.004 (Laya) and 0.018 (Julia);
-pplx's probabilities were compared on a small random model in its layout
-(within 0.00001), not on the 27B weights.
+within 0.035 (clef-flash), 0.031 (clef), 0.020 (H2O-Lightning), 0.004
+(Laya) and 0.018 (Julia); pplx's probabilities were compared on a small
+random model in its layout (within 0.00001), not on the 27B weights.
 
 ### Clef
 
@@ -492,7 +518,7 @@ is about two thirds of a Mac's memory on a 16 GB Mac and four fifths on a
 Peak memory at the full 16,384 tokens: clef-flash 19.0 GB in bf16 and
 11.2 GB in 8-bit; Clef 27B 32 GB in 8-bit and 19.5 GB in 4-bit.
 [`download --bits`](#getting-a-model) stores a quantized copy directly;
-[convert](#quantizing-clef-and-pplx-convert) makes one from a full download and
+[convert](#quantizing-convert) makes one from a full download and
 offers mixed precision, which changes fewer answers than uniform 4-bit.
 
 Clef 27B is three to four times slower than clef-flash and only a little
@@ -530,9 +556,9 @@ clef-flash, a 16,384-token state takes about 10 s the first time and
 0.2 s for one new question after that (1.5 s for twenty). The answers
 are the same as without reuse, within the parity tolerance.
 `--prefix-cache GB` on `run`, `chat`, `server` and `mcp` (Python:
-`prefix_cache_gb`) changes the amount; 0 turns it off. Laya and Julia
-read each question together with the state, so they have nothing to
-reuse.
+`prefix_cache_gb`) changes the amount; 0 turns it off. H2O-Lightning
+keeps recent states the same way. pplx, Laya and Julia read each question
+together with the state, so they have nothing to reuse.
 
 ### pplx
 
@@ -550,7 +576,7 @@ does; `--max-input-tokens` can lower the limit, not raise it.
 | 4-bit | 15.3 GB | 16.9 GB: 32 GB Macs and up | 17.1 GB |
 
 `download --bits 8` or `--bits 4` stores a copy without keeping the
-full-size files, and [convert](#quantizing-clef-and-pplx-convert) writes
+full-size files, and [convert](#quantizing-convert) writes
 one from a full download (uniform 8-bit or 4-bit; the decision head and
 the vision tower stay as released).
 
@@ -575,6 +601,57 @@ for the release (Jev: 57.9). Its prompt and token ids match the
 release's code exactly; its probabilities were compared with that code on
 a small random model in the same layout, since the release's code needs
 about 104 GB to run the 27B on a Mac.
+
+### H2O-Lightning
+
+H2O.ai's H2O-Lightning-4B, built on Qwen3.5-4B, takes text and images and
+answers 1 to 255 options. Each question is its own sequence, but the
+system prompt and the state come first: they are computed once per
+request and shared by its questions, and kept for later requests on the
+same state as for Clef ([reusing a state](#reusing-a-state)). The input
+limit, 40,960 tokens, applies per question. As in the release, a state
+over 32,000 tokens keeps its first and last 16,000 around a `...` line
+(`truncated` is set), and a question still over the limit is refused.
+`--max-input-tokens` lowers the limit, not raises it; the state is then
+cut to leave room for the request's longest question.
+
+As released, a yes/no answer less sure than 0.801 is reported at 0.801 on
+its side: the answer stays, its probability moves. `--noul-floor 0`
+(Python: `noul_floor=0`, also for `server` and `mcp`) reports the model's
+own probability, for routing uncertain answers elsewhere; a value
+between 0.5 and 1 sets another floor. Other families refuse the option.
+
+| Copy | Disk | The fit check needs | Peak memory (longest states) |
+|---|---|---|---|
+| bf16 (as released) | 9.1 GB | 10.0 GB: 16 GB Macs and up | 12.6 GB |
+| 8-bit | 5.1 GB | 5.7 GB: 16 GB Macs and up | 8.9 GB |
+| mixed 4.5 | 3.3 GB | 3.6 GB: 16 GB Macs and up | 7.2 GB |
+| 4-bit | 3.0 GB | 3.3 GB: 16 GB Macs and up | 7.0 GB |
+
+On a 16 GB Mac the full-size model fits, but long states take it past
+the GPU's working set; use the 8-bit copy there. `download --bits` and
+[convert](#quantizing-convert) write the copies; the vision tower stays as
+released.
+
+One question about a 250-token state takes 0.18 s, five take 0.41 s;
+a 28,800-token state takes 12.2 s with one question and 12.7 s with five,
+and 0.69 s for five new questions once the state is kept. As for Clef,
+the quantized copies save memory, not time: from 1,000 tokens on they
+are 5-17% slower.
+
+Images, as for Clef, need the `images` extra: up to 4 per request, each
+scaled to at most 1,048,576 pixels as in the release (`--max-image-mp`
+does not apply), placed ahead of the text. The vision tower loads with
+the first image request.
+
+On the benchmarks in [Models](#models) it is behind the 27B models, ahead
+of clef-flash on entailment (ANLI round 3: 59.9% against 50.8%) and has the
+best calibrated sentiment scores. H2O.ai reports 205 of the 231 public
+JevBench items for the release. Its prompt and token ids match the
+release's code (its shim, with transformers in place of vLLM) for every
+question of the test set; in bf16 its probabilities are within 0.020 of
+that code run in bf16 on the same Mac (mean 0.0014), and the 3 answers
+that changed of 271 were near ties.
 
 ### Laya
 
@@ -608,10 +685,10 @@ such as "Billing" (Laya: 9 to 10 with any of them). Check the wording on
 a few of your own cases before relying on it. `run` and `chat` print a
 hint when Julia gets choice options without descriptions.
 
-## Quantizing Clef and pplx: `convert`
+## Quantizing: `convert`
 
-Laya and Julia are small enough to load as released. Clef and pplx can be
-written as a smaller copy:
+Laya and Julia are small enough to load as released. Clef, pplx and
+H2O-Lightning can be written as a smaller copy:
 
 ```bash
 # 8-bit: half the memory, answers within the parity tolerance
@@ -630,6 +707,8 @@ calibration set, how far the answers move when each block of the model is
 quantized alone (about 6 minutes), then gives the sensitive blocks more
 bits within the average you asked for.
 
+clef-flash's copies, against the released model:
+
 | Copy | Disk | Peak memory | Changed answers (of 139) |
 |---|---|---|---|
 | bf16 (as released) | 17.8 GB | 19.0 GB | - |
@@ -644,6 +723,13 @@ quantized copies are 10-20% slower.
 
 pplx takes `-q` (8-bit) and `-q --bits 4`; mixed precision is not
 offered for it, since measuring it needs the full-size model loaded.
+
+H2O-Lightning takes all of these, mixed precision included (about 4
+minutes to measure). Against the release's code on its test set (271
+questions), the 8-bit copy changed 6 answers, all near ties (largest
+difference 0.035); mixed 4.5 changed 11, 4 of them clear ones (0.16);
+uniform 4-bit 19, 12 of them clear (0.33). For this model 4-bit costs
+more than for clef-flash: prefer 8-bit, or mixed precision on a small Mac.
 
 `convert` reads one weight file at a time, so a model larger than the
 Mac's memory can be converted: Clef 27B to 8-bit takes about 10 s and
@@ -668,8 +754,9 @@ table at the top:
 | laya-multilingual | 1,000-token state, 20 questions | 558 ms | 337 ms | 1.7x |
 | Julia-1 | 7,350-token state, 20 questions | 12.4 s | 2.0 s | 6.1x |
 
-clef-flash peaks at 19.0 GB against the reference's 23.9 GB. Full tables,
-the 8-bit copy and how to reproduce them: [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md).
+clef-flash peaks at 19.0 GB against the reference's 23.9 GB.
+H2O-Lightning is not in the table: its release runs on vLLM, which needs
+CUDA. Full tables, the quantized copies and how to reproduce them: [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md).
 
 To measure a model on your machine:
 
@@ -679,9 +766,11 @@ mlx-decision benchmark -m Cloudflare/clef-flash
 
 It reports load time, peak memory and median / p95 time per request
 across state lengths (those that fit the model's limit) and numbers of
-questions; for Clef also each request again on a state it has kept. As a
-rule of thumb, clef-flash reads about 1,700 tokens per second and Clef
-27B (8-bit) about 380; pplx (8-bit) about 420, laya about 25,000,
+questions; for Clef and H2O-Lightning also each request again on a state
+it has kept. As a rule of thumb, clef-flash reads about 1,700 tokens per
+second and Clef 27B (8-bit) about 380; pplx (8-bit) about 420;
+H2O-Lightning about 2,400 to 3,100 for one question, and more questions
+add little since they share the state; laya about 25,000,
 laya-multilingual about 60,000 and Julia-1 about 100,000, counting the
 state once per question. `--out FILE` also
 writes the results as JSON, with the Mac's chip, CPU and GPU cores,
@@ -702,7 +791,7 @@ mlx-decision benchmark -m ~/Models --out results/
 ```bash
 make setup   # editable install with dev tools
 make test       # unit tests; parity tests run when the weights are found
-make test-slow  # Clef 27B 8-bit against its reference (about 8 min)
+make test-slow  # Clef 27B 8-bit and H2O-Lightning against their references (about 10 min)
 make lint
 ```
 
@@ -717,16 +806,20 @@ and `scripts/make_marker_reference.py` (runs the `laya` package or Julia's
 code from its release folder). pplx's fixture comes from
 `scripts/make_pplx_reference.py`, which runs the release's code on a
 small random model with the release's tokenizer; its tests need only the
-release's small files in the Hugging Face cache.
+release's small files in the Hugging Face cache. H2O-Lightning's comes
+from `scripts/make_h2o_reference.py` in the same way (the release's shim,
+with transformers in place of vLLM); with `--model` it runs the real
+weights in bf16 for the slow test, which takes the release from
+`$MLX_DECISION_MODELS/h2o-lightning-4b`.
 
 ## Affiliation
 
 mlx-decision is an independent open-source project, not affiliated with or
-endorsed by Cloudflare, Perplexity, TypeSafe AI, Convai Innovations or
-Supersonic Labs. Its server speaks a request and response format
+endorsed by Cloudflare, Perplexity, H2O.ai, TypeSafe AI, Convai
+Innovations or Supersonic Labs. Its server speaks a request and response format
 compatible with TypeSafe AI's public Jev API. Clef and clef-flash
-(Cloudflare), pplx-decider (Perplexity), Laya (Convai Innovations) and
-Julia 1 (Supersonic Labs) are used under their Apache-2.0 licences; this
+(Cloudflare), pplx-decider (Perplexity), H2O-Lightning (H2O.ai), Laya
+(Convai Innovations) and Julia 1 (Supersonic Labs) are used under their Apache-2.0 licences; this
 package downloads them from Hugging Face and does not ship their weights.
 
 ## Licence
@@ -736,10 +829,12 @@ MIT, see `LICENSE`. The Qwen3.5 model code is adapted from
 input encoding and head are ported from Cloudflare's release; the image
 preprocessing, vision tower, image positions and the ModernBERT encoder
 are ported from [transformers](https://github.com/huggingface/transformers);
-the pplx prompt is ported from pplx-decider's release; the Laya and Julia
+the pplx prompt is ported from pplx-decider's release; the H2O-Lightning
+prompt and the lifting of images out of the state from H2O-Lightning's
+release; the Laya and Julia
 head and input encoding are ported from the
 [laya](https://pypi.org/project/laya/) package and Julia 1's release (all
 Apache-2.0). Their licence texts are in `LICENSES/`. The test photos are
 public domain or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep
-their own licence (Clef, clef-flash, pplx-decider, Laya, Julia 1:
-Apache-2.0).
+their own licence (Clef, clef-flash, pplx-decider, H2O-Lightning, Laya,
+Julia 1: Apache-2.0).

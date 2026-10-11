@@ -70,6 +70,14 @@ Not measured: the release's code loads the 27B in float32 on a Mac (about
 104 GB). `scripts/pplx_parity_bundle.py` writes the same kind of bundle as
 for Clef 27B, for a Mac that has the memory.
 
+### H2O-Lightning
+
+Not compared: the release runs on vLLM, which needs CUDA. For the parity
+tests below its shim ran with transformers in vLLM's place, in bf16 on
+MPS, one pass per question as the shim sends them; that took 20.5 minutes
+for the 271 questions of the parity set, mlx-decision in bf16 94 s. That
+run is not how the release is meant to be served, so it is no speedup.
+
 ### Laya and Julia
 
 Each family's own code on MPS, run as it runs there: Laya through the `laya`
@@ -160,6 +168,30 @@ state once per question:
 | 7,350 | 5 | 37,201 | 101 s | 94.4 s |
 | Peak memory | | | 29.1 GB | 17.1 GB |
 
+H2O-Lightning in bf16, as an 8-bit and as a uniform 4-bit copy
+(`--questions 1,5`). Each question is its own sequence, but they share
+the system prompt and the state, which are computed once per request;
+input tokens count the state once per question. The longest length,
+28,800, stays under the release's state cut at 32,000 tokens. Warm: the
+same request again with the state kept:
+
+| State tokens | Questions | Input tokens | bf16 | 8-bit | 4-bit | bf16 warm |
+|---|---|---|---|---|---|---|
+| 250 | 1 | 328 | 0.175 s | 0.185 s | 0.173 s | 0.057 s |
+| 250 | 5 | 1,684 | 0.406 s | 0.437 s | 0.412 s | 0.289 s |
+| 1,000 | 1 | 1,079 | 0.381 s | 0.430 s | 0.403 s | 0.060 s |
+| 1,000 | 5 | 5,439 | 0.617 s | 0.687 s | 0.646 s | 0.296 s |
+| 4,000 | 1 | 4,083 | 1.31 s | 1.54 s | 1.50 s | 0.069 s |
+| 4,000 | 5 | 20,459 | 1.58 s | 1.82 s | 1.78 s | 0.329 s |
+| 15,000 | 1 | 15,099 | 5.61 s | 6.20 s | 6.04 s | 0.127 s |
+| 15,000 | 5 | 75,539 | 6.01 s | 6.57 s | 6.38 s | 0.488 s |
+| 28,800 | 1 | 28,920 | 12.2 s | 13.3 s | 13.0 s | 0.197 s |
+| 28,800 | 5 | 144,644 | 12.7 s | 14.0 s | 13.5 s | 0.687 s |
+| Peak memory | | | 12.6 GB | 8.9 GB | 7.0 GB | |
+
+The quantized copies are 5-17% slower from 1,000 tokens on; their warm
+times are within 0.03 s of bf16's.
+
 Laya and Julia in float16. They read each question as its own sequence with
 the whole state, so the input tokens count the state once per question:
 
@@ -172,7 +204,8 @@ the whole state, so the input tokens count the state once per question:
 
 Throughput: clef-flash about 1,550-1,850 tokens per second, Clef 27B
 (8-bit) about 360-400, pplx about 370-460 (8-bit) and 380-420 (4-bit),
-laya and
+H2O-Lightning about 2,400-3,100 for one question (bf16; more questions
+share the state), laya and
 laya-typed-decisions about 24,000-26,000, laya-multilingual about 60,000,
 Julia-1 about 100,000.
 
@@ -194,6 +227,10 @@ input (the state is cut to fit the questions), median of 5 runs:
 Clef 27B as an 8-bit copy, with a state of 15,000 tokens: 40.4 s the
 first time, 0.48 s with one question on the kept state, 1.89 s with five
 and 6.05 s with twenty.
+
+H2O-Lightning keeps states the same way (2 GB by default): with a
+28,800-token state, 12.2 s the first time and 0.20 s for one question on
+the kept state, 0.69 s for five (bf16, table above).
 
 A warm request takes about as long as the same questions on a short state
 (20 questions on a 250-token state: 1.27 s in bf16); the questions still
@@ -248,6 +285,20 @@ reference's top two are more than 0.04 apart:
 pplx copies have not been compared yet: the unquantized model does not fit
 here, and there is no bf16 run of it from a larger Mac.
 
+H2O-Lightning copies on its parity set (the 100 answered requests below,
+271 questions, the answers before the yes/no floor), against the release's code in bf16 on
+MPS; brackets as above. mlx-decision in bf16 is the first row:
+
+| Model | Disk | Peak memory | Mean / max probability difference | Changed answers |
+|---|---|---|---|---|
+| bf16 (as released) | 9.1 GB | 12.6 GB | 0.001 / 0.020 | 3 (0) |
+| 8-bit (`-q`) | 5.1 GB | 8.9 GB | 0.003 / 0.035 | 6 (0) |
+| mixed 4.5 (`--target-bits 4.5`) | 3.3 GB | 7.2 GB | 0.012 / 0.159 | 11 (4) |
+| uniform 4-bit (`-q --bits 4`) | 3.0 GB | 6.9 GB | 0.020 / 0.333 | 19 (12) |
+
+Uniform 4-bit moves this model's answers more than clef-flash's
+(largest difference 0.333 against 0.212); mixed precision halves that.
+
 ## Agreement with the reference code
 
 The parity tests (`tests/parity/`) compare mlx-decision with each family's
@@ -269,6 +320,18 @@ probability.
   over 8,192 tokens. Probabilities were compared on a small random model
   in the release's layout (8 layers, real vocabulary), on the CPU: within
   0.00001. The 27B weights were not run against the release's code.
+- H2O-Lightning: 102 requests (the 97 above plus 5 of its own: empty
+  instructions, empty option descriptions, images inside the state, five
+  images, a yes/no question with `yes` / `no` option ids) against the
+  release's shim, with transformers in vLLM's place. The token ids and
+  image grids are the same for every question, and the 40,000-token
+  state is cut as the release cuts it. Two requests are refused: five
+  images (the release refuses them too) and the `yes` / `no` ids (the
+  release takes them, the Jev request format does not). On the other
+  100 (271 questions), in bf16 on MPS with float32 logits, as the
+  release computes them: largest difference 0.020, mean 0.0014, 3
+  changed answers, all near ties (top two within 0.04). On a small
+  random model in the release's layout, on the CPU: within 0.00001.
 - Laya and Julia: 84 text requests (clef-flash's 50 plus 34 in 22
   languages, around the input limits, and requests the models cut or
   refuse) against their own code in float32 on the CPU. Same token ids and
@@ -306,28 +369,33 @@ Accuracy / macro-F1 / ECE (expected calibration error of the top
 probability, lower is better), in percent; for SST-5 also the mean
 absolute error of the expected level, in levels. A `noul` answer counts
 as yes at a probability of 0.5 or more; a `score` answer's most likely
-level is its prediction. clef-flash ran in bf16, Clef 27B and pplx as
-8-bit copies; Jev is TypeSafe AI's hosted model (`typesafe/jev`, run on
+level is its prediction. clef-flash and H2O-Lightning ran in bf16, Clef
+27B and pplx as 8-bit copies; H2O-Lightning with its yes/no floor on, as
+released (it moves Offensive's probabilities, never an answer); Jev is TypeSafe AI's hosted model (`typesafe/jev`, run on
 2026-10-08), and its column needs a Jev account.
 
-| Benchmark | clef-flash | clef (8-bit) | pplx (8-bit) | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
-|---|---|---|---|---|---|---|---|---|
-| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.8 / 4.3 |
-| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.5 / 77.7 / 3.6 |
-| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 69.2 / 69.4 / 13.0 |
-| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 3.1 |
-| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.7 / 55.3 / 17.2 / 0.49 |
+| Benchmark | clef-flash | clef (8-bit) | pplx (8-bit) | H2O-Lightning-4B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
+|---|---|---|---|---|---|---|---|---|---|
+| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 85.2 / 86.8 / 4.7 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.8 / 4.3 |
+| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 82.1 / 76.3 / 5.0 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.5 / 77.7 / 3.6 |
+| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 59.9 / 59.9 / 18.3 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 69.2 / 69.4 / 13.0 |
+| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 84.6 / 84.6 / 6.1 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 3.1 |
+| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 57.3 / 52.2 / 1.6 / 0.52 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.7 / 55.3 / 17.2 / 0.49 |
 
 Notes:
 - No model refused an example or had its input cut: every state fits
   every model's limit, and every option list fits Julia's 2 to 20 options.
 - Clef 27B gains on clef-flash mainly on entailment and calibration; pplx
-  is the only local model close to Jev on ANLI round 3.
+  is the only local model close to Jev on ANLI round 3. H2O-Lightning,
+  at 4B, is ahead of clef-flash on ANLI round 3 and has the lowest
+  calibration error on SST-5, but trails the larger models on TREC and
+  OpenBookQA.
 - About 28% of the Offensive tweets are offensive. Laya marks too few of
   them (laya: 65 of 860), Julia too many (726 of 860). On TREC, Julia
   answers 453 of 500 questions with its first two options.
 - Run times on the M5 Pro, for the whole suite: Laya and Julia under a
-  minute, clef-flash 22 minutes, pplx (8-bit) 44, Clef 27B (8-bit) 74.
+  minute, H2O-Lightning 11 minutes, clef-flash 22, pplx (8-bit) 44,
+  Clef 27B (8-bit) 74.
 
 ```bash
 python scripts/accuracy_benchmark.py local --datasets DIR --model MODEL --out results.json
