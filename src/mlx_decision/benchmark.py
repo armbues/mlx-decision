@@ -144,7 +144,8 @@ def time_warm(model: DecisionModel, request: dict, repeats: int) -> list[float] 
 
     The request repeats unchanged: only the prefix is looked up, so its
     questions are computed each time, as new questions would be. A prefix
-    larger than the cache limit is not kept, and then there is nothing to time.
+    larger than the cache limit is not kept, nor one a family finds too short
+    to be worth keeping (d1), and then there is nothing to time.
     """
     cache = prefix_cache(model)
     if cache is None:
@@ -245,7 +246,8 @@ def format_report(report: Report) -> str:
         lines += [
             "",
             "Warm: the same request again with its state's computed prefix kept "
-            "(only the questions are computed); - where the prefix was too large to keep.",
+            "(only the questions are computed); - where no prefix was kept (too large for "
+            "the cache, or too short to be worth keeping).",
         ]
     return "\n".join(lines)
 
