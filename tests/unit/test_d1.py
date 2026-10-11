@@ -237,3 +237,15 @@ def test_prefix_cache_off(folder):
     assert model.backend.prefix_cache is None
     with pytest.raises(ValueError, match="prefix_cache_gb"):
         mlx_decision.load(folder, prefix_cache_gb=-1)
+
+
+def test_images_inside_the_state_are_read_as_text(model):
+    """Text only: nothing is lifted out of the state, so nothing is refused."""
+    picture = "data:image/png;base64," + "iVBORw0KGgo" + "A" * 80
+    state = {"note": "see the photo", "photo": picture}
+    encoded, _, _ = model.backend.encode(
+        parse_request({"state": state, "questions": {"refund": QUESTIONS["refund"]}})
+    )
+    text = model.backend.tokenizer.decode(encoded[0].input_ids, skip_special_tokens=False)
+    assert "[image" not in text
+    assert 0 < model.decide(state, {"refund": QUESTIONS["refund"]}).answers["refund"].noul < 1

@@ -25,6 +25,24 @@ change the interface).
   token, and in bf16 its probabilities are within 0.020 of that code
   run on the same Mac.
 
+- LiquidAI's d1-3B (`LiquidAI/d1-3B`), a 3B model, for text, through the
+  same API, `run`, `chat`, `server`, `mcp` and `benchmark`, and in the
+  `download` menu after H2O-Lightning. Its weights are under the LFM Open
+  License v1.0, which licenses commercial use only to organisations with
+  less than $10 million in annual revenue: `download` shows this and asks
+  before downloading (`--yes` skips the question), and a download by repo
+  id notes it on stderr. It reads up to 32,768 tokens per question (a
+  longer state is cut, keeping its start and end; `truncated` is set),
+  answers up to 255 options and 2 to 10 score levels, runs a request's
+  questions in one pass and keeps long states for later requests
+  (`--prefix-cache`). One question about a 250-token state takes 62 ms;
+  it is about as fast as its release's own code (0.9 to 1.2 times) and
+  about as accurate as H2O-Lightning-4B. Its prompt and token ids match
+  the release's, and in bf16 its probabilities are within 0.030 of the
+  release's code. The prompt and answer reading were written from the
+  release's documented and observed behaviour; none of the release's
+  code is part of mlx-decision.
+
 - `--noul-floor` on `run`, `chat`, `server` and `mcp` (Python:
   `noul_floor`) sets H2O-Lightning's yes/no floor. As released, a yes/no
   answer less sure than 0.801 is reported at 0.801 on its side; 0 turns
@@ -38,6 +56,11 @@ change the interface).
   `[image N]`, numbered after the images in `images`, and read as if it
   had been given there; errors name its place (`state.photos.1`). Image
   URLs are refused, not fetched.
+
+### Changed
+
+- The `download` menu lists ten models now; "Other..." is chosen with the
+  arrow keys (number keys reach the first nine entries).
 
 ## [0.7.0] - 2026-10-09
 

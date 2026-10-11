@@ -153,7 +153,10 @@ def load(model: str | Path, check_memory: bool = True, **options) -> DecisionMod
     question; states over 32,000 tokens, or too long for a lowered limit, are
     cut) and
     ``noul_floor`` (default the release's 0.801: less sure yes/no answers are
-    reported at it; 0 turns it off). For Laya and
+    reported at it; 0 turns it off). For d1: ``max_input_tokens`` (default
+    and maximum 32,768 per question; states too long for it are cut). For
+    Clef, H2O-Lightning and d1: ``prefix_cache_gb`` (memory for recently
+    computed states, default 2; 0 turns it off). For Laya and
     Julia: ``max_input_tokens`` (default: the release's own limit, at most
     8,192) and ``dtype`` (``"float32"``, ``"float16"`` or ``"bfloat16"``;
     default float16); for Julia also ``strict_encoding`` (default True, as its release: refuse
