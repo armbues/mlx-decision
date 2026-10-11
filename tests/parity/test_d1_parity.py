@@ -115,3 +115,43 @@ def test_the_release_refuses_only_questions_without_instructions(tokenizer, rid)
     for question in missing:
         with pytest.raises(ValueError):
             suffix(question, tokenizer)
+
+
+@pytest.mark.parametrize("limit", [32768, 8192, 1024])
+def test_long_states_are_cut_to_fit_and_keep_their_ends(tokenizer, limit):
+    """The backend without weights, on every text request of the parity sets."""
+    from mlx_decision.errors import DecisionError
+    from mlx_decision.models.d1.model import CUT_MARK, D1Backend
+    from mlx_decision.types import parse_request
+
+    backend = D1Backend("tokens", None, tokenizer, limit)
+    cuts = refused = 0
+    for case in CASES:
+        request = parse_request({"state": case["state"], "questions": case["questions"]})
+        try:
+            encoded, shared, cut = backend.encode(request)
+        except DecisionError as error:
+            # Only a question too long even with an empty state.
+            question = REQUESTS[case["id"]]["questions"][error.param.split(".", 1)[1]]
+            alone = encode(
+                tokenizer, prefix("") + suffix({"instructions": "x", **question}, tokenizer)
+            )
+            assert len(alone) > limit - 16, (case["id"], error)
+            refused += 1
+            continue
+        assert all(len(q.input_ids) <= limit for q in encoded), case["id"]
+        whole = encode(tokenizer, prefix(case["state"]))
+        if not cut:
+            continue
+        cuts += 1
+        head = tokenizer.decode(encoded[0].input_ids, skip_special_tokens=False)
+        start, end = head.split(CUT_MARK, 1)
+        original = tokenizer.decode(whole, skip_special_tokens=False)
+        # The kept text is the original's start and end (but for a token at each cut).
+        assert original.startswith(start[:-8]), case["id"]
+        tail = end.split("\n\n\nQUESTION:\n")[0]
+        assert original.split("\n\n\nQUESTION:\n")[0].endswith(tail[8:]), case["id"]
+        # Not cut far below what the longest question leaves room for.
+        assert max(len(q.input_ids) for q in encoded) > limit - 64, case["id"]
+    assert cuts > 0
+    print(f"limit {limit}: {cuts} cut, {refused} refused")

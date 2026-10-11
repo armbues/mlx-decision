@@ -16,6 +16,13 @@ single question takes the second way only to keep a long prefix
 (``KEEP_PREFIX`` tokens) for later requests. Rows go in batches of at most
 ``BATCH_TOKENS`` tokens, prefix included.
 
+A state too long for the input limit with the request's longest question is
+cut: its first and last tokens are kept around a ``CUT_MARK`` line, and the
+answer is marked truncated. The rendering of the state stays with
+``prefix``: the state's text is what ``prefix`` adds to an empty state, and
+the cut text goes back in as a string state, which ``prefix`` keeps as it
+is.
+
 The answer is read at each prompt's last token from the logits of the tokens
 that stand for the options (rows of the tied output embeddings, in float32):
 each option's best token, then a softmax over the options. The logits of the
@@ -55,6 +62,10 @@ KEEP_PREFIX = 512
 # Tokens per batch of rows, each row counted with its prefix: bounds the
 # copies of a long prefix's cache, one per row.
 BATCH_TOKENS = 16384
+# Where a cut state's head and tail meet, and the tokens left for it and for
+# how the cut text tokenizes at its edges.
+CUT_MARK = "\n...\n"
+CUT_MARGIN = 8
 
 
 @dataclass
@@ -98,6 +109,18 @@ def batched(cache: list, rows: int) -> list:
     return out
 
 
+def state_text(state) -> str | None:
+    """The state as the prompt shows it: what ``prefix`` adds to an empty state's prefix."""
+    if state is None:
+        return None
+    head = prefix(None)
+    tail = prefix("")[len(head) :]
+    full = prefix(state)
+    if not (full.startswith(head) and full.endswith(tail)):
+        return None
+    return full[len(head) : len(full) - len(tail)]
+
+
 class D1Backend:
     def __init__(
         self,
@@ -119,34 +142,68 @@ class D1Backend:
             max_input_tokens=max_input_tokens,
             max_choice_options=MAX_CHOICE_OPTIONS,
             max_score_levels=MAX_SCORE_LEVELS,
-            truncates_input=False,
+            truncates_input=True,
         )
 
     def _encode_text(self, text: str) -> list[int]:
         return self.tokenizer.encode(text, add_special_tokens=False).ids
 
-    def encode(self, request: Request) -> tuple[list[Encoded], int]:
-        """Every question's token ids, checked against the input limit, and how many
-        of them are the shared prefix (0 if a prompt does not start with its tokens)."""
+    def cut(self, state, room: int) -> str | None:
+        """``state`` cut to about ``room`` tokens around ``CUT_MARK``, or None if it fits
+        (or cannot be cut)."""
+        text = state_text(state)
+        if text is None or room <= 0:
+            return None
+        ids = self._encode_text(text)
+        if len(ids) <= room:
+            return None
+        head = room // 2
+        decode = self.tokenizer.decode
+        return (
+            decode(ids[:head], skip_special_tokens=False)
+            + CUT_MARK
+            + decode(ids[len(ids) - (room - head) :], skip_special_tokens=False)
+        )
+
+    def encode(self, request: Request) -> tuple[list[Encoded], int, bool]:
+        """Every question's token ids, checked against the input limit; how many of
+        them are the shared prefix (0 if a prompt does not start with its tokens);
+        and whether the state was cut to fit."""
+        questions = {
+            question_id: question_dict(question_id, question)
+            for question_id, question in request.questions.items()
+        }
+        tails = {qid: suffix(data, self.tokenizer) for qid, data in questions.items()}
+        tail_ids = {qid: self._encode_text(tail) for qid, tail in tails.items()}
+        limit = self.capabilities.max_input_tokens
         head = prefix(request.state)
         shared = self._encode_text(head)
-        several = len(request.questions) > 1
-        limit = self.capabilities.max_input_tokens
+        longest = max(len(ids) for ids in tail_ids.values())
+        cut = False
+        if len(shared) + longest > limit:
+            room = limit - len(self._encode_text(prefix(""))) - longest - CUT_MARGIN
+            if (text := self.cut(request.state, room)) is not None:
+                head, cut = prefix(text), True
+                shared = self._encode_text(head)
+        several = len(questions) > 1
         encoded = []
         for question_id, question in request.questions.items():
-            data = question_dict(question_id, question)
-            tail = suffix(data, self.tokenizer)
-            ids = shared + self._encode_text(tail) if several else self._encode_text(head + tail)
+            if several:
+                ids = shared + tail_ids[question_id]
+            else:
+                ids = self._encode_text(head + tails[question_id])
             if len(ids) > limit:
+                after = " after cutting the state" if cut else ""
                 raise DecisionError(
-                    f"the question with its state needs {len(ids)} tokens; the limit is {limit}",
+                    f"the question with its state needs {len(ids)} tokens{after}; "
+                    f"the limit is {limit}",
                     param=f"questions.{question_id}",
                 )
-            encoded.append(Encoded(question_id, data, ids, option_keys(question)))
-        if not several and encoded[0].input_ids != shared + self._encode_text(tail):
+            encoded.append(Encoded(question_id, questions[question_id], ids, option_keys(question)))
+        if not several and encoded[0].input_ids != shared + tail_ids[encoded[0].question_id]:
             # The whole prompt tokenizes differently across the prefix's end.
-            return encoded, 0
-        return encoded, len(shared)
+            return encoded, 0, cut
+        return encoded, len(shared), cut
 
     def prefix_state(self, ids: list[int]) -> list:
         """The model's cache after ``ids``: kept from an earlier request, or computed."""
@@ -199,7 +256,7 @@ class D1Backend:
         )
 
     def score(self, request: Request) -> BackendOutput:
-        encoded, shared = self.encode(request)
+        encoded, shared, cut = self.encode(request)
         ids = [question.input_ids for question in encoded]
         repeated = (len(encoded) - 1) * shared
         keep = self.prefix_cache is not None and shared >= KEEP_PREFIX
@@ -215,6 +272,7 @@ class D1Backend:
         return BackendOutput(
             probabilities=answers,
             input_tokens=sum(len(q.input_ids) for q in encoded),
+            truncated=cut,
         )
 
 
@@ -226,7 +284,10 @@ def load(
     """Load d1-3B from a release folder (text only: the vision tower is not read).
 
     ``max_input_tokens`` lowers the limit per question's prompt (default and
-    maximum 32,768, the model's context). ``prefix_cache_gb`` is the memory
+    maximum 32,768, the model's context); a state too long for it with the
+    request's longest question is cut around a "..." line, keeping its start
+    and end, and only questions too long on their own are refused.
+    ``prefix_cache_gb`` is the memory
     for kept prefixes (the computed state of a long request state), so a
     request with a state seen recently and other questions computes only its
     questions; 0 turns keeping off (the questions of one request still share

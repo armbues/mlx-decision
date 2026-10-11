@@ -82,7 +82,8 @@ def test_one_question_reads_the_option_tokens_as_over_the_whole_vocabulary(model
 
 def test_several_questions_share_the_tokenized_prefix(model):
     backend = model.backend
-    encoded, length = backend.encode(parse_request({"state": STATE, "questions": QUESTIONS}))
+    encoded, length, cut = backend.encode(parse_request({"state": STATE, "questions": QUESTIONS}))
+    assert not cut
     tokenizer = backend.tokenizer
     shared = tokenizer.encode(prefix(STATE), add_special_tokens=False).ids
     assert length == len(shared)
@@ -98,7 +99,7 @@ def test_several_questions_share_the_tokenized_prefix(model):
 def test_missing_instructions_become_the_question_id(model):
     backend = model.backend
     question = {"type": "noul"}
-    (encoded,), _ = backend.encode(
+    (encoded,), _, _ = backend.encode(
         parse_request({"state": STATE, "questions": {"urgent": question}})
     )
     assert encoded.question["instructions"] == "urgent"
@@ -118,11 +119,37 @@ def test_limits(model):
     assert error.value.param == "images"
 
 
-def test_prompts_over_the_limit_are_refused(folder):
-    model = mlx_decision.load(folder, max_input_tokens=40)
-    with pytest.raises(DecisionError, match="the limit is 40") as error:
-        model.decide(" ".join(["refund"] * 60), {"refund": QUESTIONS["refund"]})
-    assert error.value.param == "questions.refund"
+def test_a_long_state_is_cut_to_fit_keeping_its_start_and_end(folder):
+    model = mlx_decision.load(folder, max_input_tokens=80)
+    words = ["refund"] * 40 + ["billing"] * 60 + ["angry"] * 40
+    state = " ".join(words)
+    text = model.backend.cut(state, 20)
+    start, end = text.split("\n...\n")
+    assert start.split() == ["refund"] * 10 and end.split() == ["angry"] * 10
+    assert model.backend.cut(state, 200) is None  # fits
+    encoded, shared, cut = model.backend.encode(
+        parse_request({"state": state, "questions": QUESTIONS})
+    )
+    assert cut
+    assert all(len(q.input_ids) <= 80 for q in encoded)
+    # One cut state for every question.
+    assert len({tuple(q.input_ids[:shared]) for q in encoded}) == 1
+    assert model.decide(state, QUESTIONS).truncated
+    assert not model.decide(STATE, QUESTIONS).truncated
+
+
+def test_only_a_question_too_long_on_its_own_is_refused(folder):
+    model = mlx_decision.load(folder, max_input_tokens=30)
+    many = {f"o{i}": "billing technical sales refund" for i in range(12)}
+    question = {"type": "choice", "instructions": "Which team ?", "criteria": many}
+    with pytest.raises(DecisionError, match="the limit is 30") as error:
+        model.decide(" ".join(["refund"] * 100), {"q": question})
+    assert error.value.param == "questions.q"
+    # A short question on the same state: the state is cut instead.
+    model = mlx_decision.load(folder, max_input_tokens=60)
+    result = model.decide(" ".join(["refund"] * 100), {"refund": QUESTIONS["refund"]})
+    assert result.truncated
+    assert result.usage.input_tokens <= 60
 
 
 def test_load_options(folder):
