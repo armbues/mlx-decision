@@ -108,3 +108,30 @@ def test_only_a_marker_written_by_download_counts_as_a_stored_model(monkeypatch,
     (snapshot / "mlx_decision.json").unlink()
     (snapshot / "mlx_decision.json").write_text('{"family": "fake"}')
     assert stored_snapshot("org/decider") == snapshot
+
+
+def test_downloading_by_repo_id_logs_the_familys_licence_note(monkeypatch, tmp_path, caplog):
+    import logging
+
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    from tiny_models import write_d1
+
+    snapshot = write_d1(tmp_path / "snapshot")
+
+    def not_cached(repo_id, allow_patterns=None, local_files_only=False):
+        if local_files_only:
+            raise LocalEntryNotFoundError("not in the cache")
+        return str(snapshot)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", not_cached)
+    with caplog.at_level(logging.WARNING, logger="mlx_decision.hub"):
+        assert mlx_decision.load("org/d1").name == "d1"
+    assert "org/d1: d1's weights are under the LFM Open License v1.0" in caplog.text
+
+    caplog.clear()
+    cached = lambda repo_id, allow_patterns=None, local_files_only=False: str(snapshot)  # noqa: E731
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", cached)
+    with caplog.at_level(logging.WARNING, logger="mlx_decision.hub"):
+        mlx_decision.load("org/d1")
+    assert "LFM" not in caplog.text

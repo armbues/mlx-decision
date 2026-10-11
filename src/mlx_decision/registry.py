@@ -38,6 +38,9 @@ class Family:
     # (tensor name, shape) -> whether the converter quantizes it, for size
     # estimates before converting; None: every tensor.
     quantizable: Callable[[str, list[int]], bool] | None = None
+    # A note on terms of use that ``download`` shows (and asks about in a
+    # terminal) and a download by repo id logs; None: nothing to note.
+    licence: str | None = None
 
 
 _FAMILIES: dict[str, Family] = {}
@@ -52,9 +55,10 @@ def register_family(
     files: tuple[str, ...] | None = None,
     weight_files: str | None = None,
     quantizable: Callable[[str, list[int]], bool] | None = None,
+    licence: str | None = None,
 ) -> None:
     _FAMILIES[name] = Family(
-        name, detect, loader, converter, known_models, files, weight_files, quantizable
+        name, detect, loader, converter, known_models, files, weight_files, quantizable, licence
     )
 
 
@@ -246,6 +250,11 @@ register_family(
             "d1: LiquidAI's 3B decision model (LFM2.5), text",
             "6 GB",
         ),
+    ),
+    licence=(
+        "d1's weights are under the LFM Open License v1.0: commercial use is licensed only "
+        "to organisations with less than $10 million in annual revenue (see the LICENSE "
+        "file of the model's repository)."
     ),
     # Not the release's code, chat template or image settings (text only).
     files=(

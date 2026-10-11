@@ -15,6 +15,9 @@ REPOS = {
     "Cloudflare/clef-flash": {"joint_head_config.json": "{}", "config.json": "{}"},
     "Qwen/Qwen3.5-9B": {"config.json": "{}"},
     "convaiinnovations/laya": {"rl_agent_config.json": "{}"},
+    "LiquidAI/d1-3B": {
+        "config.json": '{"model_type": "lfm2_vl", "auto_map": {"AutoModel": "modeling_d1.D1Model"}}'
+    },
 }
 LAYA_FILES = {  # the root checkpoint, plus a second one in a sub-folder
     "model.safetensors": 843_000_000,
@@ -115,6 +118,45 @@ def test_an_unsupported_model_needs_yes(hub):
     assert "not a supported decision model" in result.stderr
     assert len(hub) == 1  # only the JSON files
     assert invoke("Qwen/Qwen3.5-9B", "--yes").exit_code == 0
+
+
+def test_d1_notes_its_licence_and_downloads_without_a_terminal(hub):
+    result = invoke("LiquidAI/d1-3B")
+    assert result.exit_code == 0, result.output
+    assert "note: d1's weights are under the LFM Open License v1.0" in result.stderr
+    assert "less than $10 million in annual revenue" in result.stderr
+    assert len(hub) == 2  # the JSON files, then the model
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_d1_asks_about_its_licence_in_a_terminal(hub, terminal, monkeypatch, answer):
+    terminal.folders.append(None)
+    asked = []
+    monkeypatch.setattr(
+        "prompt_toolkit.shortcuts.confirm", lambda message: asked.append(message) or answer
+    )
+    result = invoke("LiquidAI/d1-3B")
+    assert asked == ["Download it under these terms?"]
+    assert "LFM Open License" in result.stderr
+    if answer:
+        assert result.exit_code == 0, result.output
+        assert len(hub) == 2
+    else:
+        assert result.exit_code == 1
+        assert "not downloaded" in result.stderr
+        assert len(hub) == 1  # only the JSON files
+
+
+def test_yes_skips_the_licence_question(hub, terminal, monkeypatch):
+    terminal.folders.append(None)
+    monkeypatch.setattr("prompt_toolkit.shortcuts.confirm", lambda message: pytest.fail(message))
+    result = invoke("LiquidAI/d1-3B", "--yes")
+    assert result.exit_code == 0, result.output
+    assert "note: d1's weights" in result.stderr
+
+
+def test_other_families_note_nothing(hub):
+    assert "note:" not in invoke("Cloudflare/clef-flash").stderr
 
 
 def test_a_missing_repo(hub):

@@ -634,7 +634,13 @@ def download(
         ),
     ] = None,
     yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Download even if no model family can load it.")
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Download even if no model family can load it, and without asking about "
+            "the terms of use some models note.",
+        ),
     ] = False,
 ) -> None:
     """Download a model from the Hugging Face Hub (HF_TOKEN for private or gated ones)."""
@@ -643,6 +649,7 @@ def download(
 
     from .download import QUANTIZED_BITS, check_repo, download_quantized, format_size
     from .download import download as fetch
+    from .registry import get_family
 
     if bits is not None and bits not in QUANTIZED_BITS:
         raise typer.BadParameter("must be 8 or 4", param_hint="--bits")
@@ -664,6 +671,13 @@ def download(
 
                 if not terminal or not confirm("Download it anyway?"):
                     fail("not downloaded (use --yes to download anyway)")
+        if check.family is not None and (licence := get_family(check.family).licence):
+            typer.echo(f"note: {licence}", err=True)
+            if terminal and not yes:
+                from prompt_toolkit.shortcuts import confirm
+
+                if not confirm("Download it under these terms?"):
+                    fail("not downloaded")
         if bits is not None and not check.convertible:
             fail(f"{repo_id}: {check.family or 'these'} models cannot be stored quantized")
         if bits is None and check.convertible:

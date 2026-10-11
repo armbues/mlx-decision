@@ -1,5 +1,6 @@
 """Resolve a model reference to a local folder."""
 
+import logging
 from pathlib import Path
 
 
@@ -80,8 +81,22 @@ def _snapshot(repo_id: str, snapshot_download) -> str:
 
     configs = Path(snapshot_download(repo_id, allow_patterns=["*.json"]))
     try:
-        files = detect_family(configs).files
+        family = detect_family(configs)
     except ValueError:
-        files = None
+        family = None
+    files = family.files if family is not None else None
     patterns = list(files) if files is not None else None
+    if family is not None and family.licence and not _weights_cached(repo_id, patterns):
+        logging.getLogger(__name__).warning("%s: %s", repo_id, family.licence)
     return snapshot_download(repo_id, allow_patterns=patterns)
+
+
+def _weights_cached(repo_id: str, patterns: list[str] | None) -> bool:
+    """Whether the Hub cache already holds the repository's weights (no network)."""
+    from huggingface_hub import snapshot_download
+
+    try:
+        folder = snapshot_download(repo_id, allow_patterns=patterns, local_files_only=True)
+    except Exception:  # not cached (or a stand-in that cannot tell)
+        return False
+    return any(Path(folder).glob("*.safetensors"))
