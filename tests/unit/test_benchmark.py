@@ -197,6 +197,10 @@ def test_default_lengths_fit_the_input_limit():
     assert default_lengths(1024) == (250, 1000)
     assert default_lengths(512) == (250, 450)
     assert default_lengths(128) == (100,)
+    # States cut below the input limit: measured up to the cut.
+    assert default_lengths(40960) == (250, 1000, 4000, 15000, 36850)
+    assert default_lengths(40960, 32000) == (250, 1000, 4000, 15000, 28800)
+    assert default_lengths(None, 8192) == (250, 1000, 4000, 7350)
 
 
 # A folder of models.

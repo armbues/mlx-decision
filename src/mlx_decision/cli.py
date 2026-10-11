@@ -1067,7 +1067,8 @@ def benchmark(
         str | None,
         typer.Option(
             help="State lengths in tokens, comma-separated. Default: 250,1000,4000,15000, "
-            "those below the model's input limit (plus one near it for small limits)."
+            "those below the model's input limit or state cut (plus one near it when "
+            "they stay below half of it)."
         ),
     ] = None,
     questions: Annotated[
@@ -1091,7 +1092,7 @@ def benchmark(
 ) -> None:
     """Measure load time and latency per request across state length and question count.
 
-    For Clef, each row is also timed with its state's computed prefix kept
+    For Clef and H2O-Lightning, each row is also timed with its state's computed prefix kept
     (the warm columns), as a later request on the same state would run.
     """
     from .benchmark import benchmark as run_benchmark

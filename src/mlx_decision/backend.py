@@ -18,6 +18,9 @@ class Capabilities:
     supports_images: bool = False
     # False when inputs over max_input_tokens are refused instead of cut.
     truncates_input: bool = True
+    # Tokens of state a prompt shows at most, when less than the input limit
+    # (longer states are cut).
+    max_state_tokens: int | None = None
 
 
 @dataclass

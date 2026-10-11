@@ -166,6 +166,7 @@ class H2OBackend:
             max_choice_options=len(config.labels),
             max_score_levels=len(config.labels),
             truncates_input=True,
+            max_state_tokens=config.prompt.max_state_tokens,
             supports_images=(
                 config.image is not None and path is not None and has_vision_weights(path)
             ),

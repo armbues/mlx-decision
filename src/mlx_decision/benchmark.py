@@ -96,12 +96,16 @@ def make_state(words: int) -> str:
     return " ".join(filler[i % len(filler)] for i in range(words))
 
 
-def default_lengths(limit: int | None) -> tuple[int, ...]:
+def default_lengths(limit: int | None, state_limit: int | None = None) -> tuple[int, ...]:
     """The default state lengths that fit the model's input limit.
 
     When those all stay below half the limit (Laya's 512 or 1,024 tokens), a
     length near the limit is added, so that the longest inputs are measured.
+    A model that cuts states to fewer tokens than its input limit
+    (H2O-Lightning's 32,000) is measured up to that cut instead.
     """
+    if state_limit is not None:
+        limit = state_limit if limit is None else min(limit, state_limit)
     if limit is None:
         return DEFAULT_LENGTHS
     lengths = [length for length in DEFAULT_LENGTHS if length < limit]
@@ -163,7 +167,8 @@ def run(
 ) -> Report:
     """Time every cell; ``lengths`` default to ``default_lengths`` for the model's limit."""
     if lengths is None:
-        lengths = default_lengths(model.backend.capabilities.max_input_tokens)
+        caps = model.backend.capabilities
+        lengths = default_lengths(caps.max_input_tokens, caps.max_state_tokens)
     rate = tokens_per_word(model)
     mx.reset_peak_memory()
     cells = []
