@@ -220,6 +220,44 @@ register_family(
 )
 
 
+def _d1_detect(path: Path) -> bool:
+    """An LFM2-VL ``config.json`` whose ``auto_map`` names the d1 model (the JSON alone,
+    for ``download``)."""
+    file = path / "config.json"
+    if not file.exists():
+        return False
+    try:
+        config = json.loads(file.read_text())
+    except ValueError:
+        return False
+    if not isinstance(config, dict) or config.get("model_type") != "lfm2_vl":
+        return False
+    auto_map = config.get("auto_map")
+    return isinstance(auto_map, dict) and str(auto_map.get("AutoModel", "")).endswith("D1Model")
+
+
+register_family(
+    "d1",
+    detect=_d1_detect,
+    loader="mlx_decision.models.d1.model:load",
+    known_models=(
+        KnownModel(
+            "LiquidAI/d1-3B",
+            "d1: LiquidAI's 3B decision model (LFM2.5), text",
+            "6 GB",
+        ),
+    ),
+    # Not the release's code, chat template or image settings (text only).
+    files=(
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "model*.safetensors",
+        "LICENSE",
+        "README.md",
+    ),
+)
+
 # The encoder and tokenizer folders plus the files at the top; the Laya repo
 # also holds other checkpoints in sub-folders, Julia's its PyTorch code.
 _MARKER_FILES = ("model.safetensors", "encoder/*", "tokenizer/*", "README.md", "LICENSE*")

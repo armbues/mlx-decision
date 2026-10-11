@@ -446,3 +446,101 @@ def write_marker(folder: Path, family: str, seed: int = 0, max_length: int = 48)
         policy = {"max_length": max_length, "head_length": 24, "strict_encoding": True}
         (folder / "inference-policy.json").write_text(json.dumps(policy))
     return folder
+
+
+D1_SPECIAL = ["<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|pad|>"]
+D1_CODES = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+D1_CODES += [chr(c) for c in range(ord("a"), ord("z") + 1)]
+D1_CODES += [str(i) for i in range(10)] + [f"{i:02d}" for i in range(100)]
+D1_CODES += [str(i) for i in range(100, 256)]
+D1_WORDS = ["[UNK]", "yes", "Yes", "YES", "no", "No", "NO", "user", "assistant", "QUESTION"]
+D1_WORDS += [":", ".", ",", "-", "Options", "Reply", "with", "the", "option", "code", "only"]
+D1_WORDS += ["or", "a", "single", "digit", "billing", "technical", "sales", "refund", "angry"]
+D1_TEXT = {
+    "model_type": "lfm2",
+    "hidden_size": 64,
+    "num_hidden_layers": 4,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "max_position_embeddings": 32768,
+    "norm_eps": 1e-5,
+    "conv_bias": False,
+    "conv_L_cache": 3,
+    "block_dim": 64,
+    "block_multiple_of": 16,
+    "block_ffn_dim_multiplier": 1.0,
+    "block_auto_adjust_ff_dim": False,
+    "intermediate_size": 96,
+    "rope_parameters": {"rope_theta": 1000000.0, "rope_type": "default"},
+    "layer_types": ["conv", "conv", "full_attention", "conv"],
+    "tie_word_embeddings": True,
+}
+# The release's tokenizer and its settings, copied by ``write_d1(files_from=...)``.
+D1_FILES = ("tokenizer.json", "tokenizer_config.json")
+
+
+def write_d1_tokenizer(folder: Path) -> int:
+    """A word-level tokenizer with the prompt's special tokens and every option code;
+    returns its vocabulary size."""
+    words = D1_WORDS + D1_SPECIAL + [code for code in D1_CODES if code not in D1_WORDS]
+    tokenizer = Tokenizer(
+        models.WordLevel({word: i for i, word in enumerate(words)}, unk_token="[UNK]")
+    )
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.add_special_tokens(D1_SPECIAL)
+    tokenizer.save(str(folder / "tokenizer.json"))
+    return len(words)
+
+
+def write_d1(folder: Path, seed: int = 0, files_from: Path | None = None) -> Path:
+    """A d1-3B release folder: tiny LFM2 text model, float32.
+
+    As the release: an LFM2-VL ``config.json`` whose ``auto_map`` names the
+    d1 model, one ``model.safetensors`` with the text model under
+    ``model.language_model.*`` (PyTorch's convolution kernels, tied
+    embeddings) next to a vision tower and projector (a few tensors; d1 is
+    text only here, so they are never read). ``files_from`` (a release
+    folder) supplies the tokenizer, with the release's vocabulary size;
+    without it the folder gets a word-level tokenizer (``D1_WORDS``, the
+    special tokens and every option code).
+    """
+    import shutil
+
+    from mlx.utils import tree_flatten
+
+    from mlx_decision.backbones.lfm2.lfm2 import Model as Lfm2Model
+    from mlx_decision.backbones.lfm2.lfm2 import ModelArgs as Lfm2Args
+
+    folder.mkdir(parents=True, exist_ok=True)
+    if files_from:
+        for name in D1_FILES:
+            shutil.copy(Path(files_from) / name, folder / name)
+        vocab = json.loads((Path(files_from) / "config.json").read_text())["text_config"][
+            "vocab_size"
+        ]
+    else:
+        vocab = write_d1_tokenizer(folder)
+    text = {**D1_TEXT, "vocab_size": vocab}
+    # Lazily built: only the names and shapes are used, nothing is allocated.
+    model = Lfm2Model(Lfm2Args.from_dict(text))
+    shapes = {}
+    for name, value in tree_flatten(model.parameters()):
+        shape = tuple(value.shape)
+        if name.endswith("conv.conv.weight"):
+            shape = (shape[0], shape[2], shape[1])
+        shapes["model.language_model." + name[len("model.") :]] = shape
+    shapes["model.vision_tower.vision_model.post_layernorm.weight"] = (32,)
+    shapes["model.multi_modal_projector.linear_1.weight"] = (64, 128)
+    tensors = {name: mx.array(_random(name, shape, seed)) for name, shape in sorted(shapes.items())}
+    mx.save_safetensors(str(folder / "model.safetensors"), tensors, metadata={"format": "pt"})
+    config = {
+        "architectures": ["Lfm2VlForConditionalGeneration"],
+        "auto_map": {"AutoModel": "modeling_d1.D1Model"},
+        "model_type": "lfm2_vl",
+        "text_config": text,
+        "vision_config": {"model_type": "siglip2_vision_model", "hidden_size": 32},
+        "tie_word_embeddings": True,
+    }
+    (folder / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    (folder / "LICENSE").write_text("test licence\n")
+    return folder

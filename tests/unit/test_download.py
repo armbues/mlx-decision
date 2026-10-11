@@ -139,12 +139,15 @@ def test_the_menu_lists_known_models_and_other():
         "Cloudflare/clef",
         "perplexity-ai/pplx-decider-v1.1-27b",
         "h2oai/h2o-lightning-4b",
+        "LiquidAI/d1-3B",
         "convaiinnovations/laya",
         "convaiinnovations/laya-multilingual",
         "convaiinnovations/laya-typed-decisions",
         "SupersonicLabs/Julia-1",
     ]
-    for typed, expected in [("\r", "Cloudflare/clef-flash"), ("9\rorg/model\r", "org/model")]:
+    # Number keys reach the first nine entries; "Other..." is the tenth.
+    other = "\x1b[B" * len(known_models()) + "\rorg/model\r"
+    for typed, expected in [("\r", "Cloudflare/clef-flash"), (other, "org/model")]:
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             pipe.send_text(typed)
             assert pick_repo() == expected

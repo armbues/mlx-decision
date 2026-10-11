@@ -91,6 +91,9 @@ def test_descriptions_carry_the_model_limits():
     assert "at most 16 options" in tools(FakeBackend(question_tokens=192))["decide"].description
     strict = FakeBackend(question_tokens=192, truncates_input=False)
     assert "groups of options" not in tools(strict)["decide"].description
+    fewer_levels = FakeBackend(max_choice_options=255, max_score_levels=10)
+    description = tools(fewer_levels)["decide"].description
+    assert "A choice takes at most 255 options, a score at most 10 levels." in description
 
 
 def test_decide_answers_every_question_type():

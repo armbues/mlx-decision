@@ -124,10 +124,14 @@ def family_hints(info: dict[str, Any], allow_image_paths: bool) -> list[str]:
         why = ""
         if info["truncates_input"] and limit != info["max_choice_options"]:
             why = f" (a question and its options share {info['question_tokens']} tokens)"
+        levels = info["max_score_levels"]
+        if levels is not None and levels < limit:
+            takes = f"A choice takes at most {limit} options{why}, a score at most {levels} levels"
+        else:
+            takes = f"A choice or score takes at most {limit} options or levels{why}"
         hints.append(
-            f"A choice or score takes at most {limit} options or levels{why}. For more, "
-            "first choose among groups of options, then ask again with the options of "
-            "the chosen group."
+            f"{takes}. For more, first choose among groups of options, then ask again with "
+            "the options of the chosen group."
         )
     if info["family"] == "julia":
         hints.append(
