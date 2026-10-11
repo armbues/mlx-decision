@@ -3,6 +3,14 @@
 # Copied from mlx-lm (https://github.com/ml-explore/mlx-lm), file
 # mlx_lm/models/lfm2.py at commit 5cfec4cb39deba54210b3ff4d86f2337c7bc10b5,
 # under the MIT License. See LICENSES/mlx-lm-MIT.txt.
+#
+# Modified for mlx-decision: the model returns the final hidden states, and
+# ``output_embedding_rows`` gives rows of the (tied) output embeddings, so a
+# readout computes only the logits it needs. Caches are the Qwen3.5 copy's
+# (``ConcatenateKVCache`` and ``ArraysCache``, one sequence, no padding),
+# which replace arrays instead of writing into them, so a computed prefix can
+# be forked; a pass that fills a cache is evaluated layer by layer. Removed:
+# the batched-cache paths of the short convolution (lengths, advance).
 
 from dataclasses import dataclass
 from typing import Any, List, Optional
@@ -10,14 +18,14 @@ from typing import Any, List, Optional
 import mlx.core as mx
 import mlx.nn as nn
 
-from .activations import swiglu
-from .base import (
+from ..qwen3_5.activations import swiglu
+from ..qwen3_5.base import (
     BaseModelArgs,
     create_attention_mask,
     create_ssm_mask,
     scaled_dot_product_attention,
 )
-from .cache import ArraysCache, KVCache
+from ..qwen3_5.cache import ArraysCache, ConcatenateKVCache
 
 
 @dataclass
@@ -165,14 +173,7 @@ class ShortConv(nn.Module):
                 state = cache[0]
             Bx = mx.concatenate([state, Bx], axis=1)
             n_keep = self.L_cache - 1
-            t = x.shape[1]
-            if cache.lengths is not None:
-                ends = mx.clip(cache.lengths, 0, t)
-                positions = (ends[:, None] + mx.arange(n_keep))[..., None]
-                cache[0] = mx.take_along_axis(Bx, positions, axis=1)
-            else:
-                cache[0] = Bx[:, -n_keep:, :]
-            cache.advance(t)
+            cache[0] = Bx[:, -n_keep:, :]
         else:
             Bx = mx.pad(Bx, [(0, 0), (self.L_cache - 1, 0), (0, 0)])
 
@@ -287,6 +288,11 @@ class Lfm2Model(nn.Module):
         for layer, c in zip(self.layers, cache):
             mask = attn_mask if layer.is_attention_layer else conv_mask
             h = layer(h, mask, cache=c)
+            if c is not None:
+                # Layer by layer: an unevaluated conv state (a slice of the
+                # layer's input) would keep every layer's input alive until the
+                # end of the pass.
+                mx.eval(h, c.state)
 
         return self.embedding_norm(h)
 
@@ -304,8 +310,12 @@ class Model(nn.Module):
         cache=None,
         input_embeddings: Optional[mx.array] = None,
     ):
-        out = self.model(inputs, cache, input_embeddings)
-        return self.model.embed_tokens.as_linear(out)
+        """Final hidden states (after the last norm) for token ids ``[B, L]``."""
+        return self.model(inputs, cache, input_embeddings)
+
+    def output_embedding_rows(self, ids: mx.array) -> mx.array:
+        """Rows of the output embedding matrix (tied to the input embeddings) for ``ids``."""
+        return self.model.embed_tokens.weight[ids]
 
     def sanitize(self, weights):
         sanitized_weights = {}
@@ -323,6 +333,6 @@ class Model(nn.Module):
 
     def make_cache(self):
         return [
-            KVCache() if l.is_attention_layer else ArraysCache(size=1)
+            ConcatenateKVCache() if l.is_attention_layer else ArraysCache(size=1)
             for l in self.layers
         ]
