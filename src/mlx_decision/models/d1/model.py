@@ -3,12 +3,24 @@
 Each question is its own prompt: the state (``prefix``) and the question
 (``suffix``). With one question the whole prompt is tokenized at once; with
 several, the prefix is tokenized once and each question's own text after it,
-which gives the release's token ids in both cases. The answer is read at the
-prompt's last token from the logits of the tokens that stand for the
-options (rows of the tied output embeddings, in float32): each option's best
-token, then a softmax over the options. The logits of the rest of the
-vocabulary would shift every option's score by the same amount, so they are
-not computed.
+which gives the release's token ids in both cases.
+
+The questions of a request run together, as rows of one right-padded batch
+(the model is causal, so padding at the end changes no real token). Either
+every row holds its whole prompt, or the prefix is computed once (or taken
+from the prefix cache) and the rows hold only the questions' own tokens,
+continuing from copies of its cache. The second costs one more pass, worth
+it once the prefix would otherwise be repeated ``SHARE_TOKENS`` times or
+more (measured on d1-3B: the two are level at about 190 repeated tokens). A
+single question takes the second way only to keep a long prefix
+(``KEEP_PREFIX`` tokens) for later requests. Rows go in batches of at most
+``BATCH_TOKENS`` tokens, prefix included.
+
+The answer is read at each prompt's last token from the logits of the tokens
+that stand for the options (rows of the tied output embeddings, in float32):
+each option's best token, then a softmax over the options. The logits of the
+rest of the vocabulary would shift every option's score by the same amount,
+so they are not computed.
 """
 
 from dataclasses import dataclass
@@ -19,9 +31,11 @@ import mlx.core as mx
 from tokenizers import Tokenizer
 
 from ...backbones.lfm2.load import load_text_model
+from ...backbones.qwen3_5.cache import ConcatenateKVCache
 from ...backend import BackendOutput, Capabilities
 from ...errors import DecisionError
 from ...types import Choice, Noul, Request
+from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
 from .prompt import prefix, suffix
 from .readout import option_token_ids, probabilities
 
@@ -32,6 +46,15 @@ MAX_INPUT_TOKENS = 32768
 MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 10
 REQUIRED_FILES = ("config.json", "tokenizer.json")
+# Repeated prefix tokens ((questions - 1) x prefix) from which computing the
+# prefix once beats one more pass.
+SHARE_TOKENS = 192
+# Prefix tokens from which a single question's prefix is computed apart, to
+# be kept for later requests (with the prefix cache on).
+KEEP_PREFIX = 512
+# Tokens per batch of rows, each row counted with its prefix: bounds the
+# copies of a long prefix's cache, one per row.
+BATCH_TOKENS = 16384
 
 
 @dataclass
@@ -59,12 +82,39 @@ def option_keys(question) -> list[str]:
     return [str(i) for i in range(len(question.criteria))]
 
 
+def batched(cache: list, rows: int) -> list:
+    """Copies of a one-sequence cache for ``rows`` sequences that continue it."""
+    out = []
+    for layer in cache:
+        copy = layer.fork()
+        if isinstance(copy, ConcatenateKVCache):
+            copy.keys = mx.broadcast_to(copy.keys, (rows, *copy.keys.shape[1:]))
+            copy.values = mx.broadcast_to(copy.values, (rows, *copy.values.shape[1:]))
+        else:
+            copy.cache = [
+                None if a is None else mx.broadcast_to(a, (rows, *a.shape[1:])) for a in copy.cache
+            ]
+        out.append(copy)
+    return out
+
+
 class D1Backend:
-    def __init__(self, name: str, model, tokenizer: Tokenizer, max_input_tokens: int):
-        """``model`` None gives a backend that only encodes."""
+    def __init__(
+        self,
+        name: str,
+        model,
+        tokenizer: Tokenizer,
+        max_input_tokens: int,
+        prefix_cache_gb: float = 0.0,
+    ):
+        """``model`` None gives a backend that only encodes; ``prefix_cache_gb``
+        0 keeps no prefixes between requests."""
         self.name = name
         self.model = model
         self.tokenizer = tokenizer
+        self.prefix_cache = (
+            PrefixCache(round(prefix_cache_gb * 1e9)) if prefix_cache_gb > 0 else None
+        )
         self.capabilities = Capabilities(
             max_input_tokens=max_input_tokens,
             max_choice_options=MAX_CHOICE_OPTIONS,
@@ -75,30 +125,71 @@ class D1Backend:
     def _encode_text(self, text: str) -> list[int]:
         return self.tokenizer.encode(text, add_special_tokens=False).ids
 
-    def encode(self, request: Request) -> list[Encoded]:
-        """Every question's token ids, checked against the input limit."""
+    def encode(self, request: Request) -> tuple[list[Encoded], int]:
+        """Every question's token ids, checked against the input limit, and how many
+        of them are the shared prefix (0 if a prompt does not start with its tokens)."""
         head = prefix(request.state)
-        shared = self._encode_text(head) if len(request.questions) > 1 else None
+        shared = self._encode_text(head)
+        several = len(request.questions) > 1
         limit = self.capabilities.max_input_tokens
         encoded = []
         for question_id, question in request.questions.items():
             data = question_dict(question_id, question)
             tail = suffix(data, self.tokenizer)
-            if shared is None:
-                ids = self._encode_text(head + tail)
-            else:
-                ids = shared + self._encode_text(tail)
+            ids = shared + self._encode_text(tail) if several else self._encode_text(head + tail)
             if len(ids) > limit:
                 raise DecisionError(
                     f"the question with its state needs {len(ids)} tokens; the limit is {limit}",
                     param=f"questions.{question_id}",
                 )
             encoded.append(Encoded(question_id, data, ids, option_keys(question)))
-        return encoded
+        if not several and encoded[0].input_ids != shared + self._encode_text(tail):
+            # The whole prompt tokenizes differently across the prefix's end.
+            return encoded, 0
+        return encoded, len(shared)
 
-    def answer(self, question: Encoded) -> list[float]:
-        """The question's option probabilities, from one pass over its prompt."""
-        hidden = self.model(mx.array([question.input_ids]))[0, -1].astype(mx.float32)
+    def prefix_state(self, ids: list[int]) -> list:
+        """The model's cache after ``ids``: kept from an earlier request, or computed."""
+        key = None
+        if self.prefix_cache is not None:
+            key = prefix_key(ids)
+            if (entry := self.prefix_cache.get(key)) is not None:
+                return entry.cache
+        cache = self.model.make_cache()
+        self.model(mx.array([ids]), cache=cache)
+        mx.eval([c.state for c in cache])
+        if key is not None:
+            self.prefix_cache.put(key, cache)
+        return cache
+
+    def last_hidden(self, rows: list[list[int]], cache: list | None, offset: int) -> list:
+        """The final hidden state at each row's last token (float32), the rows
+        continuing ``cache`` (after ``offset`` tokens) if given."""
+        out = []
+        start = 0
+        while start < len(rows):
+            # As many rows as fit the budget, prefix included; at least one.
+            end = start + 1
+            longest = len(rows[start])
+            while end < len(rows):
+                widest = max(longest, len(rows[end]))
+                if (end + 1 - start) * (offset + widest) > BATCH_TOKENS:
+                    break
+                longest = widest
+                end += 1
+            chunk = rows[start:end]
+            padded = mx.array([row + [0] * (longest - len(row)) for row in chunk])
+            state = batched(cache, len(chunk)) if cache is not None else None
+            hidden = self.model(padded, cache=state)
+            ends = mx.array([len(row) - 1 for row in chunk])
+            last = hidden[mx.arange(len(chunk)), ends].astype(mx.float32)
+            mx.eval(last)
+            out += [last[i] for i in range(len(chunk))]
+            start = end
+        return out
+
+    def answer(self, question: Encoded, hidden: mx.array) -> list[float]:
+        """The question's option probabilities from the hidden state at its last token."""
         groups = option_token_ids(question.question, self.tokenizer)
         tokens = sorted({token for group in groups for token in group})
         rows = self.model.output_embedding_rows(mx.array(tokens)).astype(mx.float32)
@@ -108,10 +199,18 @@ class D1Backend:
         )
 
     def score(self, request: Request) -> BackendOutput:
-        encoded = self.encode(request)
+        encoded, shared = self.encode(request)
+        ids = [question.input_ids for question in encoded]
+        repeated = (len(encoded) - 1) * shared
+        keep = self.prefix_cache is not None and shared >= KEEP_PREFIX
+        if shared and (repeated >= SHARE_TOKENS or keep):
+            cache = self.prefix_state(ids[0][:shared])
+            hidden = self.last_hidden([row[shared:] for row in ids], cache, shared)
+        else:
+            hidden = self.last_hidden(ids, None, 0)
         answers = {}
-        for question in encoded:
-            values = self.answer(question)
+        for question, last in zip(encoded, hidden, strict=True):
+            values = self.answer(question, last)
             answers[question.question_id] = dict(zip(question.option_ids, values, strict=True))
         return BackendOutput(
             probabilities=answers,
@@ -119,12 +218,22 @@ class D1Backend:
         )
 
 
-def load(path: Path, max_input_tokens: int | None = None) -> D1Backend:
+def load(
+    path: Path,
+    max_input_tokens: int | None = None,
+    prefix_cache_gb: float = DEFAULT_PREFIX_CACHE_GB,
+) -> D1Backend:
     """Load d1-3B from a release folder (text only: the vision tower is not read).
 
     ``max_input_tokens`` lowers the limit per question's prompt (default and
-    maximum 32,768, the model's context).
+    maximum 32,768, the model's context). ``prefix_cache_gb`` is the memory
+    for kept prefixes (the computed state of a long request state), so a
+    request with a state seen recently and other questions computes only its
+    questions; 0 turns keeping off (the questions of one request still share
+    their prefix).
     """
+    if prefix_cache_gb < 0:
+        raise ValueError("prefix_cache_gb must be 0 (off) or more")
     if max_input_tokens is None:
         max_input_tokens = MAX_INPUT_TOKENS
     if not 1 <= max_input_tokens <= MAX_INPUT_TOKENS:
@@ -138,6 +247,8 @@ def load(path: Path, max_input_tokens: int | None = None) -> D1Backend:
         raise FileNotFoundError(f"{path}: no model*.safetensors weights")
     tokenizer = Tokenizer.from_file(str(path / "tokenizer.json"))
     model = load_text_model(path)
-    backend = D1Backend(path.resolve().name, model, tokenizer, max_input_tokens)
+    backend = D1Backend(
+        path.resolve().name, model, tokenizer, max_input_tokens, prefix_cache_gb=prefix_cache_gb
+    )
     backend.precision = str(model.model.embed_tokens.weight.dtype).rsplit(".", 1)[-1]
     return backend

@@ -5,7 +5,7 @@ cell runs one warm-up request, then ``repeats`` timed ones, end to end
 through ``DecisionModel.decide_request``. It works for any family: states
 are filler text, sized from the token counts the model reports.
 
-For a model that keeps computed prefixes (Clef, H2O-Lightning), each cell
+For a model that keeps computed prefixes (Clef, H2O-Lightning, d1), each cell
 also times requests on a state it has seen: the "warm" times, which cover
 only the questions. The timed cold requests drop kept prefixes first.
 """

@@ -82,9 +82,10 @@ def test_one_question_reads_the_option_tokens_as_over_the_whole_vocabulary(model
 
 def test_several_questions_share_the_tokenized_prefix(model):
     backend = model.backend
-    encoded = backend.encode(parse_request({"state": STATE, "questions": QUESTIONS}))
+    encoded, length = backend.encode(parse_request({"state": STATE, "questions": QUESTIONS}))
     tokenizer = backend.tokenizer
     shared = tokenizer.encode(prefix(STATE), add_special_tokens=False).ids
+    assert length == len(shared)
     for question in encoded:
         tail = tokenizer.encode(suffix(question.question, tokenizer), add_special_tokens=False).ids
         assert question.input_ids == shared + tail
@@ -97,7 +98,9 @@ def test_several_questions_share_the_tokenized_prefix(model):
 def test_missing_instructions_become_the_question_id(model):
     backend = model.backend
     question = {"type": "noul"}
-    (encoded,) = backend.encode(parse_request({"state": STATE, "questions": {"urgent": question}}))
+    (encoded,), _ = backend.encode(
+        parse_request({"state": STATE, "questions": {"urgent": question}})
+    )
     assert encoded.question["instructions"] == "urgent"
     assert "QUESTION:\nurgent\n" in prefix(STATE) + suffix(encoded.question, backend.tokenizer)
     assert 0 < model.decide(STATE, {"urgent": question}).answers["urgent"].noul < 1
@@ -138,3 +141,72 @@ def test_run(folder):
     body = json.loads(result.stdout)
     assert body["model"] == folder.name
     assert 0 < body["answers"]["refund"]["noul"] < 1
+
+
+LONG_STATE = " ".join(
+    ["refund", "billing", "angry", "sales"] * 160
+)  # over KEEP_PREFIX and SHARE_TOKENS
+
+
+def as_list(answer) -> list[float]:
+    return [answer.noul] if answer.type == "noul" else list(answer.probabilities.values())
+
+
+def one_at_a_time(model, state) -> dict[str, list[float]]:
+    return {
+        qid: as_list(model.decide(state, {qid: q}).answers[qid]) for qid, q in QUESTIONS.items()
+    }
+
+
+@pytest.fixture
+def cpu():
+    """Float32 on the CPU: no TF32 (load with check_memory=False, which needs the GPU)."""
+    with mx.stream(mx.cpu):
+        yield
+
+
+@pytest.mark.parametrize("state", [STATE, LONG_STATE], ids=["short", "long"])
+def test_questions_together_answer_as_one_at_a_time(folder, cpu, state):
+    """Short: every question's whole prompt a row of one batch. Long: the prefix once,
+    the questions' own tokens as rows continuing it."""
+    model = mlx_decision.load(folder, prefix_cache_gb=0, check_memory=False)
+    alone = one_at_a_time(model, state)
+    together = model.decide(state, QUESTIONS).answers
+    for qid, values in alone.items():
+        assert np.allclose(as_list(together[qid]), values, atol=1e-5), qid
+
+
+def test_batches_within_the_token_budget(folder, cpu, monkeypatch):
+    import mlx_decision.models.d1.model as d1
+
+    model = mlx_decision.load(folder, prefix_cache_gb=0, check_memory=False)
+    want = model.decide(LONG_STATE, QUESTIONS).answers
+    monkeypatch.setattr(d1, "BATCH_TOKENS", 1)  # one row per pass
+    got = model.decide(LONG_STATE, QUESTIONS).answers
+    for qid in QUESTIONS:
+        assert np.allclose(as_list(got[qid]), as_list(want[qid]), atol=1e-5), qid
+
+
+def test_a_long_prefix_is_kept_for_the_next_request(folder, cpu):
+    model = mlx_decision.load(folder, check_memory=False)
+    cache = model.backend.prefix_cache
+    first = {"refund": QUESTIONS["refund"]}
+    second = {k: v for k, v in QUESTIONS.items() if k != "refund"}
+    model.decide(LONG_STATE, first)
+    assert (cache.hits, cache.misses, len(cache)) == (0, 1, 1)
+    kept = model.decide(LONG_STATE, second).answers
+    assert (cache.hits, len(cache)) == (1, 1)
+    fresh = mlx_decision.load(folder, prefix_cache_gb=0, check_memory=False)
+    fresh = fresh.decide(LONG_STATE, second).answers
+    for qid in second:
+        assert np.allclose(as_list(kept[qid]), as_list(fresh[qid]), atol=1e-5), qid
+    # Short prefixes are part of every row, not kept.
+    model.decide(STATE, QUESTIONS)
+    assert len(cache) == 1
+
+
+def test_prefix_cache_off(folder):
+    model = mlx_decision.load(folder, prefix_cache_gb=0, check_memory=False)
+    assert model.backend.prefix_cache is None
+    with pytest.raises(ValueError, match="prefix_cache_gb"):
+        mlx_decision.load(folder, prefix_cache_gb=-1)

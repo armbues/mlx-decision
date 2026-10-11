@@ -312,7 +312,7 @@ PrefixCacheOption = Annotated[
         "--prefix-cache",
         min=0,
         metavar="GB",
-        help="Memory for kept states (Clef, H2O-Lightning): a request whose state came "
+        help="Memory for kept states (Clef, H2O-Lightning, d1): a request whose state came "
         "recently, with other questions, computes only the questions. Default 2; 0 turns "
         "it off.",
     ),
@@ -1093,7 +1093,7 @@ def benchmark(
 ) -> None:
     """Measure load time and latency per request across state length and question count.
 
-    For Clef and H2O-Lightning, each row is also timed with its state's computed prefix kept
+    For Clef, H2O-Lightning and d1, each row is also timed with its state's computed prefix kept
     (the warm columns), as a later request on the same state would run.
     """
     from .benchmark import benchmark as run_benchmark
