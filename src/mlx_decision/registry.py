@@ -201,7 +201,7 @@ register_family(
     known_models=(
         KnownModel(
             "h2oai/h2o-lightning-4b",
-            "H2O-Lightning: H2O.ai's 4B decision model (Qwen3.5), text",
+            "H2O-Lightning: H2O.ai's 4B decision model (Qwen3.5), text and images",
             "9 GB",
         ),
     ),
