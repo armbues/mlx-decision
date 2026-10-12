@@ -1,5 +1,6 @@
 """The ``chat`` session, typed through prompt_toolkit's pipe input."""
 
+import copy
 import json
 
 import pytest
@@ -259,3 +260,30 @@ def test_json_answers_note_truncation_on_stderr(tmp_path, capsys):
     assert bodies(out)[0]["usage"]["input_tokens"] == 1
     assert "truncated" not in out
     assert "note: the state was truncated" in err
+
+
+@pytest.mark.parametrize(
+    "criteria",
+    [
+        [1, "1", "high"],  # 1 and "1" show as the same line
+        ["low", "low", "high"],
+        ["calm\nquiet", "angry"],  # one level, two lines
+        ["", "angry"],  # a blank line ends the block
+        {"a: b": None, "a": "b", "c": None},  # both show as "a: b"
+        {"a: b": None, "a": None},  # both name option "a" for the validator
+        {"x": "two\nlines", "y": None},
+    ],
+)
+def test_edit_keeps_criteria_it_cannot_show_one_per_line(fake_model, capsys, criteria):
+    kind = "score" if isinstance(criteria, list) else "choice"
+    question = {"type": kind, "instructions": "How?", "criteria": criteria}
+    expected = copy.deepcopy(question)
+    # Enter keeps the type, the id and the instructions; one more would end
+    # the criteria block if it were shown.
+    typed = lines("/edit q", "", "", "", "")
+    session = drive(fake_model, typed, body={"questions": {"q": question}})
+    assert session.questions["q"] == expected
+    assert [type(value) for value in session.questions["q"]["criteria"]] == [
+        type(value) for value in expected["criteria"]
+    ]
+    assert "kept as they are" in capsys.readouterr().err

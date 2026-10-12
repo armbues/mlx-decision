@@ -366,12 +366,15 @@ class Session:
         return new_id, question
 
     def ask_options(self, current: dict[str, Any]) -> dict[str, Any]:
+        shown = [
+            key if value is None else f"{key}: {as_text(value)}" for key, value in current.items()
+        ]
+        if not one_per_line(shown, option_key):
+            say(KEPT.format(what="options"))
+            return current
         say("options, one per line as 'option' or 'option: description' (blank line ends):")
-        lines = {
-            (key if value is None else f"{key}: {as_text(value)}"): (key, value)
-            for key, value in current.items()
-        }
-        text = self.ask_block(list(lines), OptionsValidator())
+        lines = dict(zip(shown, current.items(), strict=True))
+        text = self.ask_block(shown, OptionsValidator())
         options = {}
         for line in filter(str.strip, text.splitlines()):
             if line in lines:
@@ -383,9 +386,13 @@ class Session:
         return options
 
     def ask_levels(self, current: list[Any]) -> list[Any]:
+        shown = [as_text(value) for value in current]
+        if not one_per_line(shown):
+            say(KEPT.format(what="levels"))
+            return current
         say("levels, lowest first, one per line (blank line ends):")
-        lines = {as_text(value): value for value in current}
-        text = self.ask_block(list(lines), None)
+        lines = dict(zip(shown, current, strict=True))
+        text = self.ask_block(shown, None)
         return [lines.get(line, line.strip()) for line in filter(str.strip, text.splitlines())]
 
     def ask_block(self, default: list[str], validator: Validator | None) -> str:
@@ -439,6 +446,27 @@ class Session:
         return f"{kind}_{n}"
 
 
+# Criteria the line editor would change without being asked to.
+KEPT = (
+    "{what} kept as they are: some look alike on a line, span lines or are "
+    "blank, so editing them here would lose them; edit them in a -q file"
+)
+
+
+def option_key(line: str) -> str:
+    """The option a line names, as ``OptionsValidator`` reads it."""
+    return line.partition(":")[0].strip()
+
+
+def one_per_line(shown: list[str], key=lambda line: line) -> bool:
+    """Whether entries shown as ``shown`` come back from the line editor as they
+    are: each one non-blank line, no two with the same ``key``."""
+    if any(len(line.splitlines()) != 1 or not line.strip() for line in shown):
+        return False
+    keys = [key(line) for line in shown]
+    return len(set(keys)) == len(keys)
+
+
 class IdValidator(Validator):
     def __init__(self, taken: set[str], empty_ok: bool):
         self.taken = taken
@@ -458,7 +486,7 @@ class OptionsValidator(Validator):
     def validate(self, document) -> None:
         seen = set()
         for line in filter(str.strip, document.text.splitlines()):
-            key = line.partition(":")[0].strip()
+            key = option_key(line)
             if key in seen:
                 raise ValidationError(message=f"option {key!r} given twice")
             seen.add(key)

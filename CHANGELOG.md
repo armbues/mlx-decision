@@ -72,6 +72,11 @@ change the interface).
   it on stderr, as `run --json` does.
 - `chat` with `"images": null` in its `-q` file crashed on `/image`; null
   now means no images.
+- `chat`'s `/edit` lost score levels or choice options that look alike
+  on a line (`[1, "1"]`, a repeated level, option `a: b` next to `a`
+  described as `b`) or that span lines, even when nothing was changed.
+  Such criteria are now kept as they are, with a note to edit them in
+  the `-q` file; the rest of the question stays editable.
 
 ## [0.8.0] - 2026-10-11
 
