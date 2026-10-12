@@ -4,6 +4,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import anyio
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -367,6 +368,40 @@ def test_models_are_unloaded_to_fit_the_budget(models_folder):
         for name in ("Alpha", "beta", "Alpha", "gamma"):
             assert client.post("/v1/systemone", json={**BODY, "model": name}).status_code == 200
         assert client.get("/health").json()["loaded"] == ["Alpha", "gamma"]
+
+
+def test_an_invalid_request_loads_and_unloads_nothing(models_folder):
+    with several(models_folder, budget=1100) as client:  # one model at a time
+        assert client.post("/v1/systemone", json={**BODY, "model": "Alpha"}).status_code == 200
+        for body in ({"model": "beta"}, {**BODY, "model": "beta", "questions": {}}):
+            assert client.post("/v1/systemone", json=body).status_code == 422
+        assert client.get("/health").json()["loaded"] == ["Alpha"]
+
+
+def worker_threads() -> set[threading.Thread]:
+    return {t for t in threading.enumerate() if t.name.startswith("mlx-decision")}
+
+
+@pytest.mark.parametrize("failure", ["startup", "serving"])
+def test_the_worker_stops_when_the_lifespan_ends_with_an_error(tmp_path, failure):
+    def load(spec):
+        if failure == "startup":
+            raise FileNotFoundError("weights missing")
+        return DecisionModel(FakeBackend())
+
+    pool = ModelPool(discover([write_model(tmp_path / "fake")]), budget=10**9, load=load)
+    app = create_app(pool)
+    before = worker_threads()
+
+    async def run():
+        async with app.router.lifespan_context(app):
+            raise RuntimeError("stopped while serving")
+
+    with pytest.raises((FileNotFoundError, RuntimeError)) as caught:
+        anyio.run(run)
+    expected = FileNotFoundError if failure == "startup" else RuntimeError
+    assert caught.type is expected  # the original error, not one from the cleanup
+    assert not any(t.is_alive() for t in worker_threads() - before)
 
 
 def test_a_model_larger_than_the_budget_gets_a_422_on_model(models_folder):

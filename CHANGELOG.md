@@ -44,6 +44,13 @@ change the interface).
   deep made H2O-Lightning and d1-3B fail while writing their prompt
   (`server` answered 500). Requests may now nest up to 100 levels; deeper
   ones are refused with an error naming the field.
+- `server` with several models loaded the model an invalid request named
+  (unloading another to make room) before it found the request invalid,
+  so a malformed request could cost two model loads. A request is now
+  checked before its model is loaded.
+- When the default model failed to load at startup, the server's worker
+  thread was left running (only noticeable when the app is embedded and
+  started again); it is now stopped however the server ends.
 
 ## [0.8.0] - 2026-10-11
 

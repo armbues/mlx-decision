@@ -21,7 +21,7 @@ from .errors import DecisionError
 from .images import check_data_urls
 from .memory import ModelTooLargeError
 from .pool import ModelPool
-from .types import decode_json
+from .types import decode_json, parse_request
 
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
 # Room for several large images as data URLs.
@@ -69,11 +69,13 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if pool.default is not None:
-            await on_worker(pool.get, pool.default)
-            logger.info("model %s loaded", pool.default)
-        yield
-        worker.shutdown(wait=True)
+        try:
+            if pool.default is not None:
+                await on_worker(pool.get, pool.default)
+                logger.info("model %s loaded", pool.default)
+            yield
+        finally:  # also when the default model fails to load
+            worker.shutdown(wait=True)
 
     app = FastAPI(title="mlx-decision", lifespan=lifespan)
     guards = []
@@ -111,7 +113,10 @@ def create_app(
         name = body.get("model") if isinstance(body, dict) else None
 
         def answer():
-            return pool.get(name if isinstance(name, str) else None).decide_request(body)
+            # What needs no model first, so a bad body loads and unloads nothing.
+            chosen = pool.resolve(name if isinstance(name, str) else None)
+            parse_request(body)
+            return pool.get(chosen).decide_request(body)
 
         try:
             check_data_urls(body)
