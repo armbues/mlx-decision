@@ -3,7 +3,9 @@
 Needs the ``server`` extra (FastAPI, uvicorn). The models come from a
 ``ModelPool``; the request's ``model`` field picks one. All model work,
 loading included, runs on one worker thread; requests wait their turn
-there. With an API key, ``/v1/*`` requires ``Authorization: Bearer <key>``.
+there. With an API key, the ``/v1`` routes require ``Authorization: Bearer
+<key>``; the check belongs to the routes, so it holds wherever the app is
+mounted (a mount or a proxy's root path).
 """
 
 import asyncio
@@ -13,7 +15,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .errors import DecisionError
@@ -26,6 +28,10 @@ TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
 MAX_BODY_BYTES = 64 * 2**20
 
 logger = logging.getLogger(__name__)
+
+
+class _Unauthorized(Exception):
+    """A request to the API without the configured key."""
 
 
 def error_response(
@@ -70,19 +76,26 @@ def create_app(
         worker.shutdown(wait=True)
 
     app = FastAPI(title="mlx-decision", lifespan=lifespan)
+    guards = []
 
     if api_key:
         expected = f"Bearer {api_key}".encode()
 
-        @app.middleware("http")
-        async def check_api_key(request: Request, call_next):
-            if request.url.path.startswith("/v1/"):
-                given = request.headers.get("authorization", "").encode()
-                if not hmac.compare_digest(given, expected):
-                    return error_response(401, "missing or invalid API key", "authentication_error")
-            return await call_next(request)
+        async def check_api_key(request: Request) -> None:
+            given = request.headers.get("authorization", "").encode()
+            if not hmac.compare_digest(given, expected):
+                raise _Unauthorized
 
-    @app.post("/v1/systemone")
+        @app.exception_handler(_Unauthorized)
+        async def unauthorized(request: Request, error: _Unauthorized):
+            return error_response(401, "missing or invalid API key", "authentication_error")
+
+        guards.append(Depends(check_api_key))
+
+    # The key check runs before an endpoint reads the body.
+    api = APIRouter(prefix="/v1", dependencies=guards)
+
+    @api.post("/systemone")
     async def systemone(request: Request):
         raw = await read_body(request, max_body_bytes)
         if raw is None:
@@ -123,7 +136,7 @@ def create_app(
     async def health():
         return {"status": "ok", "model": pool.default, "loaded": pool.loaded()}
 
-    @app.get("/v1/models")
+    @api.get("/models")
     async def models():
         return {
             "models": [
@@ -137,4 +150,5 @@ def create_app(
             ]
         }
 
+    app.include_router(api)
     return app

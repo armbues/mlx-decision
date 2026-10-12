@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fake_backend import FakeBackend, write_model, write_sized_model
@@ -198,6 +199,35 @@ def test_the_right_key_passes_and_health_stays_open(keyed_client):
     ok = keyed_client.post("/v1/systemone", json=BODY, headers={"Authorization": "Bearer s3cret"})
     assert ok.status_code == 200
     assert keyed_client.get("/health").status_code == 200
+
+
+@pytest.mark.parametrize("deployment", ["direct", "mount", "root_path"])
+def test_the_api_key_holds_under_a_url_prefix(tmp_path, deployment):
+    app = create_app(single_pool(tmp_path, FakeBackend), api_key="s3cret")
+    with TestClient(app) as direct:  # runs the lifespan, which a mount does not
+        if deployment == "direct":
+            client, prefix = direct, ""
+        elif deployment == "mount":
+            outer = FastAPI()
+            outer.mount("/decision", app)
+            client, prefix = TestClient(outer), "/decision"
+        else:
+            client, prefix = TestClient(app, root_path="/decision"), "/decision"
+        right = {"Authorization": "Bearer s3cret"}
+        for headers in ({}, {"Authorization": "Bearer wrong"}):
+            assert (
+                client.post(f"{prefix}/v1/systemone", json=BODY, headers=headers).status_code == 401
+            )
+            assert client.get(f"{prefix}/v1/models", headers=headers).status_code == 401
+        assert client.post(f"{prefix}/v1/systemone", json=BODY, headers=right).status_code == 200
+        assert client.get(f"{prefix}/v1/models", headers=right).status_code == 200
+        assert client.get(f"{prefix}/health").status_code == 200
+
+
+def test_the_api_key_is_checked_before_the_body_is_read(tmp_path):
+    app = create_app(single_pool(tmp_path, FakeBackend), api_key="s3cret", max_body_bytes=10)
+    with TestClient(app) as client:
+        assert client.post("/v1/systemone", json=BODY).status_code == 401
 
 
 def test_server_command_reads_the_key_from_the_environment(monkeypatch, fake_model_path):

@@ -18,6 +18,12 @@ change the interface).
   and the server's memory budget saw 131 MB, so `--prefix-cache` and
   shared states could use several times the memory they were allowed.
   It now holds what it counts.
+- The server's API key was not checked when the app ran under a URL
+  prefix: mounted in another FastAPI app, or behind a proxy with a root
+  path (`/decision/v1/systemone` answered without a key). The
+  `mlx-decision server` command itself, which serves at `/`, was not
+  affected. The key is now checked on the API's routes, wherever they
+  are mounted.
 
 ## [0.8.0] - 2026-10-11
 
