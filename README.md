@@ -153,7 +153,9 @@ Questions can also be plain dicts in the API's wire format
 `model.decide_request(body)` takes a whole request body. Invalid requests
 raise `mlx_decision.DecisionError`, whose `param` names the offending field
 (building an invalid `Choice`, `Score` or `Noul` object directly raises
-pydantic's `ValidationError` instead). `result.truncated` tells you whether
+pydantic's `ValidationError` instead). The state, instructions and criteria
+take any JSON data nested up to 100 levels deep, with finite numbers
+(no `NaN` or infinity). `result.truncated` tells you whether
 the state was cut to fit the model's input limit. The answer types
 (`ChoiceAnswer`, `ScoreAnswer`, `NoulAnswer`) and `Usage` can be imported
 from `mlx_decision`.

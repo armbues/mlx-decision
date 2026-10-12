@@ -164,6 +164,23 @@ def test_values_json_cannot_answer_with_are_refused_before_the_model(client, raw
     assert client.backend.states == []
 
 
+def test_a_number_too_long_to_read_is_a_400(client):
+    digits = "1" * 5000  # past Python's 4,300-digit conversion limit
+    raw = '{"state":' + digits + ',"questions":{"q":{"type":"noul"}}}'
+    response = client.post("/v1/systemone", content=raw)
+    assert response.status_code == 400
+    assert "number too long to read" in response.json()["error"]["message"]
+    assert client.post("/v1/systemone", json=BODY).status_code == 200
+
+
+def test_a_state_nested_too_deeply_for_the_models_is_a_422(client):
+    raw = '{"state":' + "[" * 2000 + "]" * 2000 + ',"questions":{"q":{"type":"noul"}}}'
+    response = client.post("/v1/systemone", content=raw)
+    assert response.status_code == 422
+    assert response.json()["error"]["param"] == "state"
+    assert client.backend.states == []
+
+
 def test_a_failing_model_gives_500(client, monkeypatch):
     def broken(request):
         raise RuntimeError("boom")

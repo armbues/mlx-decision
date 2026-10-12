@@ -10,7 +10,6 @@ mounted (a mount or a proxy's root path).
 
 import asyncio
 import hmac
-import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -22,6 +21,7 @@ from .errors import DecisionError
 from .images import check_data_urls
 from .memory import ModelTooLargeError
 from .pool import ModelPool
+from .types import decode_json
 
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
 # Room for several large images as data URLs.
@@ -105,13 +105,9 @@ def create_app(
                 "invalid_request_error",
             )
         try:
-            body = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError) as error:
-            return error_response(
-                400, f"the body is not valid JSON: {error}", "invalid_request_error"
-            )
-        except RecursionError:
-            return error_response(400, "the body is nested too deeply", "invalid_request_error")
+            body = decode_json(raw, "the body")
+        except DecisionError as error:
+            return error_response(400, error.message, "invalid_request_error")
         name = body.get("model") if isinstance(body, dict) else None
 
         def answer():

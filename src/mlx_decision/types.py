@@ -12,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from .errors import DecisionError
 
 WIRE_DECIMALS = 4
+# Deepest nesting of a state, instructions or criteria. Families render JSON
+# with Python's own encoder, which recurses once per level.
+MAX_DEPTH = 100
 
 # Validating an instance checks it again (it may have been changed since it
 # was built) and keeps which fields were given: H2O tells a left-out field
@@ -130,6 +133,23 @@ def _round_floats(value: Any) -> Any:
     return value
 
 
+def decode_json(text: str | bytes, subject: str | None = None, param: str | None = None) -> Any:
+    """``json.loads``, with each way it refuses input as a ``DecisionError``.
+
+    ``subject`` names the input in the message ("the body is not valid JSON").
+    """
+    try:
+        return json.loads(text)
+    except RecursionError:
+        problem = "is nested too deeply"
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        problem = f"is not valid JSON: {error}"
+    except ValueError as error:  # an integer longer than Python converts
+        problem = f"holds a number too long to read: {str(error).split(';')[0]}"
+    message = f"{subject} {problem}" if subject else problem.removeprefix("is ")
+    raise DecisionError(message, param=param)
+
+
 def parse_request(data: Any) -> Request:
     """Validate a request body, raising ``DecisionError`` naming the bad field.
 
@@ -170,8 +190,26 @@ def _is_text(text: str) -> bool:
     return True
 
 
+def _depth(value: Any) -> int:
+    """How deeply ``value`` nests lists and objects, counted without recursion
+    and only up to one level past ``MAX_DEPTH``."""
+    deepest, stack = 0, [(value, 0)]
+    while stack and deepest <= MAX_DEPTH:
+        item, depth = stack.pop()
+        if isinstance(item, dict):
+            item = item.values()
+        elif not isinstance(item, (list, tuple)):
+            continue
+        deepest = max(deepest, depth + 1)
+        stack.extend((child, depth + 1) for child in item)
+    return deepest
+
+
 def _check_text(value: Any, param: str) -> None:
     """Fail unless ``value`` can be written as JSON text (models read it as text)."""
+    if _depth(value) > MAX_DEPTH:
+        field = param.rsplit(".", 1)[-1]
+        raise DecisionError(f"{field} is nested deeper than {MAX_DEPTH} levels", param=param)
     try:
         json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8")
     except (TypeError, ValueError) as error:

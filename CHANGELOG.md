@@ -34,6 +34,16 @@ change the interface).
   checks a JSON body gets (a state that is not JSON data, an empty
   question id, a question changed after it was built): they now get the
   same checks and errors.
+- JSON that Python's decoder refuses in other ways than a syntax error
+  (nested about 10,000 levels deep, or an integer over 4,300 digits)
+  ended `run --states` at that line without an answer for the following
+  ones, and `server` answered a too-long integer with a plain-text 500.
+  Each is now an input error: an error line in `--states`, a `400` from
+  `server`, a message for `--state-json` and question files.
+- A state, instructions or criteria nested more than about 1,000 levels
+  deep made H2O-Lightning and d1-3B fail while writing their prompt
+  (`server` answered 500). Requests may now nest up to 100 levels; deeper
+  ones are refused with an error naming the field.
 
 ## [0.8.0] - 2026-10-11
 

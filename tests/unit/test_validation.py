@@ -4,7 +4,7 @@ import pytest
 
 from fake_backend import FakeBackend
 from mlx_decision import DecisionError, DecisionModel
-from mlx_decision.types import Choice, Noul, Request, Score, parse_request
+from mlx_decision.types import MAX_DEPTH, Choice, Noul, Request, Score, decode_json, parse_request
 
 
 def body(**questions):
@@ -98,6 +98,62 @@ def test_structure_errors(data, param, message):
     assert message in caught.value.message
     if param:
         assert str(caught.value).startswith(f"{param}: ")
+
+
+def nested(depth: int) -> list:
+    """Lists nested ``depth`` levels deep (``[]`` is one level)."""
+    value: list = []
+    for _ in range(depth - 1):
+        value = [value]
+    return value
+
+
+@pytest.mark.parametrize(
+    ("data", "param"),
+    [
+        ({**body(q={"type": "noul"}), "state": nested(MAX_DEPTH + 1)}, "state"),
+        # Deeper than Python's own encoder can write; no RecursionError.
+        ({**body(q={"type": "noul"}), "state": {"a": nested(5000)}}, "state"),
+        (
+            body(q={"type": "noul", "instructions": nested(MAX_DEPTH + 1)}),
+            "questions.q.instructions",
+        ),
+        (body(q={"type": "score", "criteria": [0, nested(MAX_DEPTH)]}), "questions.q.criteria"),
+    ],
+)
+def test_nesting_deeper_than_the_limit_is_refused(data, param):
+    with pytest.raises(DecisionError) as caught:
+        parse_request(data)
+    assert caught.value.param == param
+    assert f"nested deeper than {MAX_DEPTH} levels" in caught.value.message
+
+
+def test_nesting_up_to_the_limit_is_fine():
+    parse_request({**body(q={"type": "noul"}), "state": {"a": nested(MAX_DEPTH - 1)}})
+    parse_request(Request(state=nested(MAX_DEPTH), questions={"q": Noul()}))
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("{broken", "the body is not valid JSON: "),
+        (b'"caf\xe9"', "the body is not valid JSON: "),
+        ("[" * 100_000 + "]" * 100_000, "the body is nested too deeply"),
+        ("1" * 5000, "the body holds a number too long to read: Exceeds the limit"),
+    ],
+    ids=["broken", "not-utf8", "deep", "long-number"],
+)
+def test_decode_json_turns_every_refusal_into_a_decision_error(text, message):
+    with pytest.raises(DecisionError) as caught:
+        decode_json(text, "the body", param="body")
+    assert caught.value.message.startswith(message)
+    assert caught.value.param == "body"
+
+
+def test_decode_json_without_a_subject():
+    with pytest.raises(DecisionError) as caught:
+        decode_json("{")
+    assert caught.value.message.startswith("not valid JSON: ")
 
 
 def test_valid_request_parses_into_typed_questions():

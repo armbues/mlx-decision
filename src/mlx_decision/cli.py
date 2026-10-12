@@ -90,12 +90,16 @@ def shorthand_questions(nouls: list[str], choices: list[str], scores: list[str])
 
 def build_questions(questions_file: Path | None, shorthand: dict) -> dict[str, Any]:
     """The request body from a questions file and shorthand flags, without a state."""
+    from .types import decode_json
+
     body: dict[str, Any] = {}
     if questions_file is not None:
         try:
-            data = json.loads(questions_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:  # ValueError: not UTF-8 or not JSON
+            data = decode_json(questions_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as error:
             fail(f"cannot read questions from {questions_file}: {error}")
+        except DecisionError as error:
+            fail(f"cannot read questions from {questions_file}: {error.message}")
         body = dict(data) if isinstance(data, dict) and "questions" in data else {"questions": data}
     if shorthand:
         questions = body.setdefault("questions", {})
@@ -141,10 +145,9 @@ CHAT_DESCRIBE_HOW = "/edit ID, then 'billing: Billing and payment disputes'"
 def parse_state(state: str, state_json: bool) -> Any:
     if not state_json:
         return state
-    try:
-        return json.loads(state)
-    except json.JSONDecodeError as error:
-        raise DecisionError(f"the state is not valid JSON: {error}", param="state") from None
+    from .types import decode_json
+
+    return decode_json(state, "the state", param="state")
 
 
 def build_request(
@@ -180,14 +183,13 @@ def answer_states(model, defaults: dict[str, Any], lines) -> None:
     Each line is a request body; fields it leaves out (usually the questions)
     come from ``defaults``.
     """
+    from .types import decode_json
+
     for number, line in enumerate(lines, 1):
         if not line.strip():
             continue
         try:
-            try:
-                request = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise DecisionError(f"not valid JSON: {error}") from None
+            request = decode_json(line)
             if not isinstance(request, dict):
                 raise DecisionError('a line must be a request body: {"state": ...}')
             result = model.decide_request({**defaults, **request})

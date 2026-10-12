@@ -251,6 +251,34 @@ def test_states_error_lines(cli):
     assert last["usage"]["input_tokens"] == 1
 
 
+def test_states_lines_the_decoder_refuses_are_error_lines(cli):
+    deep = "[" * 100_000 + "]" * 100_000
+    typed = '{"state": ' + deep + "}\n" + '{"state": ' + "1" * 5000 + "}\n"
+    typed += '{"state": ' + "[" * 2000 + "]" * 2000 + "}\n" + lines_of({"state": "x"})
+    result = cli("--noul", "q=Is it?", "--states", "-", input=typed)
+    assert result.exit_code == 0, result.output
+    too_deep, too_long, deep_state, answered = map(json.loads, result.stdout.splitlines())
+    assert too_deep["line"] == 1 and "nested too deeply" in too_deep["error"]["message"]
+    assert too_long["line"] == 2 and "number too long" in too_long["error"]["message"]
+    assert deep_state["line"] == 3 and deep_state["error"]["param"] == "state"
+    assert list(answered["answers"]) == ["q"]
+
+
+@pytest.mark.parametrize("where", ["--state-json", "-q"])
+def test_deep_json_from_a_flag_or_file_is_an_error(cli, tmp_path, where):
+    deep = "[" * 100_000 + "]" * 100_000
+    if where == "-q":
+        path = tmp_path / "deep.json"
+        path.write_text(deep)
+        result = cli("-q", str(path), "-s", "x")
+        assert "cannot read questions from" in result.stderr
+    else:
+        result = cli("-s", deep, "--noul", "q=?", "--state-json")
+    assert result.exit_code == 1
+    assert "nested too deeply" in result.stderr
+    assert "Traceback" not in result.output
+
+
 def test_states_note_truncation_on_stderr(fake_model_path, questions_file):
     write_model(fake_model_path, max_input_tokens=2)
     args = ["run", "-m", str(fake_model_path), "-q", str(questions_file), "--states", "-"]
