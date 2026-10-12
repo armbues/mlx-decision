@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may
 change the interface).
 
-## [Unreleased]
+## [0.8.1] - 2026-10-12
 
 ### Changed
 
@@ -15,31 +15,45 @@ change the interface).
 
 ### Fixed
 
-- `server` with several models kept the model it unloaded alive while
-  it loaded the next one, so a switch between two models that fit the
-  memory budget only one at a time briefly needed memory for both. The
-  unloaded model is now freed before the next one loads.
+- `download` drew the Hub's progress bars while it checked the model, and
+  some of them again after the licence notice, over it and next to the
+  question (seen with `LiquidAI/d1-3B`). The check is now quiet, and a
+  download shows one progress bar, closed before anything else is
+  written, that follows the bytes as they arrive (for a large file the
+  Hub's own bar moved only when a piece was written, once in 15 s); a
+  download that finds its files already there shows none.
+  The Hub's setting to turn bars off is respected, and none are drawn
+  outside a terminal.
+- With `huggingface_hub` 2.x, a failed connection in `download` or in
+  `-m org/model` ended in a traceback instead of a one-line error.
 - d1-3B kept far more memory for a computed state than it counted: a
   kept 8,000-token state held 852 MB, of which the prefix cache's limit
   and the server's memory budget saw 131 MB, so `--prefix-cache` and
   shared states could use several times the memory they were allowed.
   It now holds what it counts.
+- `server` with several models kept the model it unloaded alive while
+  it loaded the next one, so a switch between two models that fit the
+  memory budget only one at a time briefly needed memory for both. The
+  unloaded model is now freed before the next one loads.
 - The server's API key was not checked when the app ran under a URL
   prefix: mounted in another FastAPI app, or behind a proxy with a root
   path (`/decision/v1/systemone` answered without a key). The
   `mlx-decision server` command itself, which serves at `/`, was not
   affected. The key is now checked on the API's routes, wherever they
   are mounted.
+- `server` with several models loaded the model an invalid request named
+  (unloading another to make room) before it found the request invalid,
+  so a malformed request could cost two model loads. A request is now
+  checked before its model is loaded.
+- When the default model failed to load at startup, the server's worker
+  thread was left running (only noticeable when the app is embedded and
+  started again); it is now stopped however the server ends.
 - A request with a number JSON cannot write back (`1e400` or `NaN`) or a
   question id that is not valid text (a lone surrogate such as
   `"\ud800"`) reached the model, and `server` then failed with a 500
   while writing the answer (`mcp` gave the score's legend as `Infinity`
   in its text and `null` in its structured result). Both are now
   refused up front with an error naming the field.
-- `Request` objects passed to `decide_request` or `check` skipped the
-  checks a JSON body gets (a state that is not JSON data, an empty
-  question id, a question changed after it was built): they now get the
-  same checks and errors.
 - JSON that Python's decoder refuses in other ways than a syntax error
   (nested about 10,000 levels deep, or an integer over 4,300 digits)
   ended `run --states` at that line without an answer for the following
@@ -50,27 +64,24 @@ change the interface).
   deep made H2O-Lightning and d1-3B fail while writing their prompt
   (`server` answered 500). Requests may now nest up to 100 levels; deeper
   ones are refused with an error naming the field.
-- `server` with several models loaded the model an invalid request named
-  (unloading another to make room) before it found the request invalid,
-  so a malformed request could cost two model loads. A request is now
-  checked before its model is loaded.
-- When the default model failed to load at startup, the server's worker
-  thread was left running (only noticeable when the app is embedded and
-  started again); it is now stopped however the server ends.
+- `Request` objects passed to `decide_request` or `check` skipped the
+  checks a JSON body gets (a state that is not JSON data, an empty
+  question id, a question changed after it was built): they now get the
+  same checks and errors.
 - Clef and H2O-Lightning could reuse a kept state computed for another
   image: two images whose resized pixels are the same but laid out
   differently (a plain image and the same image turned on its side) got
   the same key, so the second answer depended on the first request.
   The key now includes each image's layout.
+- H2O-Lightning under a lowered `--max-input-tokens` that left room for
+  one token of state kept the whole state instead of cutting it, and
+  then refused the request as too long. It now cuts the state.
 - `convert --target-bits` for H2O-Lightning measured the quantized
   embeddings with the model's output rows still unquantized, so their
   sensitivity in `quantization_sensitivity.json` was too low (0.00034
   instead of 0.00154 at 4 bits). For `--target-bits 4.5` the chosen bits
   and the weights written are unchanged; other targets could choose
   differently.
-- H2O-Lightning under a lowered `--max-input-tokens` that left room for
-  one token of state kept the whole state instead of cutting it, and
-  then refused the request as too long. It now cuts the state.
 - `run --states` replaced bytes that are not UTF-8 with `�` and
   answered the changed text; such a line now gets an error line
   ("not valid UTF-8"), from a file and from stdin.
@@ -91,17 +102,6 @@ change the interface).
   `http://127.0.0.1/mcp` (`421 Invalid Host header`), since clients
   leave out the port there. Loopback hosts and origins are now accepted
   with or without a port; other hosts are still refused.
-- `download` drew the Hub's progress bars while it checked the model, and
-  some of them again after the licence notice, over it and next to the
-  question (seen with `LiquidAI/d1-3B`). The check is now quiet, and a
-  download shows one progress bar, closed before anything else is
-  written, that follows the bytes as they arrive (for a large file the
-  Hub's own bar moved only when a piece was written, once in 15 s); a
-  download that finds its files already there shows none.
-  The Hub's setting to turn bars off is respected, and none are drawn
-  outside a terminal.
-- With `huggingface_hub` 2.x, a failed connection in `download` or in
-  `-m org/model` ended in a traceback instead of a one-line error.
 
 ## [0.8.0] - 2026-10-11
 
