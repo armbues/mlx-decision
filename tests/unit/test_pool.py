@@ -104,6 +104,13 @@ def test_options_go_to_the_families_that_take_them(tmp_path):
     assert discover([clef], {"vision": True})[0].options == {"vision": True}
 
 
+def test_unused_options_name_the_families_in_their_usual_order(tmp_path):
+    write_marker(tmp_path / "models" / "a-laya", "laya")
+    write_clef(tmp_path / "models" / "b-clef")
+    with pytest.raises(ValueError, match="clef, laya models do not take colour"):
+        discover([tmp_path / "models"], {"colour": "red"})
+
+
 def test_the_prefix_cache_limit_is_the_option_or_the_loaders_default(tmp_path):
     clef = write_clef(tmp_path / "clef")
     laya = write_marker(tmp_path / "laya", "laya")

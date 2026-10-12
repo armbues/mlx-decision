@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may
 change the interface).
 
+## [Unreleased]
+
+### Fixed
+
+- The error for a folder that is no supported decision model (also shown
+  by `download`) listed the families alphabetically, and the error for
+  `-m` options no model takes in the order of the model folders; both now
+  list them in the order the documentation does (Clef, pplx, H2O, d1,
+  Laya, Julia).
+
 ## [0.8.1] - 2026-10-12
 
 ### Changed

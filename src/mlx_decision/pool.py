@@ -19,7 +19,7 @@ from .errors import DecisionError
 from .hub import is_repo_id, resolve_model_path
 from .memory import check_fits, required_bytes
 from .model import DecisionModel, load
-from .registry import Family, accepted_options, detect_family, loader_parameters
+from .registry import Family, accepted_options, detect_family, families, loader_parameters
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +76,13 @@ def discover(
         paths[name] = path
 
     options = options or {}
-    families = {family.name: family for _, _, family in found}
-    taken = {key for family in families.values() for key in accepted_options(family, options)}
+    names = {family.name for _, _, family in found}
+    used = [family for family in families() if family.name in names]
+    taken = {key for family in used for key in accepted_options(family, options)}
     unused = [key for key in options if key not in taken]
     if unused:
-        raise ValueError(f"{', '.join(families)} models do not take {', '.join(unused)}")
+        listed = ", ".join(family.name for family in used)
+        raise ValueError(f"{listed} models do not take {', '.join(unused)}")
     return [
         ModelSpec(name, path, family, accepted_options(family, options))
         for name, path, family in found

@@ -43,6 +43,7 @@ class Family:
     licence: str | None = None
 
 
+# In registration order, which is the order the docs list the families in.
 _FAMILIES: dict[str, Family] = {}
 
 
@@ -62,8 +63,13 @@ def register_family(
     )
 
 
+def families() -> list[Family]:
+    """Every family, in the order messages and menus list them."""
+    return list(_FAMILIES.values())
+
+
 def known_models() -> list[KnownModel]:
-    return [model for family in _FAMILIES.values() for model in family.known_models]
+    return [model for family in families() for model in family.known_models]
 
 
 def get_family(name: str) -> Family:
@@ -86,7 +92,7 @@ def detect_family(path: Path) -> Family:
     for family in _FAMILIES.values():
         if family.detect(path):
             return family
-    known = ", ".join(sorted(_FAMILIES)) or "none"
+    known = ", ".join(_FAMILIES) or "none"
     raise ValueError(f"{path}: not a supported decision model (known families: {known})")
 
 
