@@ -9,7 +9,9 @@
 # readout computes only the logits it needs. Caches are the Qwen3.5 copy's
 # (``ConcatenateKVCache`` and ``ArraysCache``, one sequence, no padding),
 # which replace arrays instead of writing into them, so a computed prefix can
-# be forked; a pass that fills a cache is evaluated layer by layer. Removed:
+# be forked; a pass that fills a cache is evaluated layer by layer, and the
+# convolution state is copied out of the prefix-length buffer it is sliced
+# from, so a kept cache does not hold that buffer. Removed:
 # the batched-cache paths of the short convolution (lengths, advance).
 
 from dataclasses import dataclass
@@ -173,7 +175,7 @@ class ShortConv(nn.Module):
                 state = cache[0]
             Bx = mx.concatenate([state, Bx], axis=1)
             n_keep = self.L_cache - 1
-            cache[0] = Bx[:, -n_keep:, :]
+            cache[0] = mx.contiguous(Bx[:, -n_keep:, :])
         else:
             Bx = mx.pad(Bx, [(0, 0), (self.L_cache - 1, 0), (0, 0)])
 

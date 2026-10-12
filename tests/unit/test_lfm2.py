@@ -1,5 +1,6 @@
 """The LFM2 text model (adapted from mlx-lm) on a tiny random model, on the CPU."""
 
+import gc
 import json
 
 import mlx.core as mx
@@ -87,6 +88,25 @@ def test_forks_of_a_prefix_continue_independently(models):
     for c, state in zip(cache, kept, strict=True):
         for now, before in zip(c.state, state, strict=True):
             assert now is before
+
+
+def test_a_kept_convolution_state_holds_only_its_own_rows(models):
+    # A slice of the prefix-length buffer would keep that whole buffer alive
+    # while ``nbytes`` (what the prefix cache counts) reports only the slice.
+    ours, _ = models
+    cache = ours.make_cache()
+    ours(ids(2048), cache=cache)
+    mx.eval([c.state for c in cache])
+    convs = [c for c in cache if hasattr(c, "cache")]
+    assert len(convs) == 3
+    counted = sum(c[0].nbytes for c in convs)
+    gc.collect()
+    before = mx.get_active_memory()
+    for c in convs:
+        c[0] = None
+    gc.collect()
+    released = before - mx.get_active_memory()
+    assert counted <= released < counted + 16384  # 2,048 rows would be ~1.5 MB
 
 
 def test_loads_the_lfm2_vl_release_layout(models, tmp_path):

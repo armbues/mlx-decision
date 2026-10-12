@@ -13,6 +13,11 @@ change the interface).
   it loaded the next one, so a switch between two models that fit the
   memory budget only one at a time briefly needed memory for both. The
   unloaded model is now freed before the next one loads.
+- d1-3B kept far more memory for a computed state than it counted: a
+  kept 8,000-token state held 852 MB, of which the prefix cache's limit
+  and the server's memory budget saw 131 MB, so `--prefix-cache` and
+  shared states could use several times the memory they were allowed.
+  It now holds what it counts.
 
 ## [0.8.0] - 2026-10-11
 
