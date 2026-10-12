@@ -23,17 +23,20 @@ from ..backbones.qwen3_5.cache import Cache, fork_cache
 DEFAULT_PREFIX_CACHE_GB = 2.0
 
 
-def prefix_key(input_ids: Sequence[int], pixel_values: Sequence[Any] = ()) -> str:
-    """A digest of the prefix tokens and the images' preprocessed pixels.
+def prefix_key(input_ids: Sequence[int], images: Sequence[Any] = ()) -> str:
+    """A digest of the prefix tokens and the images as prepared for the vision tower.
 
     The tokens are those after any cut, so a state cut differently is a
     different prefix; the pixels are those after resizing, so the image size
-    limit is part of the key. ``pixel_values`` are NumPy arrays (NumPy comes
-    with the images extra, so it is not imported here).
+    limit is part of the key. Each image's patch grid is too: the same
+    patches laid out on another grid (a plain image turned on its side) get
+    other positions. ``images`` are ``PreparedImage``s (NumPy pixels; NumPy
+    comes with the images extra, so it is not imported here).
     """
     digest = hashlib.sha256(array("q", input_ids).tobytes())
-    for pixels in pixel_values:
-        digest.update(f"{pixels.dtype}{pixels.shape}".encode())
+    for image in images:
+        pixels = image.pixel_values
+        digest.update(f"{image.grid}{pixels.dtype}{pixels.shape}".encode())
         digest.update(pixels.tobytes())
     return digest.hexdigest()
 

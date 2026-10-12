@@ -452,6 +452,28 @@ def test_images_share_the_prefix_and_are_kept_with_it(folder):
     assert other.answers != first.answers
 
 
+def test_a_turned_image_is_another_prefix(folder):
+    import mlx.core as mx
+    from test_prefix_cache import turned_images
+
+    model = mlx_decision.load(folder)
+    portrait, landscape = png(64, 96), png(96, 64)
+    turned_images(model.backend.image_config(), portrait, landscape)
+    alone = mlx_decision.load(folder, prefix_cache_gb=0)
+    body = {"state": "please refund", "questions": QUESTIONS}
+    with mx.stream(mx.cpu):
+        model.decide_request({**body, "images": [portrait]})
+        warm = model.decide_request({**body, "images": [landscape]})
+        cold = alone.decide_request({**body, "images": [landscape]})
+    assert model.backend.prefix_cache.hits == 0
+    for question_id, answer in warm.answers.items():
+        expected = cold.answers[question_id]
+        if answer.type == "noul":
+            assert answer.noul == pytest.approx(expected.noul, abs=1e-5)
+        else:
+            assert answer.probabilities == pytest.approx(expected.probabilities, abs=1e-5)
+
+
 def test_a_lowered_limit_leaves_room_for_the_images(folder):
     model = mlx_decision.load(folder, max_input_tokens=300)
     state = " ".join(["please"] * 400)

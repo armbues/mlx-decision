@@ -51,6 +51,11 @@ change the interface).
 - When the default model failed to load at startup, the server's worker
   thread was left running (only noticeable when the app is embedded and
   started again); it is now stopped however the server ends.
+- Clef and H2O-Lightning could reuse a kept state computed for another
+  image: two images whose resized pixels are the same but laid out
+  differently (a plain image and the same image turned on its side) got
+  the same key, so the second answer depended on the first request.
+  The key now includes each image's layout.
 
 ## [0.8.0] - 2026-10-11
 

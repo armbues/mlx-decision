@@ -1,6 +1,7 @@
 """Prefix reuse in the Clef backend, on tiny random models (no weights needed)."""
 
 import io
+from dataclasses import replace
 
 import mlx.core as mx
 import numpy as np
@@ -8,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 import mlx_decision
+from mlx_decision.backbones.qwen3_5.preprocess import PreparedImage
 from mlx_decision.cli import app
 from mlx_decision.models.prefix import PrefixCache, prefix_key
 from tiny_models import write_clef, write_marker
@@ -155,13 +157,45 @@ def test_entries_are_handed_out_as_forks():
     assert cache.get("a").cache[0][0].shape == (10,)
 
 
-def test_the_key_covers_tokens_and_pixels():
+def turned_images(config, portrait: bytes, landscape: bytes) -> None:
+    """Check that two plain images give the same patches on other grids."""
+    from PIL import Image
+
+    from mlx_decision.backbones.qwen3_5.preprocess import prepare_image
+
+    a, b = (
+        prepare_image(Image.open(io.BytesIO(png)).convert("RGB"), config)
+        for png in (portrait, landscape)
+    )
+    assert a.grid != b.grid and np.array_equal(a.pixel_values, b.pixel_values)
+
+
+def test_a_turned_image_is_another_prefix(folder):
+    from mlx_decision.backbones.qwen3_5.preprocess import ImageConfig
+
+    portrait, landscape = png(16, 32), png(32, 16)
+    turned_images(ImageConfig.from_folder(folder), portrait, landscape)
+    model = mlx_decision.load(folder)
+    off = mlx_decision.load(folder, prefix_cache_gb=0)
+    probabilities(model, images=[portrait])
+    warm = probabilities(model, images=[landscape])
+    assert model.backend.prefix_cache.hits == 0
+    assert close(warm, probabilities(off, images=[landscape]))
+
+
+def test_the_key_covers_tokens_pixels_and_grids():
     pixels = np.zeros((4, 6), dtype=np.float32)
+    image = PreparedImage(pixels, (1, 2, 2), 1)
     assert prefix_key([1, 2, 3]) == prefix_key([1, 2, 3])
     assert prefix_key([1, 2, 3]) != prefix_key([1, 2, 4])
-    assert prefix_key([1, 2], [pixels]) != prefix_key([1, 2])
-    assert prefix_key([1, 2], [pixels]) != prefix_key([1, 2], [pixels + 1])
-    assert prefix_key([1, 2], [pixels]) != prefix_key([1, 2], [pixels.reshape(6, 4)])
+    assert prefix_key([1, 2], [image]) != prefix_key([1, 2])
+    assert prefix_key([1, 2], [image]) != prefix_key(
+        [1, 2], [replace(image, pixel_values=pixels + 1)]
+    )
+    reshaped = replace(image, pixel_values=pixels.reshape(6, 4))
+    assert prefix_key([1, 2], [image]) != prefix_key([1, 2], [reshaped])
+    # The same pixels on another grid (a plain image turned on its side).
+    assert prefix_key([1, 2], [image]) != prefix_key([1, 2], [replace(image, grid=(1, 1, 4))])
 
 
 def test_cli_flag(folder, tmp_path):

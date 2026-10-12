@@ -114,7 +114,7 @@ class ClefBackend:
         answers the first time and when its state comes again.
         """
         ids, length = encoded.input_ids, encoded.prefix_length
-        key = prefix_key(ids[:length], [image.pixel_values for image in images])
+        key = prefix_key(ids[:length], images)
         entry = self.prefix_cache.get(key)
         positions = None
         if entry is None:

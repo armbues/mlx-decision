@@ -302,7 +302,7 @@ class H2OBackend:
         prepared = images.prepared if images else []
         key = None
         if self.prefix_cache is not None:
-            key = prefix_key(prefix, [image.pixel_values for image in prepared])
+            key = prefix_key(prefix, prepared)
             if (entry := self.prefix_cache.get(key)) is not None:
                 return entry.cache
         cache = self.backbone.make_cache()
