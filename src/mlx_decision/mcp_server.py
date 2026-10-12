@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 # Room for several large images as data URLs, as on the HTTP server.
 MAX_BODY_BYTES = 64 * 2**20
+# Hosts the HTTP transport protects against DNS rebinding.
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 READ_ONLY = types.ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
@@ -198,7 +200,10 @@ def decide_schema(info: dict[str, Any], allow_image_paths: bool) -> dict[str, An
     properties: dict[str, Any] = {
         "state": {
             "description": "The text to decide about (or any JSON value).",
-            "anyOf": [{"type": "string"}, {"type": "object"}, {"type": "array"}],
+            "anyOf": [
+                {"type": kind}
+                for kind in ("string", "object", "array", "number", "boolean", "null")
+            ],
         },
         "questions": {
             "type": "object",
@@ -342,9 +347,26 @@ class RequireApiKey:
 def http_app(server: Server, host: str, api_key: str | None = None):
     """The streamable HTTP app at ``/mcp``, behind the API key if there is one.
 
-    The SDK turns on DNS rebinding protection when ``host`` is a loopback address.
+    On a loopback address, requests must name a loopback host in ``Host`` (and
+    ``Origin``, if they send one): DNS rebinding protection as the SDK sets it
+    up, plus the forms without a port that clients send for port 80.
     """
-    app = server.streamable_http_app(host=host, max_request_body_size=MAX_BODY_BYTES)
+    security = None
+    if host in LOOPBACK:
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        names = ["127.0.0.1", "localhost", "[::1]"]
+        security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[*names, *(f"{name}:*" for name in names)],
+            allowed_origins=[
+                *(f"http://{name}" for name in names),
+                *(f"http://{name}:*" for name in names),
+            ],
+        )
+    app = server.streamable_http_app(
+        host=host, transport_security=security, max_request_body_size=MAX_BODY_BYTES
+    )
     return RequireApiKey(app, api_key) if api_key else app
 
 

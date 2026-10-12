@@ -77,6 +77,14 @@ change the interface).
   described as `b`) or that span lines, even when nothing was changed.
   Such criteria are now kept as they are, with a note to edit them in
   the `-q` file; the rest of the question stays editable.
+- `mcp`'s `decide` tool advertised `state` as a string, object or array,
+  so clients that check arguments against the schema could not send a
+  number, `true`/`false` or `null`, which the tool takes. The schema now
+  allows any JSON value, as its description says.
+- `mcp --http` on port 80 refused requests to `http://localhost/mcp` or
+  `http://127.0.0.1/mcp` (`421 Invalid Host header`), since clients
+  leave out the port there. Loopback hosts and origins are now accepted
+  with or without a port; other hosts are still refused.
 
 ## [0.8.0] - 2026-10-11
 

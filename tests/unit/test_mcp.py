@@ -348,3 +348,53 @@ def test_real_models_answer_through_mcp(real_model):
     assert 0 <= answers["angry"]["score"] <= 2
     info = serve_model(real_model, "call_tool", "model_info", {}).structured_content
     assert info["name"] == real_model.name and info["precision"]
+
+
+@pytest.mark.parametrize("state", ["text", {"a": 1}, [1], 42, 1.5, True, None])
+def test_the_advertised_schema_takes_every_json_state(state):
+    from jsonschema import Draft202012Validator
+
+    schema = tools()["decide"].input_schema
+    arguments = {"state": state, "questions": {"q": {"type": "noul", "instructions": "Urgent?"}}}
+    assert list(Draft202012Validator(schema).iter_errors(arguments)) == []
+    assert not decide(arguments).is_error
+
+
+INITIALIZE = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-11-25",
+        "capabilities": {},
+        "clientInfo": {"name": "test", "version": "1"},
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("headers", "status"),
+    [
+        # Clients leave out the port for port 80.
+        ({"Host": "127.0.0.1"}, 200),
+        ({"Host": "localhost"}, 200),
+        ({"Host": "[::1]"}, 200),
+        ({"Host": "localhost:8765", "Origin": "http://localhost"}, 200),
+        ({"Host": "localhost:8765", "Origin": "http://127.0.0.1:3000"}, 200),
+        ({"Host": "untrusted.example"}, 421),
+        ({"Host": "untrusted.example:8765"}, 421),
+        ({"Host": "localhost.example"}, 421),
+        ({"Host": "localhost:8765", "Origin": "http://untrusted.example"}, 403),
+    ],
+)
+def test_http_on_loopback_takes_loopback_hosts_with_or_without_a_port(headers, status):
+    from fastapi.testclient import TestClient
+
+    from mlx_decision.mcp_server import http_app
+
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        server = create_server(DecisionModel(FakeBackend()), worker, False)
+        with TestClient(http_app(server, "127.0.0.1")) as client:
+            accept = {"Accept": "application/json, text/event-stream"}
+            response = client.post("/mcp", json=INITIALIZE, headers={**accept, **headers})
+    assert response.status_code == status
