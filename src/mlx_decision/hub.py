@@ -25,7 +25,6 @@ def resolve_model_path(model: str | Path) -> Path:
     if not is_repo_id(model):
         raise ModelNotFoundError(f"model folder not found: {model}")
 
-    import httpx
     from huggingface_hub import snapshot_download
     from huggingface_hub.errors import (
         GatedRepoError,
@@ -49,9 +48,21 @@ def resolve_model_path(model: str | Path) -> Path:
         reason = "not a local folder or a valid Hugging Face repo id (org/name)"
     except LocalEntryNotFoundError:
         reason = "not downloaded yet, and the Hugging Face Hub cannot be reached"
-    except (HfHubHTTPError, httpx.HTTPError, OSError) as error:
+    except (HfHubHTTPError, *http_errors(), OSError) as error:
         reason = f"cannot download from the Hugging Face Hub: {str(error).splitlines()[0]}"
     raise ModelNotFoundError(f"{model}: {reason}") from None
+
+
+def http_errors() -> tuple[type[Exception], ...]:
+    """The HTTP client's errors for a failed connection: huggingface_hub 1.x
+    raises httpx's, 2.x those of httpx2 (installed with it)."""
+    import httpx
+
+    try:
+        import httpx2
+    except ImportError:
+        return (httpx.HTTPError,)
+    return (httpx.HTTPError, httpx2.HTTPError)
 
 
 def stored_snapshot(repo_id: str) -> Path | None:

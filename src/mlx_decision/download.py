@@ -3,7 +3,9 @@
 import json
 import shutil
 import tempfile
+import threading
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
@@ -21,10 +23,87 @@ from huggingface_hub.utils import (
     enable_progress_bars,
     filter_repo_objects,
 )
+from huggingface_hub.utils import tqdm as hf_tqdm
 
 from .hub import stored_snapshot
 from .memory import DTYPE_BYTES, MARGIN, QUANTIZED_BITS, element_count, quantized_size, working_set
 from .registry import detect_family, get_family, resolve
+
+
+@contextmanager
+def progress(label: str | None = None) -> Iterator[type]:
+    """A ``tqdm_class`` for the Hub's download functions whose bars all close on exit.
+
+    The Hub leaves some of its bars open after a download; they close when
+    garbage collected and draw their last line again then, over whatever the
+    terminal shows by that time (a notice, a prompt). With ``label``, one bar
+    of bytes is shown under it and the Hub's others (files counted, bytes
+    over the network) are hidden; without, none is shown. Being the Hub's own
+    class underneath, it keeps the Hub's rules: no bars without a terminal,
+    none when the user turned them off.
+
+    The shown bar counts the bytes written or, when further along, the bytes
+    received: a Xet download writes a large file in a few big pieces (one
+    update in 15 s, measured) while it reports the bytes received ten times
+    a second. Written bytes reach the total at the end either way.
+    """
+    bars: list[hf_tqdm] = []
+    shown: list[hf_tqdm] = []  # the last is on screen
+    lock = threading.Lock()
+
+    class Bar(hf_tqdm):
+        def __init__(self, *args, **kwargs):
+            name = kwargs.get("name") or ""
+            self.transfer = name.endswith(".transfer")
+            self.label = label if kwargs.get("unit") == "B" and not self.transfer else None
+            self.written = self.received = 0
+            if self.label is None:
+                kwargs["disable"] = True
+            else:
+                # One line: the Hub's hidden bars must not push it down a line.
+                kwargs.update(desc=self.label, position=0)
+            super().__init__(*args, **kwargs)
+            bars.append(self)
+            if self.label is not None:
+                shown.append(self)
+
+        def update(self, n=1):
+            if self.transfer:  # bytes received, for the bar on screen
+                if shown:
+                    shown[-1].count(received=n or 0)
+            elif self.label is not None:
+                self.count(written=n or 0)
+            else:
+                super().update(n)
+
+        def count(self, written=0, received=0):
+            with lock:
+                self.written += written
+                self.received += received
+                ahead = max(self.written, self.received) - self.n
+                if ahead > 0:
+                    super().update(ahead)
+
+        # The Hub renames its bars as it goes ("Reconstructing ..."); a shown
+        # bar keeps the label.
+        def set_description(self, desc=None, refresh=True):
+            if self.label is None:
+                super().set_description(desc, refresh)
+
+        def set_description_str(self, desc=None, refresh=True):
+            if self.label is None:
+                super().set_description_str(desc, refresh)
+
+        def close(self):
+            if self.label is not None and not self.n:
+                self.leave = False  # nothing fetched (all there already): no empty bar left
+            super().close()
+
+    try:
+        yield Bar
+    finally:
+        for bar in bars:
+            bar.close()
 
 
 @dataclass(frozen=True)
@@ -79,8 +158,14 @@ def check_repo(repo_id: str) -> RepoCheck:
     info = HfApi().model_info(repo_id, files_metadata=True)
     siblings = info.siblings or []
     revision = getattr(info, "sha", None)
-    with tempfile.TemporaryDirectory() as folder:
-        snapshot_download(repo_id, allow_patterns=["*.json"], local_dir=folder, revision=revision)
+    with tempfile.TemporaryDirectory() as folder, progress() as quiet:
+        snapshot_download(
+            repo_id,
+            allow_patterns=["*.json"],
+            local_dir=folder,
+            revision=revision,
+            tqdm_class=quiet,
+        )
         try:
             family = detect_family(Path(folder))
         except ValueError as error:
@@ -145,9 +230,14 @@ def download(
         # The full-size files would be written into the quantized folder.
         raise FileExistsError(f"already stored quantized in the Hugging Face cache: {stored}")
     patterns = list(files) if files is not None else None
-    path = snapshot_download(
-        repo_id, local_dir=local_dir, allow_patterns=patterns, revision=revision
-    )
+    with progress("downloading") as bars:
+        path = snapshot_download(
+            repo_id,
+            local_dir=local_dir,
+            allow_patterns=patterns,
+            revision=revision,
+            tqdm_class=bars,
+        )
     return Path(path)
 
 
@@ -189,23 +279,35 @@ def download_quantized(
     for folder in (source, partial):
         shutil.rmtree(folder, ignore_errors=True)
     try:
-        snapshot_download(repo_id, revision=revision, local_dir=source, allow_patterns=["*.json"])
+        with progress() as quiet:
+            snapshot_download(
+                repo_id,
+                revision=revision,
+                local_dir=source,
+                allow_patterns=["*.json"],
+                tqdm_class=quiet,
+            )
         names = _weight_files(source, check.model_files)
-        snapshot_download(
-            repo_id,
-            revision=revision,
-            local_dir=source,
-            allow_patterns=list(check.files) if check.files is not None else None,
-            ignore_patterns=names,
-        )
+        with progress("other files") as bars:
+            snapshot_download(
+                repo_id,
+                revision=revision,
+                local_dir=source,
+                allow_patterns=list(check.files) if check.files is not None else None,
+                ignore_patterns=names,
+                tqdm_class=bars,
+            )
 
         def fetch() -> Iterator[Path]:
             for number, name in enumerate(names, 1):
                 if on_file is not None:
                     on_file(number, len(names), name)
-                file = Path(hf_hub_download(repo_id, name, revision=revision, local_dir=source))
-                yield file
-                file.unlink()
+                with progress("downloading") as bars:
+                    file = hf_hub_download(
+                        repo_id, name, revision=revision, local_dir=source, tqdm_class=bars
+                    )
+                yield Path(file)
+                Path(file).unlink()
 
         converter = resolve(get_family(check.family).converter)
         converter(source, partial, source=repo_id, revision=revision, bits=bits, shards=fetch())

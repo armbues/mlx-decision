@@ -7,6 +7,12 @@ change the interface).
 
 ## [Unreleased]
 
+### Changed
+
+- `huggingface_hub` from 1.1 up to 2.x (was: 1.0 and later). 1.0 cannot
+  hand a single file's progress to the caller, which `download` now
+  needs; 2.x, which a new install gets, is now tested and supported.
+
 ### Fixed
 
 - `server` with several models kept the model it unloaded alive while
@@ -85,6 +91,17 @@ change the interface).
   `http://127.0.0.1/mcp` (`421 Invalid Host header`), since clients
   leave out the port there. Loopback hosts and origins are now accepted
   with or without a port; other hosts are still refused.
+- `download` drew the Hub's progress bars while it checked the model, and
+  some of them again after the licence notice, over it and next to the
+  question (seen with `LiquidAI/d1-3B`). The check is now quiet, and a
+  download shows one progress bar, closed before anything else is
+  written, that follows the bytes as they arrive (for a large file the
+  Hub's own bar moved only when a piece was written, once in 15 s); a
+  download that finds its files already there shows none.
+  The Hub's setting to turn bars off is respected, and none are drawn
+  outside a terminal.
+- With `huggingface_hub` 2.x, a failed connection in `download` or in
+  `-m org/model` ended in a traceback instead of a one-line error.
 
 ## [0.8.0] - 2026-10-11
 

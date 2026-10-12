@@ -652,11 +652,11 @@ def download(
     ] = False,
 ) -> None:
     """Download a model from the Hugging Face Hub (HF_TOKEN for private or gated ones)."""
-    import httpx
     from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
     from .download import QUANTIZED_BITS, check_repo, download_quantized, format_size
     from .download import download as fetch
+    from .hub import http_errors
     from .registry import get_family
 
     if bits is not None and bits not in QUANTIZED_BITS:
@@ -724,7 +724,7 @@ def download(
             path = download_quantized(check, bits, local_dir, on_file)
     except RepositoryNotFoundError:
         fail(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
-    except (HfHubHTTPError, httpx.HTTPError, OSError, ValueError) as error:
+    except (HfHubHTTPError, *http_errors(), OSError, ValueError) as error:
         fail(f"{repo_id}: {str(error).splitlines()[0]}")
     typer.echo(f"downloaded {repo_id} to {path}", err=True)
     model = str(local_dir) if local_dir else repo_id

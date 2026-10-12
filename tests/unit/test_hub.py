@@ -44,6 +44,18 @@ def test_hub_failures_become_one_line_errors(monkeypatch, error, reason):
     assert "\n" not in str(caught.value)
 
 
+def test_hub_2s_connection_errors_become_one_line_errors(monkeypatch):
+    # huggingface_hub 2.x raises httpx2's errors instead of httpx's.
+    httpx2 = pytest.importorskip("httpx2")
+
+    def snapshot_download(repo_id, allow_patterns=None):
+        raise httpx2.ConnectError("no route")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    with pytest.raises(ModelNotFoundError, match="cannot download from the Hugging Face Hub"):
+        resolve_model_path("org/model")
+
+
 def test_local_paths_are_never_looked_up_on_the_hub(tmp_path):
     assert not is_repo_id(tmp_path)
     assert not is_repo_id("./missing")

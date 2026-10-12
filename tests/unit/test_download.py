@@ -1,5 +1,7 @@
 """``mlx-decision download`` with the Hub replaced by fakes."""
 
+import io
+import sys
 from types import SimpleNamespace
 
 import httpx
@@ -66,7 +68,10 @@ def hub(monkeypatch, tmp_path):
             files = {"model.safetensors": SimpleNamespace(tensors=info)}
             return SimpleNamespace(files_metadata=files)
 
-    def snapshot_download(repo_id, allow_patterns=None, local_dir=None, revision=None):
+    def snapshot_download(
+        repo_id, allow_patterns=None, local_dir=None, revision=None, tqdm_class=None
+    ):
+        assert tqdm_class is not None  # every download's bars are ours to close
         calls.append((repo_id, allow_patterns, local_dir))
         folder = local_dir or tmp_path / "cache" / repo_id
         folder = type(tmp_path)(folder)
@@ -366,9 +371,14 @@ def serve(monkeypatch, tmp_path, release):
             raise download.NotASafetensorsRepoError("no index")
 
     def snapshot_download(
-        repo_id, allow_patterns=None, local_dir=None, revision=None, ignore_patterns=None
+        repo_id,
+        allow_patterns=None,
+        local_dir=None,
+        revision=None,
+        ignore_patterns=None,
+        tqdm_class=None,
     ):
-        assert revision == SHA and local_dir is not None
+        assert revision == SHA and local_dir is not None and tqdm_class is not None
         picked = filter_repo_objects(names, allow_patterns=allow_patterns)
         picked = filter_repo_objects(picked, ignore_patterns=ignore_patterns)
         Path(local_dir).mkdir(parents=True, exist_ok=True)
@@ -377,8 +387,8 @@ def serve(monkeypatch, tmp_path, release):
             shutil.copy2(release / name, Path(local_dir) / name)
         return str(local_dir)
 
-    def hf_hub_download(repo_id, filename, revision=None, local_dir=None):
-        assert revision == SHA
+    def hf_hub_download(repo_id, filename, revision=None, local_dir=None, tqdm_class=None):
+        assert revision == SHA and tqdm_class is not None
         present = sorted(p.name for p in Path(local_dir).glob("model*.safetensors"))
         state.events.append((filename, present))
         if filename == state.fail_on:
@@ -680,3 +690,142 @@ def test_a_terminal_asks_for_the_size_after_the_model(remote, terminal, monkeypa
     assert terminal.asked == ["folder", "model", "size"]
     marker = (tmp_path / "models" / "tiny" / "mlx_decision.json").read_text()
     assert '"bits": 4' in marker
+
+
+@pytest.mark.parametrize("client", ["httpx", "httpx2"])
+def test_a_lost_connection_is_a_one_line_error(monkeypatch, client):
+    module = pytest.importorskip(client)  # huggingface_hub 1.x raises httpx's, 2.x httpx2's
+
+    def check_repo(repo_id):
+        raise module.ConnectError("no route")
+
+    monkeypatch.setattr(download, "check_repo", check_repo)
+    result = CliRunner().invoke(app, ["download", "Cloudflare/clef-flash", "--yes"])
+    assert result.exit_code == 1
+    assert "Cloudflare/clef-flash: no route" in result.stderr
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+# Progress bars, through the installed Hub's own snapshot_download with only
+# the file listing and the transfer faked.
+
+
+class Terminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.fixture
+def real_snapshot(monkeypatch, tmp_path):
+    """Runs ``snapshot_download``; returns the terminal its bars wrote to."""
+    import importlib
+
+    hub = importlib.import_module("huggingface_hub._snapshot_download")
+    if not hasattr(hub, "read_tree_cache"):
+        pytest.skip("this huggingface_hub lists files another way")
+    terminal = Terminal()
+
+    class Eager(download.hf_tqdm):  # draws every update, not at most every 0.1 s
+        def __init__(self, *args, **kwargs):
+            kwargs.setdefault("mininterval", 0)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(download, "hf_tqdm", Eager)
+    failure = {}
+
+    def transfer(*args, **kwargs):
+        with kwargs["tqdm_class"](total=10) as bar:
+            if "xet" in failure:
+                # Xet: bytes received come in early, the file is written at the end.
+                bar.update_transfer(6)
+                failure["xet"] = terminal.getvalue()
+                bar.update_transfer(2)  # less than the file: deduplicated
+                bar.update(10)
+                return "unused"
+            bar.update(4)
+            if "error" in failure:
+                # A fresh one: the parameter's own would keep its traceback,
+                # and with it the bars, alive.
+                error = failure["error"]
+                raise type(error)(*error.args)
+            bar.update(6)
+        return "unused"
+
+    monkeypatch.setattr(hub, "read_tree_cache", lambda *a: {"config.json": object()})
+    monkeypatch.setattr(hub, "hf_hub_download", transfer)
+
+    def run(tqdm_class, error=None, xet=False):
+        # Here, not at setup: pytest sets its own stderr again for the test.
+        monkeypatch.setattr(sys, "stderr", terminal)
+        if error is not None:
+            failure["error"] = error
+        if xet:
+            failure["xet"] = None
+        hub.snapshot_download(
+            "example/model", revision="a" * 40, local_dir=tmp_path, tqdm_class=tqdm_class
+        )
+
+    run.terminal = terminal
+    run.seen = failure
+    return run
+
+
+def collected_output(terminal) -> str:
+    """What the bars write when they are garbage collected."""
+    import gc
+
+    before = terminal.getvalue()
+    gc.collect()
+    return terminal.getvalue()[len(before) :]
+
+
+def test_a_labelled_download_shows_one_bar_and_closes_it(real_snapshot):
+    with download.progress("downloading") as bars:
+        real_snapshot(bars)
+    shown = real_snapshot.terminal.getvalue()
+    assert shown.endswith("\n")  # closed: a bar ends its line when it closes
+    assert "downloading: 100%" in shown
+    # Not the Hub's file count, transfer bar or its renamed descriptions.
+    assert "Fetching" not in shown and "Download complete" not in shown
+    assert "Reconstruct" not in shown
+    assert collected_output(real_snapshot.terminal) == ""
+
+
+def test_the_bar_follows_the_bytes_received_before_the_file_is_written(real_snapshot):
+    with download.progress("downloading") as bars:
+        real_snapshot(bars, xet=True)
+    assert "downloading:  60%" in real_snapshot.seen["xet"]  # before anything was written
+    assert "downloading: 100%" in real_snapshot.terminal.getvalue()
+
+
+def test_a_quiet_download_shows_nothing(real_snapshot):
+    with download.progress() as quiet:
+        real_snapshot(quiet)
+    assert real_snapshot.terminal.getvalue() == ""
+    assert collected_output(real_snapshot.terminal) == ""
+
+
+@pytest.mark.parametrize("error", [OSError("connection reset"), KeyboardInterrupt()])
+def test_bars_close_when_a_download_fails(real_snapshot, error):
+    try:
+        with download.progress("downloading") as bars:
+            real_snapshot(bars, error)
+    except type(error):
+        pass  # no reference kept: its traceback would keep the bars alive
+    else:
+        pytest.fail("the download should fail")
+    shown = real_snapshot.terminal.getvalue()
+    assert "downloading:  40%" in shown and shown.endswith("\n")
+    assert collected_output(real_snapshot.terminal) == ""
+
+
+def test_bars_stay_off_when_the_user_turned_them_off(real_snapshot):
+    from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
+
+    disable_progress_bars()
+    try:
+        with download.progress("downloading") as bars:
+            real_snapshot(bars)
+    finally:
+        enable_progress_bars()
+    assert real_snapshot.terminal.getvalue() == ""
