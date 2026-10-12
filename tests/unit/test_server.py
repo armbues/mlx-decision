@@ -142,6 +142,28 @@ def test_malformed_json(client):
     assert response.json()["error"]["type"] == "invalid_request_error"
 
 
+@pytest.mark.parametrize(
+    ("raw", "param"),
+    [
+        # JSON can spell infinity (1e400) and an id that is not valid text.
+        (
+            b'{"state":"x","questions":{"q":{"type":"score","criteria":[0,1e400]}}}',
+            "questions.q.criteria",
+        ),
+        (b'{"state":NaN,"questions":{"q":{"type":"noul"}}}', "state"),
+        (
+            b'{"state":"x","questions":{"\\ud800":{"type":"noul","instructions":"ok?"}}}',
+            "questions",
+        ),
+    ],
+)
+def test_values_json_cannot_answer_with_are_refused_before_the_model(client, raw, param):
+    response = client.post("/v1/systemone", content=raw)
+    assert response.status_code == 422
+    assert response.json()["error"]["param"] == param
+    assert client.backend.states == []
+
+
 def test_a_failing_model_gives_500(client, monkeypatch):
     def broken(request):
         raise RuntimeError("boom")

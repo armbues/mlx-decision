@@ -53,6 +53,21 @@ def body(**questions):
         (body(q={"type": "noul", "criteria": "x"}), "questions.q.criteria", "must be an object"),
         ({**body(q={"type": "noul"}), "images": "data:x"}, "images", "images must be a list"),
         ({**body(q={"type": "noul"}), "state": "a\ud800"}, "state", "not valid text"),
+        (body(**{"a\ud800": {"type": "noul"}}), "questions", "question id 'a\\ud800'"),
+        # The id is the error, not what pydantic finds in its question.
+        (body(**{"a\ud800": {"type": "rank"}}), "questions", "is not valid text"),
+        ({**body(q={"type": "noul"}), "state": float("inf")}, "state", "not finite"),
+        ({**body(q={"type": "noul"}), "state": {"a": [1, float("nan")]}}, "state", "not finite"),
+        (
+            body(q={"type": "noul", "instructions": {"limit": -float("inf")}}),
+            "questions.q.instructions",
+            "not finite",
+        ),
+        (
+            body(q={"type": "score", "criteria": [0, float("inf")]}),
+            "questions.q.criteria",
+            "not finite",
+        ),
         ({**body(q={"type": "noul"}), "state": {1: "a", "b": 2}}, "state", "mixes key types"),
         (
             body(q={"type": "choice", "criteria": {"a": {1, 2}}}),
@@ -95,7 +110,25 @@ def test_valid_request_parses_into_typed_questions():
     )
     assert isinstance(request, Request)
     assert [type(q) for q in request.questions.values()] == [Noul, Choice, Score]
-    assert parse_request(request) is request
+    assert parse_request(request) == request
+
+
+def test_typed_requests_are_checked_like_bodies():
+    with pytest.raises(DecisionError) as caught:
+        parse_request(Request(state={1, 2}, questions={"q": Noul()}))
+    assert (caught.value.param, "not JSON data" in caught.value.message) == ("state", True)
+    with pytest.raises(DecisionError) as caught:
+        parse_request(Request(state="text", questions={"": Noul()}))
+    assert caught.value.message == "question ids must not be empty"
+    with pytest.raises(DecisionError) as caught:
+        parse_request(Request(state=float("nan"), questions={"q": Noul()}))
+    assert caught.value.param == "state"
+    # Changed after it was built: pydantic does not check assignments.
+    changed = Request(state="text", questions={"q": Choice(criteria={"a": None})})
+    changed.questions["q"].criteria = {}
+    with pytest.raises(DecisionError) as caught:
+        parse_request(changed)
+    assert caught.value.param == "questions.q.criteria"
 
 
 def test_unknown_top_level_fields_are_ignored():
@@ -123,6 +156,19 @@ def decide_with(data, **capabilities):
 def test_invalid_structure_never_reaches_the_backend():
     error = decide_with(body(q={"type": "rank"}))
     assert error.param == "questions.q.type"
+
+
+def test_a_checked_typed_request_keeps_which_fields_were_given():
+    # H2O writes left-out instructions as empty, an explicit null as JSON.
+    request = Request(state="x", questions={"a": Noul(), "b": Noul(instructions=None)})
+    checked = parse_request(request)
+    assert checked.questions["a"].model_fields_set == set()
+    assert checked.questions["b"].model_fields_set == {"instructions"}
+
+
+def test_invalid_typed_requests_never_reach_the_backend():
+    error = decide_with(Request(state={1, 2}, questions={"q": Noul()}))
+    assert error.param == "state"
 
 
 def test_unsupported_question_type():

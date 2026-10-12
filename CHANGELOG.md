@@ -24,6 +24,16 @@ change the interface).
   `mlx-decision server` command itself, which serves at `/`, was not
   affected. The key is now checked on the API's routes, wherever they
   are mounted.
+- A request with a number JSON cannot write back (`1e400` or `NaN`) or a
+  question id that is not valid text (a lone surrogate such as
+  `"\ud800"`) reached the model, and `server` then failed with a 500
+  while writing the answer (`mcp` gave the score's legend as `Infinity`
+  in its text and `null` in its structured result). Both are now
+  refused up front with an error naming the field.
+- `Request` objects passed to `decide_request` or `check` skipped the
+  checks a JSON body gets (a state that is not JSON data, an empty
+  question id, a question changed after it was built): they now get the
+  same checks and errors.
 
 ## [0.8.0] - 2026-10-11
 

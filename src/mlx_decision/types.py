@@ -4,6 +4,7 @@ These models mirror the JSON bodies of ``POST /v1/systemone``.
 """
 
 import json
+from collections.abc import Mapping
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -12,9 +13,16 @@ from .errors import DecisionError
 
 WIRE_DECIMALS = 4
 
+# Validating an instance checks it again (it may have been changed since it
+# was built) and keeps which fields were given: H2O tells a left-out field
+# from an explicit null.
+REVALIDATE = ConfigDict(revalidate_instances="always")
+
 
 class Noul(BaseModel):
     """A yes/no question. The answer is the probability of yes."""
+
+    model_config = REVALIDATE
 
     type: Literal["noul"] = "noul"
     instructions: Any = None
@@ -24,6 +32,8 @@ class Noul(BaseModel):
 class Choice(BaseModel):
     """Pick one option. ``criteria`` maps option id to a description (or None)."""
 
+    model_config = REVALIDATE
+
     type: Literal["choice"] = "choice"
     instructions: Any = None
     criteria: dict[str, Any] = Field(min_length=1)
@@ -31,6 +41,8 @@ class Choice(BaseModel):
 
 class Score(BaseModel):
     """Rate on ordered levels. ``criteria`` lists the level descriptions."""
+
+    model_config = REVALIDATE
 
     type: Literal["score"] = "score"
     instructions: Any = None
@@ -47,7 +59,7 @@ class Request(BaseModel):
     unknown fields are ignored too.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", revalidate_instances="always")
 
     state: Any
     questions: dict[str, Question] = Field(min_length=1)
@@ -119,9 +131,21 @@ def _round_floats(value: Any) -> Any:
 
 
 def parse_request(data: Any) -> Request:
-    """Validate a request body, raising ``DecisionError`` naming the bad field."""
+    """Validate a request body, raising ``DecisionError`` naming the bad field.
+
+    A ``Request`` is checked like a body (it may hold anything in ``state``,
+    or have been changed since it was built), and comes back as a new one.
+    """
+    # Before pydantic, whose error paths would show such an id garbled.
     if isinstance(data, Request):
-        return data
+        questions = data.questions
+    else:
+        questions = data.get("questions") if isinstance(data, Mapping) else None
+    for question_id in questions if isinstance(questions, Mapping) else ():
+        if isinstance(question_id, str) and not _is_text(question_id):
+            raise DecisionError(
+                f"question id {ascii(question_id)} is not valid text", param="questions"
+            )
     try:
         request = Request.model_validate(data)
     except ValidationError as error:
@@ -137,16 +161,28 @@ def parse_request(data: Any) -> Request:
     return request
 
 
+def _is_text(text: str) -> bool:
+    """Whether ``text`` can be written as UTF-8 (a lone surrogate cannot)."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _check_text(value: Any, param: str) -> None:
     """Fail unless ``value`` can be written as JSON text (models read it as text)."""
     try:
-        json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8")
     except (TypeError, ValueError) as error:
         # TypeError: not JSON data (a date, a set, mixed key types);
-        # UnicodeEncodeError (a ValueError): a lone surrogate in a string.
+        # UnicodeEncodeError (a ValueError): a lone surrogate in a string;
+        # ValueError: NaN or infinity (which a JSON body can spell, e.g. 1e400).
         field = param.rsplit(".", 1)[-1]
         if isinstance(error, UnicodeError):
             message = f"{field} is not valid text: {error.reason} ({error.object[error.start]!r})"
+        elif str(error).startswith("Out of range float"):
+            message = f"{field} holds a number that is not finite (NaN or infinity)"
         elif "not supported between instances" in str(error):
             message = f"{field} mixes key types (keys must be strings)"
         else:
