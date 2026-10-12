@@ -7,6 +7,13 @@ change the interface).
 
 ## [Unreleased]
 
+### Fixed
+
+- `server` with several models kept the model it unloaded alive while
+  it loaded the next one, so a switch between two models that fit the
+  memory budget only one at a time briefly needed memory for both. The
+  unloaded model is now freed before the next one loads.
+
 ## [0.8.0] - 2026-10-11
 
 ### Added

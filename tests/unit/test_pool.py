@@ -1,5 +1,6 @@
 """Model discovery and the model pool, with fake models of made-up sizes."""
 
+import gc
 import logging
 import weakref
 from pathlib import Path
@@ -175,6 +176,34 @@ def test_the_least_recently_used_model_is_unloaded_to_fit_the_budget(models):
     assert alpha() is None  # released, not only forgotten
     assert beta() is not None
     assert loads.names == ["Alpha", "beta", "gamma"]
+
+
+def test_unloaded_models_are_gone_before_the_memory_release_and_the_next_load(
+    models, tmp_path, monkeypatch
+):
+    big = fake(tmp_path / "big", 1800)  # 1,980 counted: both loaded models must go
+    refs, alive = {}, []
+
+    def living():
+        return [name for name, ref in refs.items() if ref() is not None]
+
+    def load(spec):
+        alive.append(("load", living()))
+        model = pool_module._load(spec)
+        refs[spec.name] = weakref.ref(model)
+        return model
+
+    def release():
+        gc.collect()
+        alive.append(("release", living()))
+
+    monkeypatch.setattr(pool_module, "_release_memory", release)
+    pool = ModelPool(discover([models, big]), budget=2200, load=load)
+    pool.get("Alpha")
+    pool.get("beta")
+    alive.clear()
+    pool.get("big")
+    assert alive == [("release", []), ("load", [])]
 
 
 def test_the_memory_is_released_only_after_an_unload(models, monkeypatch):

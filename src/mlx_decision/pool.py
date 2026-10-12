@@ -199,7 +199,10 @@ class ModelPool:
         limit = self._limit()
         unloaded = False
         while self._loaded and sum(self._sizes[n] for n in self._loaded) + size > limit:
-            old, _ = self._loaded.popitem(last=False)
+            # Delete without binding the model, so no local keeps it (and its
+            # weights) alive through the release and the next load.
+            old = next(iter(self._loaded))
+            del self._loaded[old]
             logger.info("unloaded %s to make room for %s", old, name)
             self._loaded_names = tuple(self._loaded)
             unloaded = True
