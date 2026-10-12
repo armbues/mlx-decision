@@ -123,7 +123,10 @@ def test_an_unsupported_model_needs_yes(hub):
     assert "not a supported decision model" in result.stderr
     assert "known families: clef, pplx, h2o, d1, laya, julia" in result.stderr
     assert len(hub) == 1  # only the JSON files
-    assert invoke("Qwen/Qwen3.5-9B", "--yes").exit_code == 0
+    result = invoke("Qwen/Qwen3.5-9B", "--yes")
+    assert result.exit_code == 0
+    assert "downloaded Qwen/Qwen3.5-9B" in result.stderr
+    assert "try it" not in result.stderr
 
 
 def test_d1_notes_its_licence_and_downloads_without_a_terminal(hub):

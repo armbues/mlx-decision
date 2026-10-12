@@ -14,6 +14,9 @@ change the interface).
   `-m` options no model takes in the order of the model folders; both now
   list them in the order the documentation does (Clef, pplx, H2O, d1,
   Laya, Julia).
+- `download --yes` of a repository no model family can load ended with
+  "try it: mlx-decision chat -m ...", which could not load it either. The
+  hint is now left out for such a download.
 
 ## [0.8.1] - 2026-10-12
 

@@ -727,8 +727,9 @@ def download(
     except (HfHubHTTPError, *http_errors(), OSError, ValueError) as error:
         fail(f"{repo_id}: {str(error).splitlines()[0]}")
     typer.echo(f"downloaded {repo_id} to {path}", err=True)
-    model = str(local_dir) if local_dir else repo_id
-    typer.echo(f"try it: mlx-decision chat -m {model}", err=True)
+    if check.family is not None:  # none could load it, as the warning said
+        model = str(local_dir) if local_dir else repo_id
+        typer.echo(f"try it: mlx-decision chat -m {model}", err=True)
 
 
 @app.command()
