@@ -56,6 +56,12 @@ change the interface).
   differently (a plain image and the same image turned on its side) got
   the same key, so the second answer depended on the first request.
   The key now includes each image's layout.
+- `convert --target-bits` for H2O-Lightning measured the quantized
+  embeddings with the model's output rows still unquantized, so their
+  sensitivity in `quantization_sensitivity.json` was too low (0.00034
+  instead of 0.00154 at 4 bits). For `--target-bits 4.5` the chosen bits
+  and the weights written are unchanged; other targets could choose
+  differently.
 
 ## [0.8.0] - 2026-10-11
 

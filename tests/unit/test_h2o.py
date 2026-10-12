@@ -529,3 +529,45 @@ def test_mixed_precision_sweeps_without_the_floor(folder, tmp_path, monkeypatch)
     assert model.info()["precision"] == "mixed 4.5-bit"
     assert model.backend.noul_floor == 0.801  # the release's, in the copy
     assert model.decide("please refund", QUESTIONS).answers
+
+
+def test_the_sensitivity_sweep_reads_the_output_rows_it_is_measuring(folder):
+    import mlx.core as mx
+
+    from mlx_decision.mixed import Unit, measure_sensitivity
+    from mlx_decision.models.h2o.model import H2OBackend
+
+    backend = mlx_decision.load(folder, prefix_cache_gb=0, noul_floor=0).backend
+    request = parse_request({"state": "please refund", "questions": QUESTIONS})
+    path = "language_model.model.embed_tokens"  # tied: also the output rows
+    unit = Unit(path, (path,), backend.backbone.language_model.model.embed_tokens.weight.size)
+    seen = []
+
+    def evaluate() -> list[list[float]]:
+        # A backend built now reads the rows of whatever layer is installed.
+        fresh = H2OBackend(
+            "fresh",
+            backend.backbone,
+            backend.tokenizer,
+            backend.config,
+            backend.capabilities.max_input_tokens,
+        )
+        fresh.noul_floor = backend.noul_floor
+        with mx.stream(mx.cpu):
+            ours, theirs = backend.score(request), fresh.score(request)
+        seen.append((ours.probabilities, theirs.probabilities))
+        return [list(p.values()) for p in ours.probabilities.values()]
+
+    def flat(vectors: list[list[float]]) -> list[float]:
+        return [p for vector in vectors for p in vector]
+
+    before = evaluate()
+    measure_sensitivity(backend.backbone, [unit], 4, 32, evaluate)
+    after = evaluate()
+    for ours, theirs in seen:
+        for question_id, probabilities in ours.items():
+            assert probabilities == pytest.approx(theirs[question_id], abs=1e-6)
+    # seen: before, the sweep's reference, quantized, after. The quantized
+    # pass differs, and the original rows are back afterwards.
+    assert seen[2][0] != seen[1][0]
+    assert flat(after) == pytest.approx(flat(before), abs=1e-7)

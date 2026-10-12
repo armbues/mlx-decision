@@ -152,15 +152,14 @@ class H2OBackend:
         self.noul_floor = config.noul_floor
         self.path = path
         self.label_ids = label_ids or label_token_ids(tokenizer, config.labels)
-        self.label_rows = None
+        self._label_rows = None
+        self._rows_layer = None  # the output layer the rows were read from
         self.vision = None
         self.prefix_cache = (
             PrefixCache(round(prefix_cache_gb * 1e9)) if prefix_cache_gb > 0 else None
         )
         if backbone is not None:
-            rows = backbone.language_model.output_embedding_rows(mx.array(self.label_ids))
-            self.label_rows = rows.astype(mx.float32)
-            mx.eval(self.label_rows)
+            self.label_rows()
         self.capabilities = Capabilities(
             max_input_tokens=max_input_tokens,
             max_choice_options=len(config.labels),
@@ -180,6 +179,19 @@ class H2OBackend:
 
             self.vision = load_vision_model(self.path)
         return self.vision
+
+    def label_rows(self) -> mx.array:
+        """The label tokens' output embedding rows (float32), kept between requests
+        and read again when the output layer is replaced (the mixed-precision
+        sweep swaps in a quantized one, then the original)."""
+        model = self.backbone.language_model
+        layer = model.output_embedding_layer()
+        if layer is not self._rows_layer:
+            rows = model.output_embedding_rows(mx.array(self.label_ids))
+            self._label_rows = rows.astype(mx.float32)
+            mx.eval(self._label_rows)
+            self._rows_layer = layer
+        return self._label_rows
 
     def image_config(self):
         """The release's processor settings at the serve config's pixel limit."""
@@ -390,7 +402,7 @@ class H2OBackend:
                 grids = [image.grid for image in images.prepared]
                 positions = position_ids(input_ids, pad, grids, images.merge_size)[:, :, length:]
             hidden = self.backbone(ids[:, length:], None, positions, cache=fork_cache(cache))
-        return self.label_rows[:count] @ hidden[0, -1].astype(mx.float32)
+        return self.label_rows()[:count] @ hidden[0, -1].astype(mx.float32)
 
     def probabilities(
         self,

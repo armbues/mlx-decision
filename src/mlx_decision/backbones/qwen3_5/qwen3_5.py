@@ -301,9 +301,13 @@ class TextModel(nn.Module):
             for l in self.layers
         ]
 
+    def output_embedding_layer(self) -> nn.Module:
+        """The layer holding the output embeddings (the input ones when tied)."""
+        return self.model.embed_tokens if self.args.tie_word_embeddings else self.lm_head
+
     def output_embedding_rows(self, ids: mx.array) -> mx.array:
         """Rows of the output embedding matrix for token ``ids``, dequantized if needed."""
-        layer = self.model.embed_tokens if self.args.tie_word_embeddings else self.lm_head
+        layer = self.output_embedding_layer()
         if "scales" not in layer:
             return layer.weight[ids]
         biases = layer.get("biases")
