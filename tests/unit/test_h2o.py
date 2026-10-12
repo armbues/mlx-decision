@@ -136,6 +136,10 @@ def test_the_state_cut_keeps_head_and_tail():
     text = " ".join(f"w{i}" for i in range(10))
     assert cut_state(text, 10, encode, decode) == (text, False)
     assert cut_state(text, 4, encode, decode) == ("w0 w1\n...\nw8 w9", True)
+    # Small caps, odd ones rounded down as the release does; 1 keeps nothing.
+    assert cut_state(text, 3, encode, decode) == ("w0\n...\nw9", True)
+    assert cut_state(text, 2, encode, decode) == ("w0\n...\nw9", True)
+    assert cut_state(text, 1, encode, decode) == ("\n...\n", True)
 
 
 def test_commit_noul():
@@ -293,6 +297,19 @@ def test_a_lowered_limit_cuts_long_states_to_fit(folder):
     assert "\n...\n" in state_text
     # At the release's limit the same state is short enough to keep whole.
     assert not mlx_decision.load(folder).decide(state, QUESTIONS).truncated
+
+
+def test_a_limit_that_leaves_one_token_of_state_still_cuts(folder):
+    model = mlx_decision.load(folder)
+    question = {"q": {"type": "noul"}}
+    empty = parse_request({"state": "", "questions": question})
+    length = len(model.backend.encode(empty)[0][0].input_ids)
+    for room in (1, 2, 3):
+        model = mlx_decision.load(folder, max_input_tokens=length + 8 + room)
+        request = empty.model_copy(update={"state": "refund " * 100})
+        assert model.backend.state_cap(request) == room
+        encoded, cut = model.backend.encode(request)
+        assert cut and len(encoded[0].input_ids) <= length + 8 + room
 
 
 def test_questions_share_their_prefix_within_and_across_requests(folder):

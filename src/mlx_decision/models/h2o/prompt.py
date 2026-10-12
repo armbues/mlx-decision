@@ -77,7 +77,8 @@ def cut_state(text: str, max_tokens: int, encode, decode) -> tuple[str, bool]:
     if len(ids) <= max_tokens:
         return text, False
     half = max_tokens // 2
-    return decode(ids[:half]) + CUT_MARK + decode(ids[-half:]), True
+    # As the release, but its ids[-half:] keeps every token when half is 0.
+    return decode(ids[:half]) + CUT_MARK + decode(ids[len(ids) - half :]), True
 
 
 def describe(value: object) -> str:

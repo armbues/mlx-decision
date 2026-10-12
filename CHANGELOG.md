@@ -62,6 +62,9 @@ change the interface).
   instead of 0.00154 at 4 bits). For `--target-bits 4.5` the chosen bits
   and the weights written are unchanged; other targets could choose
   differently.
+- H2O-Lightning under a lowered `--max-input-tokens` that left room for
+  one token of state kept the whole state instead of cutting it, and
+  then refused the request as too long. It now cuts the state.
 
 ## [0.8.0] - 2026-10-11
 
