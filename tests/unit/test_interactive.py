@@ -244,3 +244,18 @@ def test_ctrl_c_while_answering_keeps_the_session(fake_model, capsys, monkeypatc
     assert calls == ["first", "second"]
     assert "cancelled" in err
     assert len(bodies(out)) == 1  # the second state was still answered
+
+
+def test_a_null_images_field_is_no_images(fake_model):
+    session = drive(fake_model, lines("/image clear"), {"questions": QUESTIONS, "images": None})
+    assert session.images == []
+
+
+def test_json_answers_note_truncation_on_stderr(tmp_path, capsys):
+    model = load(write_model(tmp_path / "model", max_input_tokens=1))
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        Session(model, {"questions": QUESTIONS}, False, as_json=True).answer("one two")
+    out, err = capsys.readouterr()
+    assert bodies(out)[0]["usage"]["input_tokens"] == 1
+    assert "truncated" not in out
+    assert "note: the state was truncated" in err

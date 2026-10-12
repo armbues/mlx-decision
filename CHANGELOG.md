@@ -65,6 +65,13 @@ change the interface).
 - H2O-Lightning under a lowered `--max-input-tokens` that left room for
   one token of state kept the whole state instead of cutting it, and
   then refused the request as too long. It now cuts the state.
+- `run --states` replaced bytes that are not UTF-8 with `�` and
+  answered the changed text; such a line now gets an error line
+  ("not valid UTF-8"), from a file and from stdin.
+- `chat --json` did not say when the state was truncated; it now notes
+  it on stderr, as `run --json` does.
+- `chat` with `"images": null` in its `-q` file crashed on `/image`; null
+  now means no images.
 
 ## [0.8.0] - 2026-10-11
 

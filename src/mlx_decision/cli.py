@@ -180,8 +180,8 @@ def build_request(
 def answer_states(model, defaults: dict[str, Any], lines) -> None:
     """One response body per request line, in order; a bad line gives an error body.
 
-    Each line is a request body; fields it leaves out (usually the questions)
-    come from ``defaults``.
+    Each line is a request body (text, or bytes decoded as UTF-8); fields it
+    leaves out (usually the questions) come from ``defaults``.
     """
     from .types import decode_json
 
@@ -189,6 +189,11 @@ def answer_states(model, defaults: dict[str, Any], lines) -> None:
         if not line.strip():
             continue
         try:
+            if isinstance(line, bytes):
+                try:
+                    line = line.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    raise DecisionError(f"not valid UTF-8: {error}") from None
             request = decode_json(line)
             if not isinstance(request, dict):
                 raise DecisionError('a line must be a request body: {"state": ...}')
@@ -432,10 +437,11 @@ def run(
         body.pop("state", None)
         add_images(body, image)
         try:
+            # Bytes, so that a line that is not UTF-8 is reported, not repaired.
             source = (
-                nullcontext(sys.stdin)
+                nullcontext(getattr(sys.stdin, "buffer", sys.stdin))
                 if states == "-"
-                else open(states, encoding="utf-8", errors="replace")  # noqa: SIM115
+                else open(states, "rb")  # noqa: SIM115
             )
         except OSError as error:
             fail(f"cannot read the states: {error}")

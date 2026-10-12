@@ -146,7 +146,9 @@ class Session:
 
     @property
     def images(self) -> list[Any]:
-        return self.body.setdefault("images", [])
+        if self.body.get("images") is None:  # left out, or null in a -q file
+            self.body["images"] = []
+        return self.body["images"]
 
     def toolbar(self) -> str:
         count = len(self.questions)
@@ -202,6 +204,8 @@ class Session:
             return
         if self.as_json:
             typer.echo(json.dumps(result.to_wire(), ensure_ascii=False))
+            if result.truncated:  # the body has no field for it
+                say("note: the state was truncated to fit the model's input limit")
         else:
             typer.echo(format_result(result))
         say()

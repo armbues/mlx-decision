@@ -279,6 +279,21 @@ def test_deep_json_from_a_flag_or_file_is_an_error(cli, tmp_path, where):
     assert "Traceback" not in result.output
 
 
+@pytest.mark.parametrize("source", ["file", "stdin"])
+def test_states_lines_that_are_not_utf8_are_error_lines(cli, tmp_path, source):
+    typed = b'{"state": "caf\xe9"}\n{"state": "next"}\n'
+    if source == "file":
+        path = tmp_path / "states.jsonl"
+        path.write_bytes(typed)
+        result = cli("--noul", "q=Is it?", "--states", str(path))
+    else:
+        result = cli("--noul", "q=Is it?", "--states", "-", input=typed)
+    assert result.exit_code == 0, result.output
+    broken, answered = map(json.loads, result.stdout.splitlines())
+    assert broken["line"] == 1 and broken["error"]["message"].startswith("not valid UTF-8")
+    assert list(answered["answers"]) == ["q"]
+
+
 def test_states_note_truncation_on_stderr(fake_model_path, questions_file):
     write_model(fake_model_path, max_input_tokens=2)
     args = ["run", "-m", str(fake_model_path), "-q", str(questions_file), "--states", "-"]
