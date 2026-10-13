@@ -60,10 +60,12 @@ def _falling(question) -> dict[str, float]:
     return {option: (n - index) / total for index, option in enumerate(options)}
 
 
-def load(path: Path, **options) -> FakeBackend:
+def load(path: Path, fit_weights: Path | None = None, **options) -> FakeBackend:
     config = json.loads((path / MARKER_FILE).read_text())
     config.pop("family")
-    return FakeBackend(**{**config, **options})
+    backend = FakeBackend(**{**config, **options})
+    backend.fit_weights = fit_weights  # a fitted model's trained tensors, if any
+    return backend
 
 
 def write_model(folder: Path, **config) -> Path:
@@ -83,3 +85,23 @@ def write_sized_model(folder: Path, weights: int) -> Path:
 
 
 register_family(FAMILY, detect=lambda path: False, loader="fake_backend:load")
+
+
+TEAM = {"type": "choice", "criteria": {"billing": "Money", "tech": "Bugs", "sales": "Plans"}}
+
+
+def write_fitted(folder: Path, base: Path, kinds: tuple[str, ...] = ("calibrate",)) -> Path:
+    """A fitted model over ``base`` (any family) that calibrates the choice ``team``
+    (``TEAM``) with temperature 2; ``kinds`` as the marker names them."""
+    from mlx_decision import fitted
+    from mlx_decision.registry import detect_family
+
+    question = fitted.FitQuestion.of("team", Choice(**TEAM))
+    fit = fitted.Fit(list(kinds), [question], {0: fitted.Calibration(2.0)})
+    return fitted.write(
+        folder,
+        family=detect_family(base).name,
+        base=fitted.base_reference(base, base),
+        base_fingerprint=fitted.fingerprint(base),
+        fit=fit,
+    )

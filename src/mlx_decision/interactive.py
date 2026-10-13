@@ -28,6 +28,7 @@ from .cli import (
     undescribed_choices,
 )
 from .errors import DecisionError
+from .fitted import unfitted_warnings
 
 TYPES = {
     "choice": "pick one of several options",
@@ -183,6 +184,8 @@ class Session:
         if not self.questions:
             say("error: no questions; /add one")
             return
+        for message in unfitted_warnings(self.model, self.body):
+            say(f"warning: {message}")
         busy = sys.stderr.isatty()
         if busy:
             typer.echo("answering...", err=True, nl=False)

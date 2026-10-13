@@ -10,7 +10,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.validation import ValidationError
 
-from fake_backend import write_model
+from fake_backend import TEAM, write_fitted, write_model
 from mlx_decision import load
 from mlx_decision.interactive import OptionsValidator, Session
 
@@ -287,3 +287,12 @@ def test_edit_keeps_criteria_it_cannot_show_one_per_line(fake_model, capsys, cri
         type(value) for value in expected["criteria"]
     ]
     assert "kept as they are" in capsys.readouterr().err
+
+
+def test_a_fitted_model_warns_before_answering_once_per_question(tmp_path, capsys):
+    model = load(write_fitted(tmp_path / "fit", write_model(tmp_path / "base")))
+    body = {"questions": {"team": TEAM, "urgent": {"type": "noul"}}}
+    drive(model, lines("one", "", "two", ""), body)
+    out, err = capsys.readouterr()
+    assert len(bodies(out)) == 2
+    assert err.count("warning: fit: question 'urgent' is not one it was fitted on") == 1

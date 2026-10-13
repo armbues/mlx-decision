@@ -235,3 +235,74 @@ def test_run_answers_with_a_fitted_model(tmp_path, base):
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["model"] == "fit"
+
+
+def test_run_warns_once_about_questions_the_fit_does_not_cover(tmp_path, base):
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    states = tmp_path / "states.jsonl"
+    states.write_text('{"state": "a"}\n{"state": "b"}\n')
+    flags = ["--choice", "team=billing,tech,sales", "--noul", "urgent"]
+    result = CliRunner().invoke(app, ["run", "-m", str(folder), "--states", str(states), *flags])
+    assert result.exit_code == 0, result.output
+    warnings = [line for line in result.stderr.splitlines() if line.startswith("warning:")]
+    assert warnings == [
+        "warning: fit: question 'noul_1' is not one it was fitted on (same id and options); "
+        "the base answers it"
+    ]  # before answering, once, and not again from the log
+    assert len(result.stdout.splitlines()) == 2
+
+
+def test_mcp_tells_agents_which_questions_were_fitted(tmp_path, base):
+    from mlx_decision.mcp_server import family_hints
+
+    model = mlx_decision.load(write_fitted(tmp_path / "fit", base, team_fit()))
+    hints = " ".join(family_hints(model.info(), allow_image_paths=False))
+    assert "fitted on these questions: `team`." in hints
+    assert "fitted on" not in " ".join(family_hints(mlx_decision.load(base).info(), False))
+
+
+def test_mcp_checks_options_against_the_base_family(tmp_path):
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+    from tiny_models import write_marker
+
+    laya = write_marker(tmp_path / "laya", "laya")
+    folder = write_fitted(tmp_path / "laya-fit", laya, team_fit())
+    result = CliRunner().invoke(app, ["mcp", "-m", str(folder), "--noul-floor", "0.5"])
+    assert result.exit_code == 1
+    assert "laya models do not take noul_floor" in result.stderr
+
+
+def test_a_shared_h2o_base_answers_as_before_beside_its_readout_fit(tmp_path):
+    from mlx_decision.pool import ModelPool, discover
+
+    root = tmp_path / "models"
+    base = write_h2o(root / "tiny-h2o")
+    request = parse_request({"state": "please refund", "questions": {"team": TEAM}})
+    plain = mlx_decision.load(base)
+    with mx.stream(mx.cpu):  # one device throughout: the prefix is kept between calls
+        team = plain.backend.features(request)["team"]
+        want = plain.decide_request(request).to_wire()["answers"]
+    readout = Readout(team.option_ids, -team.rows, mx.zeros(3))
+    fit = Fit(
+        ["readout"], [FitQuestion.of("team", request.questions["team"])], readouts={0: readout}
+    )
+    fitted.write(
+        root / "h2o-fit",
+        family="h2o",
+        base=base_reference(base, base),
+        base_fingerprint=fingerprint(base),
+        fit=fit,
+    )
+    pool = ModelPool(discover([root]), budget=10**12)
+    with mx.stream(mx.cpu):
+        got_fit = pool.get("h2o-fit").decide_request(request)
+        got_base = pool.get("tiny-h2o").decide_request(request)
+    assert pool.get("h2o-fit").backend.base is pool.get("tiny-h2o").backend
+    assert got_base.to_wire()["answers"] == want
+    assert got_fit.answers["team"].choice != got_base.answers["team"].choice

@@ -20,6 +20,7 @@ from mcp.server.stdio import stdio_server
 
 from . import __version__
 from .errors import DecisionError
+from .fitted import QUESTION_KINDS
 from .images import check_data_urls
 from .model import DecisionModel
 
@@ -140,6 +141,13 @@ def family_hints(info: dict[str, Any], allow_image_paths: bool) -> list[str]:
             "Describe every choice option in `criteria` with a short phrase of what it "
             'covers ("Billing and payment disputes"): with bare ids or one-word labels '
             "this model answers much worse."
+        )
+    if (fit := info.get("fit")) and any(kind in QUESTION_KINDS for kind in fit["kinds"]):
+        ids = ", ".join(f"`{question_id}`" for question_id in fit["questions"])
+        hints.append(
+            f"It was fitted on these questions: {ids}. Ask them with the same ids and "
+            "options to get the fitted answers; other questions are answered by its base "
+            "model."
         )
     if info["supports_images"]:
         where = "data URLs (data:image/png;base64,...)"

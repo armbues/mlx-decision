@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fake_backend import FakeBackend, write_model, write_sized_model
+from fake_backend import FakeBackend, write_fitted, write_model, write_sized_model
 from mlx_decision import DecisionModel
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.server import TRUNCATED_HEADER, create_app
@@ -477,3 +477,18 @@ def test_server_command_passes_the_budget(serve, models_folder):
         for name in ("Alpha", "beta", "gamma"):
             client.post("/v1/systemone", json={**BODY, "model": name})
         assert client.get("/health").json()["loaded"] == ["beta", "gamma"]
+
+
+def test_fitted_models_are_served_by_name_beside_their_base(serve, models_folder):
+    write_fitted(models_folder / "beta-support", models_folder / "beta")
+    result, app = serve("-m", models_folder, "--default-model", "beta")
+    assert result.exit_code == 0, result.output
+    assert "models: Alpha, beta, beta-support, gamma; default beta" in result.stderr
+    body = {**BODY, "questions": {"team": QUESTIONS["department"]}}
+    with TestClient(app) as client:
+        names = [model["name"] for model in client.get("/v1/models").json()["models"]]
+        assert names == ["Alpha", "beta", "beta-support", "gamma"]
+        response = client.post("/v1/systemone", json={**body, "model": "beta-support"})
+        assert response.status_code == 200
+        assert response.json()["model"] == "beta-support"
+        assert client.get("/health").json()["loaded"] == ["beta", "beta-support"]

@@ -9,8 +9,9 @@ import pytest
 
 import mlx_decision.memory as memory
 import mlx_decision.pool as pool_module
-from fake_backend import write_model, write_sized_model
+from fake_backend import TEAM, write_fitted, write_model, write_sized_model
 from mlx_decision import DecisionError, ModelTooLargeError
+from mlx_decision.fitted import FIT_FILE, FittedBackend
 from mlx_decision.hub import ModelNotFoundError
 from mlx_decision.pool import ModelPool, discover, prefix_cache_bytes
 from tiny_models import write_clef, write_marker
@@ -282,3 +283,123 @@ def test_a_failed_load_leaves_the_pool_unchanged(models):
     with pytest.raises(FileNotFoundError):
         pool.get("beta")
     assert pool.loaded() == ["Alpha"]
+
+
+# Fitted models
+
+
+@pytest.fixture
+def fits(tmp_path) -> Path:
+    """A folder with the 1,000-byte model "base", two calibrations over it ("fit-a",
+    "fit-b") and the 1,000-byte models "other" and "third"."""
+    root = tmp_path / "models"
+    base = fake(root / "base", 1000)
+    write_fitted(root / "fit-a", base)
+    write_fitted(root / "fit-b", base)
+    fake(root / "other", 1000)
+    fake(root / "third", 1000)
+    return root
+
+
+def fit_bytes(folder: Path) -> int:
+    return round(memory.tensor_bytes(folder / FIT_FILE) * memory.MARGIN)
+
+
+def test_fitted_models_are_listed_beside_their_base_in_the_base_family(fits):
+    specs = {spec.name: spec for spec in discover([fits])}
+    assert list(specs) == ["base", "fit-a", "fit-b", "other", "third"]
+    fit = specs["fit-a"]
+    assert (fit.family.name, fit.path, fit.fit.base) == ("fake", fits / "fit-a", fits / "base")
+    assert (fit.base.name, fit.base.path) == ("base", fits / "base")
+    assert specs["base"].fit is None and specs["base"].base is None
+
+
+def test_a_fitted_model_takes_the_options_of_its_base_family(tmp_path):
+    root = tmp_path / "models"
+    write_clef(root / "clef")
+    write_fitted(root / "laya-fit", write_marker(tmp_path / "laya", "laya"))
+    specs = discover([root], {"prefix_cache_gb": 1.0, "max_input_tokens": 64})
+    assert {spec.name: spec.options for spec in specs} == {
+        "clef": {"prefix_cache_gb": 1.0, "max_input_tokens": 64},
+        "laya-fit": {"max_input_tokens": 64},
+    }
+    with pytest.raises(ValueError, match="laya models do not take prefix_cache_gb"):
+        discover([root / "laya-fit"], {"prefix_cache_gb": 1.0})
+
+
+def test_a_fitted_model_without_its_base_is_skipped_in_a_folder_and_refused_alone(fits, tmp_path):
+    (fits / "base").rename(tmp_path / "moved")
+    skipped = []
+    specs = discover([fits], on_skip=lambda path, reason: skipped.append((path.name, reason)))
+    assert [spec.name for spec in specs] == ["other", "third"]
+    assert [name for name, _ in skipped] == ["fit-a", "fit-b"]
+    assert "its base model" in skipped[0][1] and "is missing" in skipped[0][1]
+    with pytest.raises(ValueError, match="fit-a: its base model .* is missing"):
+        discover([fits / "fit-a"])
+
+
+def test_fitted_models_share_their_loaded_base(fits, working_set):
+    pool, loads = make_pool(fits)
+    fit_a = pool.get("fit-a")
+    assert loads.names == ["base"]  # loaded as the base, not once per fitted model
+    base = pool.get("base")
+    fit_b = pool.get("fit-b")
+    assert loads.names == ["base"]
+    assert isinstance(fit_a.backend, FittedBackend)
+    assert fit_a.backend.base is base.backend is fit_b.backend.base
+    assert pool.loaded() == ["fit-a", "base", "fit-b"]
+    body = {"state": "x", "questions": {"team": TEAM}}
+    assert [pool.get(name).decide_request(body).model for name in pool.loaded()] == [
+        "fit-a",
+        "base",
+        "fit-b",
+    ]
+    fitted = fit_a.decide_request(body).answers["team"].probabilities
+    plain = base.decide_request(body).answers["team"].probabilities
+    assert fitted != pytest.approx(plain)
+
+
+def test_a_shared_base_is_counted_once_and_unloaded_with_its_fitted_models(fits, caplog):
+    # Room for two models of 1,100 bytes and two fits.
+    pool, loads = make_pool(fits, budget=2200 + 2 * fit_bytes(fits / "fit-a"))
+    assert pool.size("fit-a") == 1100 + fit_bytes(fits / "fit-a")  # alone: with its base
+    base = weakref.ref(pool.get("fit-a").backend.base)
+    pool.get("other")
+    pool.get("fit-b")
+    pool.get("base")
+    assert pool.loaded() == ["fit-a", "other", "fit-b", "base"]
+    pool.get("third")  # "other" is the least recently used
+    assert pool.loaded() == ["fit-a", "fit-b", "base", "third"]
+    with caplog.at_level(logging.INFO, logger="mlx_decision.pool"):
+        pool.get("other")  # now the base, with everything that shares it
+    assert pool.loaded() == ["third", "other"]
+    assert "unloaded fit-a, fit-b, base to make room for other" in caplog.text
+    assert base() is None
+    assert loads.names == ["base", "other", "third", "other"]
+
+
+def test_a_base_that_is_not_listed_loads_under_its_own_name(fits, caplog, working_set):
+    loads = Loads()
+    pool = ModelPool(discover([fits / "fit-a", fits / "fit-b"]), budget=1500, load=loads)
+    with caplog.at_level(logging.INFO, logger="mlx_decision.pool"):
+        model = pool.get("fit-a")
+        pool.get("fit-b")
+    assert loads.names == ["base"]
+    assert model.backend.base.name == "base"
+    assert pool.loaded() == ["fit-a", "fit-b"]
+    assert "loading fit-a (with its base base)" in caplog.text
+    assert "loading fit-b (sharing the loaded base)" in caplog.text
+    tight = ModelPool(discover([fits / "fit-a"]), budget=1100, load=Loads())
+    with pytest.raises(ModelTooLargeError, match="fit-a needs about"):
+        tight.get(None)  # the base alone would fit, with the fit it does not
+
+
+def test_a_fit_with_trained_weights_loads_a_base_of_its_own(fits, working_set):
+    write_fitted(fits / "tuned", fits / "base", kinds=("finetune", "calibrate"))
+    pool, loads = make_pool(fits)
+    tuned = pool.get("tuned")
+    base = pool.get("base")
+    assert loads.names == ["tuned", "base"]
+    assert tuned.backend.base is not base.backend
+    assert tuned.backend.base.fit_weights == fits / "tuned" / FIT_FILE
+    assert base.backend.fit_weights is None

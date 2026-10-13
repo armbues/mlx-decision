@@ -458,6 +458,7 @@ def run(
                 fail(str(error))
             if bare := undescribed_choices(loaded, body.get("questions")):
                 typer.echo(describe_options_hint(bare, RUN_DESCRIBE_HOW), err=True)
+            warn_unfitted(loaded, body)
             answer_states(loaded, body, lines)
         return
     body = add_images(build_request(questions, shorthand, state, state_file, state_json), image)
@@ -470,6 +471,7 @@ def run(
         )
         if bare := undescribed_choices(loaded, body.get("questions")):
             typer.echo(describe_options_hint(bare, RUN_DESCRIBE_HOW), err=True)
+        warn_unfitted(loaded, body)
         result = loaded.decide_request(body)
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
@@ -530,6 +532,14 @@ def chat(
     if bare := undescribed_choices(loaded, body.get("questions")):
         typer.echo(describe_options_hint(bare, CHAT_DESCRIBE_HOW), err=True)
     start_chat(loaded, body, state_json, as_json)
+
+
+def warn_unfitted(model, body: dict[str, Any]) -> None:
+    """Warn about questions a fitted model was not fitted on (the base answers them)."""
+    from .fitted import unfitted_warnings
+
+    for message in unfitted_warnings(model, body):
+        typer.echo(f"warning: {message}", err=True)
 
 
 def start_chat(model, body: dict[str, Any], state_json: bool, as_json: bool) -> None:
@@ -872,10 +882,11 @@ def mcp(
         fail("the MCP server needs extra packages: pip install 'mlx-decision[mcp]'")
     import logging
 
+    from .fitted import model_family
     from .hub import resolve_model_path
     from .memory import check_fits
     from .model import load
-    from .registry import check_options, detect_family
+    from .registry import check_options
 
     # stdout carries the protocol: everything else goes to stderr.
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(message)s")
@@ -883,7 +894,7 @@ def mcp(
     try:
         # Fail here, before a client is waiting for the handshake.
         path = resolve_model_path(model)
-        check_options(detect_family(path), options)
+        check_options(model_family(path), options)
         if not no_memory_check:
             check_fits(path, options, name=model)
     except (FileNotFoundError, ValueError) as error:

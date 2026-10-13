@@ -29,8 +29,8 @@ from typing import Any
 
 from .backend import BackendOutput, Readable
 from .hub import ModelNotFoundError, is_repo_id, resolve_model_path, snapshot_revision
-from .registry import MARKER_FILE, load_backend
-from .types import Choice, Noul, Request
+from .registry import FITTED, MARKER_FILE, Family, detect_family, load_backend
+from .types import Choice, Noul, Request, parse_request
 
 FORMAT = 1
 FIT_FILE = "fit.safetensors"
@@ -172,22 +172,35 @@ class FittedBackend:
             if readable:
                 values = self.base.finish(request.questions[question_id], values)
             probabilities[question_id] = values
-        self._warn([qid for qid, i in matched.items() if i is None])
+        for message in self.unfitted(request.questions):
+            log.warning(message)
         return BackendOutput(probabilities, output.input_tokens, output.truncated)
 
-    def _warn(self, unmatched: list[str]) -> None:
-        """Once per question id the fit does not cover, when it has question kinds."""
+    def unfitted(self, questions: Mapping[str, Any]) -> list[str]:
+        """A warning for each question the fit does not cover (when it has question
+        kinds), once per question id: reported ids are not reported again."""
         if not any(kind in QUESTION_KINDS for kind in self.fit.kinds):
-            return
-        for question_id in unmatched:
-            if question_id not in self.warned:
-                self.warned.add(question_id)
-                log.warning(
-                    "%s: question %r is not one it was fitted on (same id and options); "
-                    "the base answers it",
-                    self.name,
-                    question_id,
-                )
+            return []
+        new = [
+            question_id
+            for question_id, question in questions.items()
+            if question_id not in self.warned and self.fit.index(question_id, question) is None
+        ]
+        self.warned.update(new)
+        return [
+            f"{self.name}: question {question_id!r} is not one it was fitted on (same id and "
+            "options); the base answers it"
+            for question_id in new
+        ]
+
+
+def unfitted_warnings(model, body: Mapping[str, Any]) -> list[str]:
+    """``FittedBackend.unfitted`` for the questions of a request body, so that ``run``
+    and ``chat`` warn before answering; empty for a model that is not fitted."""
+    backend = model.backend
+    if not isinstance(backend, FittedBackend) or not body.get("questions"):
+        return []
+    return backend.unfitted(parse_request({"state": "", "questions": body["questions"]}).questions)
 
 
 def fingerprint(path: Path) -> str:
@@ -323,17 +336,64 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, str | None]]:
     return files
 
 
+@dataclass(frozen=True)
+class FittedFolder:
+    """A fitted model folder whose base was found and checked; nothing loaded."""
+
+    path: Path
+    marker: dict[str, Any]
+    base: Path
+    family: Family  # the base's
+
+    @property
+    def kinds(self) -> list[str]:
+        return list((self.marker.get("fit") or {}).get("kinds", []))
+
+    @property
+    def shares_base(self) -> bool:
+        """Whether the fit leaves the base's weights alone, so a loaded base can be shared."""
+        return not any(kind in WEIGHT_KINDS for kind in self.kinds)
+
+    @property
+    def base_name(self) -> str:
+        """How the base is named when loaded for this fit: its repo or its folder."""
+        reference = self.marker["base"]
+        if "repo_id" in reference:
+            return reference["repo_id"].rstrip("/").rsplit("/", 1)[-1]
+        return self.base.name
+
+
+def open_folder(path: Path) -> FittedFolder:
+    """Read a fitted model folder and resolve and check its base (``BaseModelError``)."""
+    marker = read_marker(path)
+    base = resolve_base(path, marker)
+    check_base(path, marker, base)
+    family = detect_family(base)
+    if family is FITTED:
+        raise BaseModelError(f"{path.name}: its base model {base} is itself a fitted model")
+    return FittedFolder(path, marker, base, family)
+
+
+def model_family(path: Path) -> Family:
+    """The family whose loader options a model takes: a fitted model's base's."""
+    family = detect_family(path)
+    return open_folder(path).family if family is FITTED else family
+
+
+def attach(folder: FittedFolder, base, name: str | None = None) -> FittedBackend:
+    """The fit applied to its loaded base backend (which may serve other models too)."""
+    fit = read_fit(folder.path, folder.marker)
+    name = name or folder.path.resolve().name
+    return FittedBackend(name, base, fit, folder.marker["base"], folder.path)
+
+
 def load(path: Path, **options) -> FittedBackend:
     """A fitted model: its base resolved, checked and loaded (``options`` go to the
     base's loader), with the fit applied."""
-    marker = read_marker(path)
-    base_path = resolve_base(path, marker)
-    check_base(path, marker, base_path)
-    fit = read_fit(path, marker)
-    if any(kind in WEIGHT_KINDS for kind in fit.kinds):
+    folder = open_folder(path)
+    if not folder.shares_base:
         options = {**options, "fit_weights": path / FIT_FILE}
-    base = load_backend(base_path, **options)
-    return FittedBackend(path.resolve().name, base, fit, marker["base"], path)
+    return attach(folder, load_backend(folder.base, **options))
 
 
 def write(
