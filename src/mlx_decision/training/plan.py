@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..data.format import Example
+from ..data.format import Example, Splits
 from ..memory import required_bytes, weight_bytes
 
 KINDS = ("calibrate", "readout", "head", "finetune")
@@ -26,7 +26,7 @@ MAIN_KIND = {
     "julia": "finetune",
 }
 # The kinds this version trains.
-BUILT = frozenset({"calibrate"})
+BUILT = frozenset({"calibrate", "finetune"})
 
 # Scoring: seconds per question, seconds per 1,000 tokens, and the weight bytes
 # of the copy measured (clef-flash bf16, pplx 4-bit, H2O-Lightning 4-bit, d1
@@ -96,16 +96,72 @@ def scoring_seconds(family: str, weights: int, examples: list[Example]) -> float
     return scale * (questions * per_question + tokens / 1000 * per_thousand)
 
 
-def kind_bytes(kind: str, path: Path, options: dict) -> int:
+# Fine-tuning, seconds per 1,000 estimated padded tokens (bfloat16,
+# checkpointing; the whole model, the head alone): fitted to fine-tunes of
+# Julia-1 and laya (ModernBERT-large) on TREC; the head alone scaled alike.
+FINETUNE_RATES = {"julia": (0.038, 0.008), "laya": (0.14, 0.033)}
+# Padded tokens per token in batches of random order.
+PADDING = 1.5
+# Bytes per trained parameter: float32 copy and two moments, bfloat16 gradients
+# and the kept epoch's bfloat16 copy.
+TRAINED_PARAMETER_BYTES = 16
+# On top, the larger of two passing peaks: updating the largest tensor (bytes per
+# element), and the backward pass (bytes per token, hidden unit and layer, with
+# checkpointing). Measured on Julia-1 and laya at 4,096-token batches.
+UPDATE_BYTES = 22
+BACKWARD_BYTES = 10
+HEAD_LAYERS = 2
+
+
+def kind_bytes(kind: str, path: Path, options: dict, head_only: bool = False) -> int:
     """Memory a kind needs beyond the model's weights and their margin."""
-    return 0  # calibrate keeps a few numbers per example
+    from ..models.marker.model import sizes
+    from .finetune import BATCH_TOKENS
+
+    if kind != "finetune":
+        return 0  # calibrate keeps a few numbers per example
+    size = sizes(path)
+    if head_only:
+        trained, largest, layers = size.head, size.largest_head, HEAD_LAYERS
+    else:
+        trained = size.encoder + size.head
+        largest = max(size.largest_encoder, size.largest_head)
+        layers = size.layers + HEAD_LAYERS
+    passing = max(UPDATE_BYTES * largest, BACKWARD_BYTES * BATCH_TOKENS * size.hidden * layers)
+    return trained * TRAINED_PARAMETER_BYTES + passing
+
+
+def training_seconds(
+    family: str, fit: list[Example], dev: list[Example], epochs: int, head_only: bool
+) -> float:
+    """Seconds of a fine-tune: its epochs over ``fit``, and ``dev``'s loss after each."""
+    full, head = FINETUNE_RATES.get(family, (0.25, 0.06))
+    rate = head if head_only else full
+
+    def tokens(examples: list[Example]) -> float:
+        return sum(request_tokens(e) * len(e.labels) for e in examples) * PADDING / 1000
+
+    # The dev loss is a forward pass, about a third of a step.
+    return epochs * (tokens(fit) * rate + tokens(dev) * full / 3)
 
 
 def estimate(
-    family: str, kinds: list[str], path: Path, options: dict, examples: list[Example]
+    family: str,
+    kinds: list[str],
+    path: Path,
+    options: dict,
+    splits: Splits,
+    epochs: int = 3,
+    head_only: bool = False,
 ) -> Estimate:
-    """Time and peak memory of a run on ``examples`` (all of them, holdout included)."""
+    """Time and peak memory of a run on ``splits``."""
     weights = weight_bytes(path, options)
-    seconds = weights / LOAD_RATE + scoring_seconds(family, weights, examples) + 1.0
-    extra = max(kind_bytes(kind, path, options) for kind in kinds)
+    seconds = weights / LOAD_RATE + scoring_seconds(family, weights, splits.holdout) + 1.0
+    if kinds == ["calibrate"]:
+        seconds += scoring_seconds(family, weights, splits.fit + splits.dev)
+    else:
+        seconds += training_seconds(family, splits.fit, splits.dev, epochs, head_only)
+        # The dev part and the holdout scored again by the trained model.
+        seconds += scoring_seconds(family, weights, splits.dev + splits.holdout)
+    extra = max(kind_bytes(kind, path, options, head_only) for kind in kinds)
     return Estimate(seconds, required_bytes(path, options) + extra)

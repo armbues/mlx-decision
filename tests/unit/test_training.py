@@ -192,6 +192,7 @@ def test_kinds_per_family():
     assert plan.kinds("fake") == ["calibrate"]
     assert plan.resolve("h2o", "auto") == ["calibrate"]  # until readout fits are built
     assert plan.resolve("julia", "calibrate") == ["calibrate"]
+    assert plan.resolve("laya", "auto") == ["finetune", "calibrate"]
     with pytest.raises(ValueError, match="laya models cannot be fitted with readout; they take "
                        "auto, finetune, calibrate"):  # fmt: skip
         plan.resolve("laya", "readout")
@@ -200,8 +201,8 @@ def test_kinds_per_family():
 
 
 def test_the_estimate_grows_with_the_data_and_the_model(tmp_path, base):
-    small = plan.estimate("h2o", ["calibrate"], base, {}, examples(10))
-    large = plan.estimate("h2o", ["calibrate"], base, {}, examples(1000))
+    small = plan.estimate("h2o", ["calibrate"], base, {}, training_splits(examples(10)))
+    large = plan.estimate("h2o", ["calibrate"], base, {}, training_splits(examples(1000)))
     assert 0 < small.seconds < large.seconds
     assert large.seconds == pytest.approx(1 + 100 * (small.seconds - 1), rel=0.01)
 
@@ -266,7 +267,7 @@ def test_every_family_calibrates_end_to_end(tmp_path, family):
         )  # fmt: skip
         for i in range(40)
     ]
-    result = fit(base, data, output=tmp_path / "fitted")
+    result = fit(base, data, output=tmp_path / "fitted", method="calibrate")
     model = mlx_decision.load(result.path)
     assert model.info()["family"] == family
     assert model.info()["fit"]["questions"] == ["team", "urgent"]

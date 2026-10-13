@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import mlx.core as mx
-from mlx.utils import tree_flatten
+import mlx.nn as nn
+from mlx.utils import tree_flatten, tree_unflatten
 from tokenizers import Tokenizer
 
 from ...backbones.modernbert import Model as Encoder
@@ -71,6 +72,29 @@ class Sequence:
     question_type: int
 
 
+@dataclass(frozen=True)
+class TrainingItem:
+    """One question of a request as a fine-tune sees it: its sequence, the
+    temperature serving divides its scores by, and its option ids."""
+
+    sequence: Sequence
+    temperature: float
+    option_ids: list[str]
+
+    @property
+    def length(self) -> int:
+        return len(self.sequence.input_ids)
+
+
+class Parts(nn.Module):
+    """The modules a fine-tune trains: the encoder and the marker head."""
+
+    def __init__(self, encoder: Encoder, head: MarkerHead):
+        super().__init__()
+        self.encoder = encoder
+        self.head = head
+
+
 class MarkerBackend:
     def __init__(
         self, name, encoder, head, tokenizer, special, settings, capabilities, precision=None
@@ -103,19 +127,50 @@ class MarkerBackend:
 
     def logits(self, sequences: list[Sequence]) -> list[list[float]]:
         """Raw option scores per sequence, all sequences in one padded batch."""
+        scores = self.forward(sequences)
+        mx.eval(scores)
+        return [row[: len(s.markers)] for row, s in zip(scores.tolist(), sequences, strict=True)]
+
+    def forward(self, sequences: list[Sequence]) -> mx.array:
+        """Option scores (B, K) of sequences in one padded batch; K is the most options
+        of a sequence, and rows with fewer repeat their first option's score."""
         width = max(len(s.input_ids) for s in sequences)
         count = max(len(s.markers) for s in sequences)
         ids = [s.input_ids + [self.special.pad] * (width - len(s.input_ids)) for s in sequences]
         mask = [[1] * len(s.input_ids) + [0] * (width - len(s.input_ids)) for s in sequences]
-        # Rows with fewer options repeat their first marker; those scores are dropped.
         markers = [s.markers + [s.markers[0]] * (count - len(s.markers)) for s in sequences]
         attention = mx.array(mask) if len(sequences) > 1 else None
         hidden = self.encoder(mx.array(ids), attention)
-        scores = self.head(
+        return self.head(
             hidden, attention, mx.array([s.question_type for s in sequences]), mx.array(markers)
         )
-        mx.eval(scores)
-        return [row[: len(s.markers)] for row, s in zip(scores.tolist(), sequences, strict=True)]
+
+    # Fine-tuning hooks.
+
+    def trainable(self) -> Parts:
+        """The encoder and head as one module (the backend's own, trained in place)."""
+        return Parts(self.encoder, self.head)
+
+    def items(self, request: Request) -> dict[str, TrainingItem]:
+        """The request's questions as fine-tuning items, by question id."""
+        encoded = encode_request(self.tokenizer, self.special, self.settings, request)
+        return {
+            q.question_id: TrainingItem(
+                Sequence(q.input_ids, q.markers, q.question_type),
+                self.settings.temperature(q.question_type, len(q.markers)),
+                q.option_ids,
+            )
+            for q in encoded
+        }
+
+    def scores(self, items: list[TrainingItem]) -> tuple[mx.array, mx.array]:
+        """Differentiable logits (B, K) as served (divided by the temperatures), and
+        which of them are real options (B, K)."""
+        logits = self.forward([item.sequence for item in items])
+        count = logits.shape[1]
+        valid = mx.array([[k < len(item.option_ids) for k in range(count)] for item in items])
+        temperatures = mx.array([item.temperature for item in items], dtype=mx.float32)
+        return logits / temperatures[:, None], valid
 
 
 def batches(sequences: list[Sequence], budget: int | None = None):
@@ -161,6 +216,7 @@ def _load_parts(
     tokenizer_dir: str,
     layers: int,
     dtype: str | None,
+    fit_weights: Path | None = None,
 ):
     for name in (weights_file, f"{encoder_dir}/config.json", f"{tokenizer_dir}/tokenizer.json"):
         if not (path / name).exists():
@@ -176,11 +232,64 @@ def _load_parts(
     encoder.load_weights(list(Encoder.sanitize(weights, "encoder.").items()), strict=True)
     head = MarkerHead(args.hidden_size, layers)
     head.load_weights(list(MarkerHead.sanitize(weights).items()), strict=True)
+    if fit_weights is not None:
+        load_fitted_weights(Parts(encoder, head), fit_weights)
     mx.eval(encoder.parameters(), head.parameters())
     tokenizer = Tokenizer.from_file(str(path / tokenizer_dir / "tokenizer.json"))
     special = _special_tokens(tokenizer, path / tokenizer_dir)
     precision = str(tree_flatten(encoder.parameters())[0][1].dtype).rsplit(".", 1)[-1]
     return encoder, head, tokenizer, special, args, precision
+
+
+def load_fitted_weights(parts: Parts, file: Path) -> None:
+    """A fine-tune's tensors (``encoder.*``, ``head.*``; all or the head's alone) loaded
+    over the release's, in their dtype."""
+    current = dict(tree_flatten(parts.parameters()))
+    stored = mx.load(str(file))
+    tensors = {key: value for key, value in stored.items() if key.startswith(("encoder.", "head."))}
+    for key, value in tensors.items():
+        if key not in current or current[key].shape != value.shape:
+            raise ValueError(f"{file}: {key} does not fit this model")
+        tensors[key] = value.astype(current[key].dtype)
+    if not tensors:
+        raise ValueError(f"{file}: holds no fine-tuned weights")
+    parts.update(tree_unflatten(list(tensors.items())))
+
+
+@dataclass(frozen=True)
+class Sizes:
+    """What a fine-tune's memory depends on: parameters of the encoder and of the
+    head, the largest tensor of each, the encoder's width and depth."""
+
+    encoder: int
+    head: int
+    hidden: int
+    layers: int
+    largest_encoder: int = 0
+    largest_head: int = 0
+
+
+def sizes(path: Path) -> Sizes:
+    """The sizes of a release's encoder and head, from its weights' headers."""
+    from ...memory import element_count, read_header
+
+    encoder = head = hidden = largest_encoder = largest_head = 0
+    layers = set()
+    for file, _ in weight_files(path, {}):
+        for name, entry in read_header(file).items():
+            count = element_count(entry["shape"])
+            if name.startswith("encoder."):
+                encoder += count
+                largest_encoder = max(largest_encoder, count)
+                parts = name.split(".")
+                if parts[1] == "layers":
+                    layers.add(parts[2])
+                if name == "encoder.embeddings.norm.weight":
+                    hidden = entry["shape"][0]
+            elif name.startswith(("head.", "scorer.", "type_emb.")):
+                head += count
+                largest_head = max(largest_head, count)
+    return Sizes(encoder, head, hidden, len(layers), largest_encoder, largest_head)
 
 
 def weight_files(path: Path, options: dict) -> list[tuple[Path, str | None]]:
@@ -197,6 +306,7 @@ def load_julia(
     max_input_tokens: int | None = None,
     dtype: str | None = DEFAULT_DTYPE,
     strict_encoding: bool | None = None,
+    fit_weights: Path | None = None,
 ) -> MarkerBackend:
     """Load Julia 1 from a release folder (``julia_config.json``).
 
@@ -205,7 +315,8 @@ def load_julia(
     ``dtype`` (``"float32"``, ``"float16"``, ``"bfloat16"``) converts the
     weights (default float16); None keeps them as stored. ``strict_encoding`` (default: the
     policy's, True for Julia 1) refuses requests that would have to be cut
-    (state, question or options) instead of cutting them.
+    (state, question or options) instead of cutting them. ``fit_weights`` is a
+    fitted model's file of fine-tuned tensors, loaded over the release's.
     """
     root = json.loads((path / "config.json").read_text()) if (path / "config.json").exists() else {}
     config = json.loads((path / root.get("julia_config_file", "julia_config.json")).read_text())
@@ -221,6 +332,7 @@ def load_julia(
         root.get("tokenizer_directory", "tokenizer"),
         config["head_layers"],
         dtype,
+        fit_weights,
     )
     settings = Settings(
         family="julia",
@@ -241,18 +353,22 @@ def load_julia(
 
 
 def load_laya(
-    path: Path, max_input_tokens: int | None = None, dtype: str | None = DEFAULT_DTYPE
+    path: Path,
+    max_input_tokens: int | None = None,
+    dtype: str | None = DEFAULT_DTYPE,
+    fit_weights: Path | None = None,
 ) -> MarkerBackend:
     """Load a Laya checkpoint from a release folder (``rl_agent_config.json``).
 
     ``max_input_tokens`` raises or lowers the sequence limit (default: the
-    checkpoint's ``max_len``, up to the encoder's 8,192). ``dtype`` as for
-    ``load_julia``.
+    checkpoint's ``max_len``, up to the encoder's 8,192). ``dtype`` and
+    ``fit_weights`` as for ``load_julia``.
     """
     config = json.loads((path / "rl_agent_config.json").read_text())
     encoder, head, tokenizer, special, args, precision = _load_parts(
-        path, "model.safetensors", "encoder", "tokenizer", config["head_layers"], dtype
-    )
+        path, "model.safetensors", "encoder", "tokenizer", config["head_layers"], dtype,
+        fit_weights,
+    )  # fmt: skip
     settings = Settings(
         family="laya",
         max_length=_max_length(max_input_tokens, config.get("max_len"), args),

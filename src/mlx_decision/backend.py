@@ -1,7 +1,7 @@
 """What a model family implements to take part in the framework."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from .types import Question, Request
 
@@ -74,3 +74,22 @@ class Readable(Protocol):
     ) -> BackendOutput: ...
 
     def finish(self, question: Question, probabilities: dict[str, float]) -> dict[str, float]: ...
+
+
+@runtime_checkable
+class Trainable(Protocol):
+    """A family whose weights a fine-tune trains (Laya, Julia).
+
+    ``trainable()`` is the module trained in place (its ``encoder`` and
+    ``head``); ``items(request)`` the request's questions as training items
+    by question id (each with ``option_ids`` and a ``length`` in tokens);
+    ``scores(items)`` differentiable logits (rows, options) as served,
+    divided by any temperature, and a mask of the real options. A loader
+    option ``fit_weights`` loads a fine-tune's tensors over the release's.
+    """
+
+    def trainable(self) -> Any: ...
+
+    def items(self, request: Request) -> dict[str, Any]: ...
+
+    def scores(self, items: list[Any]) -> tuple[Any, Any]: ...

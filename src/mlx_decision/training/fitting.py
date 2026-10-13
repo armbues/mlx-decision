@@ -20,6 +20,7 @@ from typing import Any
 
 from .. import __version__
 from ..data.format import Example, read_examples, training_splits
+from ..errors import DecisionError
 from ..fitted import (
     Fit,
     FitQuestion,
@@ -165,6 +166,53 @@ def _calibrations(scored: list[Scored]) -> Fit:
     return fit
 
 
+def _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest: float):
+    """Fine-tune the loaded model in place on the fit part (dev picks the epoch)."""
+    from ..backend import Trainable
+    from .finetune import Item, train
+
+    backend = model.backend
+    if not isinstance(backend, Trainable):
+        raise ValueError(f"{backend.name} cannot be fine-tuned")
+
+    def items(examples: list[Example]) -> list[Item]:
+        result = []
+        for example in examples:
+            try:
+                by_question = backend.items(model.check(example.request))
+            except DecisionError:
+                continue  # refused, as scoring would
+            for question_id, label in example.labels.items():
+                item = by_question[question_id]
+                result.append(Item(item, item.option_ids.index(label)))
+        return result
+
+    emit(Event("train", message="preparing the training examples"))
+    fit_items, dev_items = items(splits.fit), items(splits.dev)
+    started = time.perf_counter()
+
+    def on_step(step: int, total: int, loss: float) -> None:
+        elapsed = time.perf_counter() - started
+        eta = round(elapsed / step * (total - step) + rest, 1)
+        emit(Event("train", step, total, metrics={"loss": round(loss, 4)}, eta_s=eta))
+
+    def on_epoch(row: dict) -> None:
+        message = f"epoch {row['epoch']}: loss {row['loss']}, dev loss {row['dev_loss']}"
+        emit(Event("train", metrics=row, message=message))
+
+    return train(
+        backend,
+        fit_items,
+        dev_items,
+        epochs=epochs,
+        head_only=head_only,
+        seed=seed,
+        on_step=on_step,
+        on_epoch=on_epoch,
+        cancelled=cancelled,
+    )
+
+
 def _compact(metrics: dict[str, dict]) -> dict[str, dict]:
     keys = ("accuracy", "macro_f1", "ece", "mae")
     return {key: metrics[key] for key in keys if metrics.get(key) is not None}
@@ -180,6 +228,7 @@ def fit(
     holdout: float = 0.2,
     seed: int = 0,
     epochs: int = 3,
+    head_only: bool = False,
     on_event: Callable[[Event], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     overwrite: bool = False,
@@ -193,7 +242,8 @@ def fit(
     or ``auto``, the family's usual kind; every run ends with a calibration.
     ``validation`` scores the report instead of a ``holdout`` share of the
     data (seeded with ``seed``, stratified by label). ``epochs`` is for the
-    kinds that train in epochs. ``on_event`` receives the progress;
+    kinds that train in epochs; ``head_only`` fine-tunes the marker head
+    without the encoder. ``on_event`` receives the progress;
     ``cancel()`` (a callable, or a ``threading.Event``) stops the run at the
     next step with ``Cancelled``. ``load_options`` go to the base's loader.
 
@@ -231,6 +281,8 @@ def fit(
     origin = _base(base)
     check_options(origin.family, load_options)
     kinds = plan.resolve(origin.family.name, method)
+    if head_only and "finetune" not in kinds:
+        raise ValueError("head_only applies to finetune")
     splits = training_splits(
         source.examples,
         holdout=holdout,
@@ -241,9 +293,11 @@ def fit(
     warnings = _warnings(training)
     for warning in warnings:
         emit(Event("check", message=f"warning: {warning}"))
-    everything = splits.holdout + training
-    estimate = plan.estimate(origin.family.name, kinds, origin.path, load_options, everything)
-    extra = max(plan.kind_bytes(kind, origin.path, load_options) for kind in kinds)
+    trainer = kinds[0] if kinds[0] != "calibrate" else None
+    estimate = plan.estimate(
+        origin.family.name, kinds, origin.path, load_options, splits, epochs, head_only
+    )
+    extra = max(plan.kind_bytes(kind, origin.path, load_options, head_only) for kind in kinds)
     check_fits(origin.path, load_options, name=origin.name, extra=extra, source=str(origin.path))
     emit(
         Event(
@@ -265,7 +319,10 @@ def fit(
     model.backend.name = origin.name
     finish_stage("check")
 
-    clock = Clock(sum(plan.request_tokens(example) for example in everything))
+    # Scoring passes: the holdout, then the training part (calibrate alone) or,
+    # after training, dev and the holdout again.
+    passes = splits.holdout + (training if trainer is None else splits.dev + splits.holdout)
+    clock = Clock(sum(plan.request_tokens(example) for example in passes))
 
     def scoring(stage: str, examples: list[Example]) -> list[Scored]:
         def on_step(done: int, example: Example) -> None:
@@ -283,23 +340,36 @@ def fit(
     unfitted = FittedBackend(origin.name, model.backend, Fit([]), origin.reference)
     before = summary(records(holdout_scored, unfitted.adjust))
     emit(Event("before", metrics=before))
-    training_scored = scoring("features", training)
-    if all(item.raw is None for item in training_scored):
-        reason = training_scored[0].refused if training_scored else "no training examples"
-        raise ValueError(f"{origin.name} answered none of the training examples ({reason})")
+    tensors: dict = {}
+    training_report = None
+    if trainer is None:
+        calibration_scored = scoring("features", training)
+        if all(item.raw is None for item in calibration_scored):
+            reason = calibration_scored[0].refused if calibration_scored else "no examples"
+            raise ValueError(f"{origin.name} answered none of the training examples ({reason})")
+        after_scored = holdout_scored
+    else:
+        rest = plan.scoring_seconds(origin.family.name, 0, splits.dev + splits.holdout)
+        trained = _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest)
+        finish_stage("train")
+        tensors = trained.tensors
+        training_report = {
+            "head_only": head_only,
+            "epochs": trained.epochs,
+            "best_epoch": trained.best,
+        }
+        # The trained model: dev fits the calibration, the holdout scores the report.
+        calibration_scored = scoring("calibrate", splits.dev)
+        after_scored = scoring("after", splits.holdout)
 
-    # The kinds' own training comes here (later kinds); then the calibration, on
-    # dev after a trained kind, on the whole training part alone.
     check_cancel()
     emit(Event("calibrate", message="fitting the calibration"))
-    alone = kinds == ["calibrate"]
-    calibration_part = training_scored if alone else training_scored[len(splits.fit) :]
-    fit_ = _calibrations(calibration_part)
+    fit_ = _calibrations(calibration_scored)
     fit_.kinds = kinds
     finish_stage("calibrate")
 
     fitted = FittedBackend(output.name, model.backend, fit_, origin.reference)
-    after = summary(records(holdout_scored, fitted.adjust))
+    after = summary(records(after_scored, fitted.adjust))
     questions = {
         question_id: {"before": before[question_id], "after": after[question_id]}
         for question_id in before
@@ -316,6 +386,7 @@ def fit(
         "holdout": holdout if held is None else None,
         "validation": (held.source or "examples") if held is not None else None,
         "epochs": epochs,
+        "head_only": head_only,
         "load_options": {
             key: value if isinstance(value, (bool, int, float, str, type(None))) else str(value)
             for key, value in load_options.items()
@@ -338,12 +409,13 @@ def fit(
             "fit": len(splits.fit),
             "dev": len(splits.dev),
             "labels": _label_counts(training),
-            "refused": sum(item.raw is None for item in holdout_scored + training_scored),
-            "truncated": sum(item.truncated for item in holdout_scored + training_scored),
+            "refused": sum(item.raw is None for item in holdout_scored + calibration_scored),
+            "truncated": sum(item.truncated for item in holdout_scored + calibration_scored),
         },
         "estimate": estimate.as_json(),
         "warnings": warnings,
         "questions": questions,
+        "training": training_report,
         "calibrations": [
             {
                 "question": question.id,
@@ -376,6 +448,7 @@ def fit(
         base=origin.reference,
         base_fingerprint=origin.fingerprint,
         fit=fit_,
+        tensors=tensors,
         report=report,
         overwrite=overwrite,
     )
