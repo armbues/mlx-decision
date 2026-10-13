@@ -82,10 +82,23 @@ def resolve(reference: str) -> Callable:
     return getattr(import_module(module), function)
 
 
+# Fitted models (a marker naming a base): loaded through their base's family,
+# so not one of the families listed in messages and menus.
+FITTED = Family(
+    "fitted",
+    detect=lambda path: False,
+    loader="mlx_decision.fitted:load",
+    weight_files="mlx_decision.fitted:weight_files",
+)
+
+
 def detect_family(path: Path) -> Family:
     marker = path / MARKER_FILE
     if marker.exists():
-        name = json.loads(marker.read_text()).get("family")
+        config = json.loads(marker.read_text())
+        if isinstance(config, dict) and "base" in config:
+            return FITTED
+        name = config.get("family")
         if name not in _FAMILIES:
             raise ValueError(f"{path}: unknown model family {name!r}")
         return _FAMILIES[name]
@@ -123,7 +136,8 @@ def load_backend(path: Path, **options) -> Backend:
     family = detect_family(path)
     check_options(family, options)
     backend = resolve(family.loader)(path, **options)
-    backend.family = family.name
+    if family is not FITTED:  # a fitted model's family is its base's
+        backend.family = family.name
     return backend
 
 

@@ -1,6 +1,7 @@
 """Resolve a model reference to a local folder."""
 
 import logging
+from functools import partial
 from pathlib import Path
 
 
@@ -14,10 +15,12 @@ def is_repo_id(model: str | Path) -> bool:
     return not (path.exists() or str(model).startswith((".", "/", "~")))
 
 
-def resolve_model_path(model: str | Path) -> Path:
+def resolve_model_path(model: str | Path, revision: str | None = None) -> Path:
     """Return the folder for a local path or a Hugging Face repo id.
 
-    Raises ``ModelNotFoundError`` with a one-line reason when there is none.
+    ``revision`` (a commit hash) pins a repo id to that snapshot: the cached
+    one if there is one, else downloaded. Raises ``ModelNotFoundError`` with a
+    one-line reason when there is none.
     """
     path = Path(model).expanduser()
     if path.is_dir():
@@ -35,9 +38,12 @@ def resolve_model_path(model: str | Path) -> Path:
     )
 
     try:
-        if (stored := stored_snapshot(str(model))) is not None:
+        if revision is not None:
+            if (cached := cached_snapshot(str(model), revision)) is not None:
+                return cached
+        elif (stored := stored_snapshot(str(model))) is not None:
             return stored
-        return Path(_snapshot(str(model), snapshot_download))
+        return Path(_snapshot(str(model), snapshot_download, revision))
     except GatedRepoError:
         reason = "gated on the Hugging Face Hub: accept its terms there and set HF_TOKEN"
     except RepositoryNotFoundError:
@@ -83,13 +89,35 @@ def stored_snapshot(repo_id: str) -> Path | None:
     return Path(found).parent
 
 
-def _snapshot(repo_id: str, snapshot_download) -> str:
+def cached_snapshot(repo_id: str, revision: str) -> Path | None:
+    """The cached snapshot of a repo at a commit, if there is one (no network)."""
+    from huggingface_hub.constants import HF_HUB_CACHE
+    from huggingface_hub.file_download import repo_folder_name
+
+    folder = Path(HF_HUB_CACHE) / repo_folder_name(repo_id=repo_id, repo_type="model")
+    snapshot = folder / "snapshots" / revision
+    return snapshot if snapshot.is_dir() else None
+
+
+def snapshot_revision(path: Path) -> tuple[str, str] | None:
+    """The repo id and commit of a Hub cache snapshot folder
+    (``.../models--org--name/snapshots/<commit>``), or None for any other folder."""
+    parts = Path(path).absolute().parts
+    if len(parts) < 3 or parts[-2] != "snapshots" or not parts[-3].startswith("models--"):
+        return None
+    org, _, name = parts[-3].removeprefix("models--").partition("--")
+    return (f"{org}/{name}", parts[-1]) if org and name else None
+
+
+def _snapshot(repo_id: str, snapshot_download, revision: str | None = None) -> str:
     """The repository in the Hub cache: the files its family needs, or all of it.
 
     The family is recognised from the JSON files, fetched first.
     """
     from .registry import detect_family
 
+    if revision is not None:
+        snapshot_download = partial(snapshot_download, revision=revision)
     configs = Path(snapshot_download(repo_id, allow_patterns=["*.json"]))
     try:
         family = detect_family(configs)

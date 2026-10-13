@@ -45,6 +45,8 @@ class DecisionModel:
             "question_tokens": caps.question_tokens,
             "requires_instructions": caps.requires_instructions,
             "supports_images": caps.supports_images,
+            # A fitted model: its base and fit.
+            **(self.backend.fitted_info() if hasattr(self.backend, "fitted_info") else {}),
         }
 
     def decide(
