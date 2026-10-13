@@ -165,7 +165,7 @@ def test_input_over_the_limit_is_refused_before_any_pass(model, folder, monkeypa
     (encoded,), _ = model.backend.encode(parse_request({"state": "please", "questions": short}))
     limit = len(encoded.input_ids) + 5
     model = mlx_decision.load(folder, max_input_tokens=limit)
-    monkeypatch.setattr(model.backend, "probabilities", lambda *_: pytest.fail("ran a pass"))
+    monkeypatch.setattr(model.backend, "last_hidden", lambda *_: pytest.fail("ran a pass"))
     questions = {**short, "long": {**QUESTIONS["refund"], "instructions": "refund " * 60}}
     with pytest.raises(DecisionError, match=f"the limit is {limit}") as error:
         model.decide("please", questions)

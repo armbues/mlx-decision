@@ -25,7 +25,8 @@ is.
 
 The answer is read at each prompt's last token from the logits of the tokens
 that stand for the options (rows of the tied output embeddings, in float32):
-each option's best token, then a softmax over the options. The logits of the
+each option's best token, then a softmax over the options (``readout``'s
+rule, computed by the readout the families share). The logits of the
 rest of the vocabulary would shift every option's score by the same amount,
 so they are not computed.
 """
@@ -43,8 +44,9 @@ from ...backend import BackendOutput, Capabilities
 from ...errors import DecisionError
 from ...types import Choice, Noul, Request
 from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
+from ..readout import Features, Readout, pick, read_out
 from .prompt import prefix, suffix
-from .readout import option_token_ids, probabilities
+from .readout import option_token_ids
 
 # The model's context (the release enforces no limit of its own).
 MAX_INPUT_TOKENS = 32768
@@ -245,17 +247,17 @@ class D1Backend:
             start = end
         return out
 
-    def answer(self, question: Encoded, hidden: mx.array) -> list[float]:
-        """The question's option probabilities from the hidden state at its last token."""
+    def question_features(self, question: Encoded, hidden: mx.array) -> Features:
+        """The rows of the tokens that stand for the question's options, each
+        option's among them, and the hidden state at its last token."""
         groups = option_token_ids(question.question, self.tokenizer)
         tokens = sorted({token for group in groups for token in group})
         rows = self.model.output_embedding_rows(mx.array(tokens)).astype(mx.float32)
-        logits = rows @ hidden
-        return probabilities(
-            question.question, self.tokenizer, dict(zip(tokens, logits.tolist(), strict=True))
-        )
+        indices = [[tokens.index(token) for token in group] for group in groups]
+        return Features(question.option_ids, hidden, rows, indices, 1.0)
 
-    def score(self, request: Request) -> BackendOutput:
+    def passes(self, request: Request) -> tuple[list[Encoded], bool, list[mx.array]]:
+        """Every question's encoding and last hidden state, and whether the state was cut."""
         encoded, shared, cut = self.encode(request)
         ids = [question.input_ids for question in encoded]
         repeated = (len(encoded) - 1) * shared
@@ -265,9 +267,34 @@ class D1Backend:
             hidden = self.last_hidden([row[shared:] for row in ids], cache, shared)
         else:
             hidden = self.last_hidden(ids, None, 0)
+        return encoded, cut, hidden
+
+    def features(self, request: Request) -> dict[str, Features]:
+        """What each question's readout reads, before the readout."""
+        encoded, _, hidden = self.passes(request)
+        return {
+            q.question_id: self.question_features(q, last)
+            for q, last in zip(encoded, hidden, strict=True)
+        }
+
+    def finish(self, question, probabilities: dict[str, float]) -> dict[str, float]:
+        """Nothing follows the readout."""
+        return probabilities
+
+    def score(
+        self,
+        request: Request,
+        readouts: dict[str, Readout] | None = None,
+        finish: bool = True,
+    ) -> BackendOutput:
+        """``readouts`` replace the option tokens' rows of the questions (by id)
+        with the same options; ``finish`` has no step to leave out here."""
+        encoded, cut, hidden = self.passes(request)
         answers = {}
         for question, last in zip(encoded, hidden, strict=True):
-            values = self.answer(question, last)
+            features = self.question_features(question, last)
+            readout = pick(readouts, question.question_id, question.option_ids)
+            values = read_out(features, readout)
             answers[question.question_id] = dict(zip(question.option_ids, values, strict=True))
         return BackendOutput(
             probabilities=answers,

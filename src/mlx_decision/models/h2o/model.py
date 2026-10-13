@@ -39,6 +39,7 @@ from ..qwen import (
     precision,
     prepare,
 )
+from ..readout import Features, Readout, pick, read_out, singletons
 from .prompt import PromptSettings, cut_state, render, render_state, shared_prefix
 
 # vLLM's --max-model-len in the release's serve.sh: a longer prompt is refused.
@@ -330,7 +331,9 @@ class H2OBackend:
             self.prefix_cache.put(key, cache)
         return cache
 
-    def score(self, request: Request) -> BackendOutput:
+    def passes(self, request: Request) -> tuple[list[Encoded], bool, list[mx.array], bool]:
+        """Every question's encoding and last hidden state, whether the state was
+        cut, and whether the request has images."""
         # Image sizes come from the file headers, so the input limit is checked
         # before any image is decoded or cut into patches.
         opened, images = self.open_images(request)
@@ -346,32 +349,69 @@ class H2OBackend:
         features = None
         if images.prepared and state is None:
             features = image_features(self.load_vision(), images.prepared)
+        with_images = bool(images.prepared)
+        hidden = [
+            self.last_hidden(q.input_ids, state, images if with_images else None, features)
+            for q in encoded
+        ]
+        return encoded, cut, hidden, with_images
+
+    def temperature(self, question_type: str, with_images: bool = False) -> float:
+        """The question type's temperature, or the image temperature with images."""
+        if with_images:
+            return self.config.image.temperature
+        return self.config.temperatures[question_type]
+
+    def question_features(self, question: Encoded, hidden: mx.array, with_images: bool):
+        count = len(question.option_ids)
+        return Features(
+            question.option_ids,
+            hidden,
+            self.label_rows()[:count],
+            singletons(count),
+            self.temperature(question.question_type, with_images),
+        )
+
+    def features(self, request: Request) -> dict[str, Features]:
+        """What each question's readout reads, before the readout."""
+        encoded, _, hidden, with_images = self.passes(request)
+        return {
+            q.question_id: self.question_features(q, last, with_images)
+            for q, last in zip(encoded, hidden, strict=True)
+        }
+
+    def finish(self, question, probabilities: dict[str, float]) -> dict[str, float]:
+        """After the readout: a yes/no answer moves to the floor when less sure."""
+        if not isinstance(question, Noul):
+            return probabilities
+        p_true = commit_noul(probabilities["true"], self.noul_floor)
+        return {"true": p_true, "false": 1 - p_true}
+
+    def score(
+        self,
+        request: Request,
+        readouts: dict[str, Readout] | None = None,
+        finish: bool = True,
+    ) -> BackendOutput:
+        """``readouts`` replace the label rows of the questions (by id) with the
+        same options; ``finish=False`` leaves out the yes/no floor."""
+        encoded, cut, hidden, with_images = self.passes(request)
         probabilities = {}
-        for question in encoded:
-            values = self.probabilities(
-                question.input_ids,
-                len(question.option_ids),
-                question.question_type,
-                state,
-                images if images.prepared else None,
-                features,
-            )
-            if isinstance(request.questions[question.question_id], Noul):
-                p_true = commit_noul(values[0], self.noul_floor)
-                values = [p_true, 1 - p_true]
-            probabilities[question.question_id] = dict(
-                zip(question.option_ids, values, strict=True)
-            )
+        for question, last in zip(encoded, hidden, strict=True):
+            features = self.question_features(question, last, with_images)
+            readout = pick(readouts, question.question_id, question.option_ids)
+            values = dict(zip(question.option_ids, read_out(features, readout), strict=True))
+            if finish:
+                values = self.finish(request.questions[question.question_id], values)
+            probabilities[question.question_id] = values
         return BackendOutput(
             probabilities=probabilities,
             input_tokens=sum(len(q.input_ids) for q in encoded),
             truncated=cut,
         )
 
-    def logits(
-        self, input_ids: list[int], count: int, prefix=None, images=None, features=None
-    ) -> mx.array:
-        """One pass: the first ``count`` labels' logits at the last token, in float32.
+    def last_hidden(self, input_ids: list[int], prefix=None, images=None, features=None):
+        """One pass: the final hidden state at the last token, in float32.
 
         ``prefix`` (its length and the backbone's cache after it) continues
         from there: only the rest of ``input_ids`` is computed. ``images``
@@ -402,7 +442,9 @@ class H2OBackend:
                 grids = [image.grid for image in images.prepared]
                 positions = position_ids(input_ids, pad, grids, images.merge_size)[:, :, length:]
             hidden = self.backbone(ids[:, length:], None, positions, cache=fork_cache(cache))
-        return self.label_rows()[:count] @ hidden[0, -1].astype(mx.float32)
+        last = hidden[0, -1].astype(mx.float32)
+        mx.eval(last)
+        return last
 
     def probabilities(
         self,
@@ -413,16 +455,13 @@ class H2OBackend:
         images=None,
         features=None,
     ) -> list[float]:
-        """The first ``count`` options' probabilities at the temperature: the
-        question type's, or the image temperature with ``images``."""
-        logits = self.logits(input_ids, count, prefix, images, features)
-        if images is not None:
-            temperature = self.config.image.temperature
-        else:
-            temperature = self.config.temperatures[question_type]
-        values = mx.softmax(logits / temperature)
-        mx.eval(values)
-        return values.tolist()
+        """One sequence's first ``count`` options' probabilities at the temperature
+        (the question type's, or the image temperature with ``images``), before
+        the yes/no floor."""
+        hidden = self.last_hidden(input_ids, prefix, images, features)
+        rows = self.label_rows()[:count]
+        temperature = self.temperature(question_type, images is not None)
+        return read_out(Features([], hidden, rows, singletons(count), temperature))
 
 
 def label_token_ids(tokenizer, labels: list[str]) -> list[int]:

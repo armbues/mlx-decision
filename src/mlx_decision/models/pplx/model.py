@@ -29,6 +29,7 @@ from ..qwen import (
     precision,
     prepare,
 )
+from ..readout import Features, Readout, pick, read_out, singletons
 from .prompt import IMAGE_PAD, describe, options, render
 
 # The release's limit per question's sequence; longer input is refused, as
@@ -135,7 +136,8 @@ class PplxBackend:
             expanded += [pad] * next(images) if token == pad else [token]
         return expanded
 
-    def score(self, request: Request) -> BackendOutput:
+    def passes(self, request: Request) -> tuple[list[Encoded], list[mx.array]]:
+        """Every question's encoding and last hidden state."""
         # Image sizes come from the file headers, so the input limit is checked
         # before any image is decoded or cut into patches.
         opened, config = [], None
@@ -147,11 +149,40 @@ class PplxBackend:
         )
         images = [prepare(image, index, config) for index, image in opened]
         features = image_features(self.load_vision(), images) if images else None
+        hidden = [self.last_hidden(q.input_ids, images, features) for q in encoded]
+        return encoded, hidden
+
+    def question_features(self, option_ids: list[str], hidden: mx.array) -> Features:
+        count = len(option_ids)
+        rows = self.readout[:count].astype(mx.float32)
+        return Features(option_ids, hidden, rows, singletons(count), self.temperature)
+
+    def features(self, request: Request) -> dict[str, Features]:
+        """What each question's readout reads, before the readout."""
+        encoded, hidden = self.passes(request)
+        return {
+            q.question_id: self.question_features(q.option_ids, last)
+            for q, last in zip(encoded, hidden, strict=True)
+        }
+
+    def finish(self, question, probabilities: dict[str, float]) -> dict[str, float]:
+        """Nothing follows the readout."""
+        return probabilities
+
+    def score(
+        self,
+        request: Request,
+        readouts: dict[str, Readout] | None = None,
+        finish: bool = True,
+    ) -> BackendOutput:
+        """``readouts`` replace the readout rows of the questions (by id) with the
+        same options; ``finish`` has no step to leave out here."""
+        encoded, hidden = self.passes(request)
         probabilities = {}
-        for question in encoded:
-            values = self.probabilities(
-                question.input_ids, len(question.option_ids), images, features
-            )
+        for question, last in zip(encoded, hidden, strict=True):
+            features = self.question_features(question.option_ids, last)
+            readout = pick(readouts, question.question_id, question.option_ids)
+            values = read_out(features, readout)
             probabilities[question.question_id] = dict(
                 zip(question.option_ids, values, strict=True)
             )
@@ -160,10 +191,8 @@ class PplxBackend:
             input_tokens=sum(len(q.input_ids) for q in encoded),
         )
 
-    def probabilities(
-        self, input_ids: list[int], count: int, images=(), features=None
-    ) -> list[float]:
-        """One pass: the first ``count`` answer codes' probabilities.
+    def last_hidden(self, input_ids: list[int], images=(), features=None) -> mx.array:
+        """One pass: the final hidden state at the last token, in float32.
 
         ``images`` (prepared) and their vision ``features`` fill the image
         pad tokens of ``input_ids``.
@@ -176,11 +205,17 @@ class PplxBackend:
             hidden = self.backbone(ids, embeddings[None], positions)
         else:
             hidden = self.backbone(ids)
-        hidden = hidden[0, -1].astype(mx.float32)
-        logits = self.readout[:count].astype(mx.float32) @ hidden
-        values = mx.softmax(logits / self.temperature)
-        mx.eval(values)
-        return values.tolist()
+        last = hidden[0, -1].astype(mx.float32)
+        mx.eval(last)
+        return last
+
+    def probabilities(
+        self, input_ids: list[int], count: int, images=(), features=None
+    ) -> list[float]:
+        """One sequence's first ``count`` answer codes' probabilities."""
+        hidden = self.last_hidden(input_ids, images, features)
+        rows = self.readout[:count].astype(mx.float32)
+        return read_out(Features([], hidden, rows, singletons(count), self.temperature))
 
 
 def read_decision_config(path: Path) -> tuple[list[str], float, bool]:

@@ -1,9 +1,12 @@
 """What a model family implements to take part in the framework."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from .types import Request
+from .types import Question, Request
+
+if TYPE_CHECKING:
+    from .models.readout import Features, Readout
 
 
 @dataclass(frozen=True)
@@ -48,3 +51,26 @@ class Backend(Protocol):
     capabilities: Capabilities
 
     def score(self, request: Request) -> BackendOutput: ...
+
+
+@runtime_checkable
+class Readable(Protocol):
+    """A family that reads its answers from the last hidden state (H2O, d1, pplx),
+    so a readout can be fitted on its features and applied per call.
+
+    ``score(request, readouts, finish)`` uses a ``Readout`` instead of the
+    release's rows for each question (by id) whose options it matches;
+    ``finish=False`` leaves out ``finish``, the steps after the readout (H2O's
+    yes/no floor; nothing for the others), so a calibration can come first.
+    """
+
+    def features(self, request: Request) -> dict[str, "Features"]: ...
+
+    def score(
+        self,
+        request: Request,
+        readouts: dict[str, "Readout"] | None = None,
+        finish: bool = True,
+    ) -> BackendOutput: ...
+
+    def finish(self, question: Question, probabilities: dict[str, float]) -> dict[str, float]: ...
