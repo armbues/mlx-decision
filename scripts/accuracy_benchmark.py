@@ -44,9 +44,11 @@ dependency of this package; ``pip install datasets``) as ``DIR/<org>/<name>``:
   load_dataset("mteb/banking77", split="test").save_to_disk("DIR/mteb/banking77")
   load_dataset("cais/mmlu", "all", split="test").save_to_disk("DIR/cais/mmlu")
 
-Questions and option descriptions are written here; results are therefore
-comparable between models run with this script, and only roughly with
-published numbers. Every example has a stable id. ``local`` writes FILE as
+The coverage suite's questions, option descriptions, label maps and pinned
+commits are the ``data`` command's presets (``mlx_decision.data.presets``),
+the classic suite's are written here; results are therefore comparable
+between models run with this script, and only roughly with published
+numbers. Every example has a stable id. ``local`` writes FILE as
 it goes (after each benchmark, every 100 examples and when interrupted)
 and resumes from it: examples already answered are not asked again.
 ``report`` prints a Markdown table of one or more result files: accuracy,
@@ -57,16 +59,17 @@ numbers).
 """
 
 import argparse
-import hashlib
 import json
 import random
-import statistics
 import sys
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+
+from mlx_decision.data.presets import NLI, PRESETS, Preset, Source, digest, examples
+from mlx_decision.metrics import metrics, record
 
 SEED = 1234
 
@@ -84,30 +87,6 @@ EMOTION = {
     "fear": "Afraid, anxious or nervous",
     "surprise": "Surprised, amazed or shocked",
 }
-NLI = {
-    "entailment": "The premise shows that the hypothesis is true",
-    "neutral": "The premise neither proves nor contradicts the hypothesis",
-    "contradiction": "The premise shows that the hypothesis is false",
-}
-# TREC's six coarse answer types, in its label order (ABBR, ENTY, DESC, HUM, LOC, NUM).
-TREC_TYPES = {
-    "abbreviation": "An abbreviation, or what an abbreviation stands for",
-    "entity": "A thing: an object, animal, plant, color, event, food, product, "
-    "substance, language, term or other entity",
-    "description": "A description, definition, manner or reason",
-    "human": "A person or a group of people, or a description of one",
-    "location": "A place: a city, country, state, mountain or other location",
-    "numeric": "A number: a count, date, distance, amount of money, percentage, "
-    "period, speed, temperature, size or weight",
-}
-# TweetEval's offensive class follows OffensEval 2019's definition.
-OFFENSIVE_CRITERIA = {
-    "true": "It contains profanity or swear words, or a targeted offense such as an "
-    "insult or a threat, veiled or direct",
-    "false": "It contains no profanity and no targeted offense",
-}
-# SST-5's labels 0 to 4, in order: the score level is the label.
-SENTIMENT = ["Very negative", "Negative", "Neutral", "Positive", "Very positive"]
 
 
 def load(datasets_dir: Path, name: str):
@@ -116,71 +95,8 @@ def load(datasets_dir: Path, name: str):
     return load_from_disk(str(datasets_dir / name))
 
 
-@dataclass(frozen=True)
-class Source:
-    """A dataset split pinned to a Hub commit, with what the saved copy must hold."""
-
-    repo: str
-    config: str | None
-    split: str
-    revision: str
-    rows: int
-    digest: str
-
-
-# The coverage suite's splits, at the Hub commits they were saved from (2026-10-08).
-ANLI_R3 = Source(
-    "facebook/anli",
-    None,
-    "test_r3",
-    "8e4813d81f46d313dac7892e1c28076917cfcdf9",
-    1200,
-    "a9a449ce009d9136",
-)
-OFFENSIVE = Source(
-    "cardiffnlp/tweet_eval",
-    "offensive",
-    "test",
-    "b3a375baf0f409c77e6bc7aa35102b7b3534f8be",
-    860,
-    "bda9a442fbcd6f91",
-)
-TREC = Source(
-    "CogComp/trec",
-    None,
-    "test",
-    "65752bf53af25bc935a0dce92fb5b6c930728450",
-    500,
-    "da2ece276b070172",
-)
-OPENBOOKQA = Source(
-    "allenai/openbookqa",
-    "main",
-    "test",
-    "388097ea7776314e93a529163e0fea805b8a6454",
-    500,
-    "1e448ea67d38e7c1",
-)
-SST5 = Source(
-    "SetFit/sst5",
-    None,
-    "test",
-    "e51bdcd8cd3a30da231967c1a249ba59361279a3",
-    2210,
-    "2f7e332b4d7193ca",
-)
-
-
-def digest(rows: list[dict]) -> str:
-    """First 16 hex digits of the SHA-256 of the rows as sorted JSON lines."""
-    sha = hashlib.sha256()
-    for row in rows:
-        sha.update((json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n").encode())
-    return sha.hexdigest()[:16]
-
-
-def load_source(datasets_dir: Path, source: Source) -> tuple[object, list[dict]]:
-    """The saved split and its rows; exits if they are not the pinned ones."""
+def load_source(datasets_dir: Path, source: Source) -> list[dict]:
+    """The rows of a saved split; exits if they are not the pinned ones."""
     from datasets import DatasetDict
 
     data = load(datasets_dir, source.repo)
@@ -193,7 +109,7 @@ def load_source(datasets_dir: Path, source: Source) -> tuple[object, list[dict]]
             f"{source.revision[:12]} ({len(rows)} rows, digest {digest(rows)}; expected "
             f"{source.rows}, {source.digest}); see --help for how to save it"
         )
-    return data, rows
+    return rows
 
 
 def select(examples: list[dict], count: int | None) -> list[dict]:
@@ -312,104 +228,9 @@ def mmlu(datasets_dir: Path) -> list[dict]:
     ]
 
 
-def trec(datasets_dir: Path) -> list[dict]:
-    _, rows = load_source(datasets_dir, TREC)
-    types = list(TREC_TYPES)
-    return [
-        {
-            "id": f"trec:{i}",
-            "state": row["text"],
-            "questions": {
-                "answer_type": {
-                    "type": "choice",
-                    "instructions": "What kind of answer does this question ask for?",
-                    "criteria": TREC_TYPES,
-                }
-            },
-            "gold": types[row["coarse_label"]],
-        }
-        for i, row in enumerate(rows)
-    ]
-
-
-def offensive(datasets_dir: Path) -> list[dict]:
-    _, rows = load_source(datasets_dir, OFFENSIVE)
-    return [
-        {
-            "id": f"offensive:{i}",
-            "state": row["text"],
-            "questions": {
-                "offensive": {
-                    "type": "noul",
-                    "instructions": "Is this tweet offensive?",
-                    "criteria": OFFENSIVE_CRITERIA,
-                }
-            },
-            "gold": "true" if row["label"] == 1 else "false",
-        }
-        for i, row in enumerate(rows)
-    ]
-
-
-def anli_r3(datasets_dir: Path) -> list[dict]:
-    data, rows = load_source(datasets_dir, ANLI_R3)
-    labels = data.features["label"].names
-    return [
-        {
-            "id": f"anli_r3:{row['uid']}",
-            "state": {"premise": row["premise"], "hypothesis": row["hypothesis"]},
-            "questions": {
-                "relation": {
-                    "type": "choice",
-                    "instructions": "How does the premise relate to the hypothesis?",
-                    "criteria": NLI,
-                }
-            },
-            "gold": labels[row["label"]],
-        }
-        for row in rows
-    ]
-
-
-def openbookqa(datasets_dir: Path) -> list[dict]:
-    _, rows = load_source(datasets_dir, OPENBOOKQA)
-    return [
-        {
-            "id": f"openbookqa:{row['id']}",
-            "state": row["question_stem"],
-            "questions": {
-                "answer": {
-                    "type": "choice",
-                    "instructions": "Which option answers or completes this science "
-                    "question correctly?",
-                    "criteria": dict(
-                        zip(row["choices"]["label"], row["choices"]["text"], strict=True)
-                    ),
-                }
-            },
-            "gold": row["answerKey"],
-        }
-        for row in rows
-    ]
-
-
-def sst5(datasets_dir: Path) -> list[dict]:
-    _, rows = load_source(datasets_dir, SST5)
-    return [
-        {
-            "id": f"sst5:{i}",
-            "state": row["text"],
-            "questions": {
-                "sentiment": {
-                    "type": "score",
-                    "instructions": "How positive is the sentiment of this movie review?",
-                    "criteria": SENTIMENT,
-                }
-            },
-            "gold": str(row["label"]),
-        }
-        for i, row in enumerate(rows)
-    ]
+def coverage(preset: Preset) -> Callable[[Path], list[dict]]:
+    """The builder of a preset's evaluation split, checked against its pinned commit."""
+    return lambda datasets_dir: examples(preset, load_source(datasets_dir, preset.source))
 
 
 @dataclass(frozen=True)
@@ -420,11 +241,7 @@ class Benchmark:
 
 SUITES: dict[str, dict[str, Benchmark]] = {
     "coverage": {
-        "trec": Benchmark(trec, TREC),
-        "offensive": Benchmark(offensive, OFFENSIVE),
-        "anli_r3": Benchmark(anli_r3, ANLI_R3),
-        "openbookqa": Benchmark(openbookqa, OPENBOOKQA),
-        "sst5": Benchmark(sst5, SST5),
+        preset.key: Benchmark(coverage(preset), preset.source) for preset in PRESETS.values()
     },
     "classic": {
         "ag_news": Benchmark(ag_news),
@@ -454,31 +271,6 @@ def build(
 
 def wire(example: dict) -> dict:
     return {"state": example["state"], "questions": example["questions"]}
-
-
-def record(answer: dict, gold: str) -> dict:
-    """What the metrics need of an answer: ``predicted`` is an option id, a level
-    (as its string key) or "true" / "false" (noul, at 0.5)."""
-    if answer["type"] == "noul":
-        return {
-            "gold": gold,
-            "predicted": "true" if answer["noul"] >= 0.5 else "false",
-            "p_max": max(answer["noul"], 1 - answer["noul"]),
-            "noul": answer["noul"],
-        }
-    probabilities = answer["probabilities"]
-    result = {
-        "gold": gold,
-        "predicted": max(probabilities, key=probabilities.get),
-        "p_max": max(probabilities.values()),
-        "confidence": answer["confidence"],
-        "probabilities": probabilities,
-    }
-    if answer["type"] == "score":
-        result["score"] = answer["score"]
-    else:
-        result["predicted"] = answer["choice"]
-    return result
 
 
 def write(path: Path, results: dict) -> None:
@@ -582,57 +374,6 @@ def local(args) -> None:
             answer_all(model, name, examples, results, args.out)
     finally:
         write(args.out, results)
-
-
-def macro_f1(records: list[dict]) -> float:
-    labels = {r["gold"] for r in records}
-    scores = []
-    for label in labels:
-        tp = sum(r["predicted"] == label and r["gold"] == label for r in records)
-        fp = sum(r["predicted"] == label and r["gold"] != label for r in records)
-        fn = sum(r["predicted"] != label and r["gold"] == label for r in records)
-        scores.append(2 * tp / (2 * tp + fp + fn) if tp else 0.0)
-    return statistics.mean(scores)
-
-
-def ece(records: list[dict], bins: int = 10) -> float:
-    """Expected calibration error of the top probability."""
-    total = 0.0
-    for b in range(bins):
-        low, high = b / bins, (b + 1) / bins
-        group = [
-            r
-            for r in records
-            if "p_max" in r and (low < r["p_max"] <= high or (b == 0 and r["p_max"] == 0))
-        ]
-        if group:
-            accuracy = sum(r["predicted"] == r["gold"] for r in group) / len(group)
-            mean_p = statistics.mean(r["p_max"] for r in group)
-            answered = sum("p_max" in r for r in records)
-            total += len(group) / answered * abs(accuracy - mean_p)
-    return total
-
-
-def mae(records: list[dict]) -> float | None:
-    """Mean absolute error of the expected level against the gold level (score)."""
-    errors = [abs(r["score"] - int(r["gold"])) for r in records if "score" in r]
-    return statistics.mean(errors) if errors else None
-
-
-def metrics(records: list[dict]) -> dict:
-    """Accuracy and macro-F1 over all records (refused ones are wrong); ECE and MAE
-    over the answered ones. ``noul`` predictions are yes at 0.5 or more."""
-    result = {
-        "n": len(records),
-        "refused": sum("refused" in r for r in records),
-        "truncated": sum(bool(r.get("truncated")) for r in records),
-        "accuracy": sum(r["predicted"] == r["gold"] for r in records) / len(records),
-        "macro_f1": macro_f1(records),
-        "ece": ece(records),
-    }
-    if any("score" in r for r in records):
-        result["mae"] = mae(records)
-    return result
 
 
 def cell(m: dict) -> str:
