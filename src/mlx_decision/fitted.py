@@ -150,31 +150,36 @@ class FittedBackend:
         }
 
     def score(self, request: Request) -> BackendOutput:
-        matched = {
-            question_id: self.fit.index(question_id, question)
-            for question_id, question in request.questions.items()
-        }
-        readable = isinstance(self.base, Readable)
-        if readable:
-            readouts = {
-                question_id: self.fit.readouts[i]
-                for question_id, i in matched.items()
-                if i is not None and i in self.fit.readouts
-            }
+        if isinstance(self.base, Readable):
+            readouts = {}
+            for question_id, question in request.questions.items():
+                i = self.fit.index(question_id, question)
+                if i is not None and i in self.fit.readouts:
+                    readouts[question_id] = self.fit.readouts[i]
             output = self.base.score(request, readouts=readouts or None, finish=False)
         else:
             output = self.base.score(request)
-        probabilities = {}
-        for question_id, values in output.probabilities.items():
-            i = matched[question_id]
-            if i is not None and i in self.fit.calibrations:
-                values = calibrate(values, self.fit.calibrations[i])
-            if readable:
-                values = self.base.finish(request.questions[question_id], values)
-            probabilities[question_id] = values
+        probabilities = self.adjust(request.questions, output.probabilities)
         for message in self.unfitted(request.questions):
             log.warning(message)
         return BackendOutput(probabilities, output.input_tokens, output.truncated)
+
+    def adjust(
+        self, questions: Mapping[str, Any], probabilities: Mapping[str, Mapping[str, float]]
+    ) -> dict[str, dict[str, float]]:
+        """The base's probabilities, before its last steps (with this fit's readouts),
+        through the fit's calibrations and then those steps (H2O's yes/no floor)."""
+        result = {}
+        for question_id, values in probabilities.items():
+            question = questions[question_id]
+            i = self.fit.index(question_id, question)
+            if i is not None and i in self.fit.calibrations:
+                options = self.fit.questions[i].options
+                values = calibrate({o: values[o] for o in options}, self.fit.calibrations[i])
+            if isinstance(self.base, Readable):
+                values = self.base.finish(question, dict(values))
+            result[question_id] = dict(values)
+        return result
 
     def unfitted(self, questions: Mapping[str, Any]) -> list[str]:
         """A warning for each question the fit does not cover (when it has question
