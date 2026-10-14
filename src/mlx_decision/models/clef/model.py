@@ -1,9 +1,11 @@
 """The Clef backend: Qwen3.5 backbone (text and, on demand, vision) plus joint schema head."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import mlx.core as mx
+from mlx.utils import tree_flatten, tree_unflatten
 
 from ...backbones.qwen3_5.load import has_vision_weights, load_text_model
 from ...backbones.qwen3_5.tokenizer import load_tokenizer
@@ -11,7 +13,7 @@ from ...backend import BackendOutput, Capabilities
 from ...types import Request
 from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
 from ..qwen import count_image_tokens, image_config, image_inputs, open_images, precision, prepare
-from .encode import DEFAULT_MAX_LENGTH, IMAGE_PAD, encode_request
+from .encode import DEFAULT_MAX_LENGTH, IMAGE_PAD, EncodedQuestion, encode_request
 from .head import JointSchemaHead
 
 # Larger images are shrunk to about this many pixels (2,048 tokens): measured
@@ -23,6 +25,17 @@ REQUIRED_FILES = (
     "joint_head_config.json",
     "joint_head.safetensors",
 )
+
+
+@dataclass
+class HeadInputs:
+    """What the joint head reads for a request: the backbone's hidden states
+    (``[tokens, hidden]``, as computed), the token ids and each question's spans."""
+
+    hidden: mx.array
+    input_ids: mx.array
+    questions: tuple[EncodedQuestion, ...]
+    truncated: bool = False
 
 
 class ClefBackend:
@@ -65,19 +78,32 @@ class ClefBackend:
             self.vision = load_vision_model(self.path)
         return self.vision
 
-    def score(self, request: Request) -> BackendOutput:
+    def encode(self, request: Request, opened=(), config=None):
+        """The request's token ids and spans (``opened`` images counted)."""
+        return encode_request(
+            self.tokenizer,
+            request,
+            max_length=self.capabilities.max_input_tokens,
+            image_tokens=[count_image_tokens(image, index, config) for index, image in opened],
+        )
+
+    def head_size(self, request: Request) -> int:
+        """Bytes of the request's hidden states (text requests: tokenized only)."""
+        if request.images:
+            raise ValueError("images are not stored for training")
+        # The hidden states come out of the backbone's last norm, in its dtype.
+        norm = self.backbone.language_model.model.norm.weight
+        return len(self.encode(request).input_ids) * norm.size * norm.itemsize
+
+    def head_inputs(self, request: Request) -> HeadInputs:
+        """The backbone's part of answering: hidden states, ids and spans, no head."""
         # Image sizes come from the file headers, so the input limit is checked
         # before any image is decoded or cut into patches.
         opened, config = [], None
         if request.images:
             config = image_config(self.path, self.max_image_pixels)
             opened = open_images(request.images)
-        encoded = encode_request(
-            self.tokenizer,
-            request,
-            max_length=self.capabilities.max_input_tokens,
-            image_tokens=[count_image_tokens(image, index, config) for index, image in opened],
-        )
+        encoded = self.encode(request, opened, config)
         images = [prepare(image, index, config) for index, image in opened]
         input_ids = mx.array(encoded.input_ids)
         if self.prefix_cache is not None:
@@ -89,21 +115,33 @@ class ClefBackend:
             hidden = self.backbone(input_ids[None], embeddings[None], positions)[0]
         else:
             hidden = self.backbone(input_ids[None])[0]
-        logits = self.head(
-            hidden,
-            input_ids,
-            encoded.questions,
+        return HeadInputs(hidden, input_ids, encoded.questions, encoded.truncated)
+
+    def head_logits(self, inputs: HeadInputs) -> list[mx.array]:
+        """The head's logits per question (differentiable in the head's parameters)."""
+        return self.head(
+            inputs.hidden,
+            inputs.input_ids,
+            inputs.questions,
             self.backbone.language_model.output_embedding_rows,
         )
+
+    def read_head(self, inputs: HeadInputs) -> dict[str, dict[str, float]]:
+        """Each question's probabilities from the head."""
+        logits = self.head_logits(inputs)
         probabilities = [mx.softmax(values.astype(mx.float32), axis=-1) for values in logits]
         mx.eval(probabilities)
+        return {
+            question.question_id: dict(zip(question.option_ids, values.tolist(), strict=True))
+            for question, values in zip(inputs.questions, probabilities, strict=True)
+        }
+
+    def score(self, request: Request) -> BackendOutput:
+        inputs = self.head_inputs(request)
         return BackendOutput(
-            probabilities={
-                question.question_id: dict(zip(question.option_ids, values.tolist(), strict=True))
-                for question, values in zip(encoded.questions, probabilities, strict=True)
-            },
-            input_tokens=len(encoded.input_ids),
-            truncated=encoded.truncated,
+            probabilities=self.read_head(inputs),
+            input_tokens=inputs.input_ids.size,
+            truncated=inputs.truncated,
         )
 
     def _reusing_prefix(self, encoded, images, config):
@@ -148,6 +186,21 @@ class ClefBackend:
         return mx.concatenate([entry.hidden, rest[0]], axis=0)
 
 
+def load_fitted_head(head: JointSchemaHead, file: Path) -> None:
+    """A trained head's tensors (``head.*``, every parameter) loaded over the
+    release's, in its dtype."""
+    current = dict(tree_flatten(head.parameters()))
+    stored = mx.load(str(file))
+    tensors = {key[5:]: value for key, value in stored.items() if key.startswith("head.")}
+    if set(tensors) != set(current):
+        raise ValueError(f"{file}: holds no trained head for this model")
+    for key, value in tensors.items():
+        if current[key].shape != value.shape:
+            raise ValueError(f"{file}: head.{key} does not fit this model")
+        tensors[key] = value.astype(current[key].dtype)
+    head.update(tree_unflatten(list(tensors.items())))
+
+
 def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     """The weights ``load`` reads (the vision tower's included), kept as stored."""
     files = sorted(path.glob("model*.safetensors")) + [path / "joint_head.safetensors"]
@@ -160,6 +213,7 @@ def load(
     vision: bool = False,
     max_image_pixels: int | None = DEFAULT_MAX_IMAGE_PIXELS,
     prefix_cache_gb: float = DEFAULT_PREFIX_CACHE_GB,
+    fit_weights: Path | None = None,
 ) -> ClefBackend:
     """Load Clef from ``path``.
 
@@ -169,6 +223,8 @@ def load(
     ``prefix_cache_gb`` is the memory for kept prefixes (the computed state
     after a request's state), so a request with a state seen recently and
     other questions computes only its questions; 0 turns reuse off.
+    ``fit_weights`` is a fitted model's ``fit.safetensors``, whose trained head
+    replaces the release's.
     """
     if max_image_pixels is not None and max_image_pixels < 32 * 32:
         raise ValueError("max_image_pixels must be at least 1024 (one image token)")
@@ -183,6 +239,8 @@ def load(
     backbone = load_text_model(path)
     head = JointSchemaHead(**json.loads((path / "joint_head_config.json").read_text()))
     head.load_weights(str(path / "joint_head.safetensors"), strict=True)
+    if fit_weights is not None:
+        load_fitted_head(head, Path(fit_weights))
     head.eval()
     mx.eval(head.parameters())
     tokenizer = load_tokenizer(path)

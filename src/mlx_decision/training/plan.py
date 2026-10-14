@@ -25,15 +25,14 @@ MAIN_KIND = {
     "laya": "finetune",
     "julia": "finetune",
 }
-# The kinds this version trains.
-BUILT = frozenset({"calibrate", "readout", "finetune"})
 
 # Scoring: seconds per question, seconds per 1,000 tokens, and the weight bytes
 # of the copy measured (clef-flash bf16, pplx 4-bit, d1 bf16, laya and Julia
 # float16); H2O-Lightning answers as fast in bf16 as at 4-bit, so its rate
-# holds up to its bf16 size.
+# holds up to its bf16 size. Clef's per question includes its prompt (about 130
+# tokens the request's length does not show; 0.27 s per ANLI-R3 request).
 SCORING = {
-    "clef": (0.10, 0.45, 19e9),
+    "clef": (0.19, 0.45, 19e9),
     "pplx": (0.25, 1.5, 15e9),
     "h2o": (0.11, 0.12, 9.1e9),
     "d1": (0.025, 0.08, 6.2e9),
@@ -56,19 +55,16 @@ def resolve(family: str, method: str) -> list[str]:
     """The kinds a run goes through, in order, for ``method`` (a kind or ``auto``).
 
     Every run ends with a calibration. Raises ``ValueError`` for a kind the
-    family does not take (naming the ones it does) or one not built yet.
+    family does not take (naming the ones it does).
     """
     offered = kinds(family)
     if method == "auto":
-        main = MAIN_KIND.get(family)
-        method = main if main in BUILT else "calibrate"
+        method = MAIN_KIND.get(family, "calibrate")
     if method not in offered:
         takes = ", ".join(["auto", *offered])
         if method in KINDS:
             raise ValueError(f"{family} models cannot be fitted with {method}; they take {takes}")
         raise ValueError(f"no fitting method is called {method}; {family} models take {takes}")
-    if method not in BUILT:
-        raise ValueError(f"{method} fits are not available in this version yet; use calibrate")
     return [method] if method == "calibrate" else [method, "calibrate"]
 
 
@@ -79,13 +75,18 @@ def request_tokens(example: Example) -> int:
 
 @dataclass(frozen=True)
 class Estimate:
-    """Seconds a run takes and the memory it needs at its peak, estimated."""
+    """Seconds a run takes, the memory it needs at its peak and the disk it uses
+    while it runs (a head fit's stored states), estimated."""
 
     seconds: float
     peak_bytes: int
+    disk_bytes: int = 0
 
     def as_json(self) -> dict:
-        return {"seconds": round(self.seconds), "peak_gb": round(self.peak_bytes / 1e9, 1)}
+        result = {"seconds": round(self.seconds), "peak_gb": round(self.peak_bytes / 1e9, 1)}
+        if self.disk_bytes:
+            result["disk_gb"] = round(self.disk_bytes / 1e9, 1)
+        return result
 
 
 def scoring_seconds(family: str, weights: int, examples: list[Example]) -> float:
@@ -121,21 +122,59 @@ READOUT_FEATURE_BYTES = 64_000
 READOUT_FIT_SECONDS = 2.0
 
 
+# The head fit (Clef): bytes per head parameter (float32 weights, gradients of a
+# request and their sum, two moments, the kept epoch's copy); bytes per token of
+# the longest request's graph; seconds per request of a training step and of the
+# dev loss (R12: about 50 s an epoch for 2k requests); the prompt's tokens beyond
+# the request's own; bytes per hidden unit stored (bfloat16).
+HEAD_PARAMETER_BYTES = 24
+HEAD_TOKEN_BYTES = 64_000
+HEAD_STEP_SECONDS = 0.03
+HEAD_DEV_SECONDS = 0.01
+CLEF_PROMPT_TOKENS = 130
+STATE_BYTES = 2
+
+
+def clef_tokens(example: Example) -> int:
+    """About the tokens of an example in Clef's prompt."""
+    return request_tokens(example) + CLEF_PROMPT_TOKENS
+
+
+def head_parameters(path: Path) -> tuple[int, int]:
+    """A Clef release's head parameters and the backbone's hidden size."""
+    from ..memory import element_count, read_header
+
+    header = read_header(path / "joint_head.safetensors")
+    count = sum(element_count(entry["shape"]) for entry in header.values())
+    config = json.loads((path / "joint_head_config.json").read_text())
+    return count, config["hidden_size"]
+
+
 def labelled(examples: list[Example]) -> int:
     """Labelled questions in ``examples``."""
     return sum(len(example.labels) for example in examples)
 
 
 def kind_bytes(
-    kind: str, path: Path, options: dict, head_only: bool = False, questions: int = 0
+    kind: str,
+    path: Path,
+    options: dict,
+    head_only: bool = False,
+    questions: int = 0,
+    tokens: int = 0,
 ) -> int:
     """Memory a kind needs beyond the model's weights and their margin; ``questions``
-    is the labelled questions of the whole data (readout)."""
+    is the labelled questions of the whole data (readout), ``tokens`` its longest
+    request's (head)."""
     from ..models.marker.model import sizes
     from .finetune import BATCH_TOKENS
+    from .head import SHARD_BYTES
 
     if kind == "readout":
         return questions * READOUT_FEATURE_BYTES
+    if kind == "head":
+        parameters, _ = head_parameters(path)
+        return parameters * HEAD_PARAMETER_BYTES + tokens * HEAD_TOKEN_BYTES + SHARD_BYTES
     if kind != "finetune":
         return 0  # calibrate keeps a few numbers per example
     size = sizes(path)
@@ -175,15 +214,23 @@ def estimate(
     """Time and peak memory of a run on ``splits``."""
     weights = weight_bytes(path, options)
     seconds = weights / LOAD_RATE + scoring_seconds(family, weights, splits.holdout) + 1.0
-    if kinds[0] in ("calibrate", "readout"):
+    every = splits.holdout + splits.fit + splits.dev
+    disk = 0
+    if kinds[0] in ("calibrate", "readout", "head"):
         seconds += scoring_seconds(family, weights, splits.fit + splits.dev)
     if kinds[0] == "readout":
         fitted = {q for example in splits.fit + splits.dev for q in example.labels}
         seconds += READOUT_FIT_SECONDS * len(fitted)
+    elif kinds[0] == "head":
+        per_epoch = len(splits.fit) * HEAD_STEP_SECONDS + len(splits.dev) * HEAD_DEV_SECONDS
+        seconds += epochs * per_epoch
+        _, hidden = head_parameters(path)
+        disk = sum(clef_tokens(example) for example in every) * hidden * STATE_BYTES
     elif kinds[0] != "calibrate":
         seconds += training_seconds(family, splits.fit, splits.dev, epochs, head_only)
         # The dev part and the holdout scored again by the trained model.
         seconds += scoring_seconds(family, weights, splits.dev + splits.holdout)
-    questions = labelled(splits.holdout + splits.fit + splits.dev)
-    extra = max(kind_bytes(kind, path, options, head_only, questions) for kind in kinds)
-    return Estimate(seconds, required_bytes(path, options) + extra)
+    questions = labelled(every)
+    tokens = max((clef_tokens(example) for example in every), default=0)
+    extra = max(kind_bytes(kind, path, options, head_only, questions, tokens) for kind in kinds)
+    return Estimate(seconds, required_bytes(path, options) + extra, disk)

@@ -77,6 +77,29 @@ class Readable(Protocol):
 
 
 @runtime_checkable
+class HeadTrainable(Protocol):
+    """A family whose decision head trains on stored backbone states (Clef).
+
+    ``head_inputs(request)`` is the backbone's part of answering (hidden
+    states, token ids, spans); ``head_logits(inputs)`` the head's logits per
+    question, differentiable in ``head``'s parameters; ``read_head(inputs)``
+    the probabilities ``score`` answers with. ``head_size(request)`` is the
+    request's hidden states' size in bytes, computed without the model. A
+    loader option ``fit_weights`` loads a trained head over the release's.
+    """
+
+    head: Any
+
+    def head_inputs(self, request: Request) -> Any: ...
+
+    def head_logits(self, inputs: Any) -> list[Any]: ...
+
+    def read_head(self, inputs: Any) -> dict[str, dict[str, float]]: ...
+
+    def head_size(self, request: Request) -> int: ...
+
+
+@runtime_checkable
 class Trainable(Protocol):
     """A family whose weights a fine-tune trains (Laya, Julia).
 

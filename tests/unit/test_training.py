@@ -191,14 +191,11 @@ def test_kinds_per_family():
     assert plan.kinds("laya") == ["finetune", "calibrate"]
     assert plan.kinds("fake") == ["calibrate"]
     assert plan.resolve("h2o", "auto") == ["readout", "calibrate"]
-    assert plan.resolve("clef", "auto") == ["calibrate"]  # until head fits are built
     assert plan.resolve("julia", "calibrate") == ["calibrate"]
     assert plan.resolve("laya", "auto") == ["finetune", "calibrate"]
     with pytest.raises(ValueError, match="laya models cannot be fitted with readout; they take "
                        "auto, finetune, calibrate"):  # fmt: skip
         plan.resolve("laya", "readout")
-    with pytest.raises(ValueError, match="head fits are not available"):
-        plan.resolve("clef", "head")
 
 
 def test_the_estimate_grows_with_the_data_and_the_model(tmp_path, base):

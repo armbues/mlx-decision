@@ -29,6 +29,7 @@ class Scored:
     truncated: bool = False
     refused: str | None = None
     features: dict[str, Features] | None = None
+    state: int | None = None  # its index in a StateStore
 
 
 def _read(features: dict[str, Features], readouts=None) -> dict[str, dict[str, float]]:
@@ -46,11 +47,13 @@ def score(
     on_step: Callable[[int, Example], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
     features: bool = False,
+    store=None,
 ) -> list[Scored]:
     """Each example scored by ``model`` in turn; ``on_step(done, example)`` after
     each, and ``Cancelled`` between them once ``cancelled()`` is true. With
     ``features`` (a family that reads out), the readouts' features are kept and
-    the probabilities read from them, as ``score`` does."""
+    the probabilities read from them, as ``score`` does; with ``store`` (a
+    ``StateStore``, Clef), the head's inputs are stored and read by the head."""
     backend = model.backend
     readable = isinstance(backend, Readable)
     if features and not readable:
@@ -65,6 +68,11 @@ def score(
                 found = backend.features(request)
                 truncated = any(f.truncated for f in found.values())
                 results.append(Scored(example, request, _read(found), truncated, features=found))
+            elif store is not None:
+                inputs = backend.head_inputs(request)
+                raw = backend.read_head(inputs)
+                state = store.add(inputs)
+                results.append(Scored(example, request, raw, inputs.truncated, state=state))
             else:
                 output = (
                     backend.score(request, finish=False) if readable else backend.score(request)
@@ -83,6 +91,17 @@ def reread(scored: list[Scored], readouts) -> list[Scored]:
     return [
         replace(item, raw=_read(item.features, readouts(item.request.questions)))
         if item.features is not None
+        else item
+        for item in scored
+    ]
+
+
+def rehead(scored: list[Scored], store, backend) -> list[Scored]:
+    """``scored`` (with stored head inputs) read again by ``backend``'s head as it
+    is now."""
+    return [
+        replace(item, raw=backend.read_head(store.get(item.state)))
+        if item.state is not None
         else item
         for item in scored
     ]

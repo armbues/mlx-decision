@@ -11,6 +11,7 @@ until the end, so a cancelled or failed run leaves no folder behind.
 
 import hashlib
 import json
+import shutil
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -41,8 +42,10 @@ from ..types import parse_request
 from . import plan
 from .calibrate import fit_calibration
 from .events import Cancelled, Event
-from .scoring import Clock, Scored, records, reread, score, summary
+from .scoring import Clock, Scored, records, rehead, reread, score, summary
 
+# Disk left free beside the hidden states a head fit stores.
+DISK_MARGIN = 2 * 10**9
 # Below these, a fit is warned about (it still runs).
 MIN_EXAMPLES = 50
 MIN_PER_OPTION = 10
@@ -282,6 +285,23 @@ def _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest: flo
 
     emit(Event("train", message="preparing the training examples"))
     fit_items, dev_items = items(splits.fit), items(splits.dev)
+    on_step, on_epoch = _reporters(emit, rest)
+    return train(
+        backend,
+        fit_items,
+        dev_items,
+        epochs=epochs,
+        head_only=head_only,
+        seed=seed,
+        on_step=on_step,
+        on_epoch=on_epoch,
+        cancelled=cancelled,
+    )
+
+
+def _reporters(emit, rest: float):
+    """``on_step`` and ``on_epoch`` callbacks of an epoch-based kind, as events;
+    ``rest`` is the seconds left after training."""
     started = time.perf_counter()
 
     def on_step(step: int, total: int, loss: float) -> None:
@@ -293,12 +313,74 @@ def _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest: flo
         message = f"epoch {row['epoch']}: loss {row['loss']}, dev loss {row['dev_loss']}"
         emit(Event("train", metrics=row, message=message))
 
+    return on_step, on_epoch
+
+
+def _size(count: int) -> str:
+    return f"{count / 1e9:.1f} GB" if count >= 1e9 else f"{max(count / 1e6, 0.1):.1f} MB"
+
+
+def _store(model, output: Path, examples: list[Example], emit):
+    """A store for the hidden states of ``examples`` beside ``output``, once their
+    size is known (and shown) and the disk has room for it."""
+    from .head import StateStore
+
+    size = 0
+    for example in examples:
+        try:
+            size += model.backend.head_size(model.check(example.request))
+        except DecisionError:
+            continue  # refused: nothing stored
+    folder = output.parent / f".{output.name}.states"
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    free = shutil.disk_usage(folder.parent).free
+    if size + DISK_MARGIN > free:
+        raise ValueError(
+            f"the hidden states need about {_size(size)} on disk in {folder.parent}, "
+            f"where {_size(free)} are free"
+        )
+    emit(
+        Event(
+            "check",
+            metrics={"states_gb": round(size / 1e9, 2)},
+            message=f"storing the hidden states: about {_size(size)} in {folder}, "
+            "removed afterwards",
+        )
+    )
+    return StateStore(folder)
+
+
+def _head(
+    backend, store, fit_part: list[Scored], dev_part: list[Scored], epochs, seed, emit, cancelled
+):
+    """Train the head in place on the fit part's stored states (dev picks the epoch)."""
+    from ..backend import HeadTrainable
+    from .head import Item, train
+
+    if not isinstance(backend, HeadTrainable):
+        raise ValueError(f"{backend.name} has no head to fit")
+
+    def items(scored: list[Scored]) -> list[Item]:
+        result = []
+        for item in scored:
+            if item.state is None:
+                continue  # refused
+            questions = store.inputs[item.state].questions
+            index = {question.question_id: i for i, question in enumerate(questions)}
+            labels = {
+                index[question_id]: questions[index[question_id]].option_ids.index(label)
+                for question_id, label in item.example.labels.items()
+            }
+            result.append(Item(item.state, labels))
+        return result
+
+    on_step, on_epoch = _reporters(emit, 1.0)
     return train(
         backend,
-        fit_items,
-        dev_items,
+        store,
+        items(fit_part),
+        items(dev_part),
         epochs=epochs,
-        head_only=head_only,
         seed=seed,
         on_step=on_step,
         on_epoch=on_epoch,
@@ -390,9 +472,12 @@ def fit(
     estimate = plan.estimate(
         origin.family.name, kinds, origin.path, load_options, splits, epochs, head_only
     )
-    questions = plan.labelled(splits.holdout + training)
+    every = splits.holdout + training
+    questions = plan.labelled(every)
+    tokens = max((plan.clef_tokens(example) for example in every), default=0)
     extra = max(
-        plan.kind_bytes(kind, origin.path, load_options, head_only, questions) for kind in kinds
+        plan.kind_bytes(kind, origin.path, load_options, head_only, questions, tokens)
+        for kind in kinds
     )
     check_fits(origin.path, load_options, name=origin.name, extra=extra, source=str(origin.path))
     emit(
@@ -416,10 +501,10 @@ def fit(
     finish_stage("check")
 
     # Scoring passes: the holdout, then the training part (calibrate alone, and
-    # the readout fit, which reads the fitted rows from the kept features) or,
-    # after training the weights, dev and the holdout again.
-    reads = trainer == "readout"
-    again = trainer is not None and not reads
+    # the readout and head fits, which read the kept features or stored states
+    # again) or, after fine-tuning, dev and the holdout again.
+    reads, stores = trainer == "readout", trainer == "head"
+    again = trainer == "finetune"
     passes = splits.holdout + (splits.dev + splits.holdout if again else training)
     clock = Clock(sum(plan.request_tokens(example) for example in passes))
 
@@ -430,48 +515,69 @@ def fit(
 
         clock.start()
         try:
-            return score(model, examples, on_step, cancelled, features=reads)
+            return score(model, examples, on_step, cancelled, features=reads, store=store)
         finally:
             clock.stop()
             finish_stage(stage)
 
-    holdout_scored = scoring("before", splits.holdout)
-    unfitted = FittedBackend(origin.name, model.backend, Fit([]), origin.reference)
-    before = summary(records(holdout_scored, unfitted.adjust))
-    emit(Event("before", metrics=before))
-    tensors: dict = {}
-    training_report = None
-    fit_ = Fit([])
-    if trainer is None or reads:
-        training_scored = scoring("features", training)
-        if all(item.raw is None for item in training_scored):
-            reason = training_scored[0].refused if training_scored else "no examples"
-            raise ValueError(f"{origin.name} answered none of the training examples ({reason})")
-        calibration_scored, after_scored = training_scored, holdout_scored
-    if reads:
-        fit_part, dev_part = training_scored[: len(splits.fit)], training_scored[len(splits.fit) :]
-        fit_, questions_report = _readouts(fit_part, dev_part, emit, cancelled, rest=1.0)
-        finish_stage("train")
-        training_report = {"questions": questions_report}
-        # The fitted rows read the kept features: dev fits the calibration, the
-        # holdout scores the report.
-        reader = FittedBackend(output.name, model.backend, fit_, origin.reference)
-        calibration_scored = reread(dev_part, reader.readouts)
-        after_scored = reread(holdout_scored, reader.readouts)
-    elif trainer is not None:
-        rest = plan.scoring_seconds(origin.family.name, 0, splits.dev + splits.holdout)
-        trained = _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest)
-        finish_stage("train")
-        tensors = trained.tensors
-        training_report = {
-            "head_only": head_only,
-            "epochs": trained.epochs,
-            "best_epoch": trained.best,
-        }
-        # The trained model: dev fits the calibration, the holdout scores the report.
-        calibration_scored = scoring("calibrate", splits.dev)
-        after_scored = scoring("after", splits.holdout)
-        training_scored = calibration_scored  # what the report counts: dev, as trained
+    store = _store(model, output, passes, emit) if stores else None
+    try:
+        holdout_scored = scoring("before", splits.holdout)
+        unfitted = FittedBackend(origin.name, model.backend, Fit([]), origin.reference)
+        before = summary(records(holdout_scored, unfitted.adjust))
+        emit(Event("before", metrics=before))
+        tensors: dict = {}
+        training_report = None
+        fit_ = Fit([])
+        if not again:
+            training_scored = scoring("features", training)
+            if all(item.raw is None for item in training_scored):
+                reason = training_scored[0].refused if training_scored else "no examples"
+                raise ValueError(f"{origin.name} answered none of the training examples ({reason})")
+            calibration_scored, after_scored = training_scored, holdout_scored
+        if reads:
+            fit_part, dev_part = (
+                training_scored[: len(splits.fit)],
+                training_scored[len(splits.fit) :],
+            )
+            fit_, questions_report = _readouts(fit_part, dev_part, emit, cancelled, rest=1.0)
+            finish_stage("train")
+            training_report = {"questions": questions_report}
+            # The fitted rows read the kept features: dev fits the calibration, the
+            # holdout scores the report.
+            reader = FittedBackend(output.name, model.backend, fit_, origin.reference)
+            calibration_scored = reread(dev_part, reader.readouts)
+            after_scored = reread(holdout_scored, reader.readouts)
+        elif trainer == "head":
+            fit_part, dev_part = (
+                training_scored[: len(splits.fit)],
+                training_scored[len(splits.fit) :],
+            )
+            trained = _head(model.backend, store, fit_part, dev_part, epochs, seed, emit, cancelled)
+            finish_stage("train")
+            tensors = trained.tensors
+            training_report = {"epochs": trained.epochs, "best_epoch": trained.best}
+            # The trained head reads the stored states: dev fits the calibration, the
+            # holdout scores the report.
+            calibration_scored = rehead(dev_part, store, model.backend)
+            after_scored = rehead(holdout_scored, store, model.backend)
+        elif trainer is not None:
+            rest = plan.scoring_seconds(origin.family.name, 0, splits.dev + splits.holdout)
+            trained = _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest)
+            finish_stage("train")
+            tensors = trained.tensors
+            training_report = {
+                "head_only": head_only,
+                "epochs": trained.epochs,
+                "best_epoch": trained.best,
+            }
+            # The trained model: dev fits the calibration, the holdout scores the report.
+            calibration_scored = scoring("calibrate", splits.dev)
+            after_scored = scoring("after", splits.holdout)
+            training_scored = calibration_scored  # what the report counts: dev, as trained
+    finally:
+        if store is not None:
+            store.remove()
 
     check_cancel()
     emit(Event("calibrate", message="fitting the calibration"))
