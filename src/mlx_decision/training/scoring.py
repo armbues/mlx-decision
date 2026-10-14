@@ -3,7 +3,7 @@ family's last steps, so a fit can come between them and its answers."""
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..answers import build_answer
 from ..backend import Readable
@@ -11,6 +11,7 @@ from ..data.format import Example
 from ..errors import DecisionError
 from ..metrics import metrics, record
 from ..model import DecisionModel
+from ..models.readout import Features, pick, read_out
 from ..types import Request
 from .events import Cancelled
 
@@ -18,14 +19,25 @@ from .events import Cancelled
 @dataclass
 class Scored:
     """An example as the model saw it: the checked request and its probabilities
-    per question before the family's last steps; ``refused`` instead when the
-    model would not answer it."""
+    per question before the family's last steps (and, from a features pass,
+    what each question's readout read); ``refused`` instead when the model
+    would not answer it."""
 
     example: Example
     request: Request | None = None
     raw: dict[str, dict[str, float]] | None = None
     truncated: bool = False
     refused: str | None = None
+    features: dict[str, Features] | None = None
+
+
+def _read(features: dict[str, Features], readouts=None) -> dict[str, dict[str, float]]:
+    return {
+        question_id: dict(
+            zip(f.option_ids, read_out(f, pick(readouts, question_id, f.option_ids)), strict=True)
+        )
+        for question_id, f in features.items()
+    }
 
 
 def score(
@@ -33,24 +45,47 @@ def score(
     examples: list[Example],
     on_step: Callable[[int, Example], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    features: bool = False,
 ) -> list[Scored]:
     """Each example scored by ``model`` in turn; ``on_step(done, example)`` after
-    each, and ``Cancelled`` between them once ``cancelled()`` is true."""
+    each, and ``Cancelled`` between them once ``cancelled()`` is true. With
+    ``features`` (a family that reads out), the readouts' features are kept and
+    the probabilities read from them, as ``score`` does."""
     backend = model.backend
     readable = isinstance(backend, Readable)
+    if features and not readable:
+        raise ValueError(f"{backend.name} has no readout features")
     results = []
     for done, example in enumerate(examples, 1):
         if cancelled is not None and cancelled():
             raise Cancelled()
         try:
             request = model.check(example.request)
-            output = backend.score(request, finish=False) if readable else backend.score(request)
-            results.append(Scored(example, request, output.probabilities, output.truncated))
+            if features:
+                found = backend.features(request)
+                truncated = any(f.truncated for f in found.values())
+                results.append(Scored(example, request, _read(found), truncated, features=found))
+            else:
+                output = (
+                    backend.score(request, finish=False) if readable else backend.score(request)
+                )
+                results.append(Scored(example, request, output.probabilities, output.truncated))
         except DecisionError as error:
             results.append(Scored(example, refused=str(error)))
         if on_step is not None:
             on_step(done, example)
     return results
+
+
+def reread(scored: list[Scored], readouts) -> list[Scored]:
+    """``scored`` (from a features pass) read out again: ``readouts(questions)``
+    gives the readouts by question id (a ``FittedBackend``'s)."""
+    return [
+        replace(item, raw=_read(item.features, readouts(item.request.questions)))
+        if item.features is not None
+        else item
+        for item in scored
+    ]
 
 
 def records(scored: list[Scored], adjust) -> dict[str, list[dict]]:

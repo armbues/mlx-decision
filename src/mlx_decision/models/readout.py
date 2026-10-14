@@ -20,13 +20,15 @@ import mlx.core as mx
 class Features:
     """What a question's readout reads: ``hidden`` (float32, ``[width]``),
     ``rows`` (float32, ``[tokens, width]``), each option's rows in ``groups``
-    (indices into ``rows``) and the family's temperature for the question."""
+    (indices into ``rows``), the family's temperature for the question and
+    whether the request was cut to fit the input limit."""
 
     option_ids: list[str]
     hidden: mx.array
     rows: mx.array
     groups: list[list[int]]
     temperature: float
+    truncated: bool = False
 
 
 @dataclass
@@ -56,13 +58,29 @@ def option_logits(features: Features, readout: Readout | None = None) -> mx.arra
                 f"not fit {rows.shape} and {len(features.groups)} options"
             )
         rows, bias = readout.rows, readout.bias
-    logits = rows @ features.hidden
-    if features.groups != singletons(len(features.groups)):
+    return group_logits(rows, features.hidden, features.groups, features.temperature, bias)
+
+
+def group_logits(
+    rows: mx.array,
+    hidden: mx.array,
+    groups: list[list[int]],
+    temperature: float,
+    bias: mx.array | None = None,
+) -> mx.array:
+    """Each option's logit from ``rows`` and ``hidden`` (``[width]``, or ``[n, width]``
+    for a batch, giving ``[n, options]``): the best row of each option's group,
+    divided by ``temperature``, plus ``bias``."""
+    batch = hidden.ndim == 2
+    logits = rows @ (hidden.T if batch else hidden)
+    if groups != singletons(len(groups)):
         # Each group padded with its own first row, which leaves its maximum alone.
-        width = max(len(group) for group in features.groups)
-        index = [group + [group[0]] * (width - len(group)) for group in features.groups]
+        width = max(len(group) for group in groups)
+        index = [group + [group[0]] * (width - len(group)) for group in groups]
         logits = logits[mx.array(index)].max(axis=1)
-    logits = logits / features.temperature
+    if batch:
+        logits = logits.T
+    logits = logits / temperature
     return logits if bias is None else logits + bias
 
 

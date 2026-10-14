@@ -362,7 +362,9 @@ class H2OBackend:
             return self.config.image.temperature
         return self.config.temperatures[question_type]
 
-    def question_features(self, question: Encoded, hidden: mx.array, with_images: bool):
+    def question_features(
+        self, question: Encoded, hidden: mx.array, with_images: bool, truncated: bool = False
+    ):
         count = len(question.option_ids)
         return Features(
             question.option_ids,
@@ -370,13 +372,14 @@ class H2OBackend:
             self.label_rows()[:count],
             singletons(count),
             self.temperature(question.question_type, with_images),
+            truncated,
         )
 
     def features(self, request: Request) -> dict[str, Features]:
         """What each question's readout reads, before the readout."""
-        encoded, _, hidden, with_images = self.passes(request)
+        encoded, cut, hidden, with_images = self.passes(request)
         return {
-            q.question_id: self.question_features(q, last, with_images)
+            q.question_id: self.question_features(q, last, with_images, cut)
             for q, last in zip(encoded, hidden, strict=True)
         }
 

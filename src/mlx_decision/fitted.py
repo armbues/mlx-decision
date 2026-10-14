@@ -90,6 +90,12 @@ class Fit:
         wanted = FitQuestion.of(question_id, question)
         return next((i for i, q in enumerate(self.questions) if q == wanted), None)
 
+    def add(self, question: FitQuestion) -> int:
+        """The index of ``question`` among the fitted ones, added if new."""
+        if question not in self.questions:
+            self.questions.append(question)
+        return self.questions.index(question)
+
     def tensors(self) -> dict:
         """The question kinds' tensors as ``fit.safetensors`` stores them."""
         import mlx.core as mx
@@ -149,13 +155,18 @@ class FittedBackend:
             },
         }
 
+    def readouts(self, questions: Mapping[str, Any]) -> dict[str, Any]:
+        """The fit's readouts for ``questions``, by question id (fitted ones only)."""
+        readouts = {}
+        for question_id, question in questions.items():
+            i = self.fit.index(question_id, question)
+            if i is not None and i in self.fit.readouts:
+                readouts[question_id] = self.fit.readouts[i]
+        return readouts
+
     def score(self, request: Request) -> BackendOutput:
         if isinstance(self.base, Readable):
-            readouts = {}
-            for question_id, question in request.questions.items():
-                i = self.fit.index(question_id, question)
-                if i is not None and i in self.fit.readouts:
-                    readouts[question_id] = self.fit.readouts[i]
+            readouts = self.readouts(request.questions)
             output = self.base.score(request, readouts=readouts or None, finish=False)
         else:
             output = self.base.score(request)

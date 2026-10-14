@@ -26,15 +26,16 @@ MAIN_KIND = {
     "julia": "finetune",
 }
 # The kinds this version trains.
-BUILT = frozenset({"calibrate", "finetune"})
+BUILT = frozenset({"calibrate", "readout", "finetune"})
 
 # Scoring: seconds per question, seconds per 1,000 tokens, and the weight bytes
-# of the copy measured (clef-flash bf16, pplx 4-bit, H2O-Lightning 4-bit, d1
-# bf16, laya and Julia float16).
+# of the copy measured (clef-flash bf16, pplx 4-bit, d1 bf16, laya and Julia
+# float16); H2O-Lightning answers as fast in bf16 as at 4-bit, so its rate
+# holds up to its bf16 size.
 SCORING = {
     "clef": (0.10, 0.45, 19e9),
     "pplx": (0.25, 1.5, 15e9),
-    "h2o": (0.11, 0.12, 3e9),
+    "h2o": (0.11, 0.12, 9.1e9),
     "d1": (0.025, 0.08, 6.2e9),
     "laya": (0.008, 0.02, 0.85e9),
     "julia": (0.003, 0.01, 0.3e9),
@@ -113,11 +114,28 @@ BACKWARD_BYTES = 10
 HEAD_LAYERS = 2
 
 
-def kind_bytes(kind: str, path: Path, options: dict, head_only: bool = False) -> int:
-    """Memory a kind needs beyond the model's weights and their margin."""
+# The readout fit keeps each labelled question's features: a float32 hidden
+# state (pplx 20 KB) and, for d1, its option rows; on the safe side.
+READOUT_FEATURE_BYTES = 64_000
+# Its search, seconds per fitted question (R17: 1.4-1.8 s).
+READOUT_FIT_SECONDS = 2.0
+
+
+def labelled(examples: list[Example]) -> int:
+    """Labelled questions in ``examples``."""
+    return sum(len(example.labels) for example in examples)
+
+
+def kind_bytes(
+    kind: str, path: Path, options: dict, head_only: bool = False, questions: int = 0
+) -> int:
+    """Memory a kind needs beyond the model's weights and their margin; ``questions``
+    is the labelled questions of the whole data (readout)."""
     from ..models.marker.model import sizes
     from .finetune import BATCH_TOKENS
 
+    if kind == "readout":
+        return questions * READOUT_FEATURE_BYTES
     if kind != "finetune":
         return 0  # calibrate keeps a few numbers per example
     size = sizes(path)
@@ -157,11 +175,15 @@ def estimate(
     """Time and peak memory of a run on ``splits``."""
     weights = weight_bytes(path, options)
     seconds = weights / LOAD_RATE + scoring_seconds(family, weights, splits.holdout) + 1.0
-    if kinds == ["calibrate"]:
+    if kinds[0] in ("calibrate", "readout"):
         seconds += scoring_seconds(family, weights, splits.fit + splits.dev)
-    else:
+    if kinds[0] == "readout":
+        fitted = {q for example in splits.fit + splits.dev for q in example.labels}
+        seconds += READOUT_FIT_SECONDS * len(fitted)
+    elif kinds[0] != "calibrate":
         seconds += training_seconds(family, splits.fit, splits.dev, epochs, head_only)
         # The dev part and the holdout scored again by the trained model.
         seconds += scoring_seconds(family, weights, splits.dev + splits.holdout)
-    extra = max(kind_bytes(kind, path, options, head_only) for kind in kinds)
+    questions = labelled(splits.holdout + splits.fit + splits.dev)
+    extra = max(kind_bytes(kind, path, options, head_only, questions) for kind in kinds)
     return Estimate(seconds, required_bytes(path, options) + extra)

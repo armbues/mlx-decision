@@ -247,14 +247,16 @@ class D1Backend:
             start = end
         return out
 
-    def question_features(self, question: Encoded, hidden: mx.array) -> Features:
+    def question_features(
+        self, question: Encoded, hidden: mx.array, truncated: bool = False
+    ) -> Features:
         """The rows of the tokens that stand for the question's options, each
         option's among them, and the hidden state at its last token."""
         groups = option_token_ids(question.question, self.tokenizer)
         tokens = sorted({token for group in groups for token in group})
         rows = self.model.output_embedding_rows(mx.array(tokens)).astype(mx.float32)
         indices = [[tokens.index(token) for token in group] for group in groups]
-        return Features(question.option_ids, hidden, rows, indices, 1.0)
+        return Features(question.option_ids, hidden, rows, indices, 1.0, truncated)
 
     def passes(self, request: Request) -> tuple[list[Encoded], bool, list[mx.array]]:
         """Every question's encoding and last hidden state, and whether the state was cut."""
@@ -271,9 +273,9 @@ class D1Backend:
 
     def features(self, request: Request) -> dict[str, Features]:
         """What each question's readout reads, before the readout."""
-        encoded, _, hidden = self.passes(request)
+        encoded, cut, hidden = self.passes(request)
         return {
-            q.question_id: self.question_features(q, last)
+            q.question_id: self.question_features(q, last, cut)
             for q, last in zip(encoded, hidden, strict=True)
         }
 

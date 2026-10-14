@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import mlx.core as mx
+
 from .. import __version__
 from ..data.format import Example, read_examples, training_splits
 from ..errors import DecisionError
@@ -39,7 +41,7 @@ from ..types import parse_request
 from . import plan
 from .calibrate import fit_calibration
 from .events import Cancelled, Event
-from .scoring import Clock, Scored, records, score, summary
+from .scoring import Clock, Scored, records, reread, score, summary
 
 # Below these, a fit is warned about (it still runs).
 MIN_EXAMPLES = 50
@@ -139,9 +141,9 @@ def _label_counts(examples: list[Example]) -> dict[str, dict[str, int]]:
     return {qid: dict(sorted(c.items())) for qid, c in counts.items()}
 
 
-def _calibrations(scored: list[Scored]) -> Fit:
-    """A calibration per fitted question (same id, type and options) on ``scored``;
-    biases where every example asks it the same way."""
+def _calibrations(scored: list[Scored], fit: Fit) -> Fit:
+    """A calibration per fitted question (same id, type and options) on ``scored``,
+    added to ``fit``; biases where every example asks it the same way."""
     groups: dict[tuple, tuple[FitQuestion, list[tuple[Scored, str]]]] = {}
     for item in scored:
         if item.raw is None:
@@ -150,7 +152,6 @@ def _calibrations(scored: list[Scored]) -> Fit:
             fitted_question = FitQuestion.of(question_id, item.request.questions[question_id])
             key = (question_id, fitted_question.type, tuple(fitted_question.options))
             groups.setdefault(key, (fitted_question, []))[1].append((item, question_id))
-    fit = Fit(["calibrate"])
     for fitted_question, rows in groups.values():
         options = fitted_question.options
         probabilities = [[item.raw[qid][o] for o in options] for item, qid in rows]
@@ -159,11 +160,103 @@ def _calibrations(scored: list[Scored]) -> Fit:
             json.dumps(item.request.questions[qid].model_dump(), sort_keys=True, default=str)
             for item, qid in rows
         }
-        fit.calibrations[len(fit.questions)] = fit_calibration(
+        fit.calibrations[fit.add(fitted_question)] = fit_calibration(
             probabilities, labels, bias=len(wordings) == 1
         )
-        fit.questions.append(fitted_question)
     return fit
+
+
+@dataclass
+class _Rows:
+    """A fitted question's readout inputs: the first example's features (whose
+    rows, groups and temperature every example must share) and each part's
+    hidden states and gold option indexes."""
+
+    question: FitQuestion
+    features: Any  # the first example's Features
+    parts: dict[str, tuple[list, list[int]]]
+    varies: bool = False
+
+    def same(self, other) -> bool:
+        first = self.features
+        return (
+            other.option_ids == first.option_ids
+            and other.groups == first.groups
+            and other.temperature == first.temperature
+            and other.rows.shape == first.rows.shape
+            and bool(mx.array_equal(other.rows, first.rows))
+        )
+
+
+def _readouts(fit_part: list[Scored], dev_part: list[Scored], emit, cancelled, rest: float):
+    """A readout per fitted question, trained on the fit part's features and picked
+    on dev's; the fit and a report per question."""
+    from .readout import fit_readout, search_steps
+
+    questions: dict[tuple, _Rows] = {}
+    for part, scored in (("fit", fit_part), ("dev", dev_part)):
+        for item in scored:
+            if item.features is None:
+                continue  # refused
+            for question_id, label in item.example.labels.items():
+                fitted_question = FitQuestion.of(question_id, item.request.questions[question_id])
+                features = item.features[question_id]
+                key = (question_id, fitted_question.type, tuple(fitted_question.options))
+                entry = questions.setdefault(
+                    key, _Rows(fitted_question, features, {"fit": ([], []), "dev": ([], [])})
+                )
+                entry.varies = entry.varies or not entry.same(features)
+                entry.parts[part][0].append(features.hidden)
+                # The rows are in the family's order of the options.
+                entry.parts[part][1].append(features.option_ids.index(label))
+    fit = Fit([])
+    report = []
+    total = search_steps() * len(questions)
+    started = time.perf_counter()
+    offset = 0
+    for entry in questions.values():
+        question = entry.question
+        (fit_hidden, fit_labels), (dev_hidden, dev_labels) = entry.parts.values()
+        row: dict[str, Any] = {
+            "question": question.id,
+            "options": question.options,
+            "fit": len(fit_labels),
+            "dev": len(dev_labels),
+        }
+        reason = None
+        if entry.varies:
+            reason = "its examples score other tokens (the options are worded differently)"
+        elif not fit_labels or not dev_labels:
+            reason = "it needs examples in both the fit and the dev part"
+        if reason is not None:
+            emit(Event("train", message=f"warning: no readout for {question.id!r}: {reason}"))
+            report.append(row | {"skipped": reason})
+            offset += search_steps()
+            continue
+
+        def on_step(done: int, offset=offset) -> None:
+            step = offset + done
+            elapsed = time.perf_counter() - started
+            eta = round(elapsed / step * (total - step) + rest, 1)
+            emit(Event("train", step, total, eta_s=eta))
+
+        features = entry.features
+        readout, picked = fit_readout(
+            features.option_ids,
+            features.rows,
+            features.groups,
+            features.temperature,
+            (mx.stack(fit_hidden), fit_labels),
+            (mx.stack(dev_hidden), dev_labels),
+            on_step,
+            cancelled,
+        )
+        offset += search_steps()
+        if readout is not None:
+            fit.readouts[fit.add(question)] = readout
+        report.append(row | picked.as_json())
+        emit(Event("train", metrics=row | picked.as_json(), message=f"readout for {question.id!r}"))
+    return fit, report
 
 
 def _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest: float):
@@ -297,7 +390,10 @@ def fit(
     estimate = plan.estimate(
         origin.family.name, kinds, origin.path, load_options, splits, epochs, head_only
     )
-    extra = max(plan.kind_bytes(kind, origin.path, load_options, head_only) for kind in kinds)
+    questions = plan.labelled(splits.holdout + training)
+    extra = max(
+        plan.kind_bytes(kind, origin.path, load_options, head_only, questions) for kind in kinds
+    )
     check_fits(origin.path, load_options, name=origin.name, extra=extra, source=str(origin.path))
     emit(
         Event(
@@ -319,9 +415,12 @@ def fit(
     model.backend.name = origin.name
     finish_stage("check")
 
-    # Scoring passes: the holdout, then the training part (calibrate alone) or,
-    # after training, dev and the holdout again.
-    passes = splits.holdout + (training if trainer is None else splits.dev + splits.holdout)
+    # Scoring passes: the holdout, then the training part (calibrate alone, and
+    # the readout fit, which reads the fitted rows from the kept features) or,
+    # after training the weights, dev and the holdout again.
+    reads = trainer == "readout"
+    again = trainer is not None and not reads
+    passes = splits.holdout + (splits.dev + splits.holdout if again else training)
     clock = Clock(sum(plan.request_tokens(example) for example in passes))
 
     def scoring(stage: str, examples: list[Example]) -> list[Scored]:
@@ -331,7 +430,7 @@ def fit(
 
         clock.start()
         try:
-            return score(model, examples, on_step, cancelled)
+            return score(model, examples, on_step, cancelled, features=reads)
         finally:
             clock.stop()
             finish_stage(stage)
@@ -342,13 +441,24 @@ def fit(
     emit(Event("before", metrics=before))
     tensors: dict = {}
     training_report = None
-    if trainer is None:
-        calibration_scored = scoring("features", training)
-        if all(item.raw is None for item in calibration_scored):
-            reason = calibration_scored[0].refused if calibration_scored else "no examples"
+    fit_ = Fit([])
+    if trainer is None or reads:
+        training_scored = scoring("features", training)
+        if all(item.raw is None for item in training_scored):
+            reason = training_scored[0].refused if training_scored else "no examples"
             raise ValueError(f"{origin.name} answered none of the training examples ({reason})")
-        after_scored = holdout_scored
-    else:
+        calibration_scored, after_scored = training_scored, holdout_scored
+    if reads:
+        fit_part, dev_part = training_scored[: len(splits.fit)], training_scored[len(splits.fit) :]
+        fit_, questions_report = _readouts(fit_part, dev_part, emit, cancelled, rest=1.0)
+        finish_stage("train")
+        training_report = {"questions": questions_report}
+        # The fitted rows read the kept features: dev fits the calibration, the
+        # holdout scores the report.
+        reader = FittedBackend(output.name, model.backend, fit_, origin.reference)
+        calibration_scored = reread(dev_part, reader.readouts)
+        after_scored = reread(holdout_scored, reader.readouts)
+    elif trainer is not None:
         rest = plan.scoring_seconds(origin.family.name, 0, splits.dev + splits.holdout)
         trained = _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest)
         finish_stage("train")
@@ -361,10 +471,11 @@ def fit(
         # The trained model: dev fits the calibration, the holdout scores the report.
         calibration_scored = scoring("calibrate", splits.dev)
         after_scored = scoring("after", splits.holdout)
+        training_scored = calibration_scored  # what the report counts: dev, as trained
 
     check_cancel()
     emit(Event("calibrate", message="fitting the calibration"))
-    fit_ = _calibrations(calibration_scored)
+    fit_ = _calibrations(calibration_scored, fit_)
     fit_.kinds = kinds
     finish_stage("calibrate")
 
@@ -409,8 +520,8 @@ def fit(
             "fit": len(splits.fit),
             "dev": len(splits.dev),
             "labels": _label_counts(training),
-            "refused": sum(item.raw is None for item in holdout_scored + calibration_scored),
-            "truncated": sum(item.truncated for item in holdout_scored + calibration_scored),
+            "refused": sum(item.raw is None for item in holdout_scored + training_scored),
+            "truncated": sum(item.truncated for item in holdout_scored + training_scored),
         },
         "estimate": estimate.as_json(),
         "warnings": warnings,
