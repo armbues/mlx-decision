@@ -99,9 +99,11 @@ def scoring_seconds(family: str, weights: int, examples: list[Example]) -> float
 
 
 # Fine-tuning, seconds per 1,000 estimated padded tokens (bfloat16,
-# checkpointing; the whole model, the head alone): fitted to fine-tunes of
-# Julia-1 and laya (ModernBERT-large) on TREC; the head alone scaled alike.
-FINETUNE_RATES = {"julia": (0.038, 0.008), "laya": (0.14, 0.033)}
+# checkpointing; the whole model, the head alone): Julia-1 fitted on TREC
+# (exact there); laya between TREC (0.14) and TweetEval Offensive (0.22),
+# where the request's length weighs option descriptions unlike the encoder;
+# the head alone scaled alike.
+FINETUNE_RATES = {"julia": (0.038, 0.008), "laya": (0.2, 0.047)}
 # Padded tokens per token in batches of random order.
 PADDING = 1.5
 # Bytes per trained parameter: float32 copy and two moments, bfloat16 gradients
