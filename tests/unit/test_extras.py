@@ -103,6 +103,25 @@ def test_server_command_names_the_extra(folder):
     assert "pip install 'mlx-decision[server]'" in out["err"]
 
 
+def test_data_from_the_hub_names_the_training_extra():
+    out = cli(["datasets"], ["data", "hf:org/name", "--show", "1"])
+    assert out["code"] == 1
+    assert "needs the training extra: pip install 'mlx-decision[training]'" in out["err"]
+
+
+def test_data_from_csv_and_training_need_no_extra(tmp_path):
+    csv = tmp_path / "tickets.csv"
+    csv.write_text("text,label\nrefund,billing\ncrash,tech\n")
+    out = cli(
+        ["datasets"], ["data", str(csv), "--question", "Team?", "-o", str(tmp_path / "t.jsonl")]
+    )
+    assert out["code"] == 0, out["err"]
+    out = cli(
+        ["datasets"], ["training", "eval", "-m", "./no-model", "--data", str(tmp_path / "t.jsonl")]
+    )
+    assert "datasets" not in out["err"] and "no-model" in out["err"]
+
+
 def test_convert_keeps_the_vision_tower_without_numpy(folder, png, tmp_path):
     out = run_without(
         ["numpy", "PIL"],
@@ -121,9 +140,9 @@ print(json.dumps({{"out": str(convert({str(folder)!r}, {str(tmp_path / "q8")!r},
 
 def test_the_base_install_imports_no_extra(folder):
     out = run_without(
-        ["numpy", "PIL", "fastapi", "uvicorn"],
+        ["numpy", "PIL", "fastapi", "uvicorn", "datasets"],
         f"""
-import mlx_decision, mlx_decision.cli
+import mlx_decision, mlx_decision.cli, mlx_decision.training
 model = mlx_decision.load({str(folder)!r})
 model.decide("billing", {QUESTIONS!r})
 print(json.dumps({{"ok": True}}))

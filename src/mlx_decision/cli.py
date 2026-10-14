@@ -1356,3 +1356,188 @@ def training_eval(
         typer.echo(json.dumps(result.as_json(), indent=2, ensure_ascii=False))
     else:
         typer.echo(format_eval(result))
+
+
+def pairs(value: str | None, flag: str) -> dict[str, str] | None:
+    """``a=x,b=y`` as a dict, in order."""
+    if value is None:
+        return None
+    result = {}
+    for part in value.split(","):
+        key, sep, rest = part.partition("=")
+        if not sep or not key.strip():
+            raise typer.BadParameter(f"expected KEY=VALUE,... but got {part!r}", param_hint=flag)
+        result[key.strip()] = rest.strip()
+    return result
+
+
+def question_from_file(path: Path) -> tuple[str, dict]:
+    """The one question of a ``-q`` file (a questions map or a whole request body)."""
+    try:
+        loaded = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise typer.BadParameter(f"cannot read {path}: {error}", param_hint="-q") from None
+    questions = loaded.get("questions", loaded) if isinstance(loaded, dict) else None
+    if not isinstance(questions, dict) or len(questions) != 1:
+        raise typer.BadParameter(
+            "the file must hold exactly one question (a questions map or a request body)",
+            param_hint="-q",
+        )
+    [(question_id, question)] = questions.items()
+    return question_id, question
+
+
+def show_made(made, count: int) -> None:
+    """The first examples as JSON lines, then the label counts."""
+    for example in made.examples[:count]:
+        typer.echo(json.dumps(example.to_json(), ensure_ascii=False))
+    typer.echo("")
+    typer.echo(summary_of_made(made))
+
+
+def summary_of_made(made) -> str:
+    lines = [f"{len(made.examples):,} examples"]
+    if made.mapping is not None:
+        used = ", ".join(f"{role}={name}" for role, name in made.mapping.columns.items() if name)
+        lines[0] += f" ({made.mapping.shape} shape: {used})"
+    for question_id, counts in made.label_counts().items():
+        listed = ", ".join(f"{label} {count:,}" for label, count in counts.items())
+        lines.append(f"labels: {question_id}: {listed}")
+    for reason, count in made.skipped.items():
+        lines.append(f"skipped {count:,} rows: {reason}")
+    return "\n".join(lines)
+
+
+ColumnFlag = Annotated[str | None, typer.Option(help="Column name (overrides the guess).")]
+
+
+@app.command("data")
+def data_command(
+    source: Annotated[
+        str | None,
+        typer.Argument(
+            help="hf:ORG/NAME (a Hugging Face dataset), a .csv, .jsonl or .parquet file, or "
+            "a folder saved by the datasets library.",
+            show_default=False,
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="The JSON lines file to write.")
+    ] = None,
+    preset: Annotated[
+        str | None,
+        typer.Option(
+            help="A coverage-suite dataset with its wording, pinned to its commit: trec, "
+            "offensive, sst5, openbookqa or anli-r3 (with --split)."
+        ),
+    ] = None,
+    config: Annotated[str | None, typer.Option(help="The dataset's config.")] = None,
+    split: Annotated[str | None, typer.Option(help="The dataset's split.")] = None,
+    revision: Annotated[str | None, typer.Option(help="A commit, branch or tag.")] = None,
+    limit: Annotated[int | None, typer.Option(min=1, help="Only the first N rows.")] = None,
+    sample: Annotated[
+        int | None, typer.Option(min=1, help="N rows drawn at random (with --seed).")
+    ] = None,
+    seed: Annotated[int, typer.Option(help="Seed of --sample.")] = 0,
+    show: Annotated[
+        int | None,
+        typer.Option(min=0, help="Print the first N lines and the label counts; write nothing."),
+    ] = None,
+    shape: Annotated[
+        str | None,
+        typer.Option(
+            help="text, pair, choice, yesno or rating. Default: guessed from the columns."
+        ),
+    ] = None,
+    text: ColumnFlag = None,
+    label: ColumnFlag = None,
+    premise: ColumnFlag = None,
+    hypothesis: ColumnFlag = None,
+    question_column: ColumnFlag = None,
+    choices: ColumnFlag = None,
+    answer: ColumnFlag = None,
+    context: ColumnFlag = None,
+    question: Annotated[
+        str | None,
+        typer.Option(help="The question's instructions (yesno: each row's question is used)."),
+    ] = None,
+    question_id: Annotated[
+        str | None, typer.Option("--id", help="The question's id. Default: the dataset's name.")
+    ] = None,
+    options: Annotated[
+        str | None,
+        typer.Option(
+            help="Option ids and descriptions: 'id=description,...'. Default: the label names."
+        ),  # fmt: skip
+    ] = None,
+    questions_file: Annotated[
+        Path | None,
+        typer.Option("--questions", "-q", help="JSON file with the whole question (as run's -q)."),
+    ] = None,
+    label_map: Annotated[
+        str | None,
+        typer.Option(help="Raw labels to option ids: '0=negative,1=positive'."),
+    ] = None,
+    noul: Annotated[
+        bool,
+        typer.Option("--noul", help="Two classes as a yes/no question (the second class is yes)."),
+    ] = False,
+    levels: Annotated[
+        str | None,
+        typer.Option(help="rating: level descriptions, lowest first: 'bad,ok,good'."),
+    ] = None,
+    no_input: Annotated[
+        bool, typer.Option("--no-input", help="Never ask; anything left open is an error.")
+    ] = False,
+) -> None:
+    """Turn a dataset into labelled examples for training fit (JSON lines)."""
+    from .data.format import write_examples
+    from .data.make import make
+
+    if output is None and show is None:
+        fail("pass -o FILE.jsonl (or --show N to preview)")
+    wording = {
+        "id": question_id,
+        "instructions": question,
+        "options": pairs(options, "--options"),
+        "label_map": pairs(label_map, "--label-map"),
+        "noul": noul or None,
+        "levels": [level.strip() for level in levels.split(",")] if levels else None,
+    }
+    if questions_file is not None:
+        if question is not None or options is not None:
+            fail("-q holds the whole question; drop --question and --options")
+        file_id, wording["question"] = question_from_file(questions_file)
+        wording["id"] = question_id or file_id
+    columns = {
+        "text": text,
+        "label": label,
+        "premise": premise,
+        "hypothesis": hypothesis,
+        "question": question_column,
+        "choices": choices,
+        "answer": answer,
+        "context": context,
+    }
+    try:
+        made = make(
+            source,
+            preset=preset,
+            config=config,
+            split=split,
+            revision=revision,
+            limit=limit,
+            sample=sample,
+            seed=seed,
+            shape=shape,
+            columns=columns,
+            wording=wording,
+        )
+    except (DecisionError, FileNotFoundError, ValueError) as error:
+        fail(str(error))
+    if show is not None:
+        show_made(made, show)
+        return
+    write_examples(output, made.examples)
+    typer.echo(summary_of_made(made), err=True)
+    typer.echo(f"wrote {output}", err=True)

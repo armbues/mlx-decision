@@ -238,14 +238,17 @@ PRESETS: dict[str, Preset] = {
 }
 
 
-def examples(preset: Preset, rows: list[dict], split: str | None = None) -> list[dict]:
+def examples(
+    preset: Preset, rows: list[dict], split: str | None = None, indices: list[int] | None = None
+) -> list[dict]:
     """The examples of a split's rows, in order (``split`` None: the evaluation
     split). Ids of the evaluation split are ``<key>:<row id>``, of other splits
-    ``<key>:<split>/<row id>``."""
+    ``<key>:<split>/<row id>``; a row's id is its own, or its index in the split
+    (``indices``, when ``rows`` are some of them; else their position)."""
     split = split or preset.source.split
     prefix = f"{preset.key}:" if split == preset.source.split else f"{preset.key}:{split}/"
     result = []
-    for index, row in enumerate(rows):
+    for index, row in zip(indices or range(len(rows)), rows, strict=True):
         try:
             example = preset.make(row)
         except ValueError as error:
