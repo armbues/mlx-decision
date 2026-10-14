@@ -296,21 +296,21 @@ class Session:
     # The question builder
 
     def build(self, question_id: str | None = None) -> None:
-        """Add a question, or edit ``question_id``; repeats until the question is valid."""
-        draft_id = question_id
-        draft = dict(self.questions[question_id]) if question_id else {}
-        while True:
-            try:
-                draft_id, draft = self.ask_question(question_id, draft_id, draft)
-            except (KeyboardInterrupt, EOFError):
-                say("cancelled")
-                return
-            try:
-                self.model.check({"state": "", "questions": {draft_id: draft}})
-            except DecisionError as error:
-                say(f"error: {error}")
-                continue
-            break
+        """Add a question, or edit ``question_id``; repeats until the model accepts it."""
+
+        def check(draft_id: str, draft: dict[str, Any]) -> None:
+            self.model.check({"state": "", "questions": {draft_id: draft}})
+
+        built = build_question(
+            set(self.questions) - {question_id},
+            question_id,
+            dict(self.questions[question_id]) if question_id else {},
+            check=check,
+            suggest=self.free_id,
+        )
+        if built is None:
+            return
+        draft_id, draft = built
         if question_id is None:
             self.questions[draft_id] = draft
         else:
@@ -324,105 +324,9 @@ class Session:
         if bare := undescribed_choices(self.model, {draft_id: draft}):
             say(describe_options_hint(bare, CHAT_DESCRIBE_HOW))
 
-    def ask_question(
-        self, question_id: str | None, draft_id: str | None, current: dict[str, Any]
-    ) -> tuple[str, dict[str, Any]]:
-        kind = self.pick(
-            "Type:",
-            [(name, f"{name:<7} {description}") for name, description in TYPES.items()],
-            default=current.get("type"),
-        )
-        taken = set(self.questions) - {question_id}
-        suggestion = self.free_id(kind)
-        new_id = (
-            self.ask(
-                "id: ",
-                default=draft_id or "",
-                placeholder=None if draft_id else [("fg:ansibrightblack", suggestion)],
-                validator=IdValidator(taken, empty_ok=not draft_id),
-            )
-            or suggestion
-        )
-        old_instructions = current.get("instructions")
-        default = as_text(old_instructions) if old_instructions is not None else ""
-        required = kind == "noul"
-        text = self.ask(
-            "instructions: " if required else "instructions (optional): ",
-            default=default,
-            validator=Validator.from_callable(
-                lambda text: bool(text.strip()) or not required,
-                error_message="a yes/no question needs its text",
-            ),
-        )
-        question: dict[str, Any] = {"type": kind}
-        if text.strip():
-            question["instructions"] = old_instructions if text == default else text.strip()
-        same_type = current.get("type") == kind
-        if kind == "choice":
-            criteria = current.get("criteria") if same_type else None
-            question["criteria"] = self.ask_options(criteria if isinstance(criteria, dict) else {})
-        elif kind == "score":
-            criteria = current.get("criteria") if same_type else None
-            question["criteria"] = self.ask_levels(criteria if isinstance(criteria, list) else [])
-        elif same_type and "criteria" in current:
-            question["criteria"] = current["criteria"]
-        return new_id, question
-
-    def ask_options(self, current: dict[str, Any]) -> dict[str, Any]:
-        shown = [
-            key if value is None else f"{key}: {as_text(value)}" for key, value in current.items()
-        ]
-        if not one_per_line(shown, option_key):
-            say(KEPT.format(what="options"))
-            return current
-        say("options, one per line as 'option' or 'option: description' (blank line ends):")
-        lines = dict(zip(shown, current.items(), strict=True))
-        text = self.ask_block(shown, OptionsValidator())
-        options = {}
-        for line in filter(str.strip, text.splitlines()):
-            if line in lines:
-                key, value = lines[line]
-            else:
-                key, _, description = line.partition(":")
-                key, value = key.strip(), description.strip() or None
-            options[key] = value
-        return options
-
-    def ask_levels(self, current: list[Any]) -> list[Any]:
-        shown = [as_text(value) for value in current]
-        if not one_per_line(shown):
-            say(KEPT.format(what="levels"))
-            return current
-        say("levels, lowest first, one per line (blank line ends):")
-        lines = dict(zip(shown, current, strict=True))
-        text = self.ask_block(shown, None)
-        return [lines.get(line, line.strip()) for line in filter(str.strip, text.splitlines())]
-
-    def ask_block(self, default: list[str], validator: Validator | None) -> str:
-        return PromptSession().prompt(
-            "  ",
-            default="\n".join(default) + "\n" if default else "",
-            multiline=True,
-            key_bindings=block_bindings(commands=False),
-            prompt_continuation=continuation,
-            validator=validator,
-            validate_while_typing=False,
-        )
-
-    def ask(self, message: str, **options) -> str:
-        return PromptSession().prompt(message, **options).strip()
-
-    def pick(self, message: str, options: list[tuple[str, str]], default: str | None = None) -> str:
-        """A menu: arrow keys or the option's number, then Enter."""
-        if default not in dict(options):
-            default = None
-        return shortcuts.choice(
-            message, options=options, default=default, key_bindings=MENU_BINDINGS
-        )
-
     def next_step(self) -> str:
         try:
-            return self.pick("Next:", NEXT_STEPS)
+            return pick("Next:", NEXT_STEPS)
         except (KeyboardInterrupt, EOFError):
             return "start"
 
@@ -432,21 +336,182 @@ class Session:
             for question_id, question in self.questions.items()
         ]
         try:
-            return self.pick(message, options)
+            return pick(message, options)
         except (KeyboardInterrupt, EOFError):
             return None
 
     def confirm(self, message: str) -> bool:
-        try:
-            return shortcuts.confirm(message)
-        except (KeyboardInterrupt, EOFError):
-            return False
+        return confirm(message)
 
     def free_id(self, kind: str) -> str:
         n = 1
         while f"{kind}_{n}" in self.questions:
             n += 1
         return f"{kind}_{n}"
+
+
+# Prompts and menus, shared by chat and the data and training wizards.
+
+
+def ask(message: str, **options) -> str:
+    """One line, stripped."""
+    return PromptSession().prompt(message, **options).strip()
+
+
+def pick(message: str, options: list[tuple[Any, str]], default: Any = None) -> Any:
+    """A menu: arrow keys or the option's number, then Enter."""
+    if default not in dict(options):
+        default = None
+    return shortcuts.choice(message, options=options, default=default, key_bindings=MENU_BINDINGS)
+
+
+def confirm(message: str) -> bool:
+    """Yes or no; cancelling says no."""
+    try:
+        return shortcuts.confirm(message)
+    except (KeyboardInterrupt, EOFError):
+        return False
+
+
+def ask_block(default: list[str], validator: Validator | None) -> str:
+    """Several lines, prefilled with ``default``; a blank line ends them."""
+    return PromptSession().prompt(
+        "  ",
+        default="\n".join(default) + "\n" if default else "",
+        multiline=True,
+        key_bindings=block_bindings(commands=False),
+        prompt_continuation=continuation,
+        validator=validator,
+        validate_while_typing=False,
+    )
+
+
+def build_question(
+    taken: set[str],
+    question_id: str | None = None,
+    current: dict[str, Any] | None = None,
+    *,
+    check=None,
+    suggest=lambda kind: f"{kind}_1",
+    types: tuple[str, ...] = tuple(TYPES),
+    criteria: bool = True,
+    instructions_required: bool = False,
+) -> tuple[str, dict[str, Any]] | None:
+    """Ask for a question, or edit ``current`` (as ``question_id``), until
+    ``check(id, question)`` accepts it (it raises ``DecisionError`` or
+    ``ValueError`` with what is wrong); None when cancelled.
+
+    ``taken`` are ids already in use; ``suggest(kind)`` the id offered when
+    none is typed. ``types`` limits the question types (one: no menu);
+    without ``criteria`` the options and levels are not asked (they come
+    from elsewhere); ``instructions_required`` asks for instructions on
+    every type (a yes/no question always needs them).
+    """
+    draft_id, draft = question_id, dict(current or {})
+    while True:
+        try:
+            draft_id, draft = ask_question(
+                taken, draft_id, draft, suggest, types, criteria, instructions_required
+            )
+        except (KeyboardInterrupt, EOFError):
+            say("cancelled")
+            return None
+        try:
+            if check is not None:
+                check(draft_id, draft)
+        except (DecisionError, ValueError) as error:
+            say(f"error: {error}")
+            continue
+        return draft_id, draft
+
+
+def ask_question(
+    taken: set[str],
+    draft_id: str | None,
+    current: dict[str, Any],
+    suggest,
+    types: tuple[str, ...],
+    criteria: bool,
+    instructions_required: bool,
+) -> tuple[str, dict[str, Any]]:
+    if len(types) == 1:
+        kind = types[0]
+    else:
+        kind = pick(
+            "Type:",
+            [(name, f"{name:<7} {TYPES[name]}") for name in types],
+            default=current.get("type"),
+        )
+    suggestion = suggest(kind)
+    new_id = (
+        ask(
+            "id: ",
+            default=draft_id or "",
+            placeholder=None if draft_id else [("fg:ansibrightblack", suggestion)],
+            validator=IdValidator(taken, empty_ok=not draft_id),
+        )
+        or suggestion
+    )
+    old_instructions = current.get("instructions")
+    default = as_text(old_instructions) if old_instructions is not None else ""
+    required = kind == "noul" or instructions_required
+    text = ask(
+        "instructions: " if required else "instructions (optional): ",
+        default=default,
+        validator=Validator.from_callable(
+            lambda text: bool(text.strip()) or not required,
+            error_message=(
+                "a yes/no question needs its text"
+                if kind == "noul"
+                else "the question needs its text"
+            ),
+        ),
+    )
+    question: dict[str, Any] = {"type": kind}
+    if text.strip():
+        question["instructions"] = old_instructions if text == default else text.strip()
+    same_type = current.get("type") == kind
+    if not criteria:
+        return new_id, question
+    if kind == "choice":
+        found = current.get("criteria") if same_type else None
+        question["criteria"] = ask_options(found if isinstance(found, dict) else {})
+    elif kind == "score":
+        found = current.get("criteria") if same_type else None
+        question["criteria"] = ask_levels(found if isinstance(found, list) else [])
+    elif same_type and "criteria" in current:
+        question["criteria"] = current["criteria"]
+    return new_id, question
+
+
+def ask_options(current: dict[str, Any]) -> dict[str, Any]:
+    shown = [key if value is None else f"{key}: {as_text(value)}" for key, value in current.items()]
+    if not one_per_line(shown, option_key):
+        say(KEPT.format(what="options"))
+        return current
+    say("options, one per line as 'option' or 'option: description' (blank line ends):")
+    lines = dict(zip(shown, current.items(), strict=True))
+    text = ask_block(shown, OptionsValidator())
+    options = {}
+    for line in filter(str.strip, text.splitlines()):
+        if line in lines:
+            key, value = lines[line]
+        else:
+            key, _, description = line.partition(":")
+            key, value = key.strip(), description.strip() or None
+        options[key] = value
+    return options
+
+
+def ask_levels(current: list[Any]) -> list[Any]:
+    shown = [as_text(value) for value in current]
+    if not one_per_line(shown):
+        say(KEPT.format(what="levels"))
+        return current
+    say("levels, lowest first, one per line (blank line ends):")
+    lines = dict(zip(shown, current, strict=True))
+    text = ask_block(shown, None)
+    return [lines.get(line, line.strip()) for line in filter(str.strip, text.splitlines())]
 
 
 # Criteria the line editor would change without being asked to.

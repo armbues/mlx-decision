@@ -48,7 +48,7 @@ server = ["fastapi>=0.110", "uvicorn>=0.29"]
 images = ["pillow>=10", "numpy>=1.26"]
 mcp = ["mcp>=2.3,<3"]
 training = ["datasets>=3.0"]
-dev = ["mlx-decision[server,images,mcp,training]", "pytest", "ruff", "build", "twine"]
+dev = ["mlx-decision[server,images,mcp,training]", "pytest", "pyte", "ruff", "build", "twine"]
 
 [project.urls]
 Homepage = "https://github.com/armbues/mlx-decision"

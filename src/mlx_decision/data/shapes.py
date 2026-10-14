@@ -85,7 +85,7 @@ class Mapping:
     columns: dict[str, str | None]
 
 
-def _candidates(table: Table, role: str, used: set[str]) -> list[str]:
+def candidates(table: Table, role: str, used: set[str]) -> list[str]:
     fitting = [c for c in table.columns.values() if c.kind in KINDS[role] and c.name not in used]
     named = [c.name for c in fitting if c.name.lower() in NAMES[role]]
     if named:
@@ -112,7 +112,7 @@ def _resolve(table: Table, shape: str, given: dict[str, str]) -> Mapping:
     for role in ROLES[shape]:
         if role in columns:
             continue
-        found = _candidates(table, role, used)
+        found = candidates(table, role, used)
         if len(found) == 1:
             columns[role] = found[0]
             used.add(found[0])
@@ -195,7 +195,7 @@ def _raw(value: Any) -> str:
     return str(value)
 
 
-def _class_names(column: Column, table: Table, label_map: dict[str, str] | None) -> list[str]:
+def class_names(column: Column, table: Table, label_map: dict[str, str] | None) -> list[str]:
     """The raw classes of a label column, in order: a class label's names, else
     the label map's keys, else the distinct values sorted."""
     if column.names:
@@ -231,7 +231,7 @@ def _lookup(label_map: dict[str, str] | None, column: Column, value: Any, name: 
 def _classes(table: Table, mapping: Mapping, wording: Wording):
     """The options of a class question: ``(option ids, descriptions)`` in order."""
     column = table.columns[mapping.columns["label"]]
-    names = _class_names(column, table, wording.label_map)
+    names = class_names(column, table, wording.label_map)
     if wording.options:
         return list(wording.options), dict(wording.options)
     if wording.label_map:
@@ -311,6 +311,21 @@ def _yes_no(value: Any) -> str | None:
     return None
 
 
+def rating_values(table: Table, column: Column) -> list[str]:
+    """A rating column's values in order, one level each: a class label's names,
+    whole numbers from the lowest to the highest, or the distinct values."""
+    raws = class_names(column, table, None)
+    if column.kind == INT and raws:
+        # Whole-number ratings keep every level between the lowest and highest.
+        low, high = int(raws[0]), int(raws[-1])
+        if high - low + 1 > MAX_LEVELS:
+            raise SourceError(
+                f"{column.name} runs from {low} to {high}: more than {MAX_LEVELS} levels"
+            )
+        raws = [str(value) for value in range(low, high + 1)]
+    return raws
+
+
 def _levels(table: Table, mapping: Mapping, wording: Wording) -> tuple[list[str], list[Any]]:
     """A rating's raw values in order and the level descriptions."""
     column = table.columns[mapping.columns["label"]]
@@ -323,15 +338,7 @@ def _levels(table: Table, mapping: Mapping, wording: Wording) -> tuple[list[str]
         raise SourceError(
             "a rating's levels are its values in order; use --levels for their descriptions"
         )
-    raws = _class_names(column, table, None)
-    if column.kind == INT and raws:
-        # Whole-number ratings keep every level between the lowest and highest.
-        low, high = int(raws[0]), int(raws[-1])
-        if high - low + 1 > MAX_LEVELS:
-            raise SourceError(
-                f"{column.name} runs from {low} to {high}: more than {MAX_LEVELS} levels"
-            )
-        raws = [str(value) for value in range(low, high + 1)]
+    raws = rating_values(table, column)
     if wording.levels is not None:
         if len(wording.levels) != len(raws):
             raise SourceError(

@@ -1166,7 +1166,7 @@ training_app = typer.Typer(
 app.add_typer(training_app, name="training")
 
 DataOption = Annotated[
-    Path,
+    Path | None,
     typer.Option(
         "--data",
         help='Labelled examples as JSON lines: a request body plus "labels" per line, '
@@ -1187,18 +1187,26 @@ def default_output(model: str, data: Path) -> Path:
     return Path(f"{base or 'model'}-{data.stem}")
 
 
+YesOption = Annotated[
+    bool,
+    typer.Option(
+        "--yes", "-y", help="Take the defaults for what the flags leave open; ask nothing."
+    ),
+]
+
+
 @training_app.command("fit")
 def training_fit(
     model: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--model",
             "-m",
             help="The base: a model folder or Hugging Face repo id, or a fitted model (its "
             "fit is replaced, its base kept).",
         ),
-    ],
-    data: DataOption,
+    ] = None,
+    data: DataOption = None,
     output: Annotated[
         Path | None,
         typer.Option(
@@ -1208,13 +1216,13 @@ def training_fit(
         ),
     ] = None,
     method: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--method",
-            help="auto (the family's own kind, then calibrate), calibrate (every family), "
-            "head (Clef), readout (pplx, H2O-Lightning, d1) or finetune (Laya, Julia).",
+            help="auto (the family's own kind, then calibrate; the default), calibrate (every "
+            "family), head (Clef), readout (pplx, H2O-Lightning, d1) or finetune (Laya, Julia).",
         ),
-    ] = "auto",
+    ] = None,
     validation: Annotated[
         Path | None,
         typer.Option(
@@ -1223,17 +1231,20 @@ def training_fit(
         ),
     ] = None,
     holdout: Annotated[
-        float,
+        float | None,
         typer.Option(
             min=0.0,
             max=0.9,
-            help="Share of --data held out (by label) to score the report.",
+            help="Share of --data held out (by label) to score the report. Default: 0.2.",
         ),
-    ] = 0.2,
+    ] = None,
     seed: Annotated[int, typer.Option(help="Seed of the splits (and the training order).")] = 0,
     epochs: Annotated[
-        int, typer.Option(min=1, help="Epochs of the head and finetune kinds; the best is kept.")
-    ] = 3,
+        int | None,
+        typer.Option(
+            min=1, help="Epochs of the head and finetune kinds; the best is kept. Default: 3."
+        ),
+    ] = None,
     head_only: Annotated[
         bool, typer.Option("--head-only", help="finetune: train the marker head alone.")
     ] = False,
@@ -1247,37 +1258,68 @@ def training_fit(
             "--events",
             help="Print the progress as JSON lines on stdout instead of a progress bar and "
             'the report; a failed run ends with {"stage": "error"}, a cancelled one with '
-            '{"stage": "cancelled"}.',
+            '{"stage": "cancelled"}. Asks nothing.',
         ),
     ] = False,
+    yes: YesOption = False,
 ) -> None:
     """Fit a model to labelled examples and write the fitted model.
 
     The holdout (or --validation) only scores the report; the rest is the
-    training part. Ctrl-C stops at the next step and writes nothing.
+    training part. In a terminal, what the flags leave open is asked in
+    menus (the kind with estimates, the holdout, epochs, the output). Ctrl-C
+    stops at the next step and writes nothing.
     """
     from .training import Cancelled, fit
     from .training.console import Progress, format_fit, interrupt_cancels
+    from .training.wizard import Cancelled as MenusLeft
+    from .training.wizard import FitPlan, ask_fit
 
-    output = output or default_output(model, data)
-    progress = Progress(sys.stderr, sys.stderr.isatty())
+    plan = FitPlan(
+        model=model,
+        data=str(data) if data is not None else None,
+        output=str(output) if output is not None else None,
+        method=method,
+        validation=str(validation) if validation is not None else None,
+        holdout=holdout,
+        seed=seed,
+        epochs=epochs,
+        head_only=head_only,
+        load_options=load_options(None, max_input_tokens),
+        overwrite=overwrite,
+    )
+    asked = plan.is_open() and not (yes or events) and terminal()
+    if asked:
+        try:
+            plan = ask_fit(plan, default_output)
+        except MenusLeft:
+            fail("cancelled")
+        except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
+            fail(str(error))
+    else:
+        if plan.model is None:
+            fail("pass -m MODEL (the base)")
+        if plan.data is None:
+            fail("pass --data FILE.jsonl (labelled examples)")
+        plan.with_defaults(default_output)
+    progress = Progress(sys.stderr, sys.stderr.isatty(), plan=not asked)
     on_event = echo_event if events else progress
     with interrupt_cancels(sys.stderr) as stop:
         try:
             result = fit(
-                model,
-                data,
-                output=output,
-                method=method,
-                validation=validation,
-                holdout=holdout,
-                seed=seed,
-                epochs=epochs,
-                head_only=head_only,
+                plan.model,
+                plan.data,
+                output=plan.output,
+                method=plan.method,
+                validation=plan.validation,
+                holdout=plan.holdout if plan.holdout is not None else 0.2,
+                seed=plan.seed,
+                epochs=plan.epochs,
+                head_only=plan.head_only,
                 on_event=on_event,
                 cancel=stop,
-                overwrite=overwrite,
-                **load_options(None, max_input_tokens),
+                overwrite=plan.overwrite,
+                **plan.load_options,
             )
         except Cancelled:
             progress.close()
@@ -1295,7 +1337,7 @@ def training_fit(
             progress.close()
             message = str(error)
             if isinstance(error, FileExistsError):
-                message = f"{output} exists; pass --overwrite to replace it"
+                message = f"{plan.output} exists; pass --overwrite to replace it"
             if events:
                 echo_event(stage_event("error", message))
             fail(message)
@@ -1313,8 +1355,13 @@ def stage_event(stage: str, message: str):
 
 @training_app.command("eval")
 def training_eval(
-    model: ModelOption,
-    data: DataOption,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model", "-m", help="Model folder or Hugging Face repo id (or a fitted model)."
+        ),
+    ] = None,
+    data: DataOption = None,
     compare: Annotated[
         str | None,
         typer.Option(
@@ -1332,6 +1379,18 @@ def training_eval(
     from .training import Cancelled, evaluate
     from .training.console import Progress, format_eval, interrupt_cancels
 
+    if (model is None or data is None) and terminal():
+        from .training.wizard import Cancelled as MenusLeft
+        from .training.wizard import ask_eval
+
+        try:
+            model, data = ask_eval(model, data)
+        except MenusLeft:
+            fail("cancelled")
+    if model is None:
+        fail("pass -m MODEL")
+    if data is None:
+        fail("pass --data FILE.jsonl (labelled examples)")
     progress = Progress(sys.stderr, sys.stderr.isatty())
     with interrupt_cancels(sys.stderr) as stop:
         try:
@@ -1359,16 +1418,20 @@ def training_eval(
 
 
 def pairs(value: str | None, flag: str) -> dict[str, str] | None:
-    """``a=x,b=y`` as a dict, in order."""
+    """``a=x,b=y`` as a dict, in order (``\\,`` for a comma in a value)."""
+    from .flags import split_pairs
+
     if value is None:
         return None
-    result = {}
-    for part in value.split(","):
-        key, sep, rest = part.partition("=")
-        if not sep or not key.strip():
-            raise typer.BadParameter(f"expected KEY=VALUE,... but got {part!r}", param_hint=flag)
-        result[key.strip()] = rest.strip()
-    return result
+    try:
+        return split_pairs(value)
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint=flag) from None
+
+
+def terminal() -> bool:
+    """Whether menus can be shown: input and output are a terminal."""
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 def question_from_file(path: Path) -> tuple[str, dict]:
@@ -1467,8 +1530,9 @@ def data_command(
     options: Annotated[
         str | None,
         typer.Option(
-            help="Option ids and descriptions: 'id=description,...'. Default: the label names."
-        ),  # fmt: skip
+            help="Option ids and descriptions: 'id=description,...' (\\, for a comma). "
+            "Default: the label names."
+        ),
     ] = None,
     questions_file: Annotated[
         Path | None,
@@ -1484,60 +1548,91 @@ def data_command(
     ] = False,
     levels: Annotated[
         str | None,
-        typer.Option(help="rating: level descriptions, lowest first: 'bad,ok,good'."),
+        typer.Option(
+            help="rating: level descriptions, lowest first: 'bad,ok,good' (\\, for a comma)."
+        ),
     ] = None,
     no_input: Annotated[
-        bool, typer.Option("--no-input", help="Never ask; anything left open is an error.")
+        bool,
+        typer.Option(
+            "--no-input",
+            help="Never ask (also without a terminal); anything left open is an error.",
+        ),
     ] = False,
 ) -> None:
-    """Turn a dataset into labelled examples for training fit (JSON lines)."""
-    from .data.format import write_examples
-    from .data.make import make
+    """Turn a dataset into labelled examples for training fit (JSON lines).
 
-    if output is None and show is None:
-        fail("pass -o FILE.jsonl (or --show N to preview)")
-    wording = {
-        "id": question_id,
-        "instructions": question,
-        "options": pairs(options, "--options"),
-        "label_map": pairs(label_map, "--label-map"),
-        "noul": noul or None,
-        "levels": [level.strip() for level in levels.split(",")] if levels else None,
-    }
+    In a terminal, what the flags leave open is asked in menus, which end by
+    printing the command that does the same without them.
+    """
+    from .data.format import write_examples
+    from .data.make import DataPlan
+    from .flags import split_list
+
+    plan = DataPlan(
+        source=source,
+        output=str(output) if output is not None else None,
+        preset=preset,
+        config=config,
+        split=split,
+        revision=revision,
+        limit=limit,
+        sample=sample,
+        seed=seed,
+        show=show,
+        shape=shape,
+        columns={
+            "text": text,
+            "label": label,
+            "premise": premise,
+            "hypothesis": hypothesis,
+            "question": question_column,
+            "choices": choices,
+            "answer": answer,
+            "context": context,
+        },
+        question_id=question_id,
+        instructions=question,
+        options=pairs(options, "--options"),
+        label_map=pairs(label_map, "--label-map"),
+        noul=noul,
+        levels=split_list(levels) if levels else None,
+    )
     if questions_file is not None:
         if question is not None or options is not None:
             fail("-q holds the whole question; drop --question and --options")
-        file_id, wording["question"] = question_from_file(questions_file)
-        wording["id"] = question_id or file_id
-    columns = {
-        "text": text,
-        "label": label,
-        "premise": premise,
-        "hypothesis": hypothesis,
-        "question": question_column,
-        "choices": choices,
-        "answer": answer,
-        "context": context,
-    }
+        file_id, plan.question = question_from_file(questions_file)
+        plan.questions_file = str(questions_file)
+        plan.question_id = question_id or file_id
+    open_steps = (
+        (plan.source is None and plan.preset is None)
+        or (plan.output is None and plan.show is None)
+        or not plan.has_wording()
+    )
     try:
-        made = make(
-            source,
-            preset=preset,
-            config=config,
-            split=split,
-            revision=revision,
-            limit=limit,
-            sample=sample,
-            seed=seed,
-            shape=shape,
-            columns=columns,
-            wording=wording,
-        )
+        if open_steps and not no_input and terminal():
+            from .data.wizard import Cancelled, ask_data, same_without_menus
+
+            try:
+                plan, made = ask_data(plan)
+            except Cancelled:
+                fail("cancelled")
+            if plan.show is not None:
+                typer.echo(same_without_menus(plan), err=True)
+                return
+            write_examples(plan.output, made.examples)  # the summary was in the preview
+            typer.echo(f"wrote {plan.output}", err=True)
+            typer.echo(same_without_menus(plan), err=True)
+            return
+        else:
+            if plan.output is None and plan.show is None:
+                fail("pass -o FILE.jsonl (or --show N to preview)")
+            made = plan.make()
+            if plan.show is not None:
+                show_made(made, plan.show)
+                return
     except (DecisionError, FileNotFoundError, ValueError) as error:
         fail(str(error))
-    if show is not None:
-        show_made(made, show)
-        return
-    write_examples(output, made.examples)
+    write_examples(plan.output, made.examples)
     typer.echo(summary_of_made(made), err=True)
-    typer.echo(f"wrote {output}", err=True)
+    typer.echo(f"wrote {plan.output}", err=True)

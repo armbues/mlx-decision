@@ -111,3 +111,105 @@ def _preset(name: str, split: str | None, limit, sample, seed) -> Made:
         request = {"state": item["state"], "questions": item["questions"]}
         made.append(Example(item["id"], request, {question_id: item["gold"]}))
     return Made(checked(made), table, None)
+
+
+# The flag of each column role, in the order commands list them.
+COLUMN_FLAGS = {
+    "text": "--text",
+    "label": "--label",
+    "premise": "--premise",
+    "hypothesis": "--hypothesis",
+    "question": "--question-column",
+    "choices": "--choices",
+    "answer": "--answer",
+    "context": "--context",
+}
+
+
+@dataclass
+class DataPlan:
+    """What a ``data`` run does, as its flags say it (and as the menus fill it
+    in): ``arguments()`` gives the flags back, so the menus can print the
+    command they stand for."""
+
+    source: str | None = None
+    output: str | None = None
+    preset: str | None = None
+    config: str | None = None
+    split: str | None = None
+    revision: str | None = None
+    limit: int | None = None
+    sample: int | None = None
+    seed: int = 0
+    show: int | None = None
+    shape: str | None = None
+    columns: dict[str, str | None] = field(default_factory=dict)
+    question_id: str | None = None
+    instructions: str | None = None
+    options: dict[str, str] | None = None
+    label_map: dict[str, str] | None = None
+    noul: bool = False
+    levels: list[str] | None = None
+    questions_file: str | None = None
+    question: dict[str, Any] | None = None  # read from ``questions_file``
+
+    def wording(self) -> dict[str, Any]:
+        return {
+            "id": self.question_id,
+            "instructions": self.instructions,
+            "options": self.options,
+            "label_map": self.label_map,
+            "noul": self.noul or None,
+            "levels": self.levels,
+            "question": self.question,
+        }
+
+    def has_wording(self) -> bool:
+        """Whether the question's wording is given (a preset brings its own)."""
+        return bool(self.preset or self.instructions or self.question or self.shape == "yesno")
+
+    def make(self) -> Made:
+        return make(
+            self.source,
+            preset=self.preset,
+            config=self.config,
+            split=self.split,
+            revision=self.revision,
+            limit=self.limit,
+            sample=self.sample,
+            seed=self.seed,
+            shape=self.shape,
+            columns=self.columns,
+            wording=self.wording(),
+        )
+
+    def arguments(self) -> list[str]:
+        """The flags, in the order ``data --help`` lists them."""
+        from ..flags import join_list, join_pairs
+
+        words = [self.source] if self.source else []
+        named = [
+            ("--preset", self.preset),
+            ("--config", self.config),
+            ("--split", self.split),
+            ("--revision", self.revision),
+            ("--limit", self.limit),
+            ("--sample", self.sample),
+            ("--seed", self.seed if self.sample is not None and self.seed else None),
+            ("--shape", self.shape),
+            *((flag, self.columns.get(role)) for role, flag in COLUMN_FLAGS.items()),
+            ("--questions", self.questions_file),
+            ("--id", self.question_id),
+            ("--question", self.instructions),
+            ("--options", join_pairs(self.options) if self.options else None),
+            ("--label-map", join_pairs(self.label_map) if self.label_map else None),
+            ("--levels", join_list(self.levels) if self.levels else None),
+            ("--show", self.show),
+            ("-o", self.output),
+        ]
+        for flag, value in named:
+            if value is not None:
+                words += [flag, str(value)]
+        if self.noul:
+            words.append("--noul")
+        return words

@@ -138,7 +138,7 @@ def _warnings(training: list[Example]) -> list[str]:
     return warnings
 
 
-def _label_counts(examples: list[Example]) -> dict[str, dict[str, int]]:
+def label_counts(examples: list[Example]) -> dict[str, dict[str, int]]:
     counts: dict[str, Counter] = {}
     for example in examples:
         for question_id, label in example.labels.items():
@@ -395,6 +395,64 @@ def _compact(metrics: dict[str, dict]) -> dict[str, dict]:
     return {key: metrics[key] for key in keys if metrics.get(key) is not None}
 
 
+@dataclass
+class Prepared:
+    """What a fit starts from, read and checked before any model loads: the
+    base, the data (and validation data), the splits and the data's warnings."""
+
+    origin: _Base
+    source: Data
+    held: Data | None
+    splits: Any
+    warnings: list[str]
+    load_options: dict
+
+    @property
+    def family(self) -> str:
+        return self.origin.family.name
+
+    def estimate(self, kinds: list[str], epochs: int, head_only: bool) -> plan.Estimate:
+        """Time and peak memory of a run with ``kinds``."""
+        return plan.estimate(
+            self.family, kinds, self.origin.path, self.load_options, self.splits, epochs, head_only
+        )
+
+    def extra(self, kinds: list[str], head_only: bool) -> int:
+        """Memory the kinds need beyond the model's weights."""
+        every = self.splits.holdout + self.splits.fit + self.splits.dev
+        questions = plan.labelled(every)
+        tokens = max((plan.clef_tokens(example) for example in every), default=0)
+        return max(
+            plan.kind_bytes(kind, self.origin.path, self.load_options, head_only, questions, tokens)
+            for kind in kinds
+        )
+
+
+def prepare(
+    base: str | Path,
+    data: str | Path | list[Example],
+    *,
+    validation: str | Path | list[Example] | None = None,
+    holdout: float = 0.2,
+    seed: int = 0,
+    load_options: dict | None = None,
+) -> Prepared:
+    """Read the data and find the base, as a fit's check stage does (no model loads)."""
+    load_options = dict(load_options or {})
+    source = read_data(data)
+    held = read_data(validation) if validation is not None else None
+    origin = _base(base)
+    check_options(origin.family, load_options)
+    splits = training_splits(
+        source.examples,
+        holdout=holdout,
+        validation=held.examples if held is not None else None,
+        seed=seed,
+    )
+    warnings = _warnings(splits.fit + splits.dev)
+    return Prepared(origin, source, held, splits, warnings, load_options)
+
+
 def fit(
     base: str | Path,
     data: str | Path | list[Example],
@@ -453,34 +511,20 @@ def fit(
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"{output} exists (pass overwrite to replace it)")
-    source = read_data(data)
-    held = read_data(validation) if validation is not None else None
-    origin = _base(base)
-    check_options(origin.family, load_options)
+    prepared = prepare(
+        base, data, validation=validation, holdout=holdout, seed=seed, load_options=load_options
+    )
+    source, held, origin, splits = prepared.source, prepared.held, prepared.origin, prepared.splits
     kinds = plan.resolve(origin.family.name, method)
     if head_only and "finetune" not in kinds:
         raise ValueError("head_only applies to finetune")
-    splits = training_splits(
-        source.examples,
-        holdout=holdout,
-        validation=held.examples if held is not None else None,
-        seed=seed,
-    )
     training = splits.fit + splits.dev
-    warnings = _warnings(training)
+    warnings = prepared.warnings
     for warning in warnings:
         emit(Event("check", message=f"warning: {warning}"))
     trainer = kinds[0] if kinds[0] != "calibrate" else None
-    estimate = plan.estimate(
-        origin.family.name, kinds, origin.path, load_options, splits, epochs, head_only
-    )
-    every = splits.holdout + training
-    questions = plan.labelled(every)
-    tokens = max((plan.clef_tokens(example) for example in every), default=0)
-    extra = max(
-        plan.kind_bytes(kind, origin.path, load_options, head_only, questions, tokens)
-        for kind in kinds
-    )
+    estimate = prepared.estimate(kinds, epochs, head_only)
+    extra = prepared.extra(kinds, head_only)
     check_fits(origin.path, load_options, name=origin.name, extra=extra, source=str(origin.path))
     emit(
         Event(
@@ -490,7 +534,7 @@ def fit(
                 "holdout": len(splits.holdout),
                 "fit": len(splits.fit),
                 "dev": len(splits.dev),
-                "labels": _label_counts(training),
+                "labels": label_counts(training),
                 "kinds": kinds,
                 "estimate": estimate.as_json(),
             },
@@ -628,7 +672,7 @@ def fit(
             "holdout": len(splits.holdout),
             "fit": len(splits.fit),
             "dev": len(splits.dev),
-            "labels": _label_counts(training),
+            "labels": label_counts(training),
             "refused": sum(item.raw is None for item in holdout_scored + training_scored),
             "truncated": sum(item.truncated for item in holdout_scored + training_scored),
         },

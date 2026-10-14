@@ -34,9 +34,10 @@ def duration(seconds: float) -> str:
 class Progress:
     """An ``on_event`` callback that shows events on ``stream``."""
 
-    def __init__(self, stream: TextIO, terminal: bool):
+    def __init__(self, stream: TextIO, terminal: bool, plan: bool = True):
         self.stream = stream
         self.terminal = terminal
+        self.plan = plan  # show the check stage's plan (not when the menus showed it)
         self.drawn = False  # a bar is on the current line
         self.shown: tuple = ()  # stage and tenth last shown without a terminal
 
@@ -52,7 +53,7 @@ class Progress:
             self._step(event)
         if event.message:
             self._line(f"{event.stage}: {event.message}")
-        if event.stage == "check" and event.metrics and "estimate" in event.metrics:
+        if self.plan and event.stage == "check" and event.metrics and "estimate" in event.metrics:
             for line in plan_lines(event.metrics):
                 self._line(line)
 

@@ -138,24 +138,44 @@ def _pick(kind: str, given: str | None, available: list[str], flag: str, what: s
     raise SourceError(f"{what} has several {kind}s; pass {flag} ({', '.join(available)})")
 
 
+def hub_configs(repo: str, revision: str | None = None) -> list[str]:
+    """A Hub dataset's configs; empty when it has only the default one."""
+    datasets = _datasets()
+    try:
+        configs = datasets.get_dataset_config_names(repo, revision=revision)
+    except Exception as error:  # the Hub's errors are many and vary by version
+        raise SourceError(
+            f"{HUB_PREFIX}{repo} cannot be read from the Hugging Face Hub: {error}"
+        ) from None
+    return [] if list(configs or []) == ["default"] else list(configs or [])
+
+
+def hub_splits(repo: str, config: str | None = None, revision: str | None = None) -> list[str]:
+    """A Hub dataset's splits (of ``config``)."""
+    return list(_datasets().get_dataset_split_names(repo, config, revision=revision))
+
+
+def saved_splits(path: Path) -> list[str]:
+    """A saved dataset folder's splits; empty when it holds one dataset."""
+    datasets = _datasets()
+    loaded = datasets.load_from_disk(str(path))
+    return list(loaded) if isinstance(loaded, datasets.DatasetDict) else []
+
+
 def load_hub(
     repo: str, config: str | None = None, split: str | None = None, revision: str | None = None
 ) -> Table:
     """A split of a Hugging Face dataset, through the HF cache."""
     datasets = _datasets()
     what = f"{HUB_PREFIX}{repo}"
-    try:
-        configs = datasets.get_dataset_config_names(repo, revision=revision)
-    except Exception as error:  # the Hub's errors are many and vary by version
-        raise SourceError(f"{what} cannot be read from the Hugging Face Hub: {error}") from None
-    if configs and configs != ["default"]:
+    configs = hub_configs(repo, revision)
+    if configs:
         config = _pick("config", config, configs, "--config", what)
-    elif config is not None and config not in (configs or []):
+    elif config is not None:
         raise SourceError(f"{what} has no config {config!r}")
-    splits = datasets.get_dataset_split_names(repo, config, revision=revision)
-    split = _pick(
-        "split", split, list(splits), "--split", what + (f" ({config})" if config else "")
-    )
+    splits = hub_splits(repo, config, revision)
+    where = what + (f" ({config})" if config else "")
+    split = _pick("split", split, splits, "--split", where)
     dataset = datasets.load_dataset(repo, config, split=split, revision=revision)
     origin = {"repo": repo, "config": config, "split": split, "revision": revision}
     return _from_dataset(dataset, repo.rsplit("/", 1)[-1], split, origin)
