@@ -20,7 +20,7 @@ from mcp.server.stdio import stdio_server
 
 from . import __version__
 from .errors import DecisionError
-from .fitted import QUESTION_KINDS
+from .fitted import QUESTION_KINDS, WEIGHT_KINDS
 from .images import check_data_urls
 from .model import DecisionModel
 
@@ -144,10 +144,13 @@ def family_hints(info: dict[str, Any], allow_image_paths: bool) -> list[str]:
         )
     if (fit := info.get("fit")) and any(kind in QUESTION_KINDS for kind in fit["kinds"]):
         ids = ", ".join(f"`{question_id}`" for question_id in fit["questions"])
+        if any(kind in WEIGHT_KINDS for kind in fit["kinds"]):
+            others = "other questions are answered without the fit's calibration."
+        else:
+            others = "other questions are answered by its base model."
         hints.append(
             f"It was fitted on these questions: {ids}. Ask them with the same ids and "
-            "options to get the fitted answers; other questions are answered by its base "
-            "model."
+            f"options to get the fitted answers; {others}"
         )
     if info["supports_images"]:
         where = "data URLs (data:image/png;base64,...)"

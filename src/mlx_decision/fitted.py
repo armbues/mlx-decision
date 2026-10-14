@@ -203,9 +203,15 @@ class FittedBackend:
             if question_id not in self.warned and self.fit.index(question_id, question) is None
         ]
         self.warned.update(new)
+        # Fitted weights (a fine-tune, Clef's head) answer every question; only the
+        # calibration and readouts are per question.
+        if any(kind in WEIGHT_KINDS for kind in self.fit.kinds):
+            answers = "its fitted weights answer it without the calibration"
+        else:
+            answers = "the base answers it"
         return [
             f"{self.name}: question {question_id!r} is not one it was fitted on (same id and "
-            "options); the base answers it"
+            f"options); {answers}"
             for question_id in new
         ]
 

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mlx-decision"
 dynamic = ["version"]
-description = "Run decision models such as Cloudflare's Clef locally on Apple Silicon with MLX"
+description = "Run and fine-tune decision models such as Cloudflare's Clef locally on Apple Silicon with MLX"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT AND Apache-2.0"

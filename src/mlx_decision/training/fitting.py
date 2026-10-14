@@ -35,7 +35,7 @@ from ..fitted import (
 )
 from ..fitted import write as write_fitted
 from ..hub import resolve_model_path
-from ..memory import check_fits
+from ..memory import ModelTooLargeError, check_fits, gb, required_bytes
 from ..model import DecisionModel, load
 from ..registry import FITTED, check_options, detect_family
 from ..types import parse_request
@@ -465,6 +465,37 @@ def prepare(
     return Prepared(origin, source, held, splits, warnings, load_options)
 
 
+def check_memory(prepared: Prepared, kinds: list[str], head_only: bool) -> None:
+    """Refuse a run over the working set, naming the smaller runs that would fit."""
+    origin = prepared.origin
+    try:
+        check_fits(
+            origin.path,
+            prepared.load_options,
+            name=origin.name,
+            extra=prepared.extra(kinds, head_only),
+            source=str(origin.path),
+            extra_for="training",
+            override=None,
+        )
+    except ModelTooLargeError as error:
+        smaller = []
+        if "finetune" in kinds and not head_only:
+            smaller.append(("training the head alone (--head-only", kinds, True))
+        if kinds != ["calibrate"]:
+            smaller.append(("a calibration alone (--method calibrate", ["calibrate"], False))
+        weights = required_bytes(origin.path, prepared.load_options)
+        fitting = [
+            f"{what}, about {gb(weights + prepared.extra(other, only))})"
+            for what, other, only in smaller
+            if weights + prepared.extra(other, only) <= error.available
+        ]
+        if not fitting:
+            raise
+        message = f"{error} What would fit: {' or '.join(fitting)}."
+        raise ModelTooLargeError(message, error.required, error.available) from None
+
+
 def fit(
     base: str | Path,
     data: str | Path | list[Example],
@@ -539,8 +570,7 @@ def fit(
         emit(Event("check", message=f"warning: {warning}"))
     trainer = kinds[0] if kinds[0] != "calibrate" else None
     estimate = prepared.estimate(kinds, head_only)
-    extra = prepared.extra(kinds, head_only)
-    check_fits(origin.path, load_options, name=origin.name, extra=extra, source=str(origin.path))
+    check_memory(prepared, kinds, head_only)
     emit(
         Event(
             "check",

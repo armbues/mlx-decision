@@ -12,7 +12,7 @@ import typer
 from .errors import DecisionError, PlatformError
 
 app = typer.Typer(
-    help="Run decision models on Apple Silicon.",
+    help="Run and fine-tune decision models on Apple Silicon.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -535,7 +535,8 @@ def chat(
 
 
 def warn_unfitted(model, body: dict[str, Any]) -> None:
-    """Warn about questions a fitted model was not fitted on (the base answers them)."""
+    """Warn about questions a fitted model was not fitted on (answered without the fit's
+    calibration and readouts)."""
     from .fitted import unfitted_warnings
 
     for message in unfitted_warnings(model, body):

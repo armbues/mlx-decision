@@ -7,6 +7,62 @@ change the interface).
 
 ## [Unreleased]
 
+### Added
+
+- Training: every model can be fitted to labelled examples of your own
+  task on the Mac it runs on, and the result is served like any other
+  model. The guide is `docs/TRAINING.md`; the README has a summary
+  ("Fine-tune on your data"). Measured on test splits, for example:
+  Julia-1 on TREC 16.0 → 97.4% in 2 minutes, H2O-Lightning-4B 85.2 →
+  97.4% and d1-3B 86.6 → 96.4% on TREC, laya on TweetEval Offensive
+  77.8 → 84.7%, clef-flash's ECE on ANLI-R3 20.9 → 2.8.
+
+- `mlx-decision training fit -m BASE --data FILE.jsonl` writes a fitted
+  model. Four kinds (`--method`; `auto` picks the family's own and
+  follows it with a calibration): `calibrate` for every family (a
+  temperature per question, plus a bias per option for a question asked
+  the same way throughout), `readout` for pplx, H2O-Lightning and d1
+  (each option's readout row and a bias, on the frozen network), `head`
+  for Clef (the decision head, on backbone states stored on disk for
+  the run), `finetune` for Laya and Julia (the whole encoder and head,
+  or the head alone with `--head-only`). A fifth of the data is held back
+  for the before / after report (`--holdout`, or `--validation FILE`); a
+  dev slice of the rest picks the readout's settings and the best epoch,
+  and stops a run early when an epoch gets worse (`--no-early-stop`).
+  The peak memory is estimated and checked against the Mac's working
+  set before the model loads. `--events` prints the progress as JSON
+  lines, and Ctrl-C stops the run without writing anything.
+
+- Fitted models are folders holding only the trained tensors, a report
+  and a reference to their base (a Hub repo id at its commit, or a
+  path), checked by a fingerprint when loaded, so a missing or changed
+  base is refused. They load wherever a model does: `load`, `-m` on
+  `run`, `chat`, `server` and `mcp`, a folder of models, the Jev SDK's
+  `model=`. Fits that leave the weights alone (calibrate, readout) share
+  their loaded base, so several of them cost the memory of one model.
+  Questions a fit was not made for are answered without it, with a
+  warning in `run` and `chat`.
+
+- `mlx-decision training eval -m MODEL --data FILE.jsonl` scores models on
+  labelled data: accuracy, macro-F1, ECE (and MAE for scores), refusals
+  and a confusion matrix per question; `--compare OTHER` adds a second
+  model, loaded after the first is released; `--json`.
+
+- `mlx-decision data SOURCE -o FILE.jsonl` turns a dataset into training
+  data: Hugging Face datasets (`hf:ORG/NAME`, needs the new `training`
+  extra), CSV, JSONL and Parquet files and saved `datasets` folders, in
+  five shapes (text, pair, multiple choice, yes/no, rating) guessed from
+  the columns. `--show N` previews. Presets give the coverage suite's
+  five datasets with their wording, at pinned commits.
+
+- In a terminal, `data` and `training fit` ask in menus for what their
+  flags leave open (the source, columns and question; the kind with its
+  peak memory, the holdout, the output) and print the equivalent command
+  line. `--no-input` and `--yes` turn the menus off.
+
+- Python: `mlx_decision.training.fit(...)` and `evaluate(...)`, with
+  progress events and a cancel flag.
+
 ### Fixed
 
 - The error for a folder that is no supported decision model (also shown

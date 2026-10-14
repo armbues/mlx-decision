@@ -1,14 +1,14 @@
 # mlx-decision
 
-Run decision models locally on Apple Silicon with [MLX](https://github.com/ml-explore/mlx).
+Run and fine-tune decision models locally on Apple Silicon with [MLX](https://github.com/ml-explore/mlx).
 
 A decision model reads a *state* (a message, a document, any JSON) and a set
 of typed *questions*, and returns a probability for every allowed answer in
 a single forward pass, without generating text. mlx-decision is to decision
 models what `mlx-lm` is to LLMs: load a model, ask it questions from Python
 or the command line, serve it over HTTP with an API compatible with
-[Jev's](https://typesafe.ai), or hand it to agents as an
-[MCP](#agents-mcp) tool.
+[Jev's](https://typesafe.ai), hand it to agents as an
+[MCP](#agents-mcp) tool, or [fit it to your own data](#fine-tune-on-your-data).
 
 | Model | Size | Input | Limit | Memory | Short request | Speedup | Good at |
 |---|---|---|---|---|---|---|---|
@@ -46,6 +46,7 @@ pip install mlx-decision                    # library and the mlx-decision comma
 pip install "mlx-decision[images]"          # plus image input (Pillow, NumPy)
 pip install "mlx-decision[server]"          # plus the HTTP server (FastAPI, uvicorn)
 pip install "mlx-decision[mcp]"             # plus the MCP server for agents
+pip install "mlx-decision[training]"        # plus Hugging Face datasets for `data`
 pip install "mlx-decision[server,images]"   # several extras at once
 ```
 
@@ -455,6 +456,88 @@ answers one call at a time (others queue), and takes images as data URLs
 only: it reads no files on behalf of a client. The API key works as for
 [`server`](#server) (`--api-key` or `MLX_DECISION_API_KEY`); without one,
 requests are not checked.
+
+## Fine-tune on your data
+
+Every model here can be fitted to labelled examples of your own task,
+on the Mac it runs on, in minutes. The result is a small folder that
+points at its base and loads like any model (`-m`, `load`, the
+server's `model=`). `training fit` picks the kind of fit the family
+takes:
+
+| Model | Kind | Data (train split) | Accuracy | ECE | Time | Peak |
+|---|---|---|---|---|---|---|
+| clef-flash (8-bit) | head | ANLI-R3, 2,000 rows | 50.3 → 52.7% | 20.9 → 21.4 | 10 min | 15.1 GB |
+| clef-flash (8-bit) | calibrate | 500 rows of each of five datasets | ANLI-R3: 50.3 → 52.2% | 20.9 → 2.8 | 11 min | 11.9 GB |
+| H2O-Lightning-4B | readout | TREC, 5,452 rows | 85.2 → 97.4% | 4.7 → 1.4 | 13 min | 10.6 GB |
+| d1-3B | readout | TREC, 5,452 rows | 86.6 → 96.4% | 5.5 → 1.4 | 4 min | 6.1 GB |
+| laya | finetune | TweetEval Offensive, 11,916 rows | 77.8 → 84.7% | 7.7 → 5.0 | 17 min | 8.9 GB |
+| Julia-1 | finetune | TREC, 5,452 rows | 16.0 → 97.4% | 63.1 → 1.9 | 2 min | 4.8 GB |
+
+Scored on each dataset's test split, on an Apple M5 Pro. ECE (expected
+calibration error, lower is better) says how far the probabilities are
+from how often the model is right. The calibration row is one fit for
+five questions (ANLI-R3's rows from its dev split); it lowered ECE on
+the other four datasets too. pplx takes a readout fit like H2O-Lightning and d1,
+but needs a Mac with 32 GB or more for it and has not been measured.
+
+The training data is JSON lines: a request body plus the correct
+answers.
+
+```json
+{"state": "My card was charged twice.", "questions": {"team": {"type": "choice", "instructions": "Which team handles this ticket?", "criteria": {"billing": "Payments, refunds, invoices", "tech": "Crashes, bugs, errors"}}}, "labels": {"team": "billing"}}
+```
+
+`mlx-decision data` writes such a file from a Hugging Face dataset (the
+`training` extra), a CSV, JSONL or Parquet file. It guesses which
+columns hold the text and the label, and takes the question's wording
+from you. Five benchmark datasets come as presets:
+
+```bash
+pip install "mlx-decision[training]"
+mlx-decision data hf:dair-ai/emotion --config split --split train -o emotion.jsonl \
+  --question "Which emotion does the text express most?"
+mlx-decision data --preset trec --split train -o trec-train.jsonl
+mlx-decision data --preset trec --split test -o trec-test.jsonl
+mlx-decision data --preset anli-r3 --split train_r3 --sample 2000 -o anli-train.jsonl
+```
+
+One run per kind:
+
+```bash
+# Laya, Julia: fine-tune the encoder and head (--head-only: the head alone)
+mlx-decision training fit -m SupersonicLabs/Julia-1 --data trec-train.jsonl -o julia-trec
+
+# pplx, H2O-Lightning, d1: retrain the option readout on the frozen network
+mlx-decision training fit -m LiquidAI/d1-3B --data trec-train.jsonl -o d1-trec
+
+# Clef: train the decision head on the frozen backbone (8-bit copy on a 24 GB Mac)
+mlx-decision training fit -m clef-flash-q8 --data anli-train.jsonl -o clef-anli
+
+# every family: calibrate the probabilities only (seconds after one scoring pass)
+mlx-decision training fit -m convaiinnovations/laya --data emotion.jsonl --method calibrate
+```
+
+Each run holds back a fifth of the data, reports accuracy, macro-F1 and
+ECE on it before and after, and ends with a calibration fitted on a
+slice of the training part. That calibration can only be as good as
+the data is like what the model will be asked: fitted on data the model
+finds much easier than its real work, it makes the model overconfident.
+Then compare on data the fit has not seen, and use the result:
+
+```bash
+mlx-decision training eval -m julia-trec --data trec-test.jsonl --compare SupersonicLabs/Julia-1
+mlx-decision chat -m julia-trec
+```
+
+In a terminal without flags, `data` and `training fit` ask for what they
+need in menus (the kinds with their peak memory, for example) and end by
+printing the equivalent command. Before loading, `training fit` checks
+its estimated peak memory against the Mac's working set, and refuses a
+run that does not fit, naming smaller ones that would. The kinds, their
+defaults, memory and time per family, the dataset shapes and the Python
+API (`mlx_decision.training.fit`) are in
+[docs/TRAINING.md](https://github.com/armbues/mlx-decision/blob/main/docs/TRAINING.md).
 
 ## Models
 
@@ -886,7 +969,8 @@ weights.
 
 ## Licence
 
-MIT, see `LICENSE`. The Qwen3.5 and LFM2 model code is adapted from
+MIT, see `LICENSE`. The Qwen3.5 and LFM2 model code and the gradient
+checkpointing used for fine-tuning are adapted from
 [mlx-lm](https://github.com/ml-explore/mlx-lm) (MIT, Apple Inc.); the Clef
 input encoding and head are ported from Cloudflare's release; the image
 preprocessing, vision tower, image positions and the ModernBERT encoder

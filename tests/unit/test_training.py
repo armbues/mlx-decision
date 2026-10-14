@@ -198,6 +198,24 @@ def test_kinds_per_family():
         plan.resolve("laya", "readout")
 
 
+def test_a_run_over_the_working_set_names_the_smaller_runs_that_fit(tmp_path, monkeypatch):
+    from mlx_decision.training.fitting import prepare
+
+    laya = write_marker(tmp_path / "laya", "laya")
+    prepared = prepare(laya, examples(60))
+    full = prepared.estimate(["finetune", "calibrate"], False).peak_bytes
+    head = prepared.estimate(["finetune", "calibrate"], True).peak_bytes
+    assert head < full
+    monkeypatch.setattr("mlx_decision.memory.working_set", lambda: head)
+    with pytest.raises(ModelTooLargeError) as error:
+        fit(laya, examples(60), output=tmp_path / "fit")
+    message = str(error.value)
+    assert "GB for training)" in message and "--no-memory-check" not in message
+    assert "What would fit: training the head alone (--head-only, about" in message
+    assert "or a calibration alone (--method calibrate, about" in message
+    assert not (tmp_path / "fit").exists()
+
+
 def test_the_estimate_counts_memory_only(tmp_path, base):
     estimate = plan.estimate(["calibrate"], base, {}, training_splits(examples(10)))
     assert not hasattr(estimate, "seconds") and set(estimate.as_json()) == {"peak_gb"}

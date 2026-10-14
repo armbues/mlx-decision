@@ -265,6 +265,21 @@ def test_mcp_tells_agents_which_questions_were_fitted(tmp_path, base):
     assert "fitted on" not in " ".join(family_hints(mlx_decision.load(base).info(), False))
 
 
+def test_questions_outside_a_weight_fit_are_answered_by_its_weights(base):
+    from mlx_decision.mcp_server import family_hints
+
+    fit = Fit(["finetune", "calibrate"], team_fit().questions, {0: CALIBRATION})
+    backend = fitted.FittedBackend("tuned", mlx_decision.load(base).backend, fit, {})
+    questions = parse_request({"state": "", "questions": {"urgent": {"type": "noul"}}}).questions
+    assert backend.unfitted(questions) == [
+        "tuned: question 'urgent' is not one it was fitted on (same id and options); "
+        "its fitted weights answer it without the calibration"
+    ]
+    info = {**mlx_decision.load(base).info(), "fit": {"kinds": fit.kinds, "questions": ["team"]}}
+    hints = " ".join(family_hints(info, allow_image_paths=False))
+    assert "other questions are answered without the fit's calibration." in hints
+
+
 def test_mcp_checks_options_against_the_base_family(tmp_path):
     from typer.testing import CliRunner
 
