@@ -1157,3 +1157,202 @@ def benchmark(
         typer.echo(format_report(report))
     if out is not None:
         typer.echo(f"results written to {out}", err=True)
+
+
+training_app = typer.Typer(
+    help="Fit a model to your labelled data, and score models on it.",
+    no_args_is_help=True,
+)
+app.add_typer(training_app, name="training")
+
+DataOption = Annotated[
+    Path,
+    typer.Option(
+        "--data",
+        help='Labelled examples as JSON lines: a request body plus "labels" per line, '
+        'e.g. {"state": "...", "questions": {...}, "labels": {"team": "billing"}}.',
+    ),
+]
+
+
+def echo_event(event) -> None:
+    """An event as one JSON line on stdout, at once."""
+    typer.echo(json.dumps(event.as_json(), ensure_ascii=False))
+    sys.stdout.flush()
+
+
+def default_output(model: str, data: Path) -> Path:
+    """``<base>-<data name>`` in the current folder."""
+    base = model.rstrip("/").rsplit("/", 1)[-1] if "/" in model else Path(model).name
+    return Path(f"{base or 'model'}-{data.stem}")
+
+
+@training_app.command("fit")
+def training_fit(
+    model: Annotated[
+        str,
+        typer.Option(
+            "--model",
+            "-m",
+            help="The base: a model folder or Hugging Face repo id, or a fitted model (its "
+            "fit is replaced, its base kept).",
+        ),
+    ],
+    data: DataOption,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Folder for the fitted model. Default: <base>-<data name> in this folder.",
+        ),
+    ] = None,
+    method: Annotated[
+        str,
+        typer.Option(
+            "--method",
+            help="auto (the family's own kind, then calibrate), calibrate (every family), "
+            "head (Clef), readout (pplx, H2O-Lightning, d1) or finetune (Laya, Julia).",
+        ),
+    ] = "auto",
+    validation: Annotated[
+        Path | None,
+        typer.Option(
+            "--validation",
+            help="Labelled examples that score the report, instead of a holdout of --data.",
+        ),
+    ] = None,
+    holdout: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=0.9,
+            help="Share of --data held out (by label) to score the report.",
+        ),
+    ] = 0.2,
+    seed: Annotated[int, typer.Option(help="Seed of the splits (and the training order).")] = 0,
+    epochs: Annotated[
+        int, typer.Option(min=1, help="Epochs of the head and finetune kinds; the best is kept.")
+    ] = 3,
+    head_only: Annotated[
+        bool, typer.Option("--head-only", help="finetune: train the marker head alone.")
+    ] = False,
+    max_input_tokens: MaxInputOption = None,
+    overwrite: Annotated[
+        bool, typer.Option("--overwrite", help="Replace the output folder if it exists.")
+    ] = False,
+    events: Annotated[
+        bool,
+        typer.Option(
+            "--events",
+            help="Print the progress as JSON lines on stdout instead of a progress bar and "
+            'the report; a failed run ends with {"stage": "error"}, a cancelled one with '
+            '{"stage": "cancelled"}.',
+        ),
+    ] = False,
+) -> None:
+    """Fit a model to labelled examples and write the fitted model.
+
+    The holdout (or --validation) only scores the report; the rest is the
+    training part. Ctrl-C stops at the next step and writes nothing.
+    """
+    from .training import Cancelled, fit
+    from .training.console import Progress, format_fit, interrupt_cancels
+
+    output = output or default_output(model, data)
+    progress = Progress(sys.stderr, sys.stderr.isatty())
+    on_event = echo_event if events else progress
+    with interrupt_cancels(sys.stderr) as stop:
+        try:
+            result = fit(
+                model,
+                data,
+                output=output,
+                method=method,
+                validation=validation,
+                holdout=holdout,
+                seed=seed,
+                epochs=epochs,
+                head_only=head_only,
+                on_event=on_event,
+                cancel=stop,
+                overwrite=overwrite,
+                **load_options(None, max_input_tokens),
+            )
+        except Cancelled:
+            progress.close()
+            if events:
+                echo_event(stage_event("cancelled", "nothing was written"))
+            typer.echo("cancelled; nothing was written", err=True)
+            raise typer.Exit(130) from None
+        except (
+            DecisionError,
+            FileExistsError,
+            FileNotFoundError,
+            ValueError,
+            PlatformError,
+        ) as error:
+            progress.close()
+            message = str(error)
+            if isinstance(error, FileExistsError):
+                message = f"{output} exists; pass --overwrite to replace it"
+            if events:
+                echo_event(stage_event("error", message))
+            fail(message)
+    progress.close()
+    if not events:
+        typer.echo(format_fit(result.report, str(result.path)))
+
+
+def stage_event(stage: str, message: str):
+    """How a run ended other than done: ``error`` or ``cancelled``."""
+    from .training import Event
+
+    return Event(stage, message=message)
+
+
+@training_app.command("eval")
+def training_eval(
+    model: ModelOption,
+    data: DataOption,
+    compare: Annotated[
+        str | None,
+        typer.Option(
+            "--compare",
+            help="A second model scored after the first (typically the base of a fitted "
+            "model), shown beside it. One model is loaded at a time.",
+        ),
+    ] = None,
+    max_input_tokens: MaxInputOption = None,
+    no_memory_check: NoMemoryCheckOption = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the results as JSON.")] = False,
+) -> None:
+    """Score models on labelled examples: accuracy, macro-F1, ECE (and MAE for
+    scores), refusals and a confusion matrix per question."""
+    from .training import Cancelled, evaluate
+    from .training.console import Progress, format_eval, interrupt_cancels
+
+    progress = Progress(sys.stderr, sys.stderr.isatty())
+    with interrupt_cancels(sys.stderr) as stop:
+        try:
+            result = evaluate(
+                model,
+                data,
+                compare=compare,
+                on_event=progress,
+                cancel=stop,
+                check_memory=not no_memory_check,
+                **load_options(None, max_input_tokens),
+            )
+        except Cancelled:
+            progress.close()
+            typer.echo("cancelled", err=True)
+            raise typer.Exit(130) from None
+        except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
+            progress.close()
+            fail(str(error))
+    progress.close()
+    if as_json:
+        typer.echo(json.dumps(result.as_json(), indent=2, ensure_ascii=False))
+    else:
+        typer.echo(format_eval(result))

@@ -1,4 +1,4 @@
-"""The readout fit: the option rows of H2O, d1 and pplx, trained on last hidden states.
+"""The readout fit: the option rows of pplx, H2O and d1, trained on last hidden states.
 
 These families read a question's answer from the hidden state at its last
 token through one row per scored token (``models/readout.py``). The fit

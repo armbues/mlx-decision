@@ -3,7 +3,7 @@
 An answer becomes a record with :func:`record`: the gold option id, the
 predicted one and the top probability; a refused example is a record with
 ``predicted`` None and a ``refused`` reason. :func:`metrics` summarizes a list
-of records of one question.
+of records of one question; :func:`confusion` counts gold against predicted.
 """
 
 import statistics
@@ -84,3 +84,22 @@ def metrics(records: list[dict]) -> dict:
     if any("score" in r for r in records):
         result["mae"] = mae(records)
     return result
+
+
+REFUSED = "refused"
+
+
+def confusion(records: list[dict], labels: list[str]) -> dict[str, dict[str, int]]:
+    """Counts by gold label (rows, in ``labels``' order) and predicted label
+    (columns: ``labels``, then "refused" when any example was refused). Labels
+    not in ``labels`` are added after them."""
+    seen = list(labels)
+    for r in records:
+        for label in (r["gold"], r["predicted"]):
+            if label is not None and label not in seen:
+                seen.append(label)
+    columns = seen + ([REFUSED] if any(r["predicted"] is None for r in records) else [])
+    table = {gold: dict.fromkeys(columns, 0) for gold in seen}
+    for r in records:
+        table[r["gold"]][r["predicted"] if r["predicted"] is not None else REFUSED] += 1
+    return table

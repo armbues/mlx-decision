@@ -67,20 +67,22 @@ class FitResult:
 
 
 @dataclass
-class _Data:
+class Data:
+    """Examples with the SHA-256 of their JSON lines and the file they came from."""
+
     examples: list[Example]
     sha256: str
     source: str | None
 
 
-def _read(data: str | Path | list[Example]) -> _Data:
+def read_data(data: str | Path | list[Example]) -> Data:
     """Examples from a file or as given, with their hash."""
     if isinstance(data, (str, Path)):
         raw = Path(data).read_bytes()
-        return _Data(read_examples(data), hashlib.sha256(raw).hexdigest(), str(data))
+        return Data(read_examples(data), hashlib.sha256(raw).hexdigest(), str(data))
     examples = list(data)
     lines = "".join(json.dumps(e.to_json(), ensure_ascii=False) + "\n" for e in examples)
-    return _Data(examples, hashlib.sha256(lines.encode()).hexdigest(), None)
+    return Data(examples, hashlib.sha256(lines.encode()).hexdigest(), None)
 
 
 @dataclass
@@ -451,8 +453,8 @@ def fit(
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"{output} exists (pass overwrite to replace it)")
-    source = _read(data)
-    held = _read(validation) if validation is not None else None
+    source = read_data(data)
+    held = read_data(validation) if validation is not None else None
     origin = _base(base)
     check_options(origin.family, load_options)
     kinds = plan.resolve(origin.family.name, method)
@@ -488,6 +490,7 @@ def fit(
                 "holdout": len(splits.holdout),
                 "fit": len(splits.fit),
                 "dev": len(splits.dev),
+                "labels": _label_counts(training),
                 "kinds": kinds,
                 "estimate": estimate.as_json(),
             },

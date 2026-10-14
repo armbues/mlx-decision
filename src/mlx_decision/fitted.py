@@ -130,7 +130,7 @@ class FittedBackend:
 
     def __init__(self, name: str, base, fit: Fit, base_reference: dict, path: Path | None = None):
         if fit.readouts and not isinstance(base, Readable):
-            raise ValueError(f"{name}: a readout fit needs a family that reads out (H2O, d1, pplx)")
+            raise ValueError(f"{name}: a readout fit needs a family that reads out (pplx, H2O, d1)")
         self.name = name
         self.base = base
         self.fit = fit

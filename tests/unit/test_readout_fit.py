@@ -1,4 +1,4 @@
-"""The readout fit: the search on synthetic features, and H2O, d1 and pplx end to end
+"""The readout fit: the search on synthetic features, and pplx, H2O and d1 end to end
 on their tiny models."""
 
 import json

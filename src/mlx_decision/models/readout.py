@@ -1,6 +1,6 @@
 """The readout shared by the families that answer from the last hidden state.
 
-H2O, d1 and pplx read a question's answer from the hidden state at its last
+pplx, H2O and d1 read a question's answer from the hidden state at its last
 token: one row per scored token (H2O: the option labels' rows of the tied
 embeddings; d1: the rows of the tokens that stand for each option; pplx: its
 readout's rows), the best token's logit per option, divided by a temperature
