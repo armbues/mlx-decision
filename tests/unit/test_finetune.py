@@ -206,9 +206,9 @@ def test_the_fine_tune_estimate_counts_the_trained_parameters(base):
     assert 0 < head < full
     assert plan.kind_bytes("calibrate", base, {}) == 0
     splits = training_splits(labelled(200))
-    tuned = plan.estimate("laya", ["finetune", "calibrate"], base, {}, splits)
-    calibrated = plan.estimate("laya", ["calibrate"], base, {}, splits)
-    assert tuned.seconds > calibrated.seconds and tuned.peak_bytes > calibrated.peak_bytes
+    tuned = plan.estimate(["finetune", "calibrate"], base, {}, splits)
+    calibrated = plan.estimate(["calibrate"], base, {}, splits)
+    assert tuned.peak_bytes > calibrated.peak_bytes
 
 
 def test_an_epoch_worse_on_dev_stops_the_run(base, monkeypatch):

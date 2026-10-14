@@ -140,9 +140,8 @@ def test_training_lowers_the_loss_and_keeps_the_best_epoch(tmp_path, base, quick
 def test_head_is_the_main_kind_of_clef(tmp_path, base):
     assert plan.resolve("clef", "auto") == ["head", "calibrate"]
     splits = training_splits(labelled(200))
-    estimate = plan.estimate("clef", ["head", "calibrate"], base, {}, splits)
-    calibrate = plan.estimate("clef", ["calibrate"], base, {}, splits)
-    assert estimate.seconds > calibrate.seconds
+    estimate = plan.estimate(["head", "calibrate"], base, {}, splits)
+    calibrate = plan.estimate(["calibrate"], base, {}, splits)
     assert estimate.peak_bytes > calibrate.peak_bytes
     assert estimate.disk_bytes > 0 and "disk_gb" in estimate.as_json()
     assert "disk_gb" not in calibrate.as_json()

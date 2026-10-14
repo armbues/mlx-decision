@@ -14,10 +14,10 @@ of a preset, e.g. ANLI-R3's dev split; ``--sample N`` draws N rows of each
 with ``--seed``), fits ``MODEL`` with ``mlx_decision.training.fit`` (its own
 20% holdout reports before and after), writes the fitted model to
 ``DIR/model`` and the run to ``DIR/run.json`` (the fit's report, the time,
-the estimate, the GPU's peak memory), then scores the fitted model with
+the estimated and the GPU's peak memory), then scores the fitted model with
 ``accuracy_benchmark.py local`` on the presets' test splits (``--datasets``
 as there) in a process of its own, into ``DIR/coverage.json``.
-``--estimate`` prints the estimate and stops before any model loads.
+``--estimate`` prints the memory estimate and stops before any model loads.
 
 ``report`` prints a Markdown table: per run and dataset, the base's and the
 fitted model's accuracy, macro-F1 and ECE on the test split (the base's
@@ -65,7 +65,7 @@ def fit_run(args) -> None:
     examples = train_examples(presets, args.sample, args.seed, splits)
     prepared = prepare(args.model, examples, seed=args.seed)
     kinds = resolve(prepared.family, args.method)
-    estimate = prepared.estimate(kinds, args.epochs, False)
+    estimate = prepared.estimate(kinds, False)
     plan = ", then ".join(kinds)
     print(
         f"{prepared.origin.name}: {plan}; estimate {json.dumps(estimate.as_json())}",

@@ -1,8 +1,8 @@
 """The ``training fit`` and ``training eval`` menus: what the flags leave open, asked.
 
 ``training fit``: the base and the data if missing, then the kind (a menu of
-the kinds the base's family takes, each with its estimated time and peak
-memory for this data, ``auto``'s pick first), the holdout share or a
+the kinds the base's family takes, each with its estimated peak memory for
+this data, ``auto``'s pick first), the holdout share or a
 validation file, the epochs (for the kinds that train in epochs) and the
 output folder; then a summary with the command line that does the same
 without menus, and a confirmation. ``training eval`` asks only for a missing
@@ -19,7 +19,7 @@ from prompt_toolkit.validation import Validator
 from ..flags import command_line
 from ..interactive import ask, confirm, pick, say
 from . import plan as kinds_plan
-from .console import duration, plan_lines
+from .console import plan_lines
 
 EPOCH_KINDS = ("head", "finetune")
 DEFAULT_HOLDOUT = 0.2
@@ -127,7 +127,7 @@ def ask_data_file(message: str = "Labelled data (JSON lines): ") -> str:
     return _ask(message, completer=PathCompleter(expanduser=True), validator=_existing("file"))
 
 
-def _choices(prepared, epochs: int) -> list[tuple[tuple[str, bool], str]]:
+def _choices(prepared) -> list[tuple[tuple[str, bool], str]]:
     """The kinds the family takes, ``auto``'s pick first, each with its estimate."""
     from ..memory import working_set
 
@@ -143,12 +143,12 @@ def _choices(prepared, epochs: int) -> list[tuple[tuple[str, bool], str]]:
     options = []
     for method, head_only in entries:
         kinds = kinds_plan.resolve(family, method)
-        estimate = prepared.estimate(kinds, epochs, head_only)
+        estimate = prepared.estimate(kinds, head_only)
         name = ", then ".join(kinds) + (" (head only)" if head_only else "")
         if method == main:
             name += "  [auto]" if not head_only else ""
         peak = estimate.peak_bytes / 1e9
-        text = f"{name:<36} about {duration(estimate.seconds)}, peak {peak:.1f} GB"
+        text = f"{name:<36} peak {peak:.1f} GB"
         if estimate.disk_bytes:
             text += f", {estimate.disk_bytes / 1e9:.1f} GB on disk"
         if limit and estimate.peak_bytes > limit:
@@ -166,7 +166,6 @@ def ask_fit(plan: FitPlan, default_output) -> FitPlan:
         plan.model = ask_model("Base model (folder, Hugging Face repo id, or a fitted model): ")
     if plan.data is None:
         plan.data = ask_data_file()
-    epochs = plan.epochs or DEFAULT_EPOCHS
     holdout = DEFAULT_HOLDOUT if plan.holdout is None else plan.holdout
     prepared = prepare(
         plan.model,
@@ -177,11 +176,8 @@ def ask_fit(plan: FitPlan, default_output) -> FitPlan:
         load_options=plan.load_options,
     )
     if plan.method is None:
-        say(
-            f"{prepared.origin.name} ({prepared.family}); estimates for this data, measured "
-            "on an M-series Mac with 64 GB:"
-        )
-        plan.method, plan.head_only = _pick("Method:", _choices(prepared, epochs))
+        say(f"{prepared.origin.name} ({prepared.family}); memory estimated for this data:")
+        plan.method, plan.head_only = _pick("Method:", _choices(prepared))
     kinds = kinds_plan.resolve(prepared.family, plan.method)
     if plan.validation is None and plan.holdout is None:
         how = _pick(
@@ -233,7 +229,7 @@ def _summary(plan: FitPlan, prepared, kinds: list[str]) -> None:
     from .fitting import label_counts
 
     splits = prepared.splits
-    estimate = prepared.estimate(kinds, plan.epochs or DEFAULT_EPOCHS, plan.head_only)
+    estimate = prepared.estimate(kinds, plan.head_only)
     metrics = {
         "examples": len(prepared.source.examples),
         "holdout": len(splits.holdout),

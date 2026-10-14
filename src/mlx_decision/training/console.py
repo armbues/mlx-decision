@@ -97,10 +97,10 @@ def plan_lines(metrics: dict[str, Any]) -> list[str]:
         lines.append(f"labels: {question_id}: {listed}")
     lines.append("method: " + ", then ".join(metrics["kinds"]))
     estimate = metrics["estimate"]
-    text = f"estimate: about {duration(estimate['seconds'])}, peak {estimate['peak_gb']} GB"
+    text = f"memory: about {estimate['peak_gb']} GB at the peak"
     if estimate.get("disk_gb"):
         text += f", {estimate['disk_gb']} GB on disk while it runs"
-    lines.append(text + " (from measurements on an M-series Mac with 64 GB)")
+    lines.append(text)
     return lines
 
 

@@ -1275,7 +1275,7 @@ def training_fit(
 
     The holdout (or --validation) only scores the report; the rest is the
     training part. In a terminal, what the flags leave open is asked in
-    menus (the kind with estimates, the holdout, epochs, the output). Ctrl-C
+    menus (the kind with its peak memory, the holdout, epochs, the output). Ctrl-C
     stops at the next step and writes nothing.
     """
     from .training import Cancelled, fit

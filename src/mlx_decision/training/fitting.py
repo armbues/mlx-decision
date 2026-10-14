@@ -1,7 +1,7 @@
 """``fit``: a base model and labelled data in, a fitted model folder out.
 
 The run goes through stages, each reported as events: check (data, kind,
-estimate, memory), before (the base scores the holdout), features (the base
+memory), before (the base scores the holdout), features (the base
 scores the training part), train (the kind's own training, when it has
 one), calibrate, after (the fitted model's holdout answers), write. The
 holdout only scores the report; the training part splits into fit and dev
@@ -425,11 +425,9 @@ class Prepared:
     def family(self) -> str:
         return self.origin.family.name
 
-    def estimate(self, kinds: list[str], epochs: int, head_only: bool) -> plan.Estimate:
-        """Time and peak memory of a run with ``kinds``."""
-        return plan.estimate(
-            self.family, kinds, self.origin.path, self.load_options, self.splits, epochs, head_only
-        )
+    def estimate(self, kinds: list[str], head_only: bool) -> plan.Estimate:
+        """Peak memory and disk of a run with ``kinds``."""
+        return plan.estimate(kinds, self.origin.path, self.load_options, self.splits, head_only)
 
     def extra(self, kinds: list[str], head_only: bool) -> int:
         """Memory the kinds need beyond the model's weights."""
@@ -540,7 +538,7 @@ def fit(
     for warning in warnings:
         emit(Event("check", message=f"warning: {warning}"))
     trainer = kinds[0] if kinds[0] != "calibrate" else None
-    estimate = prepared.estimate(kinds, epochs, head_only)
+    estimate = prepared.estimate(kinds, head_only)
     extra = prepared.extra(kinds, head_only)
     check_fits(origin.path, load_options, name=origin.name, extra=extra, source=str(origin.path))
     emit(
@@ -555,7 +553,6 @@ def fit(
                 "kinds": kinds,
                 "estimate": estimate.as_json(),
             },
-            eta_s=round(estimate.seconds, 1),
             message=f"loading {origin.name}",
         )
     )
@@ -632,7 +629,9 @@ def fit(
             calibration_scored = rehead(dev_part, store, model.backend)
             after_scored = rehead(holdout_scored, store, model.backend)
         elif trainer is not None:
-            rest = plan.scoring_seconds(origin.family.name, 0, splits.dev + splits.holdout)
+            # After training, dev and the holdout are scored again at the speed the
+            # holdout was scored before.
+            rest = clock.eta() or 0.0
             trained = _finetune(
                 model, splits, epochs, head_only, seed, emit, cancelled, rest, early_stop
             )

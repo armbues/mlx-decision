@@ -102,7 +102,7 @@ def test_events_follow_the_stages_and_serialize(tmp_path, base, data):
     assert features[-1].eta_s == 0
     check = [e for e in events if e.stage == "check" and e.metrics]
     assert check[0].metrics["kinds"] == ["calibrate"]
-    assert set(check[0].metrics["estimate"]) == {"seconds", "peak_gb"}
+    assert set(check[0].metrics["estimate"]) == {"peak_gb"}
     assert any(e.message and e.message.startswith("warning: ") for e in events)
     for event in events:
         json.dumps(event.as_json())
@@ -198,11 +198,9 @@ def test_kinds_per_family():
         plan.resolve("laya", "readout")
 
 
-def test_the_estimate_grows_with_the_data_and_the_model(tmp_path, base):
-    small = plan.estimate("h2o", ["calibrate"], base, {}, training_splits(examples(10)))
-    large = plan.estimate("h2o", ["calibrate"], base, {}, training_splits(examples(1000)))
-    assert 0 < small.seconds < large.seconds
-    assert large.seconds == pytest.approx(1 + 100 * (small.seconds - 1), rel=0.01)
+def test_the_estimate_counts_memory_only(tmp_path, base):
+    estimate = plan.estimate(["calibrate"], base, {}, training_splits(examples(10)))
+    assert not hasattr(estimate, "seconds") and set(estimate.as_json()) == {"peak_gb"}
 
 
 def test_the_calibration_fit_recovers_a_temperature():

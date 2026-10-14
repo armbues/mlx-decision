@@ -129,9 +129,8 @@ def test_readout_is_the_main_kind_of_the_reading_families(tmp_path):
         assert plan.resolve(family, "auto") == ["readout", "calibrate"]
     splits = training_splits(labelled(200))
     base = write_h2o(tmp_path / "tiny-h2o")
-    readout = plan.estimate("h2o", ["readout", "calibrate"], base, {}, splits)
-    calibrate = plan.estimate("h2o", ["calibrate"], base, {}, splits)
-    assert readout.seconds == pytest.approx(calibrate.seconds + 2 * plan.READOUT_FIT_SECONDS)
+    readout = plan.estimate(["readout", "calibrate"], base, {}, splits)
+    calibrate = plan.estimate(["calibrate"], base, {}, splits)
     assert readout.peak_bytes == calibrate.peak_bytes + 400 * plan.READOUT_FEATURE_BYTES
 
 

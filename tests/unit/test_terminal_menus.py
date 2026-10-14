@@ -46,7 +46,7 @@ def test_data_menus_end_with_a_command_that_writes_the_same_file(tmp_path):
     assert (tmp_path / "again.jsonl").read_bytes() == (tmp_path / "tickets.jsonl").read_bytes()
 
 
-def test_fit_menus_offer_the_kinds_with_estimates_and_run(tmp_path):
+def test_fit_menus_offer_the_kinds_with_their_memory_and_run(tmp_path):
     write_d1(tmp_path / "tiny-d1")
     write_examples(tmp_path / "tickets.jsonl", labelled(80))
     term = Terminal(["training", "fit", "-m", "tiny-d1", "--data", "tickets.jsonl"], tmp_path)
@@ -54,6 +54,7 @@ def test_fit_menus_offer_the_kinds_with_estimates_and_run(tmp_path):
     term.expect("calibrate")
     screen = term.text()
     assert "readout, then calibrate  [auto]" in screen and "peak" in screen
+    assert "M-series" not in screen
     term.send(ENTER)
     term.expect("Report on:")
     term.send(ENTER)
