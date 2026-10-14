@@ -1248,6 +1248,14 @@ def training_fit(
     head_only: Annotated[
         bool, typer.Option("--head-only", help="finetune: train the marker head alone.")
     ] = False,
+    no_early_stop: Annotated[
+        bool,
+        typer.Option(
+            "--no-early-stop",
+            help="Train every epoch, even after one is worse on the dev part than the best "
+            "before it (by default that ends the training). The best epoch is kept either way.",
+        ),
+    ] = False,
     max_input_tokens: MaxInputOption = None,
     overwrite: Annotated[
         bool, typer.Option("--overwrite", help="Replace the output folder if it exists.")
@@ -1285,6 +1293,7 @@ def training_fit(
         seed=seed,
         epochs=epochs,
         head_only=head_only,
+        early_stop=not no_early_stop,
         load_options=load_options(None, max_input_tokens),
         overwrite=overwrite,
     )
@@ -1316,6 +1325,7 @@ def training_fit(
                 seed=plan.seed,
                 epochs=plan.epochs,
                 head_only=plan.head_only,
+                early_stop=plan.early_stop,
                 on_event=on_event,
                 cancel=stop,
                 overwrite=plan.overwrite,

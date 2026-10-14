@@ -43,6 +43,7 @@ class FitPlan:
     seed: int = 0
     epochs: int | None = None
     head_only: bool = False
+    early_stop: bool = True
     load_options: dict[str, Any] = field(default_factory=dict)
     overwrite: bool = False
 
@@ -81,6 +82,8 @@ class FitPlan:
             words += ["--epochs", str(self.epochs)]
         if self.head_only:
             words.append("--head-only")
+        if not self.early_stop:
+            words.append("--no-early-stop")
         if "max_input_tokens" in self.load_options:
             words += ["--max-input-tokens", str(self.load_options["max_input_tokens"])]
         if self.overwrite:

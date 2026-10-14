@@ -159,7 +159,10 @@ def format_fit(report: dict[str, Any], path: str) -> str:
         lines.append("")
     training = report.get("training") or {}
     if "best_epoch" in training:
-        lines.append(f"kept epoch {training['best_epoch']} of {len(training['epochs'])}")
+        text = f"kept epoch {training['best_epoch']} of {len(training['epochs'])}"
+        if training.get("stopped_early"):
+            text += " (stopped early: dev loss rose)"
+        lines.append(text)
     for question in training.get("questions", []):
         if "skipped" in question:
             lines.append(f"readout {question['question']}: none ({question['skipped']})")

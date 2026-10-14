@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 import mlx_decision.model
+import mlx_decision.training
 from fake_backend import TEAM, write_model
 from mlx_decision.cli import app, default_output
 from mlx_decision.data.format import Example, training_splits, write_examples
@@ -203,3 +204,20 @@ def test_durations_and_default_outputs(tmp_path):
     data = tmp_path / "tickets.jsonl"
     assert str(default_output("Cloudflare/clef-flash", data)) == "clef-flash-tickets"
     assert str(default_output("_models/laya/", data)) == "laya-tickets"
+
+
+def test_no_early_stop_reaches_fit_and_the_report(tmp_path, base, data, cli, monkeypatch):
+    seen = {}
+    real_fit = mlx_decision.training.fit
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return real_fit(*args, **kwargs)
+
+    monkeypatch.setattr("mlx_decision.training.fit", spy)
+    result = cli("fit", "-m", str(base), "--data", str(data), "-o", str(tmp_path / "f"),
+                 "--no-early-stop")  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert seen["early_stop"] is False
+    report = json.loads((tmp_path / "f" / "training.json").read_text())
+    assert report["options"]["early_stop"] is False

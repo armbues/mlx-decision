@@ -209,3 +209,23 @@ def test_the_fine_tune_estimate_counts_the_trained_parameters(base):
     tuned = plan.estimate("laya", ["finetune", "calibrate"], base, {}, splits)
     calibrated = plan.estimate("laya", ["calibrate"], base, {}, splits)
     assert tuned.seconds > calibrated.seconds and tuned.peak_bytes > calibrated.peak_bytes
+
+
+def test_an_epoch_worse_on_dev_stops_the_run(base, monkeypatch):
+    model = mlx_decision.load(base)
+    losses = iter([0.5, 0.4, 0.45, 0.1])  # epoch 3 is worse than epoch 2: no epoch 4
+    monkeypatch.setattr("mlx_decision.training.finetune.dev_loss", lambda *a: next(losses))
+    data = items(model, labelled(16))
+    trained = train(model.backend, data[:12], data[12:], epochs=4, head_only=True)
+    assert [row["epoch"] for row in trained.epochs] == [1, 2, 3]
+    assert (trained.best, trained.stopped) == (2, True)
+    assert trained.epochs[-1]["stopped"]
+    every = iter([0.5, 0.4, 0.45, 0.1])
+    monkeypatch.setattr("mlx_decision.training.finetune.dev_loss", lambda *a: next(every))
+    trained = train(model.backend, data[:12], data[12:], epochs=4, head_only=True,
+                    early_stop=False)  # fmt: skip
+    assert (trained.best, trained.stopped, len(trained.epochs)) == (4, False, 4)
+    again = iter([0.5, 0.4, 0.3])
+    monkeypatch.setattr("mlx_decision.training.finetune.dev_loss", lambda *a: next(again))
+    trained = train(model.backend, data[:12], data[12:], epochs=3, head_only=True)
+    assert (trained.best, trained.stopped, len(trained.epochs)) == (3, False, 3)

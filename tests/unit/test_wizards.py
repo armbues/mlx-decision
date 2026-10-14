@@ -259,7 +259,8 @@ def test_without_a_terminal_the_defaults_apply(tmp_path, fit_data, monkeypatch):
     assert (tmp_path / "base-tickets").is_dir()
     missing = CliRunner().invoke(app, ["training", "fit", "--data", str(data)])
     assert missing.exit_code == 1 and "pass -m MODEL" in missing.stderr
-    plan = FitPlan(model="m", data="d.jsonl").with_defaults(default_output)
+    plan = FitPlan(model="m", data="d.jsonl", early_stop=False).with_defaults(default_output)
+    assert plan.arguments()[-1] == "--no-early-stop"
     assert (plan.method, plan.holdout, plan.epochs, plan.output) == ("auto", 0.2, 3, "m-d")
 
 

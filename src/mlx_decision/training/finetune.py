@@ -8,7 +8,8 @@ parameter. AdamW
 (weight decay 0.01), 5% linear warm-up then linear decay, gradients clipped
 to norm 1; batches of examples in a seeded random order, up to 4,096 padded
 tokens and 32 rows; each encoder layer is checkpointed. After every epoch
-the dev part's loss is measured; the epoch with the lowest is kept. The
+the dev part's loss is measured; the epoch with the lowest is kept, and an
+epoch worse than the best before it ends the run (early stopping). The
 loss is the decision loss over the served logits (divided by the release's
 temperatures, as serving does).
 """
@@ -50,12 +51,14 @@ class Item:
 
 @dataclass
 class Trained:
-    """The kept epoch's tensors (bfloat16, named ``encoder.*`` / ``head.*``) and
-    every epoch's training loss, dev loss and seconds."""
+    """The kept epoch's tensors (bfloat16, named ``encoder.*`` / ``head.*``),
+    every epoch's training loss, dev loss and seconds, and whether the run
+    stopped early (an epoch worse on dev than the best before it)."""
 
     tensors: dict[str, mx.array]
     epochs: list[dict] = field(default_factory=list)
     best: int = 0
+    stopped: bool = False
 
 
 def batches(items: list[Item], rng: random.Random | None = None) -> list[list[Item]]:
@@ -160,9 +163,11 @@ def train(
     on_step: Callable[[int, int, float], None] | None = None,
     on_epoch: Callable[[dict], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    early_stop: bool = True,
 ) -> Trained:
     """Train ``backend``'s modules in place on ``fit_items``; afterwards they hold the
-    kept epoch's weights, in their dtype from before. ``on_step(step, total, loss)``
+    kept epoch's weights, in their dtype from before. With ``early_stop``, an
+    epoch worse on dev than the best before it ends the run. ``on_step(step, total, loss)``
     after each batch, ``on_epoch(row)`` after each epoch; ``Cancelled`` between
     batches once ``cancelled()`` is true (the modules then hold the last step's
     weights, in their dtype from before: a model to discard)."""
@@ -221,12 +226,19 @@ def train(
                 "seconds": round(seconds, 1),
             }
             trained.epochs.append(row)
+            # Early stopping: an epoch worse on dev than the best so far ends the run.
+            stop = loss_on_dev > best_loss
             if loss_on_dev < best_loss or not trained.tensors:
                 best_loss, trained.best = loss_on_dev, epoch
                 # References to this epoch's arrays: later updates make new ones.
                 trained.tensors = dict(tree_flatten(parts.trainable_parameters()))
+            if early_stop and stop and epoch < len(plans):
+                row["stopped"] = True
+                trained.stopped = True
             if on_epoch is not None:
                 on_epoch(row)
+            if trained.stopped:
+                break
         del optimizer
         parts.update(tree_unflatten(list(trained.tensors.items())))
     finally:

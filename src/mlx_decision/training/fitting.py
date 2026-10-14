@@ -264,7 +264,9 @@ def _readouts(fit_part: list[Scored], dev_part: list[Scored], emit, cancelled, r
     return fit, report
 
 
-def _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest: float):
+def _finetune(
+    model, splits, epochs, head_only, seed, emit, cancelled, rest: float, early_stop: bool
+):
     """Fine-tune the loaded model in place on the fit part (dev picks the epoch)."""
     from ..backend import Trainable
     from .finetune import Item, train
@@ -298,6 +300,7 @@ def _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest: flo
         on_step=on_step,
         on_epoch=on_epoch,
         cancelled=cancelled,
+        early_stop=early_stop,
     )
 
 
@@ -313,6 +316,8 @@ def _reporters(emit, rest: float):
 
     def on_epoch(row: dict) -> None:
         message = f"epoch {row['epoch']}: loss {row['loss']}, dev loss {row['dev_loss']}"
+        if row.get("stopped"):
+            message += "; stopping early (dev loss rose)"
         emit(Event("train", metrics=row, message=message))
 
     return on_step, on_epoch
@@ -353,7 +358,15 @@ def _store(model, output: Path, examples: list[Example], emit):
 
 
 def _head(
-    backend, store, fit_part: list[Scored], dev_part: list[Scored], epochs, seed, emit, cancelled
+    backend,
+    store,
+    fit_part: list[Scored],
+    dev_part: list[Scored],
+    epochs,
+    seed,
+    emit,
+    cancelled,
+    early_stop,
 ):
     """Train the head in place on the fit part's stored states (dev picks the epoch)."""
     from ..backend import HeadTrainable
@@ -387,6 +400,7 @@ def _head(
         on_step=on_step,
         on_epoch=on_epoch,
         cancelled=cancelled,
+        early_stop=early_stop,
     )
 
 
@@ -464,6 +478,7 @@ def fit(
     seed: int = 0,
     epochs: int = 3,
     head_only: bool = False,
+    early_stop: bool = True,
     on_event: Callable[[Event], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     overwrite: bool = False,
@@ -477,8 +492,10 @@ def fit(
     or ``auto``, the family's usual kind; every run ends with a calibration.
     ``validation`` scores the report instead of a ``holdout`` share of the
     data (seeded with ``seed``, stratified by label). ``epochs`` is for the
-    kinds that train in epochs; ``head_only`` fine-tunes the marker head
-    without the encoder. ``on_event`` receives the progress;
+    kinds that train in epochs (at most: with ``early_stop`` an epoch worse on
+    dev than the best before it ends the training; the best is kept either
+    way); ``head_only`` fine-tunes the marker head without the encoder.
+    ``on_event`` receives the progress;
     ``cancel()`` (a callable, or a ``threading.Event``) stops the run at the
     next step with ``Cancelled``. ``load_options`` go to the base's loader.
 
@@ -600,23 +617,32 @@ def fit(
                 training_scored[: len(splits.fit)],
                 training_scored[len(splits.fit) :],
             )
-            trained = _head(model.backend, store, fit_part, dev_part, epochs, seed, emit, cancelled)
+            trained = _head(
+                model.backend, store, fit_part, dev_part, epochs, seed, emit, cancelled, early_stop
+            )
             finish_stage("train")
             tensors = trained.tensors
-            training_report = {"epochs": trained.epochs, "best_epoch": trained.best}
+            training_report = {
+                "epochs": trained.epochs,
+                "best_epoch": trained.best,
+                "stopped_early": trained.stopped,
+            }
             # The trained head reads the stored states: dev fits the calibration, the
             # holdout scores the report.
             calibration_scored = rehead(dev_part, store, model.backend)
             after_scored = rehead(holdout_scored, store, model.backend)
         elif trainer is not None:
             rest = plan.scoring_seconds(origin.family.name, 0, splits.dev + splits.holdout)
-            trained = _finetune(model, splits, epochs, head_only, seed, emit, cancelled, rest)
+            trained = _finetune(
+                model, splits, epochs, head_only, seed, emit, cancelled, rest, early_stop
+            )
             finish_stage("train")
             tensors = trained.tensors
             training_report = {
                 "head_only": head_only,
                 "epochs": trained.epochs,
                 "best_epoch": trained.best,
+                "stopped_early": trained.stopped,
             }
             # The trained model: dev fits the calibration, the holdout scores the report.
             calibration_scored = scoring("calibrate", splits.dev)
@@ -651,6 +677,7 @@ def fit(
         "validation": (held.source or "examples") if held is not None else None,
         "epochs": epochs,
         "head_only": head_only,
+        "early_stop": early_stop,
         "load_options": {
             key: value if isinstance(value, (bool, int, float, str, type(None))) else str(value)
             for key, value in load_options.items()

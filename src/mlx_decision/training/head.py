@@ -8,7 +8,8 @@ decay 0.01), 5% linear warm-up then linear decay, gradients summed over
 batches of 16 requests (one request's graph at a time, so memory does not
 grow with the batch) and clipped to norm 1, the requests in a seeded random
 order. After every epoch the dev part's loss is measured; the epoch with the
-lowest is kept. The loss is the decision loss over the head's logits (Clef
+lowest is kept, and an epoch worse than the best before it ends the run
+(early stopping). The loss is the decision loss over the head's logits (Clef
 has no temperature).
 """
 
@@ -132,10 +133,12 @@ def train(
     on_step: Callable[[int, int, float], None] | None = None,
     on_epoch: Callable[[dict], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    early_stop: bool = True,
 ) -> Trained:
     """Train ``backend.head`` in place on ``fit_items``; afterwards it holds the kept
     epoch's weights in its dtype from before (also ``Trained.tensors``, named
-    ``head.*``). ``on_step(step, total, loss)`` after each batch,
+    ``head.*``). With ``early_stop``, an epoch worse on dev than the best before
+    it ends the run. ``on_step(step, total, loss)`` after each batch,
     ``on_epoch(row)`` after each epoch; ``Cancelled`` between batches once
     ``cancelled()`` is true (the head then holds the last step's weights: a
     model to discard)."""
@@ -196,12 +199,19 @@ def train(
                 "seconds": round(seconds, 1),
             }
             trained.epochs.append(row)
+            # Early stopping: an epoch worse on dev than the best so far ends the run.
+            stop = loss_on_dev > best_loss
             if loss_on_dev < best_loss or not trained.tensors:
                 best_loss, trained.best = loss_on_dev, epoch
                 # References to this epoch's arrays: later updates make new ones.
                 trained.tensors = dict(tree_flatten(head.parameters()))
+            if early_stop and stop and epoch < len(plans):
+                row["stopped"] = True
+                trained.stopped = True
             if on_epoch is not None:
                 on_epoch(row)
+            if trained.stopped:
+                break
         del optimizer
         head.update(tree_unflatten(list(trained.tensors.items())))
     finally:

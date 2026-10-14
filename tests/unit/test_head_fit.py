@@ -209,3 +209,18 @@ def test_a_head_fit_refuses_a_disk_without_room(tmp_path, base, monkeypatch):
                        r"where 1.0 MB are free"):  # fmt: skip
         fit(base, labelled(60), output=tmp_path / "out" / "fit")
     assert list((tmp_path / "out").iterdir()) == []
+
+
+def test_an_epoch_worse_on_dev_stops_the_head_fit(tmp_path, base, quick, monkeypatch):
+    backend = load(base)
+    store = head_fit.StateStore(tmp_path / "states")
+    inputs = backend.head_inputs(request())
+    items = [head_fit.Item(store.add(inputs), {0: 0}) for _ in range(6)]
+    losses = iter([0.5, 0.6, 0.1])
+    monkeypatch.setattr(head_fit, "dev_loss", lambda *a, **k: next(losses))
+    trained = head_fit.train(backend, store, items[:4], items[4:], epochs=3)
+    assert (len(trained.epochs), trained.best, trained.stopped) == (2, 1, True)
+    losses = iter([0.5, 0.6, 0.1])
+    trained = head_fit.train(backend, store, items[:4], items[4:], epochs=3, early_stop=False)
+    assert (len(trained.epochs), trained.best, trained.stopped) == (3, 3, False)
+    store.remove()
