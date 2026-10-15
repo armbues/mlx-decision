@@ -13,8 +13,9 @@ release's runtime (`d3_runtime.py`) is imported from that folder.
 A tiny random model in the release layout (tests/tiny_models.py,
 `write_d3`) is written with the release's tokenizer, processors and
 decision config and loaded with the release's `D3` on the CPU; the
-runtime loads its backbone in bfloat16, which is cast to float32 here so
-the answers compare at float precision. Each question is prepared alone,
+runtime loads its backbone in bfloat16, which is loaded in float32 here
+instead (rounding the weights to bfloat16 and casting back would move the
+answers by about 1e-3), so they compare at float precision. Each question is prepared alone,
 as one row of the release's batch, through the runtime's own `prepare`
 (its rendering, tokenizer and, for images, processor). Questions are
 taken as mlx-decision parses them; a request the wire format refuses is
@@ -85,9 +86,20 @@ class Reference:
     def __init__(self, release: Path, tiny: Path):
         sys.path.insert(0, str(release))
         import d3_runtime
+        import torch
 
+        stock = d3_runtime.backbone_class
+
+        def float32_backbone(kind):
+            class Backbone(stock(kind)):
+                @classmethod
+                def from_pretrained(cls, *args, **kwargs):
+                    return super().from_pretrained(*args, **{**kwargs, "dtype": torch.float32})
+
+            return Backbone
+
+        d3_runtime.backbone_class = float32_backbone
         self.runtime = d3_runtime.D3(tiny, device="cpu")
-        self.runtime.backbone.float()
 
     def question(self, state, qid: str, question: dict, images: list, tiny: bool) -> dict:
         runtime = self.runtime
