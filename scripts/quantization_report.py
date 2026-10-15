@@ -14,7 +14,10 @@ fixture, such as ``tests/parity/reference-clef.json`` from a larger Mac; when
 it also holds mlx-decision's bf16 results, those are the baseline (the first
 row), so only the quantized copies need to run here. H2O-Lightning:
 ``--reference tests/parity/h2o/reference-bf16.json`` (its parity set, images
-in states lifted out; answers compared before the yes/no floor).
+in states lifted out; answers compared before the yes/no floor). d3:
+``--reference tests/parity/d3/reference-bf16.json`` (its parity set; the
+questions the release refuses left out; the input limit raised to the
+backbone's context for the 40k request).
 """
 
 import argparse
@@ -30,10 +33,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PARITY = ROOT / "tests" / "parity"
 MARGIN = 0.04
-# The request files of each parity set: Clef's, and H2O-Lightning's.
+# The request files of each parity set: Clef's, H2O-Lightning's and d3's.
 SETS = {
     "clef": ["requests.json"],
     "h2o": ["requests.json", "marker/requests.json", "h2o/requests.json"],
+    "d3": ["requests.json", "marker/requests.json", "d3/requests.json"],
 }
 
 
@@ -72,6 +76,49 @@ def h2o_reference(fixture: dict) -> dict:
     return reference
 
 
+def d3_reference(fixture: dict) -> dict:
+    """d3's reference in the shape of Clef's: each question's option ids (as the
+    answers name them) and probabilities; refused requests and questions left out."""
+    from mlx_decision.models.d3.prompt import options
+    from mlx_decision.types import parse_request
+
+    cases = {}
+    for name in SETS["d3"]:
+        cases |= {case["id"]: case for case in json.loads((PARITY / name).read_text())}
+    reference = {}
+    for case_id, entry in fixture["results"].items():
+        if "refused" in entry:
+            continue
+        case = cases[case_id]
+        request = parse_request({"state": case["state"], "questions": case["questions"]})
+        questions = [
+            {
+                "id": question_id,
+                "option_ids": options(request.questions[question_id])[0],
+                "probabilities": result["probabilities"],
+            }
+            for question_id, result in entry.items()
+            if "refused" not in result
+        ]
+        if questions:
+            reference[case_id] = {"questions": questions}
+    return reference
+
+
+def answerable(loaded, request):
+    """The request without the questions the model refuses, or None if none is left."""
+    from mlx_decision.errors import DecisionError
+
+    kept = {}
+    for question_id, question in request.questions.items():
+        try:
+            loaded.backend.encode(request.model_copy(update={"questions": {question_id: question}}))
+        except DecisionError:
+            continue
+        kept[question_id] = question
+    return request.model_copy(update={"questions": kept}) if kept else None
+
+
 def run_model(model: str, out: Path, kind: str = "clef") -> None:
     """Worker: answer the parity set with one model and write the numbers."""
     import mlx.core as mx
@@ -93,7 +140,12 @@ def run_model(model: str, out: Path, kind: str = "clef") -> None:
     family = detect_family(resolve_model_path(model)).name
     # Clef: no image cap beyond the processor's own, as the reference.
     # H2O-Lightning: the answers before the floor, as compared.
-    options = {"clef": {"max_image_pixels": None}, "h2o": {"noul_floor": 0}}.get(family, {})
+    # d3: the 40k request, past the default limit.
+    options = {
+        "clef": {"max_image_pixels": None},
+        "h2o": {"noul_floor": 0},
+        "d3": {"max_input_tokens": 262144},
+    }.get(family, {})
     start = time.perf_counter()
     loaded = mlx_decision.load(model, **options)
     load_seconds = time.perf_counter() - start
@@ -109,6 +161,15 @@ def run_model(model: str, out: Path, kind: str = "clef") -> None:
     }
     if kind == "clef":
         requests = {case_id: parse_request(body) for case_id, body in bodies.items()}
+    elif kind == "d3":
+        requests = {}
+        for case_id, body in bodies.items():
+            try:
+                request = answerable(loaded, parse_request(body))
+            except DecisionError:
+                continue
+            if request is not None:
+                requests[case_id] = request
     else:
         # As served: images in states lifted out; what the model refuses, left out.
         requests = {}
@@ -214,9 +275,12 @@ def main() -> None:
         run_model(args.worker[0], Path(args.worker[1]), args.worker[2])
         return
     fixture = json.loads(args.reference.read_text())
-    kind = "h2o" if fixture.get("meta", {}).get("repo_id") == "h2oai/h2o-lightning-4b" else "clef"
+    repo_id = fixture.get("meta", {}).get("repo_id", "")
+    kind = {"h2oai/h2o-lightning-4b": "h2o"}.get(repo_id, "d3" if "/d3" in repo_id else "clef")
     if kind == "h2o":
         fixture = {"results": h2o_reference(fixture)}
+    elif kind == "d3":
+        fixture = {"results": d3_reference(fixture)}
     if (
         "requests_sha256" in fixture
         and fixture["requests_sha256"]

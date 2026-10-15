@@ -1,9 +1,22 @@
-"""Write a d3 model as an MLX folder (see ``letter_convert``)."""
+"""Write a d3 model as an MLX folder, with the backbone optionally quantized.
+
+The letter readout, decision config, tokenizer and image processor
+settings are copied as released; see ``qwen_convert`` for the backbone and
+the vision tower.
+"""
 
 from pathlib import Path
 
-from .. import letter_convert
+from ..pplx.convert import COPIED
+from ..qwen_convert import convert_qwen
+
+
+def _load_for_sweep(path: Path):
+    from .model import load
+
+    return load(path)
 
 
 def convert(path: Path, output: Path, source: str, **options) -> None:
-    letter_convert.convert(path, output, source, "d3", **options)
+    """Convert (see ``convert_qwen``); ``target_bits`` switches to mixed precision."""
+    convert_qwen("d3", COPIED, _load_for_sweep, path, output, source, lm_head=False, **options)

@@ -1,10 +1,10 @@
-"""Write a causal Qwen3.5 decision model (Clef, H2O-Lightning) as an MLX folder.
+"""Write a Qwen3.5 decision model (Clef, pplx, d3, H2O-Lightning) as an MLX folder.
 
 The backbone is optionally quantized, uniformly or in mixed precision; the
-family's own files (Clef's joint schema head, H2O-Lightning's serve config)
-are copied as released. The vision tower, when the release has one, is kept
-in its stored precision (bf16): it is small next to the text model and not
-worth the risk.
+family's own files (Clef's joint schema head, the letter readout of pplx
+and d3, H2O-Lightning's serve config) are copied as released. The vision
+tower, when the release has one, is kept in its stored precision (bf16): it
+is small next to the text model and not worth the risk.
 """
 
 import json
@@ -46,7 +46,7 @@ CALIBRATION = "builtin-1"
 def convert_qwen(
     family: str,
     copied: Iterable[str],
-    load_for_sweep: Callable[[Path], object],
+    load_for_sweep: Callable[[Path], object] | None,
     path: Path,
     output: Path,
     source: str,
@@ -57,12 +57,15 @@ def convert_qwen(
     progress: Callable[[int, int, object, float], None] | None = None,
     shards: Iterable[Path] | None = None,
     revision: str | None = None,
+    lm_head: bool = True,
 ) -> None:
     """Convert; ``target_bits`` switches to mixed precision (``bits`` is then ignored).
 
     ``family`` goes into the marker, ``copied`` are the family's files taken
     as they are, ``load_for_sweep(path)`` loads the release as a backend whose
-    answers the mixed-precision sweep compares (no prefix reuse).
+    answers the mixed-precision sweep compares (no prefix reuse); without it
+    the family has no mixed precision. ``lm_head=False``: the release has no
+    output embeddings (pplx, d3), so there are none to keep unquantized.
 
     Uniform and unquantized output is written one source shard at a time
     (``convert_text_weights``); mixed precision loads the whole model, since
@@ -71,6 +74,10 @@ def convert_qwen(
     just before it is read and delete it after. ``revision`` is the Hub
     commit the weights came from, recorded in the marker.
     """
+    if target_bits is not None and load_for_sweep is None:
+        raise ValueError(f"{family} models have no mixed precision; use --bits")
+    if not lm_head and not quantize_output_embeddings:
+        raise ValueError(f"{family} models have no output embeddings to keep")
     config = json.loads((path / "config.json").read_text())
     if "quantization" in config:
         raise ValueError(f"{path} is already quantized; convert the original release")
@@ -93,6 +100,7 @@ def convert_qwen(
             bits,
             group_size,
             output_embeddings=quantize_output_embeddings,
+            lm_head=lm_head,
         )
         if quantization is not None:
             config["quantization"] = quantization
@@ -128,7 +136,11 @@ def convert_qwen(
             if bits is not None
             else None
         ),
-        "quantized_output_embeddings": bits is not None and quantize_output_embeddings,
+        **(
+            {"quantized_output_embeddings": bits is not None and quantize_output_embeddings}
+            if lm_head
+            else {}
+        ),
         "vision": vision,
     }
     if mixed:

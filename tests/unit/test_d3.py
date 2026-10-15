@@ -174,6 +174,32 @@ def test_converted_copy_is_d3(folder, tmp_path):
     assert answers.answers["team"].choice == original.answers["team"].choice
 
 
+def test_mixed_precision(folder, tmp_path, monkeypatch):
+    from mlx_decision.models import qwen_convert
+    from mlx_decision.models.qwen_convert import SENSITIVITY_FILE
+
+    monkeypatch.setattr(
+        qwen_convert,
+        "calibration_requests",
+        lambda: [{"state": "please refund", "questions": QUESTIONS}],
+    )
+    out = convert(folder, tmp_path / "mixed", target_bits=4.5, group_size=32)
+    report = json.loads((out / SENSITIVITY_FILE).read_text())
+    assert report["average_bits"] <= 4.5
+    marker = json.loads((out / MARKER_FILE).read_text())
+    assert marker["family"] == "d3" and marker["mixed"]["target_bits"] == 4.5
+    assert "quantized_output_embeddings" not in marker  # the release has none
+    assert (out / "readout.safetensors").exists() and (out / "decision_config.json").exists()
+    model = mlx_decision.load(out)
+    assert model.info()["precision"] == "mixed 4.5-bit"
+    assert model.decide("please refund", QUESTIONS).answers
+
+
+def test_no_output_embeddings_to_keep(folder, tmp_path):
+    with pytest.raises(ValueError, match="d3 models have no output embeddings to keep"):
+        convert(folder, tmp_path / "out", bits=4, quantize_output_embeddings=False)
+
+
 def test_a_d3_folder_no_longer_loads_as_pplx(folder, tmp_path):
     copy = tmp_path / "copy"
     shutil.copytree(folder, copy)

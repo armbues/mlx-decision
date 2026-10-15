@@ -956,7 +956,7 @@ def convert(
             min=2,
             max=8,
             help="Mixed precision: average bits per weight, allocated by measured "
-            "sensitivity (Clef, H2O-Lightning; implies --quantize; takes a few minutes).",
+            "sensitivity (Clef, d3, H2O-Lightning; implies --quantize; takes a few minutes).",
         ),
     ] = None,
 ) -> None:
