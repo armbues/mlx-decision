@@ -1,6 +1,7 @@
 """Run a d3 release's own runtime on the parity set and store token ids and tiny-model answers.
 
 usage: python scripts/make_d3_reference.py [--release PATH] [--only ID,ID]
+       python scripts/make_d3_reference.py --model PATH [--only ID,ID]
 
 The parity set is tests/parity/requests.json (text and image requests),
 tests/parity/marker/requests.json and tests/parity/d3/requests.json (d3's
@@ -26,6 +27,12 @@ and a SHA-256 of the token ids, the image grids, and for questions of at
 most 4,096 tokens (and the 255-option request) also the token ids, the
 tiny model's raw logits over the options and its probabilities. Existing
 entries are kept, so a run can be continued with --only.
+
+With --model (the release folder with its weights, at the pinned revision)
+the real model runs instead, as the release runs it: its backbone in
+bfloat16 on MPS (--device), its readout in float32. It answers every
+question and writes tests/parity/d3/reference-bf16.json with, per
+question, the token count and digest, the logits and the probabilities.
 """
 
 import argparse
@@ -46,6 +53,7 @@ TINY_TOKENS = 4096
 # Longer, but the only question with all 255 options.
 TINY_ALSO = {"choice_255_options"}
 SEED = 0
+MEMORY_FRACTION = 0.7  # of the GPU's working set, on MPS
 
 
 def parity_set() -> list[dict]:
@@ -83,11 +91,22 @@ def fetch_release() -> Path:
 
 
 class Reference:
-    def __init__(self, release: Path, tiny: Path):
+    """The release's runtime for the model in ``folder``.
+
+    ``real``: the release's own weights in bfloat16 on ``device`` (every
+    question is answered, no token ids kept); otherwise the tiny model in
+    float32 on the CPU.
+    """
+
+    def __init__(self, release: Path, folder: Path, real: bool = False, device: str = "cpu"):
         sys.path.insert(0, str(release))
         import d3_runtime
         import torch
 
+        self.real = real
+        if real:
+            self.runtime = d3_runtime.D3(folder, device=device)
+            return
         stock = d3_runtime.backbone_class
 
         def float32_backbone(kind):
@@ -99,7 +118,7 @@ class Reference:
             return Backbone
 
         d3_runtime.backbone_class = float32_backbone
-        self.runtime = d3_runtime.D3(tiny, device="cpu")
+        self.runtime = d3_runtime.D3(folder, device="cpu")
 
     def question(self, state, qid: str, question: dict, images: list, tiny: bool) -> dict:
         runtime = self.runtime
@@ -119,16 +138,16 @@ class Reference:
         else:
             ids = prepared.sequences[qid]
         result |= {"tokens": len(ids), "ids_sha256": ids_digest(ids)}
-        if tiny or len(ids) <= TINY_TOKENS:
+        if self.real or tiny or len(ids) <= TINY_TOKENS:
             if images:
                 logits = runtime.image_logits([text], images, [count], len(ids))[0, :count]
             else:
                 logits = runtime.logits([ids], [count])[0, :count]
             probabilities = (logits / runtime.temperature).softmax(-1)
             result |= {
-                "ids": ids,
-                "logits": logits.tolist(),
-                "probabilities": probabilities.tolist(),
+                **({} if self.real else {"ids": ids}),
+                "logits": logits.float().tolist(),
+                "probabilities": probabilities.float().tolist(),
             }
         return result
 
@@ -136,9 +155,13 @@ class Reference:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--release", type=Path, help="release folder (default: fetch)")
+    parser.add_argument("--model", type=Path, help="run the real model in this release folder")
+    parser.add_argument("--device", default="mps", help="device for --model (default: mps)")
     parser.add_argument("--only", help="comma-separated request ids")
-    parser.add_argument("--out", type=Path, default=PARITY / "d3" / "reference.json")
+    parser.add_argument("--out", type=Path)
     args = parser.parse_args()
+    name = "reference-bf16.json" if args.model else "reference.json"
+    args.out = args.out or PARITY / "d3" / name
     import torch
     import transformers
 
@@ -151,7 +174,9 @@ def main() -> None:
     from tiny_models import write_d3
 
     torch.set_grad_enabled(False)
-    release = (args.release or fetch_release()).resolve()
+    if args.model and args.device == "mps":
+        torch.mps.set_per_process_memory_fraction(MEMORY_FRACTION)
+    release = (args.model or args.release or fetch_release()).resolve()
     existing = json.loads(args.out.read_text())["results"] if args.out.exists() else {}
     cases = parity_set()
     if args.only:
@@ -160,8 +185,11 @@ def main() -> None:
 
     results = dict(existing)
     with tempfile.TemporaryDirectory() as folder:
-        tiny = write_d3(Path(folder), seed=SEED, files_from=release)
-        reference = Reference(release, tiny)
+        if args.model:
+            reference = Reference(release, release, real=True, device=args.device)
+        else:
+            tiny = write_d3(Path(folder), seed=SEED, files_from=release)
+            reference = Reference(release, tiny)
         for case in cases:
             start = time.perf_counter()
             try:
@@ -185,11 +213,11 @@ def main() -> None:
         meta = {
             "repo_id": REPO_ID,
             "revision": REVISION,
-            "seed": SEED,
+            **({"model": "release"} if args.model else {"seed": SEED}),
             "temperature": runtime.temperature,
             "attention_mode": runtime.attention_mode,
-            "tiny_tokens": TINY_TOKENS,
-            "device": "cpu",
+            **({} if args.model else {"tiny_tokens": TINY_TOKENS}),
+            "device": str(runtime.device),
             "dtype": str(next(runtime.backbone.parameters()).dtype),
             "readout_dtype": runtime.readout_dtype,
             "torch": torch.__version__,

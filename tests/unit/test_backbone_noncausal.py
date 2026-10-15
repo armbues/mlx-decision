@@ -42,3 +42,28 @@ def test_full_attention_sees_later_tokens(folder, noncausal):
 def test_noncausal_refuses_a_cache(noncausal):
     with pytest.raises(ValueError, match="cache"):
         noncausal(mx.array([[1, 2, 3]]), cache=noncausal.make_cache())
+
+
+def test_long_attention_runs_in_blocks_of_queries(folder, noncausal, monkeypatch):
+    from mlx_decision.backbones.qwen3_5 import base
+
+    # On the CPU: on the GPU, float32 matmuls use TF32, rounded differently
+    # for blocks of other shapes.
+    ids = mx.array([list(range(10, 210))])
+    with mx.stream(mx.cpu):
+        whole = noncausal(ids)
+    calls = []
+    fused = mx.fast.scaled_dot_product_attention
+
+    def counted(queries, *args, **kwargs):
+        calls.append(queries.shape[2])
+        return fused(queries, *args, **kwargs)
+
+    # Room for 64 queries' scores against the 200 keys, per head.
+    heads = noncausal.language_model.args.num_attention_heads
+    monkeypatch.setattr(base, "SCORE_BUDGET", 64 * heads * 200)
+    monkeypatch.setattr(mx.fast, "scaled_dot_product_attention", counted)
+    with mx.stream(mx.cpu):
+        blocks = noncausal(ids)
+    assert set(calls) == {64, 8}  # three blocks of 64 and the last 8, per layer
+    assert mx.abs(blocks - whole).max().item() < 1e-5

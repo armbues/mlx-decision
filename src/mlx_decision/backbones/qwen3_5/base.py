@@ -3,6 +3,9 @@
 # Copied from mlx-lm (https://github.com/ml-explore/mlx-lm), file
 # mlx_lm/models/base.py at commit 5cfec4cb39deba54210b3ff4d86f2337c7bc10b5,
 # under the MIT License. See LICENSES/mlx-lm-MIT.txt.
+#
+# Modified for mlx-decision: attention without a mask (a non-causal pass)
+# runs in blocks of queries when its scores would be large.
 
 import inspect
 from dataclasses import dataclass
@@ -111,6 +114,33 @@ def quantized_scaled_dot_product_attention(
     return out
 
 
+# Most attention scores one block of queries may hold at once (elements). The
+# fused kernel has no tiled path for every head size (none for Qwen3.5's 256),
+# and its fallback holds all scores: 51 GB for 40k tokens and 16 heads.
+SCORE_BUDGET = 2**28
+
+
+def blockwise_attention(queries, keys, values, scale: float) -> mx.array:
+    """Attention without a mask, a block of queries at a time.
+
+    Each query's softmax is over all keys either way, so the blocks give the
+    same result as one call. Each block is evaluated before the next starts:
+    left lazy, the whole graph would hold every block's scores at once.
+    """
+    batch, heads, length, _ = queries.shape
+    block = max(64, SCORE_BUDGET // (batch * heads * keys.shape[-2]) // 64 * 64)
+    if block >= length:
+        return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale)
+    outputs = []
+    for start in range(0, length, block):
+        output = mx.fast.scaled_dot_product_attention(
+            queries[:, :, start : start + block], keys, values, scale=scale
+        )
+        mx.eval(output)
+        outputs.append(output)
+    return mx.concatenate(outputs, axis=2)
+
+
 def scaled_dot_product_attention(
     queries,
     keys,
@@ -132,6 +162,8 @@ def scaled_dot_product_attention(
             group_size=cache.group_size,
             bits=cache.bits,
         )
+    elif mask is None and sinks is None:
+        return blockwise_attention(queries, keys, values, scale)
     else:
         return mx.fast.scaled_dot_product_attention(
             queries,
