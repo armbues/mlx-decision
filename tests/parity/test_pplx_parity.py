@@ -22,7 +22,8 @@ from parity_images import open_image
 import mlx_decision
 from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
-from mlx_decision.models.pplx.model import PplxBackend, read_decision_config
+from mlx_decision.models.letter import LetterBackend, read_decision_config
+from mlx_decision.models.pplx.model import PRESET
 from mlx_decision.models.qwen import count_image_tokens, open_images, prepare
 from mlx_decision.types import parse_request
 from tiny_models import write_pplx
@@ -82,11 +83,11 @@ def release() -> Path:
 
 
 @pytest.fixture(scope="module")
-def encoder(release) -> PplxBackend:
+def encoder(release) -> LetterBackend:
     """A backend without weights: enough to tokenize and prepare images."""
     codes, temperature, _ = read_decision_config(release)
     tokenizer = load_tokenizer(release)
-    return PplxBackend("tokens", None, None, tokenizer, codes, temperature, 8192, release)
+    return LetterBackend("tokens", None, None, tokenizer, codes, temperature, PRESET, path=release)
 
 
 def request(case_id: str):

@@ -199,3 +199,8 @@ def test_images_count_against_the_limit(folder):
     assert model.decide("please", question).answers
     with pytest.raises(DecisionError, match="the limit is"):
         model.decide("please", question, images=[png(64, 64)])
+
+
+def test_a_prompt_no_family_knows_is_refused(folder, tmp_path):
+    with pytest.raises(ValueError, match="names the prompt 'other', which no family here knows"):
+        mlx_decision.load(edit_config(folder, tmp_path, prompt="other"))

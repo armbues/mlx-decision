@@ -173,10 +173,29 @@ register_family(
     quantizable=_qwen_text_matrix,
 )
 
+# The letter-readout families by the ``prompt`` their ``decision_config.json``
+# names (pplx's names none).
+LETTER_PROMPTS = {None: "pplx"}
+
+
+def _letter_family(path: Path) -> str | None:
+    """The letter-readout family of a folder, None if it is not one; refuses a
+    prompt no family knows, so no model loads with another family's prompt."""
+    file = path / "decision_config.json"
+    if not file.exists():
+        return None
+    prompt = json.loads(file.read_text()).get("prompt")
+    if prompt not in LETTER_PROMPTS:
+        raise ValueError(
+            f"{path}: decision_config.json names the prompt {prompt!r}, which no family here knows"
+        )
+    return LETTER_PROMPTS[prompt]
+
+
 register_family(
     "pplx",
     # The JSON files alone, so that ``download`` recognises the repository.
-    detect=lambda path: (path / "decision_config.json").exists(),
+    detect=lambda path: _letter_family(path) == "pplx",
     loader="mlx_decision.models.pplx.model:load",
     converter="mlx_decision.models.pplx.convert:convert",
     known_models=(
@@ -200,7 +219,7 @@ register_family(
         "NOTICE",
         "README.md",
     ),
-    weight_files="mlx_decision.models.pplx.model:weight_files",
+    weight_files="mlx_decision.models.letter:weight_files",
     quantizable=_qwen_text_matrix,
 )
 
