@@ -28,7 +28,7 @@ from test_parity import TOLERANCE as BF16_TOLERANCE
 import mlx_decision
 from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
-from mlx_decision.models.d3.model import PRESET
+from mlx_decision.models.d3.model import INPUT_TOKEN_LIMIT, PRESET
 from mlx_decision.models.letter import LetterBackend, read_decision_config
 from mlx_decision.models.qwen import count_image_tokens, open_images, prepare
 from mlx_decision.types import parse_request
@@ -102,7 +102,9 @@ def encoder(release) -> LetterBackend:
     """A backend without weights: enough to tokenize and prepare images."""
     codes, temperature, _ = read_decision_config(release)
     tokenizer = load_tokenizer(release)
-    return LetterBackend("tokens", None, None, tokenizer, codes, temperature, PRESET, path=release)
+    return LetterBackend(
+        "tokens", None, None, tokenizer, codes, temperature, PRESET, INPUT_TOKEN_LIMIT, release
+    )
 
 
 def request(case_id: str):
@@ -243,7 +245,8 @@ def test_bf16_answers_as_the_release():
     if not BF16_FILE.exists():
         pytest.skip("no reference-bf16.json (scripts/make_d3_reference.py --model)")
     reference = json.loads(BF16_FILE.read_text())["results"]
-    model = mlx_decision.load(path)
+    # The set goes past the default limit (40k tokens).
+    model = mlx_decision.load(path, max_input_tokens=INPUT_TOKEN_LIMIT)
     differences, worst, decided_flips = [], (0.0, None), []
     for case_id, expected in reference.items():
         if "refused" in expected:

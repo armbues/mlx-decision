@@ -56,7 +56,7 @@ def test_detected_as_d3_not_pplx(folder):
 def test_info(model):
     info = model.info()
     assert info["family"] == "d3"
-    assert info["max_input_tokens"] == 262144
+    assert info["max_input_tokens"] == 32768
     assert not info["truncates_input"]
     assert info["max_choice_options"] == 255
     assert info["max_score_levels"] == 10
@@ -120,8 +120,13 @@ def test_255_options_answered_256_refused(model):
         model.decide("please", {"many": {"type": "choice", "criteria": criteria}})
 
 
+def test_the_limit_can_be_raised_to_the_backbones_context(folder):
+    model = mlx_decision.load(folder, max_input_tokens=262144)
+    assert model.info()["max_input_tokens"] == 262144
+
+
 @pytest.mark.parametrize("limit", [0, 262145])
-def test_the_limit_can_only_be_lowered(folder, limit):
+def test_the_limit_stays_within_the_backbones_context(folder, limit):
     with pytest.raises(ValueError, match="between 1 and 262144"):
         mlx_decision.load(folder, max_input_tokens=limit)
 

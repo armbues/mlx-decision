@@ -151,8 +151,8 @@ def load(model: str | Path, check_memory: bool = True, **options) -> DecisionMod
     ``max_image_pixels`` (default 2**21; larger images are shrunk, None keeps
     only the processor's own maximum). For pplx: ``max_input_tokens`` (default
     and maximum 8,192 per question; longer input is refused). For d3:
-    ``max_input_tokens`` (default and maximum 262,144 per question; longer
-    input is refused), ``vision`` as for Clef and ``max_image_pixels``
+    ``max_input_tokens`` (default 32,768 per question, at most 262,144;
+    longer input is refused), ``vision`` as for Clef and ``max_image_pixels``
     (default and maximum the release's 1,638,400). For H2O-Lightning:
     ``max_input_tokens`` (default and maximum 40,960 per question; states
     over 32,000 tokens, or too long for a lowered limit, are cut) and
