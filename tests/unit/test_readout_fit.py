@@ -1,4 +1,4 @@
-"""The readout fit: the search on synthetic features, and pplx, H2O and d1 end to end
+"""The readout fit: the search on synthetic features, and pplx, d3, H2O and d1 end to end
 on their tiny models."""
 
 import json
@@ -17,12 +17,12 @@ from mlx_decision.training.fitting import _readouts
 from mlx_decision.training.readout import fit_readout, search_steps
 from mlx_decision.training.scoring import Scored, reread, score
 from mlx_decision.types import parse_request
-from tiny_models import write_d1, write_h2o, write_pplx
+from tiny_models import write_d1, write_d3, write_h2o, write_pplx
 
 TEAM = {"type": "choice", "criteria": {"billing": "refund", "technical": "crash"}}
 URGENT = {"type": "noul", "instructions": "Is it urgent?"}
 STATES = ["please refund", "crash now", "refund now please", "crash"]
-WRITERS = {"h2o": write_h2o, "d1": write_d1, "pplx": write_pplx}
+WRITERS = {"h2o": write_h2o, "d1": write_d1, "pplx": write_pplx, "d3": write_d3}
 
 
 def labelled(count: int = 120) -> list[Example]:
