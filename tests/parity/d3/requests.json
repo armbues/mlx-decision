@@ -1,0 +1,13 @@
+[
+ {"id": "d3_null_state", "state": null, "questions": {"q": {"type": "noul", "instructions": "Is there a state?"}}},
+ {"id": "d3_empty_object_state", "state": {}, "questions": {"q": {"type": "noul", "instructions": "Is there a state?"}}},
+ {"id": "d3_whitespace_state", "state": "  \n padded \n ", "questions": {"q": {"type": "noul", "instructions": "Is it padded?"}}},
+ {"id": "d3_falsy_instructions", "state": "The invoice was paid twice.", "questions": {"empty": {"type": "noul", "instructions": ""}, "list": {"type": "choice", "instructions": [], "criteria": {"billing": null, "tech": null}}, "object": {"type": "score", "instructions": {}, "criteria": ["low", "high"]}}},
+ {"id": "d3_noul_empty_false", "state": "The invoice was paid twice.", "questions": {"q": {"type": "noul", "instructions": "Duplicated?", "criteria": {"false": "", "true": "Paid twice"}}}},
+ {"id": "d3_choice_empty_description", "state": "Refund please.", "questions": {"q": {"type": "choice", "instructions": "Team?", "criteria": {"billing": "", "tech": null, "sales": {"region": "EU"}}}}},
+ {"id": "d3_score_mixed_levels", "state": "Rate it.", "questions": {"q": {"type": "score", "instructions": "How good?", "criteria": [1, 2.5, {"k": "v"}, ["a"], "best"]}}},
+ {"id": "d3_score_duplicate_levels", "state": "Rate it.", "questions": {"q": {"type": "score", "instructions": "How good?", "criteria": ["ok", "ok"]}}},
+ {"id": "d3_score_empty_level", "state": "Rate it.", "questions": {"q": {"type": "score", "instructions": "How good?", "criteria": ["", "ok"]}}},
+ {"id": "d3_score_eleven_levels", "state": "Rate it.", "questions": {"q": {"type": "score", "instructions": "How good?", "criteria": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]}}},
+ {"id": "d3_image_null_state", "state": null, "images": ["dog.jpg"], "questions": {"q": {"type": "noul", "instructions": "Is there a dog?"}}}
+]

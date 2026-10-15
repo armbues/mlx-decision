@@ -273,6 +273,35 @@ def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> P
     return folder
 
 
+# The release's small files that describe a d3 model's prompt and answers.
+D3_FILES = (
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "chat_template.jinja",
+    "preprocessor_config.json",
+    "video_preprocessor_config.json",
+    "decision_config.json",
+)
+
+
+def write_d3(folder: Path, seed: int = 0, files_from: Path | None = None) -> Path:
+    """A d3 release folder: pplx's layout (the same names, shards and readout),
+    with ``files_from`` (a release folder) supplying the tokenizer, processors
+    and decision config. Without it the folder gets pplx's word-level
+    tokenizer and a decision config naming d3's prompt."""
+    import shutil
+
+    write_pplx(folder, seed)
+    if files_from:
+        for name in D3_FILES:
+            shutil.copy(Path(files_from) / name, folder / name)
+    else:
+        config = json.loads((folder / "decision_config.json").read_text())
+        config |= {"format_id": "d3-code-readout-v1", "prompt": "d3", "temperature": 1.0}
+        (folder / "decision_config.json").write_text(json.dumps(config, indent=2) + "\n")
+    return folder
+
+
 H2O_TEXT = {**PPLX_TEXT, "tie_word_embeddings": True}
 H2O_CONFIG = {
     "architectures": ["Qwen3_5ForConditionalGeneration"],
