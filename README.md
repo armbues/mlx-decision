@@ -733,7 +733,10 @@ minutes.
 | [d3-edge](https://huggingface.co/vllm-sr/d3-edge) (0.6B) | 1.2 GB | 1.3 GB: 16 GB Macs and up | - |
 
 d3-flash peaks at 18.7 GB in bf16 and 11.7 GB in 8-bit on the default
-`benchmark` lengths (up to 29,450 tokens). Five questions take five
+`benchmark` lengths (up to 29,450 tokens). The fit check counts the
+weights, not the input: on a 16 GB Mac the 8-bit copy passes it but
+long inputs take it past the GPU's working set, so use the 4-bit copy
+there (about 10 GB at the full 32,768 tokens). Five questions take five
 times as long as one: 12.6 s for five about a 4,000-token state. The
 8-bit copy saves memory, not time (up to 30% slower). `download --bits`
 and [convert](#quantizing-convert) write quantized copies, mixed
