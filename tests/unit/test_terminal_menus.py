@@ -7,7 +7,7 @@ import sys
 from test_readout_fit import labelled
 
 from mlx_decision.data.format import write_examples
-from terminal import ENTER, Terminal
+from terminal import DOWN, ENTER, Terminal
 from tiny_models import write_d1
 
 
@@ -74,3 +74,32 @@ def test_no_input_never_asks(tmp_path):
     term = Terminal(["data", "tickets.csv", "--no-input", "-o", "t.jsonl"], tmp_path)
     assert term.wait() == 1
     assert "the question's wording is open: pass --question TEXT" in term.text()
+
+
+ESCAPE = "\x1b"
+
+
+def test_download_menu_goes_from_family_to_model_and_back(tmp_path, monkeypatch):
+    # Offline: the walk ends at the Hub check of the model picked, naming it.
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    term = Terminal(["download", "--local-dir", str(tmp_path / "models")], tmp_path)
+    screen = term.expect("Other...")
+    assert "d3             vLLM Semantic Router" in screen and "6 models, 1.2-52 GB" in screen
+    term.send(DOWN * 2 + ENTER)  # d3
+    screen = term.expect("Back")
+    assert "d3 model:" in screen and "vllm-sr/d3-edge" in screen
+    term.send(ESCAPE, pause=1)  # back to the families, d3 still selected
+    assert term.text().count("Model family:") == 2
+    term.send(ENTER)
+    assert term.text().count("d3 model:") == 2
+    term.send(DOWN * 5 + ENTER)  # d3-edge
+    assert term.wait() == 1
+    assert "error: vllm-sr/d3-edge: " in term.text()
+
+
+def test_escape_in_the_family_menu_cancels(tmp_path):
+    term = Terminal(["download", "--local-dir", str(tmp_path / "models")], tmp_path)
+    term.expect("Other...")
+    term.send(ESCAPE, pause=1)
+    assert term.wait() == 1
+    assert "error" not in term.text()

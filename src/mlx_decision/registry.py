@@ -22,6 +22,15 @@ class KnownModel:
 
 
 @dataclass(frozen=True)
+class Listing:
+    """How the ``download`` menu shows a family: its name, maker and a short line."""
+
+    title: str
+    maker: str
+    summary: str
+
+
+@dataclass(frozen=True)
 class Family:
     name: str
     detect: Callable[[Path], bool]
@@ -41,6 +50,8 @@ class Family:
     # A note on terms of use that ``download`` shows (and asks about in a
     # terminal) and a download by repo id logs; None: nothing to note.
     licence: str | None = None
+    # Its line in the ``download`` menu; None: not listed there.
+    listing: Listing | None = None
 
 
 # In registration order, which is the order the docs list the families in.
@@ -57,9 +68,19 @@ def register_family(
     weight_files: str | None = None,
     quantizable: Callable[[str, list[int]], bool] | None = None,
     licence: str | None = None,
+    listing: Listing | None = None,
 ) -> None:
     _FAMILIES[name] = Family(
-        name, detect, loader, converter, known_models, files, weight_files, quantizable, licence
+        name,
+        detect,
+        loader,
+        converter,
+        known_models,
+        files,
+        weight_files,
+        quantizable,
+        licence,
+        listing,
     )
 
 
@@ -153,6 +174,7 @@ register_family(
     "clef",
     detect=lambda path: (path / "joint_head_config.json").exists(),
     loader="mlx_decision.models.clef.model:load",
+    listing=Listing("Clef", "Cloudflare", "joint schema head over Qwen3.5; text and images"),
     converter="mlx_decision.models.clef.convert:convert",
     known_models=(
         KnownModel(
@@ -197,6 +219,7 @@ register_family(
     # The JSON files alone, so that ``download`` recognises the repository.
     detect=lambda path: _letter_family(path) == "pplx",
     loader="mlx_decision.models.pplx.model:load",
+    listing=Listing("pplx", "Perplexity", "letter readout over Qwen3.5; text and images"),
     converter="mlx_decision.models.pplx.convert:convert",
     known_models=(
         KnownModel(
@@ -229,6 +252,7 @@ register_family(
     # The JSON files alone, so that ``download`` recognises the repository.
     detect=lambda path: _letter_family(path) == "d3",
     loader="mlx_decision.models.d3.model:load",
+    listing=Listing("d3", "vLLM Semantic Router", "pplx's design, 0.6B to 27B; text and images"),
     converter="mlx_decision.models.d3.convert:convert",
     known_models=(
         KnownModel(
@@ -297,6 +321,7 @@ register_family(
     "h2o",
     detect=_h2o_detect,
     loader="mlx_decision.models.h2o.model:load",
+    listing=Listing("H2O-Lightning", "H2O.ai", "label tokens over Qwen3.5; text and images"),
     converter="mlx_decision.models.h2o.convert:convert",
     known_models=(
         KnownModel(
@@ -340,6 +365,7 @@ register_family(
     "d1",
     detect=_d1_detect,
     loader="mlx_decision.models.d1.model:load",
+    listing=Listing("d1", "Liquid AI", "LFM2.5 with a decision readout; text"),
     known_models=(
         KnownModel(
             "LiquidAI/d1-3B",
@@ -371,6 +397,7 @@ register_family(
     "laya",
     detect=lambda path: (path / "rl_agent_config.json").exists(),
     loader="mlx_decision.models.marker.model:load_laya",
+    listing=Listing("Laya", "ConvAI Innovations", "small encoders (ModernBERT, mmBERT); text"),
     known_models=(
         KnownModel(
             "convaiinnovations/laya",
@@ -396,6 +423,7 @@ register_family(
     "julia",
     detect=lambda path: (path / "julia_config.json").exists(),
     loader="mlx_decision.models.marker.model:load_julia",
+    listing=Listing("Julia", "Supersonic Labs", "small multilingual encoder (mmBERT); text"),
     known_models=(
         KnownModel(
             "SupersonicLabs/Julia-1",

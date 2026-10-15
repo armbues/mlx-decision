@@ -554,25 +554,96 @@ def start_chat(model, body: dict[str, Any], state_json: bool, as_json: bool) -> 
         Session(model, body, state_json, as_json).run()
 
 
+def size_range(sizes: list[str]) -> str:
+    """The smallest to the largest of sizes like "843 MB" or "52 GB": "1.2-52 GB"."""
+    scale = {"MB": 1, "GB": 1000}
+
+    def megabytes(size: str) -> float:
+        number, unit = size.split()
+        return float(number) * scale[unit]
+
+    low, high = min(sizes, key=megabytes), max(sizes, key=megabytes)
+    if low == high:
+        return low
+    if low.split()[1] == high.split()[1]:
+        return f"{low.split()[0]}-{high}"
+    return f"{low}-{high}"
+
+
+def family_line(family) -> str:
+    """A family's entry in the first ``download`` menu (columns padded by the caller)."""
+    models = family.known_models
+    count = f"{len(models)} models" if len(models) > 1 else models[0].repo_id
+    return f"{count}, {size_range([model.size for model in models])}"
+
+
 def pick_repo() -> str | None:
-    """A menu of the known models plus "Other...", where an id is typed."""
+    """The families with their models, then the picked family's models; or a typed id.
+
+    The first menu lists the families plus "Other...", where an id is typed;
+    a family with one model is its model. In the second, "Back" and Escape
+    return to the first; Escape there cancels (None).
+    """
     from prompt_toolkit import prompt
+    from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
     from prompt_toolkit.shortcuts import choice
 
-    from .interactive import MENU_BINDINGS
-    from .registry import known_models
+    from .interactive import MENU_BINDINGS, cancel_menu
+    from .registry import families
 
-    models = known_models()
-    width = max(len(model.repo_id) for model in models)
-    options = [
-        (model.repo_id, f"{model.repo_id:<{width}}  {model.size:>6}  {model.description}")
-        for model in models
+    back = "\0back"
+    escape_cancels = KeyBindings()
+    escape_cancels.add("escape", eager=True)(cancel_menu)
+    escape_goes_back = KeyBindings()
+
+    @escape_goes_back.add("escape", eager=True)
+    def _(event) -> None:
+        event.app.exit(result=back)
+
+    listed = [family for family in families() if family.listing and family.known_models]
+    # Name, maker and summary in columns; the models (a count or the one repo id) last.
+    columns = [
+        (family.listing.title, family.listing.maker, family.listing.summary, family_line(family))
+        for family in listed
     ]
+    widths = [max(len(row[i]) for row in columns) for i in range(3)]
+    options = [
+        (family.name, "  ".join(part.ljust(w) for part, w in zip(row, [*widths, 0], strict=True)))
+        for family, row in zip(listed, columns, strict=True)
+    ]
+    default = None
     try:
-        picked = choice(
-            "Model to download:", options=[*options, ("", "Other...")], key_bindings=MENU_BINDINGS
-        )
-        return picked or prompt("Hugging Face repo id (org/name): ").strip() or None
+        while True:
+            name = choice(
+                "Model family:",
+                options=[*options, ("", "Other...")],
+                default=default,
+                key_bindings=merge_key_bindings([MENU_BINDINGS, escape_cancels]),
+            )
+            if not name:
+                return prompt("Hugging Face repo id (org/name): ").strip() or None
+            family = next(family for family in listed if family.name == name)
+            models = family.known_models
+            if len(models) == 1:
+                return models[0].repo_id
+            width = max(len(model.repo_id) for model in models)
+            picked = choice(
+                f"{family.listing.title} model:",
+                options=[
+                    *(
+                        (
+                            model.repo_id,
+                            f"{model.repo_id:<{width}}  {model.size:>6}  {model.description}",
+                        )
+                        for model in models
+                    ),
+                    (back, "Back"),
+                ],
+                key_bindings=merge_key_bindings([MENU_BINDINGS, escape_goes_back]),
+            )
+            if picked != back:
+                return picked
+            default = name
     except (KeyboardInterrupt, EOFError):
         return None
 

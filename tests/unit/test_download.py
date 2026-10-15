@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 import mlx_decision.download as download
 from mlx_decision.cli import app, pick_repo
-from mlx_decision.registry import known_models
+from mlx_decision.registry import families, known_models
 
 REPOS = {
     "Cloudflare/clef-flash": {"joint_head_config.json": "{}", "config.json": "{}"},
@@ -202,15 +202,34 @@ def test_the_menu_lists_known_models_and_other():
         "convaiinnovations/laya-typed-decisions",
         "SupersonicLabs/Julia-1",
     ]
-    # Number keys reach the first nine entries; "Other..." is the tenth.
-    other = "\x1b[B" * len(known_models()) + "\rorg/model\r"
-    for typed, expected in [("\r", "Cloudflare/clef-flash"), (other, "org/model")]:
+    down = "\x1b[B"
+    # Families: Clef, pplx, d3, H2O-Lightning, d1, Laya, Julia, then "Other...".
+    for typed, expected in [
+        ("\r\r", "Cloudflare/clef-flash"),  # Clef, its first model
+        (down + "\r", "perplexity-ai/pplx-decider-v1.1-27b"),  # one model: no second menu
+        (down * 2 + "\r" + down * 5 + "\r", "vllm-sr/d3-edge"),
+        # d3, "Back" (its seventh entry), d3 again (still selected), its second model.
+        (down * 2 + "\r" + down * 6 + "\r" + "\r" + down + "\r", "vllm-sr/d3"),
+        (down * 7 + "\rorg/model\r", "org/model"),
+    ]:
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             pipe.send_text(typed)
-            assert pick_repo() == expected
-    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
-        pipe.send_text("\x03")
-        assert pick_repo() is None
+            assert pick_repo() == expected, typed
+    for typed in ("\x03", "\r\x03"):  # Ctrl-C in either menu
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            pipe.send_text(typed)
+            assert pick_repo() is None
+
+
+def test_family_lines():
+    from mlx_decision.cli import family_line, size_range
+    from mlx_decision.registry import get_family
+
+    assert family_line(get_family("d3")) == "6 models, 1.2-52 GB"
+    assert family_line(get_family("h2o")) == "h2oai/h2o-lightning-4b, 9 GB"
+    assert family_line(get_family("laya")) == "3 models, 678-846 MB"
+    assert size_range(["843 MB", "1.2 GB"]) == "843 MB-1.2 GB"
+    assert all(f.listing for f in families() if f.known_models)
 
 
 def ask(typed):
