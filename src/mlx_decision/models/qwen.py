@@ -1,4 +1,4 @@
-"""What the Qwen3.5-based families (Clef, pplx) share: images and precision."""
+"""What the Qwen3.5-based families (Clef, pplx, d3, H2O) share: images and precision."""
 
 import json
 from pathlib import Path

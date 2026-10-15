@@ -175,7 +175,7 @@ register_family(
 
 # The letter-readout families by the ``prompt`` their ``decision_config.json``
 # names (pplx's names none).
-LETTER_PROMPTS = {None: "pplx"}
+LETTER_PROMPTS = {None: "pplx", "d3": "d3"}
 
 
 def _letter_family(path: Path) -> str | None:
@@ -212,6 +212,63 @@ register_family(
         "decision_config.json",
         "model.safetensors.index.json",
         "processor_config.json",
+        "tokenizer.json",
+        "model*.safetensors",
+        "readout.safetensors",
+        "LICENSE",
+        "NOTICE",
+        "README.md",
+    ),
+    weight_files="mlx_decision.models.letter:weight_files",
+    quantizable=_qwen_text_matrix,
+)
+
+
+register_family(
+    "d3",
+    # The JSON files alone, so that ``download`` recognises the repository.
+    detect=lambda path: _letter_family(path) == "d3",
+    loader="mlx_decision.models.d3.model:load",
+    converter="mlx_decision.models.d3.convert:convert",
+    known_models=(
+        KnownModel(
+            "vllm-sr/d3-flash",
+            "d3 flash: vLLM Semantic Router's 9B decision model (Qwen3.5), text and images",
+            "17 GB",
+        ),
+        KnownModel(
+            "vllm-sr/d3",
+            "d3: vLLM Semantic Router's 27B decision model (Qwen3.5), text and images; "
+            "below 96 GB of memory it runs quantized (offered after picking it)",
+            "52 GB",
+        ),
+        KnownModel(
+            "vllm-sr/d3-mini",
+            "d3 mini: 4B (Qwen3.5), text and images",
+            "9 GB",
+        ),
+        KnownModel(
+            "vllm-sr/d3-nano",
+            "d3 nano: 2B (Qwen3.5), text and images",
+            "4.4 GB",
+        ),
+        KnownModel(
+            "vllm-sr/d3-lite",
+            "d3 lite: 0.9B (Qwen3.5), text and images",
+            "1.7 GB",
+        ),
+        KnownModel(
+            "vllm-sr/d3-edge",
+            "d3 edge: 0.6B (Qwen3.5), text and images",
+            "1.2 GB",
+        ),
+    ),
+    # Not the release's own runtime, server, manifest or card images.
+    files=(
+        "config.json",
+        "decision_config.json",
+        "model.safetensors.index.json",
+        "preprocessor_config.json",
         "tokenizer.json",
         "model*.safetensors",
         "readout.safetensors",

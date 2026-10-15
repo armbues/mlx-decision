@@ -19,6 +19,7 @@ KINDS = ("calibrate", "readout", "head", "finetune")
 MAIN_KIND = {
     "clef": "head",
     "pplx": "readout",
+    "d3": "readout",
     "h2o": "readout",
     "d1": "readout",
     "laya": "finetune",

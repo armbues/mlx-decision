@@ -17,7 +17,7 @@ from mlx_decision.registry import MARKER_FILE
 from mlx_decision.training import Cancelled, Event, fit, plan
 from mlx_decision.training.calibrate import fit_calibration
 from mlx_decision.training.loss import decision_loss
-from tiny_models import write_clef, write_d1, write_h2o, write_marker, write_pplx
+from tiny_models import write_clef, write_d1, write_d3, write_h2o, write_marker, write_pplx
 
 URGENT = {"type": "noul", "instructions": "Is it urgent?"}
 
@@ -258,6 +258,7 @@ def test_the_decision_loss_by_hand():
 WRITERS = {
     "clef": write_clef,
     "pplx": write_pplx,
+    "d3": write_d3,
     "h2o": write_h2o,
     "d1": write_d1,
     "laya": lambda folder: write_marker(folder, "laya"),

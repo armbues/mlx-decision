@@ -1,9 +1,9 @@
 """The readout shared by the families that answer from the last hidden state.
 
-pplx, H2O and d1 read a question's answer from the hidden state at its last
-token: one row per scored token (H2O: the option labels' rows of the tied
-embeddings; d1: the rows of the tokens that stand for each option; pplx: its
-readout's rows), the best token's logit per option, divided by a temperature
+pplx, d3, H2O and d1 read a question's answer from the hidden state at its
+last token: one row per scored token (H2O: the option labels' rows of the
+tied embeddings; d1: the rows of the tokens that stand for each option; pplx
+and d3: their readout's rows), the best token's logit per option, divided by a temperature
 and normalized. ``Features`` hold what goes in, so a readout can be fitted
 without running the model again, and a fitted ``Readout`` (rows and a bias
 per option) can stand in for the release's rows:

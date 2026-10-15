@@ -121,7 +121,7 @@ def test_an_unsupported_model_needs_yes(hub):
     result = invoke("Qwen/Qwen3.5-9B")
     assert result.exit_code == 1
     assert "not a supported decision model" in result.stderr
-    assert "known families: clef, pplx, h2o, d1, laya, julia" in result.stderr
+    assert "known families: clef, pplx, d3, h2o, d1, laya, julia" in result.stderr
     assert len(hub) == 1  # only the JSON files
     result = invoke("Qwen/Qwen3.5-9B", "--yes")
     assert result.exit_code == 0
@@ -189,6 +189,12 @@ def test_the_menu_lists_known_models_and_other():
         "Cloudflare/clef-flash",
         "Cloudflare/clef",
         "perplexity-ai/pplx-decider-v1.1-27b",
+        "vllm-sr/d3-flash",
+        "vllm-sr/d3",
+        "vllm-sr/d3-mini",
+        "vllm-sr/d3-nano",
+        "vllm-sr/d3-lite",
+        "vllm-sr/d3-edge",
         "h2oai/h2o-lightning-4b",
         "LiquidAI/d1-3B",
         "convaiinnovations/laya",
