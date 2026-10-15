@@ -1,8 +1,9 @@
 # Copyright 2026 vLLM Semantic Router Team (the d3 authors).
 #
 # Ported from d3-flash (https://huggingface.co/vllm-sr/d3-flash, revision
-# 8b35c853b90e777595ec36bacae820fe08ea077a, tag v3.1.3), files d3_format.py
-# (describe, options, user_prompt, messages, the prompt strings) and
+# 8b35c853b90e777595ec36bacae820fe08ea077a: tag v3.1.3's files with a
+# newer card), files d3_format.py (describe, options, user_prompt,
+# messages, the prompt strings) and
 # d3_runtime.py (the score levels in normalize_question, image_messages),
 # with the text its chat template (chat_template.jinja, Qwen's) renders for
 # those messages, all under the Apache License 2.0. See

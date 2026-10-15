@@ -12,7 +12,9 @@
 # lookup into the output embeddings that also works when they are quantized,
 # and sanitizing a part of the weights (one shard) with the layout given; a
 # non-causal mode for the full-attention layers, a model without lm_head,
-# and the weight names of checkpoints saved without the ``model.`` prefix.
+# and the weight names of checkpoints saved without the ``model.`` prefix;
+# the config's ``layer_types``, when given, sets which layers are full
+# attention (pruned models break the every-fourth-layer pattern).
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
@@ -48,6 +50,7 @@ class TextModelArgs(BaseModelArgs):
     attention_bias: bool = False
     head_dim: Optional[int] = None
     full_attention_interval: int = 4
+    layer_types: Optional[List[str]] = None
 
     # MoE fields (optional, for Qwen3_5MoeForConditionalGeneration)
     num_experts: int = 0
@@ -75,6 +78,20 @@ class TextModelArgs(BaseModelArgs):
     def __post_init__(self):
         if self.head_dim is None:
             self.head_dim = self.hidden_size // self.num_attention_heads
+        if self.layer_types is None:
+            self.layer_types = [
+                (
+                    "full_attention"
+                    if (i + 1) % self.full_attention_interval == 0
+                    else "linear_attention"
+                )
+                for i in range(self.num_hidden_layers)
+            ]
+        kinds = {"full_attention", "linear_attention"}
+        if len(self.layer_types) != self.num_hidden_layers or not set(
+            self.layer_types
+        ) <= kinds:
+            raise ValueError("Qwen3.5 config: layer_types does not match the layers")
 
         if self.rope_parameters:
             if (
@@ -190,7 +207,7 @@ class GatedDeltaNet(nn.Module):
 class DecoderLayer(nn.Module):
     def __init__(self, args: TextModelArgs, layer_idx: int):
         super().__init__()
-        self.is_linear = (layer_idx + 1) % args.full_attention_interval != 0
+        self.is_linear = args.layer_types[layer_idx] == "linear_attention"
         if self.is_linear:
             self.linear_attn = GatedDeltaNet(args)
         else:
@@ -232,7 +249,7 @@ class Qwen3_5TextModel(nn.Module):
             DecoderLayer(args=args, layer_idx=i) for i in range(args.num_hidden_layers)
         ]
         self.norm = nn.RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
-        self.fa_idx = args.full_attention_interval - 1
+        self.fa_idx = args.layer_types.index("full_attention")
 
     def __call__(
         self,

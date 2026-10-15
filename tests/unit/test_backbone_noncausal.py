@@ -67,3 +67,19 @@ def test_long_attention_runs_in_blocks_of_queries(folder, noncausal, monkeypatch
         blocks = noncausal(ids)
     assert set(calls) == {64, 8}  # three blocks of 64 and the last 8, per layer
     assert mx.abs(blocks - whole).max().item() < 1e-5
+
+
+def test_layer_types_set_the_full_attention_layers():
+    from mlx_decision.backbones.qwen3_5.qwen3_5 import Qwen3_5TextModel, TextModelArgs
+    from tiny_models import PPLX_TEXT
+
+    # The every-fourth-layer pattern without layer_types; a pruned model's own with them.
+    stock = Qwen3_5TextModel(TextModelArgs.from_dict({**PPLX_TEXT, "layer_types": None}))
+    assert [layer.is_linear for layer in stock.layers] == [True, True, True, False] * 2
+    pruned = ["linear_attention", "full_attention", "full_attention", "full_attention"]
+    args = TextModelArgs.from_dict({**PPLX_TEXT, "num_hidden_layers": 4, "layer_types": pruned})
+    model = Qwen3_5TextModel(args)
+    assert [layer.is_linear for layer in model.layers] == [True, False, False, False]
+    assert model.fa_idx == 1
+    with pytest.raises(ValueError, match="layer_types"):
+        TextModelArgs.from_dict({**PPLX_TEXT, "layer_types": pruned})

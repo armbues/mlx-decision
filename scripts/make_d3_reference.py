@@ -33,6 +33,7 @@ the real model runs instead, as the release runs it: its backbone in
 bfloat16 on MPS (--device), its readout in float32. It answers every
 question and writes tests/parity/d3/reference-bf16.json with, per
 question, the token count and digest, the logits and the probabilities.
+For another size, --repo-id and --revision record which release ran.
 """
 
 import argparse
@@ -47,7 +48,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PARITY = ROOT / "tests" / "parity"
 REPO_ID = "vllm-sr/d3-flash"
-REVISION = "8b35c853b90e777595ec36bacae820fe08ea077a"  # tag v3.1.3
+# Tag v3.1.3's code and weights; only the card and manifest are newer.
+REVISION = "8b35c853b90e777595ec36bacae820fe08ea077a"
 RELEASE_FILES = ["*.json", "*.py", "*.jinja", "LICENSE", "NOTICE"]
 TINY_TOKENS = 4096
 # Longer, but the only question with all 255 options.
@@ -157,6 +159,8 @@ def main() -> None:
     parser.add_argument("--release", type=Path, help="release folder (default: fetch)")
     parser.add_argument("--model", type=Path, help="run the real model in this release folder")
     parser.add_argument("--device", default="mps", help="device for --model (default: mps)")
+    parser.add_argument("--repo-id", default=REPO_ID, help=f"--model's repo (default: {REPO_ID})")
+    parser.add_argument("--revision", default=REVISION, help="--model's commit (default: pinned)")
     parser.add_argument("--only", help="comma-separated request ids")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
@@ -211,8 +215,8 @@ def main() -> None:
             print(f"{case['id']}: {time.perf_counter() - start:.1f} s", flush=True)
         runtime = reference.runtime
         meta = {
-            "repo_id": REPO_ID,
-            "revision": REVISION,
+            "repo_id": args.repo_id if args.model else REPO_ID,
+            "revision": args.revision if args.model else REVISION,
             **({"model": "release"} if args.model else {"seed": SEED}),
             "temperature": runtime.temperature,
             "attention_mode": runtime.attention_mode,
