@@ -7,6 +7,55 @@ change the interface).
 
 ## [Unreleased]
 
+### Added
+
+- vLLM Semantic Router's d3 models (Decision 3.0): `vllm-sr/d3-flash`
+  (9B), `vllm-sr/d3` (27B), `d3-mini` (4B), `d3-nano` (2B), `d3-lite`
+  (0.8B) and `d3-edge` (0.6B, pruned to 12 layers), with text and
+  images, through the same API, `run`, `chat`, `server`, `mcp`,
+  `benchmark` and `training`, and in the `download` menu after pplx.
+  They share pplx's design (each question its own sequence, answers
+  read out under letter codes) with their own prompt: up to 255
+  options, 2 to 10 score levels, images of up to 1.6 MP each
+  (`--max-image-mp` lowers that). Input is never cut: 32,768 tokens per
+  question by default, and since the release sets no limit,
+  `--max-input-tokens` (Python: `max_input_tokens`) raises it up to
+  262,144 (d3-flash: about 136 KB of memory a token; 128k tokens take
+  17 GB more and 5 minutes a question). `convert` writes 8-bit, 4-bit
+  and mixed-precision copies, `download --bits` stores 8-bit or 4-bit
+  ones; the readout and the vision tower stay as released. The prompt
+  matches the release's runtime token for token on the whole test set;
+  d3-flash in bf16 is within 0.038 of that runtime in bf16, no clear
+  answer changed, and the other sizes agree on a sample of requests. On
+  the five benchmarks d3-flash comes close to pplx's 27B on entailment
+  (ANLI round 3: 64.3%) at a third of its size.
+
+- `mlx-decision download` without a repo id now lists the families
+  first (maker, a short line, how many models and their sizes), then
+  the picked family's models with a "Back" entry. Escape goes back from
+  the models and cancels in the families; a family with one model is
+  picked directly. `download REPO_ID` is unchanged.
+
+### Fixed
+
+- A long request to a model that reads its input without a causal mask
+  (pplx, d3) no longer holds all attention scores at once: for these
+  models' head size MLX has no tiled attention kernel and fell back to
+  the whole score matrix, which took about 8 GB at 16k tokens and
+  failed at 40k (51 GB). The attention now runs in blocks of queries
+  with the same results; d3-flash at 16k tokens peaks at 17 GB instead
+  of 25 GB and is faster.
+
+- A model folder whose `decision_config.json` names a prompt that no
+  family here knows is refused with an error naming the prompt. Before,
+  any such folder loaded as pplx with pplx's prompt, which is how a d3
+  model loaded in 0.9.0.
+
+- Qwen3.5 models whose `config.json` lists their layer types
+  (`layer_types`) now load with those types, not the usual pattern of a
+  full-attention layer every fourth layer; d3-edge, pruned to 12
+  layers, depends on it.
+
 ## [0.9.0] - 2026-10-14
 
 ### Added

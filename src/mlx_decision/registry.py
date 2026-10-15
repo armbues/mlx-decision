@@ -278,7 +278,7 @@ register_family(
         ),
         KnownModel(
             "vllm-sr/d3-lite",
-            "d3 lite: 0.9B (Qwen3.5), text and images",
+            "d3 lite: 0.8B (Qwen3.5), text and images",
             "1.7 GB",
         ),
         KnownModel(

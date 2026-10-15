@@ -213,7 +213,7 @@ with a calibration:
 | Family | `auto` | What is trained | Written to the fitted folder | Also available |
 |---|---|---|---|---|
 | Clef | `head` | the decision head on top of the frozen backbone | the head (clef-flash: 244 MB) | `calibrate` |
-| pplx, H2O-Lightning, d1 | `readout` | each option's readout row and a bias, on the frozen network | rows and biases (kilobytes) | `calibrate` |
+| pplx, d3, H2O-Lightning, d1 | `readout` | each option's readout row and a bias, on the frozen network | rows and biases (kilobytes) | `calibrate` |
 | Laya, Julia | `finetune` | the whole encoder and the marker head (`--head-only`: the head alone) | the encoder and head (Julia 0.3 GB, laya 0.8 GB) | `calibrate` |
 
 - **`calibrate`** (every family): one temperature per question, and one
@@ -221,9 +221,10 @@ with a calibration:
   It is fitted to the model's probabilities by minimum log loss, in under
   a second after one scoring pass. Accuracy changes only through the
   biases. The probabilities then match how often the model is right.
-- **`readout`** (pplx, H2O-Lightning, d1): these models read an answer
-  from the last hidden state through one row per option of the language
-  model's output layer. The fit trains those rows plus a bias per
+- **`readout`** (pplx, d3, H2O-Lightning, d1): these models read an
+  answer from the last hidden state through one row per option (of the
+  language model's output layer, or pplx's and d3's own readout). The fit
+  trains those rows plus a bias per
   option, starting from the release's rows. The hidden states are
   computed once per example and kept. The learning rate (1e-5, 1e-4,
   1e-3) and the pull towards the release's rows (L2 0 or 0.01) are picked
@@ -295,6 +296,9 @@ whose working set holds it:
 | clef-flash, bf16 | about 24 GB (`calibrate` 21 GB) | 48 GB (`calibrate` 32 GB) |
 | pplx, 4-bit copy | about 17 GB | 32 GB |
 | pplx, 8-bit copy | about 31 GB | 48 GB |
+| d3-flash, 8-bit copy | about 10.6 GB | 16 GB (at the edge) |
+| d3-flash, bf16 | about 18.8 GB | 32 GB |
+| d3-mini (bf16) | about 10.3 GB | 16 GB (at the edge) |
 | H2O-Lightning-4B, 8-bit / 4-bit copy | about 6 / 3.5 GB | 16 GB |
 | H2O-Lightning-4B, bf16 | 10.6 GB | 16 GB (at the edge) |
 | d1-3B (bf16) | 6.1 GB | 16 GB |
@@ -302,7 +306,7 @@ whose working set holds it:
 | laya-multilingual | about 10.2 GB (`--head-only` 1 GB) | 16 GB (at the edge) |
 | Julia-1 | 4.8 GB (`--head-only` 0.4 GB) | 16 GB |
 
-The clef-flash 4-bit and the pplx fits have not been measured. Clef 27B
+The clef-flash 4-bit, the pplx and the d3 fits have not been measured. Clef 27B
 takes the same kinds as clef-flash; on its 8-bit copy the head needs
 about 36 GB (a 64 GB Mac), also unmeasured.
 
@@ -471,7 +475,7 @@ the loader's options (`max_input_tokens=`).
 
 ## Not in this version
 
-- LoRA or full fine-tuning of Clef, pplx, H2O-Lightning or d1. Their
+- LoRA or full fine-tuning of Clef, pplx, d3, H2O-Lightning or d1. Their
   networks stay frozen, and only the head or the readout rows train.
 - Images in training data.
 - Multi-label tasks (several correct options for one question).

@@ -15,6 +15,7 @@ or the command line, serve it over HTTP with an API compatible with
 | Cloudflare's [clef-flash](https://huggingface.co/Cloudflare/clef-flash) | 9B | text, images | 16,384 tokens | 19 GB (8-bit: 11 GB) | 0.25 s | 3.5x | knowledge, classification, many options, images |
 | Cloudflare's [clef](https://huggingface.co/Cloudflare/clef) | 27B | text, images | 16,384 tokens | 54 GB (8-bit: 32 GB, 4-bit: 19 GB) | 1.1 s (8-bit) | 3.7x (bf16) | as clef-flash, a little better on entailment (8-bit) |
 | Perplexity's [pplx-decider-v1.1-27b](https://huggingface.co/perplexity-ai/pplx-decider-v1.1-27b) | 27B | text, images | 8,192 tokens per question | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | 0.83 s (8-bit) | - | knowledge, entailment, images; the most accurate here (8-bit) |
+| vLLM Semantic Router's [d3-flash](https://huggingface.co/vllm-sr/d3-flash) | 9B | text, images | 32,768 tokens per question (up to 262,144) | 19 GB (8-bit: 12 GB) | 0.23 s | - | entailment, knowledge, images, calibrated scores; five more sizes from 0.6B to 27B |
 | H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 40,960 tokens per question | 13 GB (8-bit: 9 GB, 4-bit: 7 GB) | 0.18 s | - | fast with long states and many questions, images, calibrated scores |
 | LiquidAI's [d1-3B](https://huggingface.co/LiquidAI/d1-3B) | 3B | text, many languages | 32,768 tokens per question | 12 GB | 0.06 s | 1.1x | small and fast, many questions on one state; commercial use limited by its licence |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
@@ -29,7 +30,9 @@ requests it ranges from 1.4 to 6 times ([Speed](#speed)), except for
 d1-3B, whose own code is about as fast (0.9 to 1.2 times). Clef 27B's
 reference does not fit that Mac in bf16, so its speedup was measured on
 an M2 Ultra; pplx's was not measured, nor H2O-Lightning's, whose release
-runs on vLLM with CUDA. How the models differ is in [Models](#models).
+runs on vLLM with CUDA. d3-flash's own runtime was compared over a whole
+test set, not per request: it took 2.9 times as long. How the models
+differ is in [Models](#models).
 
 This is alpha software: the interface may still change. Questions and bug
 reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues).
@@ -38,8 +41,8 @@ reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues
 
 Requirements: a Mac with Apple Silicon (M1 or later) and macOS 14 or newer,
 Python 3.12 or newer, and the memory the model needs (see the table; which
-copy fits which Mac is in [Clef](#which-copy-fits), [pplx](#pplx) and
-[H2O-Lightning](#h2o-lightning)).
+copy fits which Mac is in [Clef](#which-copy-fits), [pplx](#pplx),
+[d3](#d3) and [H2O-Lightning](#h2o-lightning)).
 
 ```bash
 pip install mlx-decision                    # library and the mlx-decision command
@@ -65,8 +68,11 @@ start:
 mlx-decision run -m SupersonicLabs/Julia-1 -s "My card was charged twice." --noul "Is it a billing problem?"
 ```
 
-`mlx-decision download` fetches a model ahead of time, from a menu of the
-supported models or by repo id. In a terminal it asks for a folder to
+`mlx-decision download` fetches a model ahead of time, from a menu or by
+repo id. The menu lists the families first (maker, a short line, how many
+models and their sizes), then the picked family's models; Escape or
+"Back" returns to the families, and "Other..." takes any repo id. In a
+terminal it asks for a folder to
 download into (the model goes into a folder named after the repo inside
 it, which you then pass to `-m`; an empty answer keeps the Hugging Face
 cache); `--local-dir` names the folder directly. It warns before
@@ -75,7 +81,7 @@ model's own terms of use where it has them (d1-3B: commercial use only
 below $10 million annual revenue), asking before it downloads; `--yes`
 skips both questions. Private or gated repos need `HF_TOKEN`.
 
-Clef, pplx and H2O-Lightning models can also be stored quantized. After the model, the menu asks
+Clef, pplx, d3 and H2O-Lightning models can also be stored quantized. After the model, the menu asks
 for full size, 8-bit or 4-bit, with the size of each and which of them fit
 in the Mac's memory (the largest that fits is the default); `--bits 8` or
 `--bits 4` chooses without asking:
@@ -98,7 +104,7 @@ as changed, since it no longer holds the repo's files.
 Before reading the weights, loading checks that the model fits: its
 weights plus 10% must be within the GPU's recommended working set
 (macOS swaps beyond it). A model that does not fit is refused with both
-sizes and, for Clef, pplx and H2O-Lightning, the `convert` command for a
+sizes and, for Clef, pplx, d3 and H2O-Lightning, the `convert` command for a
 smaller copy that fits.
 `--no-memory-check` loads it anyway.
 
@@ -162,10 +168,11 @@ the state was cut to fit the model's input limit. The answer types
 from `mlx_decision`.
 
 `load` takes options per model: `max_input_tokens` changes the input limit
-(Laya and Julia up to 8,192; pplx, H2O-Lightning and d1 only lower),
+(Laya and Julia up to 8,192, d3 up to 262,144; pplx, H2O-Lightning and
+d1 only lower),
 `strict_encoding=False` lets Julia cut what it would otherwise refuse,
 `dtype` sets Laya's and Julia's precision (default float16),
-`max_image_pixels` caps image size for Clef, `noul_floor` sets
+`max_image_pixels` caps image size for Clef and d3, `noul_floor` sets
 H2O-Lightning's [yes/no floor](#h2o-lightning), and `prefix_cache_gb` sets
 how much memory Clef, H2O-Lightning and d1 keep for
 [recent states](#reusing-a-state) (default 2, 0 turns it off).
@@ -174,7 +181,7 @@ raises `mlx_decision.ModelTooLargeError` otherwise.
 `model.info()` describes the loaded model as JSON data: family,
 precision, input limit, option limits and whether it takes images.
 
-With the `images` extra, Clef, pplx and H2O-Lightning take images as file
+With the `images` extra, Clef, pplx, d3 and H2O-Lightning take images as file
 paths, bytes, PIL images or data URLs:
 
 ```python
@@ -232,9 +239,9 @@ The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body. `--image FILE` (repeatable) sends images along with the
-state (Clef, pplx, H2O-Lightning). `--max-input-tokens N` (also on `chat`,
+state (Clef, pplx, d3, H2O-Lightning). `--max-input-tokens N` (also on `chat`,
 `server` and `mcp`) changes the model's input limit, e.g. to give Laya up
-to 8,192 tokens; `--noul-floor` changes H2O-Lightning's
+to 8,192 tokens or d3 up to 262,144; `--noul-floor` changes H2O-Lightning's
 [yes/no floor](#h2o-lightning).
 
 `mlx-decision --version` prints the installed version.
@@ -387,7 +394,7 @@ decision as a tool, answered on your Mac. It needs the `mcp` extra.
 The server has two tools:
 
 - `decide` takes the fields of a request body (`state`, `questions`, and
-  `images` for Clef, pplx and H2O-Lightning) and returns the response body as structured
+  `images` for Clef, pplx, d3 and H2O-Lightning) and returns the response body as structured
   content, plus `truncated`. An invalid request comes back as a tool
   error naming the field, which the agent can read and correct.
 - `model_info` describes the loaded model: family, precision, input
@@ -478,8 +485,9 @@ Scored on each dataset's test split, on an Apple M5 Pro. ECE (expected
 calibration error, lower is better) says how far the probabilities are
 from how often the model is right. The calibration row is one fit for
 five questions (ANLI-R3's rows from its dev split); it lowered ECE on
-the other four datasets too. pplx takes a readout fit like H2O-Lightning and d1,
-but needs a Mac with 32 GB or more for it and has not been measured.
+the other four datasets too. pplx and d3 take a readout fit like
+H2O-Lightning and d1; neither has been measured (pplx needs a Mac with
+32 GB or more for it).
 
 The training data is JSON lines: a request body plus the correct
 answers.
@@ -508,7 +516,7 @@ One run per kind:
 # Laya, Julia: fine-tune the encoder and head (--head-only: the head alone)
 mlx-decision training fit -m SupersonicLabs/Julia-1 --data trec-train.jsonl -o julia-trec
 
-# pplx, H2O-Lightning, d1: retrain the option readout on the frozen network
+# pplx, d3, H2O-Lightning, d1: retrain the option readout on the frozen network
 mlx-decision training fit -m LiquidAI/d1-3B --data trec-train.jsonl -o d1-trec
 
 # Clef: train the decision head on the frozen backbone (8-bit copy on a 24 GB Mac)
@@ -542,7 +550,7 @@ API (`mlx_decision.training.fit`) are in
 ## Models
 
 The models differ in size and in how they read a request. Clef reads the
-state once and answers all questions together; pplx, Laya and Julia read
+state once and answers all questions together; pplx, d3, Laya and Julia read
 each question on its own, with the whole state, so their input limit
 applies per question and their time grows with the number of questions.
 H2O-Lightning and d1 also read each question on its own, but after the
@@ -559,6 +567,7 @@ hosted model, for comparison):
 | clef-flash | **96.8** | 78.1 | 50.8 | 95.4 | 57.6 / 0.51 |
 | clef (8-bit) | 96.4 | **81.0** | 55.2 | 95.4 | 57.6 / 0.51 |
 | pplx (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | **58.0** / **0.47** |
+| d3-flash | 85.8 | 77.7 | 64.3 | 95.2 | 57.2 / 0.50 |
 | H2O-Lightning-4B | 85.2 | 76.3 | 59.9 | 84.6 | 57.3 / 0.52 |
 | d1-3B | 86.6 | 78.7 | 55.7 | 86.2 | 56.8 / 0.54 |
 | laya | 79.0 | 61.9 | 39.5 | 39.2 | 35.1 / 0.99 |
@@ -575,6 +584,9 @@ are in
 [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md).
 The three large models are level with Jev or ahead of it on four of the
 five benchmarks; on entailment pplx comes close to Jev, Clef does not.
+d3-flash, at 9B, is close behind pplx on entailment and science
+questions and level on sentiment, but trails the Clef models and pplx on
+answer type.
 H2O-Lightning, at 4B about a seventh of the size of the 27B models, trails them on
 answer type and science questions, is ahead of clef-flash on entailment
 and about level on sentiment, with the best calibrated scores of all
@@ -586,9 +598,10 @@ as their model cards lead one to expect; Julia, made for emotion and
 routing, answers TREC almost only with its first two options and calls
 most tweets offensive. Each model matches its own
 reference code token for token on a fixed test set, with probabilities
-within 0.035 (clef-flash), 0.031 (clef), 0.020 (H2O-Lightning), 0.030
-(d1-3B), 0.004 (Laya) and 0.018 (Julia); pplx's probabilities were compared on a small
-random model in its layout (within 0.00001), not on the 27B weights.
+within 0.035 (clef-flash), 0.031 (clef), 0.038 (d3-flash), 0.020
+(H2O-Lightning), 0.030 (d1-3B), 0.004 (Laya) and 0.018 (Julia); pplx's
+probabilities were compared on a small random model in its layout (within
+0.00001), not on the 27B weights.
 
 ### Clef
 
@@ -651,7 +664,7 @@ are the same as without reuse, within the parity tolerance.
 `--prefix-cache GB` on `run`, `chat`, `server` and `mcp` (Python:
 `prefix_cache_gb`) changes the amount; 0 turns it off. H2O-Lightning and
 d1 keep recent states the same way (d1 only states long enough to be
-worth it). pplx, Laya and Julia read each question together with the
+worth it). pplx, d3, Laya and Julia read each question together with the
 state, so they have nothing to reuse.
 
 ### pplx
@@ -695,6 +708,55 @@ for the release (Jev: 57.9). Its prompt and token ids match the
 release's code exactly; its probabilities were compared with that code on
 a small random model in the same layout, since the release's code needs
 about 104 GB to run the 27B on a Mac.
+
+### d3
+
+vLLM Semantic Router's Decision 3.0 models come in six sizes, all
+built on Qwen3.5 with text and images, with pplx's design and their own
+prompt: each question is its own sequence with the whole state and its
+images, and the answer is read out under letter codes. They answer up to
+255 options and 2 to 10 score levels. The input limit applies per
+question: 32,768 tokens by default. The release sets no limit, so
+`--max-input-tokens` (Python: `max_input_tokens`) can raise it up to
+262,144, the backbone's context. Longer input is refused, never cut.
+Memory grows with the input: d3-flash needs about 4.3 GB more at 32,768
+tokens and 17 GB more at 131,072, where one question takes about 5
+minutes.
+
+| Model | Disk (bf16) | The fit check needs | One question, 250-token state |
+|---|---|---|---|
+| [d3](https://huggingface.co/vllm-sr/d3) (27B) | 52 GB | as pplx: 96 GB Macs in bf16, 48 GB in 8-bit, 32 GB in 4-bit | - |
+| [d3-flash](https://huggingface.co/vllm-sr/d3-flash) (9B) | 16.8 GB | 18.5 GB: 32 GB Macs and up (8-bit 10.3 GB, 4-bit 5.9 GB: 16 GB Macs) | 0.23 s |
+| [d3-mini](https://huggingface.co/vllm-sr/d3-mini) (4B) | 9.1 GB | 10.0 GB: 16 GB Macs and up | 0.12 s |
+| [d3-nano](https://huggingface.co/vllm-sr/d3-nano) (2B) | 4.5 GB | 4.9 GB: 16 GB Macs and up | - |
+| [d3-lite](https://huggingface.co/vllm-sr/d3-lite) (0.8B) | 1.7 GB | 1.9 GB: 16 GB Macs and up | - |
+| [d3-edge](https://huggingface.co/vllm-sr/d3-edge) (0.6B) | 1.2 GB | 1.3 GB: 16 GB Macs and up | - |
+
+d3-flash peaks at 18.7 GB in bf16 and 11.7 GB in 8-bit on the default
+`benchmark` lengths (up to 29,450 tokens). Five questions take five
+times as long as one: 12.6 s for five about a 4,000-token state. The
+8-bit copy saves memory, not time (up to 30% slower). `download --bits`
+and [convert](#quantizing-convert) write quantized copies, mixed
+precision included; prefer 8-bit for the smallest models.
+
+Images, as for Clef, need the `images` extra: any number per request,
+each scaled to between 65,536 and 1,638,400 pixels (64 to 1,600 tokens)
+as in the release; `--max-image-mp` (Python: `max_image_pixels`) lowers
+the maximum. Videos, which the release also reads, are refused. The
+vision tower loads with the first image request.
+
+On the benchmarks in [Models](#models) d3-flash comes close to pplx's
+27B on entailment (ANLI round 3: 64.3% against 66.8%) and science
+questions, at a third of its size, with well calibrated probabilities.
+vLLM Semantic Router reports a Jev Decision Index of 55.8 for d3-flash
+(text board 0.3.2). Its prompt and token ids match the release's runtime
+for every question of the test set; in bf16 its probabilities are within
+0.038 of that runtime run in bf16 on the same Mac (mean 0.0016), with no
+changed answer where the release's top two are more than 0.04 apart. The
+smaller sizes agree with their releases on a sample of 26 questions
+(within 0.011 to 0.030; d3-nano 0.058 on one 255-option question, where
+its own release moves 0.026 between the Mac's GPU and CPU). d3 27B was
+not run.
 
 ### H2O-Lightning
 
@@ -825,7 +887,7 @@ hint when Julia gets choice options without descriptions.
 
 ## Quantizing: `convert`
 
-Laya, Julia and d1 load as released. Clef, pplx and H2O-Lightning can be
+Laya, Julia and d1 load as released. Clef, pplx, d3 and H2O-Lightning can be
 written as a smaller copy:
 
 ```bash
@@ -861,6 +923,13 @@ quantized copies are 10-20% slower.
 
 pplx takes `-q` (8-bit) and `-q --bits 4`; mixed precision is not
 offered for it, since measuring it needs the full-size model loaded.
+
+d3 takes all of these, mixed precision included (d3-lite: about a
+minute to measure; d3 27B, like Clef 27B, needs a 96 GB Mac for it).
+d3-flash's 8-bit copy stays within 0.003 of the release on the questions
+checked, its 4-bit copy within 0.037. The smallest models lose more:
+d3-edge in uniform 4-bit changed 30 clear answers of 276 against its own
+bf16. Use them at full size or 8-bit.
 
 H2O-Lightning takes all of these, mixed precision included (about 4
 minutes to measure). Against the release's code on its test set (271
@@ -909,6 +978,8 @@ across state lengths (those that fit the model's limit) and numbers of
 questions; for Clef, H2O-Lightning and d1 also each request again on a
 state it has kept. As a rule of thumb, clef-flash reads about 1,700 tokens per
 second and Clef 27B (8-bit) about 380; pplx (8-bit) about 420;
+d3-flash about 1,150 to 1,800 and d3-mini about 1,600 to 2,800, counting
+the state once per question;
 H2O-Lightning about 2,400 to 3,100 for one question, and more questions
 add little since they share the state; d1-3B about 4,400 to 5,200 for
 one question, likewise; laya about 25,000,
@@ -932,7 +1003,7 @@ mlx-decision benchmark -m ~/Models --out results/
 ```bash
 make setup   # editable install with dev tools
 make test       # unit tests; parity tests run when the weights are found
-make test-slow  # Clef 27B 8-bit, H2O-Lightning and d1-3B against their references (about 12 min)
+make test-slow  # Clef 27B 8-bit, d3-flash, H2O-Lightning and d1-3B against their references (about 21 min)
 make lint
 ```
 
@@ -954,14 +1025,19 @@ weights in bf16 for the slow test, which takes the release from
 `$MLX_DECISION_MODELS/h2o-lightning-4b`. d1-3B's come from
 `scripts/make_d1_reference.py` (its release's code, which runs only
 there; `--model` for the slow test, from `$MLX_DECISION_MODELS/d1-3B`).
+d3's comes from `scripts/make_d3_reference.py`, which runs the release's
+runtime on a small random model with the release's files; with `--model`
+it runs d3-flash's weights in bf16 for the slow test, which takes the
+release from `$MLX_DECISION_MODELS/d3-flash`.
 
 ## Affiliation
 
 mlx-decision is an independent open-source project, not affiliated with or
-endorsed by Cloudflare, Perplexity, H2O.ai, LiquidAI, TypeSafe AI, Convai
-Innovations or Supersonic Labs. Its server speaks a request and response format
+endorsed by Cloudflare, Perplexity, the vLLM Semantic Router project,
+H2O.ai, LiquidAI, TypeSafe AI, Convai Innovations or Supersonic Labs. Its server speaks a request and response format
 compatible with TypeSafe AI's public Jev API. Clef and clef-flash
-(Cloudflare), pplx-decider (Perplexity), H2O-Lightning (H2O.ai), Laya
+(Cloudflare), pplx-decider (Perplexity), the d3 models (vLLM Semantic
+Router), H2O-Lightning (H2O.ai), Laya
 (Convai Innovations) and Julia 1 (Supersonic Labs) are used under their
 Apache-2.0 licences, d1-3B (LiquidAI) under the LFM Open License v1.0;
 this package downloads them from Hugging Face and does not ship their
@@ -975,7 +1051,8 @@ checkpointing used for fine-tuning are adapted from
 input encoding and head are ported from Cloudflare's release; the image
 preprocessing, vision tower, image positions and the ModernBERT encoder
 are ported from [transformers](https://github.com/huggingface/transformers);
-the pplx prompt is ported from pplx-decider's release; the H2O-Lightning
+the pplx prompt is ported from pplx-decider's release, the d3 prompt from
+d3-flash's; the H2O-Lightning
 prompt and the lifting of images out of the state from H2O-Lightning's
 release; the d1 prompt and answer reading were written from d1-3B's
 documented and observed behaviour, without its release's code; the Laya and Julia
@@ -983,5 +1060,5 @@ head and input encoding are ported from the
 [laya](https://pypi.org/project/laya/) package and Julia 1's release (all
 Apache-2.0). Their licence texts are in `LICENSES/`. The test photos are
 public domain or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep
-their own licence (Clef, clef-flash, pplx-decider, H2O-Lightning, Laya,
-Julia 1: Apache-2.0; d1-3B: LFM Open License v1.0).
+their own licence (Clef, clef-flash, pplx-decider, d3, H2O-Lightning,
+Laya, Julia 1: Apache-2.0; d1-3B: LFM Open License v1.0).
