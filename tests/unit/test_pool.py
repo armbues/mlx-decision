@@ -403,3 +403,65 @@ def test_a_fit_with_trained_weights_loads_a_base_of_its_own(fits, working_set):
     assert tuned.backend.base is not base.backend
     assert tuned.backend.base.fit_weights == fits / "tuned" / FIT_FILE
     assert base.backend.fit_weights is None
+
+
+def test_unload_all_frees_every_model_and_they_load_again(fits):
+    pool, loads = make_pool(fits, budget=10**6)
+    base = weakref.ref(pool.get("fit-a").backend.base)
+    pool.get("other")
+    assert pool.unload_all() == ["fit-a", "other"]
+    assert pool.loaded() == [] and base() is None
+    assert pool.unload_all() == []
+    pool.get("fit-b")
+    assert loads.names == ["base", "other", "base"]
+
+
+def test_added_models_load_on_demand_and_share_a_listed_base(fits, tmp_path):
+    pool, loads = make_pool(fits / "base", budget=10**6)
+    pool.get("base")
+    names = pool.names
+    [fit, extra] = discover([fits / "fit-a", fake(tmp_path / "extra", 1000)])
+    pool.add(fit)
+    pool.add(extra)
+    assert names == ["base"]  # a copy, not changed under its reader
+    assert pool.names == ["base", "fit-a", "extra"]
+    assert pool.default == "base"
+    assert pool.get("fit-a").backend.base is pool.get("base").backend
+    pool.get("extra")
+    assert loads.names == ["base", "extra"]
+    with pytest.raises(ValueError, match="a model is already named extra"):
+        pool.add(extra)
+
+
+def test_on_change_follows_loads_unloads_and_additions(models, tmp_path):
+    pool, _ = make_pool(models, budget=2200)
+    seen = []
+    pool.on_change = lambda: seen.append(pool.loaded())
+    pool.get("Alpha")
+    pool.get("Alpha")  # already loaded: no change
+    pool.get("beta")
+    pool.get("gamma")  # unloads Alpha first
+    pool.add(discover([fake(tmp_path / "delta")])[0])
+    pool.unload_all()
+    pool.unload_all()  # nothing loaded: no change
+    assert seen == [
+        ["Alpha"],
+        ["Alpha", "beta"],
+        ["beta"],
+        ["beta", "gamma"],
+        ["beta", "gamma"],
+        [],
+    ]
+
+
+def test_a_failing_change_callback_leaves_the_pool_working(models, caplog):
+    pool, _ = make_pool(models, budget=10**6)
+
+    def fail():
+        raise RuntimeError("listener gone")
+
+    pool.on_change = fail
+    with caplog.at_level(logging.ERROR, logger="mlx_decision.pool"):
+        assert pool.get("beta").name == "beta"
+    assert pool.loaded() == ["beta"]
+    assert "the pool's change callback failed" in caplog.text

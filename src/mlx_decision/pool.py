@@ -207,7 +207,10 @@ class ModelPool:
     its own tensors once the base is loaded; the base is loaded for it if
     need be and unloaded with everything that shares it. With
     ``check_memory=False`` a model larger than the budget is loaded anyway
-    (alone). Not thread-safe: use it from the thread that answers requests.
+    (alone). ``on_change``, when set, is called with no arguments after
+    models were loaded or unloaded and after ``add``, on the thread that
+    made the change. Not thread-safe: use it from the thread that answers
+    requests (``loaded`` and ``names`` excepted).
     """
 
     def __init__(
@@ -227,13 +230,8 @@ class ModelPool:
         self.budget = budget
         self.check_memory = check_memory
         self._load = load
-        # What each model loads: itself, or the base it shares (a listed model
-        # where there is one, so the base answers under its own name too).
-        listed = {_key(spec): spec for spec in self.specs.values() if spec.base is None}
-        self._roots = {
-            name: listed.get(_key(spec.base), spec.base) if spec.base else spec
-            for name, spec in self.specs.items()
-        }
+        self.on_change: Callable[[], None] | None = None
+        self._roots = {name: self._root_of(spec) for name, spec in self.specs.items()}
         self._keys = {name: _key(root) for name, root in self._roots.items()}
         self._groups: OrderedDict[tuple[str, str], _Group] = OrderedDict()
         self._loaded: OrderedDict[str, DecisionModel] = OrderedDict()
@@ -241,9 +239,53 @@ class ModelPool:
         # A copy for other threads (the server's /health), replaced after each change.
         self._loaded_names: tuple[str, ...] = ()
 
+    def _root_of(self, spec: ModelSpec) -> ModelSpec:
+        """What a model loads: itself, or the base it shares (a listed model where
+        there is one, so the base answers under its own name too)."""
+        if spec.base is None:
+            return spec
+        key = _key(spec.base)
+        listed = (s for s in reversed(self.specs.values()) if s.base is None and _key(s) == key)
+        return next(listed, spec.base)
+
     @property
     def names(self) -> list[str]:
         return list(self.specs)
+
+    def add(self, spec: ModelSpec) -> None:
+        """A model to load on demand from now on (made while the pool is in use).
+
+        It does not change the default model. Raises ``ValueError`` when a
+        model of that name is already in the pool.
+        """
+        if spec.name in self.specs:
+            raise ValueError(f"a model is already named {spec.name}: {self.specs[spec.name].path}")
+        root = self._root_of(spec)
+        self._roots[spec.name] = root
+        self._keys[spec.name] = _key(root)
+        # A new dict, so other threads reading the names never see one change.
+        self.specs = {**self.specs, spec.name: spec}
+        self._changed()
+
+    def unload_all(self) -> list[str]:
+        """Unload every model and free their memory; returns the names unloaded."""
+        names = list(self._loaded)
+        if not names:
+            return names
+        self._groups.clear()
+        self._loaded.clear()
+        logger.info("unloaded %s", ", ".join(names))
+        _release_memory()
+        self._changed()
+        return names
+
+    def _changed(self) -> None:
+        self._loaded_names = tuple(self._loaded)
+        if self.on_change is not None:
+            try:
+                self.on_change()
+            except Exception:
+                logger.exception("the pool's change callback failed")
 
     def loaded(self) -> list[str]:
         """The loaded models, least recently used first; safe to call from any thread."""
@@ -317,6 +359,7 @@ class ModelPool:
         group.members[name] = own
         self._loaded[name] = model
         self._touch(name)
+        self._changed()
         return model
 
     def _touch(self, name: str) -> None:
@@ -345,6 +388,7 @@ class ModelPool:
             unloaded = True
         if unloaded:
             _release_memory()
+            self._changed()
 
     def _limit(self) -> int:
         return self.budget if self.budget is not None else memory.working_set()

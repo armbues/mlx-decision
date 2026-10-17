@@ -2,22 +2,22 @@
 
 Needs the ``server`` extra (FastAPI, uvicorn). The models come from a
 ``ModelPool``; the request's ``model`` field picks one. All model work,
-loading included, runs on one worker thread; requests wait their turn
-there. With an API key, the ``/v1`` routes require ``Authorization: Bearer
+loading included, runs on the ``Gpu``'s one worker thread; requests wait
+their turn there, and get a 503 while something holds the GPU (never
+under the ``server`` command). With an API key, the ``/v1`` routes require ``Authorization: Bearer
 <key>``; the check belongs to the routes, so it holds wherever the app is
 mounted (a mount or a proxy's root path).
 """
 
-import asyncio
 import hmac
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .errors import DecisionError
+from .gpu import RETRY_AFTER, Busy, Gpu
 from .images import check_data_urls
 from .memory import ModelTooLargeError
 from .pool import ModelPool
@@ -58,24 +58,29 @@ async def read_body(request: Request, limit: int) -> bytes | None:
     return b"".join(chunks)
 
 
-def create_app(
-    pool: ModelPool, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
-) -> FastAPI:
-    """The app; the pool's default model, if it has one, loads at startup on the worker thread."""
-    worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision")
+def busy_response(error: Busy) -> JSONResponse:
+    """The 503 for model work refused while something holds the GPU."""
+    response = error_response(503, str(error), "api_error", code="busy")
+    response.headers["Retry-After"] = str(RETRY_AFTER)
+    return response
 
-    async def on_worker(function, *args):
-        return await asyncio.get_running_loop().run_in_executor(worker, function, *args)
+
+def create_app(
+    gpu: Gpu | ModelPool, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
+) -> FastAPI:
+    """The app, which owns ``gpu`` (a pool gets a ``Gpu`` of its own) and closes it
+    when it stops; the default model, if there is one, loads at startup."""
+    if isinstance(gpu, ModelPool):
+        gpu = Gpu(gpu)
+    pool = gpu.pool
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         try:
-            if pool.default is not None:
-                await on_worker(pool.get, pool.default)
-                logger.info("model %s loaded", pool.default)
+            await gpu.start()
             yield
         finally:  # also when the default model fails to load
-            worker.shutdown(wait=True)
+            gpu.close()
 
     app = FastAPI(title="mlx-decision", lifespan=lifespan)
     guards = []
@@ -99,6 +104,10 @@ def create_app(
 
     @api.post("/systemone")
     async def systemone(request: Request):
+        try:
+            gpu.check()  # before reading the body
+        except Busy as error:
+            return busy_response(error)
         raw = await read_body(request, max_body_bytes)
         if raw is None:
             return error_response(
@@ -120,7 +129,9 @@ def create_app(
 
         try:
             check_data_urls(body)
-            result = await on_worker(answer)
+            result = await gpu.run(answer)
+        except Busy as error:
+            return busy_response(error)
         except DecisionError as error:
             return error_response(
                 422, error.message, "invalid_request_error", error.param, error.code
