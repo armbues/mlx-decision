@@ -34,8 +34,9 @@ def test_text_positions_match_rope(mrope, start):
     ours = mrope(x, text_positions(2, 40, start))
     reference = nn.RoPE(DIMS, traditional=False, base=BASE)(x, offset=start)
     # Both round position * frequency in float32, differently; the error grows
-    # with the position.
-    tolerance = 1e-5 + 2e-7 * (start + 40)
+    # with the position, and differs between GPU generations (an M2 needs
+    # about 2.7e-7 per position).
+    tolerance = 1e-5 + 3e-7 * (start + 40)
     assert mx.abs(ours - reference).max().item() < tolerance
 
 
