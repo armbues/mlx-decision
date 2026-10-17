@@ -12,7 +12,9 @@ import typer
 from .errors import DecisionError, PlatformError
 
 app = typer.Typer(
-    help="Run and fine-tune decision models on Apple Silicon.",
+    help="Run and fine-tune decision models on Apple Silicon.\n\n"
+    "Defaults for some flags (-m, --default-model, --memory-budget, --host, --port) can "
+    "be set in ~/.mlx-decision/config.toml; MLX_DECISION_HOME moves the folder.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -48,6 +50,48 @@ def main(
 def fail(message: str) -> None:
     typer.echo(f"error: {message}", err=True)
     raise typer.Exit(1)
+
+
+def read_config():
+    """The config file's values; its warnings go to stderr, an error ends the command."""
+    from .config import ConfigError, load
+
+    try:
+        config = load()
+    except ConfigError as error:
+        fail(str(error))
+    for warning in config.warnings:
+        typer.echo(f"warning: {warning}", err=True)
+    return config
+
+
+def config_default(config) -> str | None:
+    """The model a one-model command loads without -m (None: the file names none)."""
+    from .config import ConfigError
+
+    try:
+        return config.default_reference()
+    except ConfigError as error:
+        fail(str(error))
+
+
+def model_or_default(model: str | None, config) -> str:
+    """-m, else the config file's default model."""
+    if model is None:
+        model = config_default(config)
+    if model is None:
+        fail(f"pass -m MODEL (or set default_model in {config.path})")
+    return model
+
+
+def config_models(config) -> list[str]:
+    """The models a many-model command uses without -m."""
+    from .config import ConfigError
+
+    try:
+        return config.model_references()
+    except ConfigError as error:
+        fail(str(error))
 
 
 def split_id(value: str, flag: str, required: bool) -> tuple[str | None, str]:
@@ -255,7 +299,12 @@ def format_result(result) -> str:
 
 # Options shared by run and chat.
 ModelOption = Annotated[
-    str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+    str | None,
+    typer.Option(
+        "--model",
+        "-m",
+        help="Model folder or Hugging Face repo id. Default: default_model in the config file.",
+    ),
 ]
 QuestionsOption = Annotated[
     Path | None,
@@ -391,7 +440,7 @@ def add_images(body: dict[str, Any], images: list[Path] | None) -> dict[str, Any
 
 @app.command()
 def run(
-    model: ModelOption,
+    model: ModelOption = None,
     questions: QuestionsOption = None,
     noul: NoulOption = None,
     choice: ChoiceOption = None,
@@ -425,6 +474,7 @@ def run(
     from .model import load
     from .types import parse_request
 
+    model = model_or_default(model, read_config())
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
     if states is not None:
         if state is not None or state_file is not None or state_json:
@@ -485,7 +535,7 @@ def run(
 
 @app.command()
 def chat(
-    model: ModelOption,
+    model: ModelOption = None,
     questions: QuestionsOption = None,
     noul: NoulOption = None,
     choice: ChoiceOption = None,
@@ -509,6 +559,7 @@ def chat(
 
     if not sys.stdin.isatty():
         fail("chat needs a terminal; for many states in a script use: run --states FILE")
+    model = model_or_default(model, read_config())
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
     body: dict[str, Any] = {}
     if questions is not None or shorthand:
@@ -814,6 +865,16 @@ def download(
         typer.echo(f"try it: mlx-decision chat -m {model}", err=True)
 
 
+HostOption = Annotated[
+    str | None,
+    typer.Option(help="Address to bind to. Default: host in the config file, else 127.0.0.1."),
+]
+PortOption = Annotated[
+    int | None,
+    typer.Option(help="Port to listen on. Default: port in the config file, else 8000."),
+]
+
+
 @app.command()
 def server(
     model: Annotated[
@@ -822,15 +883,16 @@ def server(
             "--model",
             "-m",
             help="Model folder, Hugging Face repo id, or a folder of models (each subfolder "
-            "a model named after it). Repeat for several.",
+            "a model named after it). Repeat for several. Default: models in the config file.",
         ),
-    ],
+    ] = None,
     default_model: Annotated[
         str | None,
         typer.Option(
             help="Model for requests that name none or an unknown one (such as the Jev SDK's "
-            "jev-latest). Default: the only model; with several and no default, such "
-            "requests get a 422.",
+            "jev-latest). Default: default_model in the config file when it is one of the "
+            "models, else the only model; with several and no default, such requests get "
+            "a 422.",
         ),
     ] = None,
     memory_budget: Annotated[
@@ -839,11 +901,12 @@ def server(
             min=0,
             metavar="GB",
             help="Memory for loaded models; the least recently used are unloaded to stay "
-            "within it. Default: the GPU's recommended working set.",
+            "within it. Default: memory_budget_gb in the config file, else the GPU's "
+            "recommended working set.",
         ),
     ] = None,
-    host: Annotated[str, typer.Option(help="Address to bind to.")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+    host: HostOption = None,
+    port: PortOption = None,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
@@ -882,13 +945,24 @@ def server(
         handler.setFormatter(logging.Formatter("%(message)s"))
         package_logger.addHandler(handler)
     package_logger.setLevel(logging.INFO)
+    config = read_config()
+    references = model or config_models(config)
+    if not references:
+        fail(f"pass -m MODEL (or set models in {config.path})")
+    memory_budget = config.resolve(memory_budget, "memory_budget_gb")
+    host = config.resolve(host, "host", "127.0.0.1")
+    port = config.resolve(port, "port", 8000)
     options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
     budget = round(memory_budget * 1e9) if memory_budget is not None else None
     try:
         # Fail here, not inside the server: folders, options, the default model's size.
         specs = discover(
-            model, options, on_skip=lambda path, reason: typer.echo(f"skipped {reason}", err=True)
+            references,
+            options,
+            on_skip=lambda path, reason: typer.echo(f"skipped {reason}", err=True),
         )
+        if default_model is None:
+            default_model = config.default_name([spec.name for spec in specs])
         pool = ModelPool(
             specs, default=default_model, budget=budget, check_memory=not no_memory_check
         )
@@ -913,9 +987,7 @@ def server(
 
 @app.command()
 def mcp(
-    model: Annotated[
-        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
-    ],
+    model: ModelOption = None,
     http: Annotated[
         bool,
         typer.Option(
@@ -924,8 +996,19 @@ def mcp(
             "several clients share one loaded model.",
         ),
     ] = False,
-    host: Annotated[str, typer.Option(help="Address to bind to (with --http).")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="Port to listen on (with --http).")] = 8000,
+    host: Annotated[
+        str | None,
+        typer.Option(
+            help="Address to bind to (with --http). Default: host in the config file, else "
+            "127.0.0.1."
+        ),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option(
+            help="Port to listen on (with --http). Default: port in the config file, else 8000."
+        ),
+    ] = None,
     max_image_mp: MaxImageOption = None,
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
@@ -962,6 +1045,10 @@ def mcp(
 
     # stdout carries the protocol: everything else goes to stderr.
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(message)s")
+    config = read_config()
+    model = model_or_default(model, config)
+    host = config.resolve(host, "host", "127.0.0.1")
+    port = config.resolve(port, "port", 8000)
     options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
     try:
         # Fail here, before a client is waiting for the handshake.
@@ -1104,9 +1191,10 @@ def is_folder_of_models(model: str) -> bool:
 
 
 def benchmark_models(
-    folder: str, arguments: list[str], check_memory: bool, as_json: bool, out: Path | None
+    references: list[str], arguments: list[str], check_memory: bool, as_json: bool, out: Path | None
 ) -> None:
-    """``benchmark`` for a folder of models: one process per model, then a summary."""
+    """``benchmark`` for several models (folders of models, the config file's models):
+    one process per model, then a summary."""
     from .benchmark import format_report, format_summary, from_dict, run_models
     from .memory import ModelTooLargeError, check_fits
     from .pool import discover
@@ -1116,7 +1204,7 @@ def benchmark_models(
     skipped: list[str] = []
     try:
         specs = discover(
-            [folder],
+            references,
             on_skip=lambda path, reason: skipped.append(reason.replace(str(path), path.name, 1)),
         )
     except (FileNotFoundError, ValueError) as error:
@@ -1162,14 +1250,15 @@ def benchmark_models(
 @app.command()
 def benchmark(
     model: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--model",
             "-m",
             help="Model folder, Hugging Face repo id, or a folder of models (each "
-            "subfolder benchmarked in a process of its own, in alphabetical order).",
+            "subfolder benchmarked in a process of its own, in alphabetical order). "
+            "Default: the models in the config file, each in a process of its own.",
         ),
-    ],
+    ] = None,
     lengths: Annotated[
         str | None,
         typer.Option(
@@ -1211,12 +1300,17 @@ def benchmark(
     }
     if min(grid["question_counts"]) < 1:
         raise typer.BadParameter("at least one question per request", param_hint="--questions")
-    if is_folder_of_models(model):
+    config = read_config()
+    references = [model] if model is not None else config_models(config)
+    if not references:
+        fail(f"pass -m MODEL (or set models in {config.path})")
+    if len(references) > 1 or is_folder_of_models(references[0]):
         arguments = ["--questions", questions, "--repeats", str(repeats)]
         arguments += ["--lengths", lengths] if lengths else []
         arguments += ["--no-memory-check"] if no_memory_check else []
-        benchmark_models(model, arguments, not no_memory_check, as_json, out)
+        benchmark_models(references, arguments, not no_memory_check, as_json, out)
         return
+    model = references[0]
     try:
         report = run_benchmark(model, check_memory=not no_memory_check, repeats=repeats, **grid)
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
@@ -1275,7 +1369,7 @@ def training_fit(
             "--model",
             "-m",
             help="The base: a model folder or Hugging Face repo id, or a fitted model (its "
-            "fit is replaced, its base kept).",
+            "fit is replaced, its base kept). Default: default_model in the config file.",
         ),
     ] = None,
     data: DataOption = None,
@@ -1356,6 +1450,9 @@ def training_fit(
     from .training.wizard import Cancelled as MenusLeft
     from .training.wizard import FitPlan, ask_fit
 
+    config = read_config()
+    if model is None:
+        model = config_default(config)
     plan = FitPlan(
         model=model,
         data=str(data) if data is not None else None,
@@ -1441,7 +1538,10 @@ def training_eval(
     model: Annotated[
         str | None,
         typer.Option(
-            "--model", "-m", help="Model folder or Hugging Face repo id (or a fitted model)."
+            "--model",
+            "-m",
+            help="Model folder or Hugging Face repo id (or a fitted model). Default: "
+            "default_model in the config file.",
         ),
     ] = None,
     data: DataOption = None,
@@ -1462,6 +1562,9 @@ def training_eval(
     from .training import Cancelled, evaluate
     from .training.console import Progress, format_eval, interrupt_cancels
 
+    config = read_config()
+    if model is None:
+        model = config_default(config)
     if (model is None or data is None) and terminal():
         from .training.wizard import Cancelled as MenusLeft
         from .training.wizard import ask_eval

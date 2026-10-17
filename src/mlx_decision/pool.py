@@ -86,8 +86,7 @@ def discover(
                 raise ValueError(f"{error}, and none of its subfolders is one") from None
             found += models
             continue
-        name = str(reference).rstrip("/").rsplit("/", 1)[-1] if is_repo_id(reference) else None
-        found.append((name or path.resolve().name, path, *_identify(path, family)))
+        found.append((model_name(reference), path, *_identify(path, family)))
 
     paths: dict[str, Path] = {}
     for name, path, _, _ in found:
@@ -111,6 +110,35 @@ def discover(
             base = ModelSpec(fit.base_name, fit.base, family, family_options)
         specs.append(ModelSpec(name, path, family, family_options, fit, base))
     return specs
+
+
+def model_name(reference: str | Path) -> str:
+    """The name ``discover`` gives the model a folder or repo id names (resolving nothing)."""
+    if is_repo_id(reference):
+        return str(reference).rstrip("/").rsplit("/", 1)[-1]
+    return Path(reference).expanduser().resolve().name
+
+
+def find_reference(references: Iterable[str], name: str) -> str | None:
+    """The reference among ``references`` for the model ``name``, as ``discover``
+    would name it: a reference equal to ``name``, a model named so, or a subfolder
+    named so of a folder of models. Nothing is downloaded or loaded."""
+    for reference in references:
+        path = Path(reference).expanduser()
+        if is_repo_id(reference) or not path.is_dir():
+            if name in (reference, model_name(reference)):
+                return reference
+            continue
+        try:
+            detect_family(path)
+        except ValueError:
+            subfolder = path / name
+            if subfolder.is_dir() and not name.startswith(".") and "/" not in name:
+                return str(subfolder)
+            continue
+        if name in (reference, model_name(reference)):
+            return reference
+    return None
 
 
 def _identify(path: Path, family: Family) -> tuple[Family, fitted.FittedFolder | None]:

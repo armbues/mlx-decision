@@ -273,6 +273,27 @@ error body with its line number, and the run goes on:
 {"error": {"message": "state is required", "type": "invalid_request_error", "param": "state"}, "line": 3}
 ```
 
+### Defaults in a config file
+
+`~/.mlx-decision/config.toml`, if it exists, holds defaults for some
+flags. A flag on the command line wins over the file, the file over the
+built-in default:
+
+```toml
+models = ["~/Models", "Cloudflare/clef-flash"]  # -m of server, mcp and benchmark
+default_model = "clef-flash"  # run, chat, mcp and training without -m; server's --default-model
+memory_budget_gb = 30         # server's --memory-budget
+host = "127.0.0.1"            # server's and mcp's --host
+port = 8000                   # server's and mcp's --port
+```
+
+`models` takes what `-m` takes; `default_model` is the name of one of
+those models, or a model folder or repo id of its own. Paths start with
+`/`, `~` or `./` (relative to the file's folder). An unknown key is a
+warning, a value of the wrong type an error naming the key. The API key
+is not read from the file (`--api-key` or `MLX_DECISION_API_KEY`).
+`MLX_DECISION_HOME` moves the folder.
+
 ## Interactive: `chat`
 
 `mlx-decision chat` loads the model once and answers one state after

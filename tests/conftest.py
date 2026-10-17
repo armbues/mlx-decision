@@ -17,6 +17,14 @@ LAYA_TYPED = ("laya-typed-decisions", "convaiinnovations/laya-typed-decisions")
 JULIA = ("Julia-1", "SupersonicLabs/Julia-1")
 
 
+@pytest.fixture(autouse=True)
+def mlx_decision_home(tmp_path_factory, monkeypatch) -> Path:
+    """An empty home folder, so commands never read the user's config file."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("MLX_DECISION_HOME", str(home))
+    return home
+
+
 @pytest.fixture
 def working_set(monkeypatch):
     """Set the working set the memory check compares against."""
