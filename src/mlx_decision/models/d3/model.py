@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
+from ...backend import Capabilities
 from ..letter import LetterBackend, Preset
+from ..letter import capabilities as letter_capabilities
 from ..letter import load as load_letter
 from .prompt import describe, options, render
 
@@ -29,6 +31,11 @@ PRESET = Preset(
     max_image_pixels=MAX_IMAGE_PIXELS,
     max_score_levels=MAX_SCORE_LEVELS,
 )
+
+
+def capabilities(path: Path, options: dict) -> Capabilities:
+    """What ``load(path, **options)`` gives the backend, from the folder's config files."""
+    return letter_capabilities(path, PRESET, options)
 
 
 def load(

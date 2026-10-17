@@ -31,7 +31,7 @@ class FakeBackend:
     ):
         self.name = name
         self.fixed = fixed or {}
-        self.capabilities = Capabilities(max_input_tokens=max_input_tokens, **capabilities)
+        self.capabilities = _capabilities(max_input_tokens, **capabilities)
 
     def score(self, request: Request) -> BackendOutput:
         state = request.state if isinstance(request.state, str) else json.dumps(request.state)
@@ -60,6 +60,18 @@ def _falling(question) -> dict[str, float]:
     return {option: (n - index) / total for index, option in enumerate(options)}
 
 
+def _capabilities(max_input_tokens: int | None = None, **capabilities) -> Capabilities:
+    return Capabilities(max_input_tokens=max_input_tokens, **capabilities)
+
+
+def capabilities(path: Path, options: dict) -> Capabilities:
+    """What ``load(path, **options)`` gives the backend, from the marker file."""
+    config = {**json.loads((path / MARKER_FILE).read_text()), **options}
+    for key in ("family", "name", "fixed", "fit_weights"):
+        config.pop(key, None)
+    return _capabilities(**config)
+
+
 def load(path: Path, fit_weights: Path | None = None, **options) -> FakeBackend:
     config = json.loads((path / MARKER_FILE).read_text())
     config.pop("family")
@@ -84,7 +96,12 @@ def write_sized_model(folder: Path, weights: int) -> Path:
     return folder
 
 
-register_family(FAMILY, detect=lambda path: False, loader="fake_backend:load")
+register_family(
+    FAMILY,
+    detect=lambda path: False,
+    loader="fake_backend:load",
+    capabilities="fake_backend:capabilities",
+)
 
 
 TEAM = {"type": "choice", "criteria": {"billing": "Money", "tech": "Bugs", "sales": "Plans"}}

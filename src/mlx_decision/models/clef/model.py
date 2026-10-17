@@ -61,12 +61,8 @@ class ClefBackend:
         self.prefix_cache = (
             PrefixCache(round(prefix_cache_gb * 1e9)) if prefix_cache_gb > 0 else None
         )
-        self.capabilities = Capabilities(
-            max_input_tokens=max_input_tokens,
-            # The release documents no limits; these are the Jev API's.
-            max_choice_options=255,
-            max_score_levels=10,
-            supports_images=path is not None and has_vision_weights(path),
+        self.capabilities = _capabilities(
+            max_input_tokens, path is not None and has_vision_weights(path)
         )
 
     def load_vision(self):
@@ -184,6 +180,26 @@ class ClefBackend:
             cache=entry.cache,
         )
         return mx.concatenate([entry.hidden, rest[0]], axis=0)
+
+
+def _capabilities(max_input_tokens: int, images: bool) -> Capabilities:
+    return Capabilities(
+        max_input_tokens=max_input_tokens,
+        # The release documents no limits; these are the Jev API's.
+        max_choice_options=255,
+        max_score_levels=10,
+        supports_images=images,
+    )
+
+
+def capabilities(path: Path, options: dict) -> Capabilities:
+    """What ``load(path, **options)`` gives the backend, from the folder's files."""
+    result = _capabilities(
+        options.get("max_input_tokens", DEFAULT_MAX_LENGTH), has_vision_weights(path)
+    )
+    if options.get("vision") and not result.supports_images:
+        raise ValueError(f"{path} has no vision weights")
+    return result
 
 
 def load_fitted_head(head: JointSchemaHead, file: Path) -> None:

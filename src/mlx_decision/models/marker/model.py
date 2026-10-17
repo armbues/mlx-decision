@@ -96,9 +96,7 @@ class Parts(nn.Module):
 
 
 class MarkerBackend:
-    def __init__(
-        self, name, encoder, head, tokenizer, special, settings, capabilities, precision=None
-    ):
+    def __init__(self, name, encoder, head, tokenizer, special, settings, precision=None):
         self.name = name
         self.precision = precision
         self.encoder = encoder
@@ -106,7 +104,7 @@ class MarkerBackend:
         self.tokenizer = tokenizer
         self.special = special
         self.settings = settings
-        self.capabilities = capabilities
+        self.capabilities = _capabilities(settings)
 
     def score(self, request: Request) -> BackendOutput:
         encoded = encode_request(self.tokenizer, self.special, self.settings, request)
@@ -301,6 +299,60 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, str | None]]:
     return [(file, options.get("dtype", DEFAULT_DTYPE))] if file.exists() else []
 
 
+def _capabilities(settings: Settings) -> Capabilities:
+    julia = settings.family == "julia"
+    limits = {"max_choice_options": 20, "max_score_levels": 20} if julia else {}
+    return Capabilities(
+        max_input_tokens=settings.max_length,
+        question_tokens=settings.head_length,
+        truncates_input=not settings.strict,
+        **limits,
+    )
+
+
+def _encoder_args(path: Path, encoder_dir: str) -> EncoderArgs:
+    file = path / encoder_dir / "config.json"
+    if not file.exists():
+        raise FileNotFoundError(f"{path}: {encoder_dir}/config.json is missing")
+    return EncoderArgs.from_config(json.loads(file.read_text()))
+
+
+def _read_julia(path: Path) -> tuple[dict, dict, dict]:
+    """A Julia release's top config (file names), checkpoint config and inference policy."""
+    root = json.loads((path / "config.json").read_text()) if (path / "config.json").exists() else {}
+    config = json.loads((path / root.get("julia_config_file", "julia_config.json")).read_text())
+    if config.get("format_version") != 1:
+        raise ValueError(f"{path}: unsupported Julia checkpoint format")
+    policy_file = path / "inference-policy.json"
+    policy = json.loads(policy_file.read_text()) if policy_file.exists() else {}
+    return root, config, policy
+
+
+def _julia_encoder_dir(root: dict) -> str:
+    return str(Path(root.get("encoder_config_file", "encoder/config.json")).parent)
+
+
+def _julia_settings(
+    policy: dict, max_input_tokens: int | None, strict_encoding: bool | None, args: EncoderArgs
+) -> Settings:
+    return Settings(
+        family="julia",
+        max_length=_max_length(max_input_tokens, policy.get("max_length"), args),
+        head_length=policy.get("head_length", 512),
+        strict=policy.get("strict_encoding", True) if strict_encoding is None else strict_encoding,
+    )
+
+
+def julia_capabilities(path: Path, options: dict) -> Capabilities:
+    """What ``load_julia(path, **options)`` gives the backend, from the folder's config files."""
+    root, _, policy = _read_julia(path)
+    args = _encoder_args(path, _julia_encoder_dir(root))
+    settings = _julia_settings(
+        policy, options.get("max_input_tokens"), options.get("strict_encoding"), args
+    )
+    return _capabilities(settings)
+
+
 def load_julia(
     path: Path,
     max_input_tokens: int | None = None,
@@ -318,38 +370,42 @@ def load_julia(
     (state, question or options) instead of cutting them. ``fit_weights`` is a
     fitted model's file of fine-tuned tensors, loaded over the release's.
     """
-    root = json.loads((path / "config.json").read_text()) if (path / "config.json").exists() else {}
-    config = json.loads((path / root.get("julia_config_file", "julia_config.json")).read_text())
-    if config.get("format_version") != 1:
-        raise ValueError(f"{path}: unsupported Julia checkpoint format")
-    policy_file = path / "inference-policy.json"
-    policy = json.loads(policy_file.read_text()) if policy_file.exists() else {}
-    encoder_dir = str(Path(root.get("encoder_config_file", "encoder/config.json")).parent)
+    root, config, policy = _read_julia(path)
     encoder, head, tokenizer, special, args, precision = _load_parts(
         path,
         root.get("weights_file", "model.safetensors"),
-        encoder_dir,
+        _julia_encoder_dir(root),
         root.get("tokenizer_directory", "tokenizer"),
         config["head_layers"],
         dtype,
         fit_weights,
     )
-    settings = Settings(
-        family="julia",
-        max_length=_max_length(max_input_tokens, policy.get("max_length"), args),
-        head_length=policy.get("head_length", 512),
-        strict=policy.get("strict_encoding", True) if strict_encoding is None else strict_encoding,
-    )
-    capabilities = Capabilities(
-        max_input_tokens=settings.max_length,
-        max_choice_options=20,
-        max_score_levels=20,
-        question_tokens=settings.head_length,
-        truncates_input=not settings.strict,
-    )
+    settings = _julia_settings(policy, max_input_tokens, strict_encoding, args)
     return MarkerBackend(
-        path.resolve().name, encoder, head, tokenizer, special, settings, capabilities, precision
+        path.resolve().name, encoder, head, tokenizer, special, settings, precision
     )
+
+
+def _laya_settings(
+    path: Path, config: dict, max_input_tokens: int | None, args: EncoderArgs
+) -> Settings:
+    return Settings(
+        family="laya",
+        max_length=_max_length(max_input_tokens, config.get("max_len"), args),
+        head_length=config.get("head_max_len", 192),
+        temperatures=_laya_temperatures(path, config.get("temperature", [1.0, 1.0, 1.0])),
+        temperatures_by_options={
+            bucket: _clamp_temperature(value)
+            for bucket, value in config.get("temperature_by_options", {}).items()
+        },
+    )
+
+
+def laya_capabilities(path: Path, options: dict) -> Capabilities:
+    """What ``load_laya(path, **options)`` gives the backend, from the folder's config files."""
+    config = json.loads((path / "rl_agent_config.json").read_text())
+    args = _encoder_args(path, "encoder")
+    return _capabilities(_laya_settings(path, config, options.get("max_input_tokens"), args))
 
 
 def load_laya(
@@ -369,21 +425,9 @@ def load_laya(
         path, "model.safetensors", "encoder", "tokenizer", config["head_layers"], dtype,
         fit_weights,
     )  # fmt: skip
-    settings = Settings(
-        family="laya",
-        max_length=_max_length(max_input_tokens, config.get("max_len"), args),
-        head_length=config.get("head_max_len", 192),
-        temperatures=_laya_temperatures(path, config.get("temperature", [1.0, 1.0, 1.0])),
-        temperatures_by_options={
-            bucket: _clamp_temperature(value)
-            for bucket, value in config.get("temperature_by_options", {}).items()
-        },
-    )
-    capabilities = Capabilities(
-        max_input_tokens=settings.max_length, question_tokens=settings.head_length
-    )
+    settings = _laya_settings(path, config, max_input_tokens, args)
     return MarkerBackend(
-        path.resolve().name, encoder, head, tokenizer, special, settings, capabilities, precision
+        path.resolve().name, encoder, head, tokenizer, special, settings, precision
     )
 
 

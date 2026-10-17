@@ -97,12 +97,8 @@ class LetterBackend:
             preset.max_image_pixels, max_image_pixels or preset.max_image_pixels
         )
         self.vision = None
-        self.capabilities = Capabilities(
-            max_input_tokens=max_input_tokens or preset.max_input_tokens,
-            max_choice_options=len(codes),
-            max_score_levels=min(len(codes), preset.max_score_levels or len(codes)),
-            supports_images=path is not None and has_vision_weights(path),
-            truncates_input=False,
+        self.capabilities = _capabilities(
+            preset, codes, max_input_tokens, path is not None and has_vision_weights(path)
         )
 
     def load_vision(self):
@@ -271,6 +267,36 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     return [(file, None) for file in files if file.exists()]
 
 
+def _capabilities(
+    preset: Preset, codes: list[str], max_input_tokens: int | None, images: bool
+) -> Capabilities:
+    return Capabilities(
+        max_input_tokens=max_input_tokens or preset.max_input_tokens,
+        max_choice_options=len(codes),
+        max_score_levels=min(len(codes), preset.max_score_levels or len(codes)),
+        supports_images=images,
+        truncates_input=False,
+    )
+
+
+def _check_input_limit(preset: Preset, max_input_tokens: int | None) -> None:
+    limit = preset.input_token_limit
+    if max_input_tokens is not None and not 1 <= max_input_tokens <= limit:
+        raise ValueError(f"max_input_tokens must be between 1 and {limit}")
+
+
+def capabilities(path: Path, preset: Preset, options: dict) -> Capabilities:
+    """What ``load(path, preset, **options)`` gives the backend, from the folder's
+    config files."""
+    max_input_tokens = options.get("max_input_tokens")
+    _check_input_limit(preset, max_input_tokens)
+    codes, _, _ = read_decision_config(path)
+    result = _capabilities(preset, codes, max_input_tokens, has_vision_weights(path))
+    if options.get("vision") and not result.supports_images:
+        raise ValueError(f"{path} has no vision weights")
+    return result
+
+
 def load(
     path: Path,
     preset: Preset,
@@ -285,9 +311,7 @@ def load(
     ``vision=True`` loads the vision tower now, not with the first image.
     ``max_image_pixels`` lowers the preset's image maximum.
     """
-    limit = preset.input_token_limit
-    if max_input_tokens is not None and not 1 <= max_input_tokens <= limit:
-        raise ValueError(f"max_input_tokens must be between 1 and {limit}")
+    _check_input_limit(preset, max_input_tokens)
     # Checked before the backbone, which takes a while to load.
     for name in REQUIRED_FILES:
         if not (path / name).exists():

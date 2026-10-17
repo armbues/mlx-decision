@@ -161,15 +161,8 @@ class H2OBackend:
         )
         if backbone is not None:
             self.label_rows()
-        self.capabilities = Capabilities(
-            max_input_tokens=max_input_tokens,
-            max_choice_options=len(config.labels),
-            max_score_levels=len(config.labels),
-            truncates_input=True,
-            max_state_tokens=config.prompt.max_state_tokens,
-            supports_images=(
-                config.image is not None and path is not None and has_vision_weights(path)
-            ),
+        self.capabilities = _capabilities(
+            config, max_input_tokens, path is not None and has_vision_weights(path)
         )
 
     def load_vision(self):
@@ -485,6 +478,39 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     return [(file, None) for file in sorted(path.glob("model*.safetensors"))]
 
 
+def _capabilities(config: ServeConfig, max_input_tokens: int, vision: bool) -> Capabilities:
+    """``vision``: the folder has vision weights (images also need the serve
+    config's image block)."""
+    return Capabilities(
+        max_input_tokens=max_input_tokens,
+        max_choice_options=len(config.labels),
+        max_score_levels=len(config.labels),
+        truncates_input=True,
+        max_state_tokens=config.prompt.max_state_tokens,
+        supports_images=config.image is not None and vision,
+    )
+
+
+def _input_limit(max_input_tokens: int | None) -> int:
+    """The limit per question's prompt: the release's unless lowered."""
+    if max_input_tokens is None:
+        return MAX_INPUT_TOKENS
+    if not 1 <= max_input_tokens <= MAX_INPUT_TOKENS:
+        raise ValueError(
+            f"max_input_tokens must be between 1 and {MAX_INPUT_TOKENS} (the release's limit)"
+        )
+    return max_input_tokens
+
+
+def capabilities(path: Path, options: dict) -> Capabilities:
+    """What ``load(path, **options)`` gives the backend, from the folder's config files."""
+    limit = _input_limit(options.get("max_input_tokens"))
+    result = _capabilities(ServeConfig.read(path), limit, has_vision_weights(path))
+    if options.get("vision") and not result.supports_images:
+        raise ValueError(f"{path} has no vision weights or image settings")
+    return result
+
+
 def load(
     path: Path,
     max_input_tokens: int | None = None,
@@ -513,12 +539,7 @@ def load(
         raise ValueError("prefix_cache_gb must be 0 (off) or more")
     if noul_floor is not None and noul_floor != 0 and not 0.5 < noul_floor < 1:
         raise ValueError("noul_floor must be between 0.5 and 1, or 0 to turn it off")
-    if max_input_tokens is None:
-        max_input_tokens = MAX_INPUT_TOKENS
-    if not 1 <= max_input_tokens <= MAX_INPUT_TOKENS:
-        raise ValueError(
-            f"max_input_tokens must be between 1 and {MAX_INPUT_TOKENS} (the release's limit)"
-        )
+    max_input_tokens = _input_limit(max_input_tokens)
     # Checked before the backbone, which takes a while to load.
     for name in REQUIRED_FILES:
         if not (path / name).exists():

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 
-from .backend import Backend
+from .backend import Backend, Capabilities
 
 MARKER_FILE = "mlx_decision.json"
 
@@ -52,6 +52,10 @@ class Family:
     licence: str | None = None
     # Its line in the ``download`` menu; None: not listed there.
     listing: Listing | None = None
+    # "module:function" (path, load options) -> Capabilities: what a model takes,
+    # read from its folder's config files without loading weights; the
+    # backend's constructor builds its capabilities the same way.
+    capabilities: str | None = None
 
 
 # In registration order, which is the order the docs list the families in.
@@ -69,6 +73,7 @@ def register_family(
     quantizable: Callable[[str, list[int]], bool] | None = None,
     licence: str | None = None,
     listing: Listing | None = None,
+    capabilities: str | None = None,
 ) -> None:
     _FAMILIES[name] = Family(
         name,
@@ -81,6 +86,7 @@ def register_family(
         quantizable,
         licence,
         listing,
+        capabilities,
     )
 
 
@@ -110,6 +116,7 @@ FITTED = Family(
     detect=lambda path: False,
     loader="mlx_decision.fitted:load",
     weight_files="mlx_decision.fitted:weight_files",
+    capabilities="mlx_decision.fitted:capabilities",
 )
 
 
@@ -162,6 +169,17 @@ def load_backend(path: Path, **options) -> Backend:
     return backend
 
 
+def static_capabilities(path: Path, **options) -> Capabilities:
+    """What the model in ``path`` takes when loaded with ``options``, read from its
+    config files: no weights are loaded. Raises as ``load_backend`` would for
+    options the family does not take or values its loader refuses."""
+    family = detect_family(path)
+    check_options(family, options)
+    if family.capabilities is None:
+        raise ValueError(f"{family.name} models do not report capabilities before loading")
+    return resolve(family.capabilities)(path, options)
+
+
 def _qwen_text_matrix(name: str, shape: list[int]) -> bool:
     """The text backbone's matrices (named as released or as MLX saves them);
     the vision tower and the decision head stay as they are."""
@@ -174,6 +192,7 @@ register_family(
     "clef",
     detect=lambda path: (path / "joint_head_config.json").exists(),
     loader="mlx_decision.models.clef.model:load",
+    capabilities="mlx_decision.models.clef.model:capabilities",
     listing=Listing("Clef", "Cloudflare", "joint schema head over Qwen3.5; text and images"),
     converter="mlx_decision.models.clef.convert:convert",
     known_models=(
@@ -219,6 +238,7 @@ register_family(
     # The JSON files alone, so that ``download`` recognises the repository.
     detect=lambda path: _letter_family(path) == "pplx",
     loader="mlx_decision.models.pplx.model:load",
+    capabilities="mlx_decision.models.pplx.model:capabilities",
     listing=Listing("pplx", "Perplexity", "letter readout over Qwen3.5; text and images"),
     converter="mlx_decision.models.pplx.convert:convert",
     known_models=(
@@ -252,6 +272,7 @@ register_family(
     # The JSON files alone, so that ``download`` recognises the repository.
     detect=lambda path: _letter_family(path) == "d3",
     loader="mlx_decision.models.d3.model:load",
+    capabilities="mlx_decision.models.d3.model:capabilities",
     listing=Listing("d3", "vLLM Semantic Router", "pplx's design, 0.6B to 27B; text and images"),
     converter="mlx_decision.models.d3.convert:convert",
     known_models=(
@@ -321,6 +342,7 @@ register_family(
     "h2o",
     detect=_h2o_detect,
     loader="mlx_decision.models.h2o.model:load",
+    capabilities="mlx_decision.models.h2o.model:capabilities",
     listing=Listing("H2O-Lightning", "H2O.ai", "label tokens over Qwen3.5; text and images"),
     converter="mlx_decision.models.h2o.convert:convert",
     known_models=(
@@ -365,6 +387,7 @@ register_family(
     "d1",
     detect=_d1_detect,
     loader="mlx_decision.models.d1.model:load",
+    capabilities="mlx_decision.models.d1.model:capabilities",
     listing=Listing("d1", "Liquid AI", "LFM2.5 with a decision readout; text"),
     known_models=(
         KnownModel(
@@ -397,6 +420,7 @@ register_family(
     "laya",
     detect=lambda path: (path / "rl_agent_config.json").exists(),
     loader="mlx_decision.models.marker.model:load_laya",
+    capabilities="mlx_decision.models.marker.model:laya_capabilities",
     listing=Listing("Laya", "ConvAI Innovations", "small encoders (ModernBERT, mmBERT); text"),
     known_models=(
         KnownModel(
@@ -423,6 +447,7 @@ register_family(
     "julia",
     detect=lambda path: (path / "julia_config.json").exists(),
     loader="mlx_decision.models.marker.model:load_julia",
+    capabilities="mlx_decision.models.marker.model:julia_capabilities",
     listing=Listing("Julia", "Supersonic Labs", "small multilingual encoder (mmBERT); text"),
     known_models=(
         KnownModel(

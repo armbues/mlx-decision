@@ -27,9 +27,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .backend import BackendOutput, Readable
+from .backend import BackendOutput, Capabilities, Readable
 from .hub import ModelNotFoundError, is_repo_id, resolve_model_path, snapshot_revision
-from .registry import FITTED, MARKER_FILE, Family, detect_family, load_backend
+from .registry import (
+    FITTED,
+    MARKER_FILE,
+    Family,
+    detect_family,
+    load_backend,
+    static_capabilities,
+)
 from .types import Choice, Noul, Request, parse_request
 
 FORMAT = 1
@@ -358,6 +365,11 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, str | None]]:
     if (path / FIT_FILE).exists():
         files.append((path / FIT_FILE, None))
     return files
+
+
+def capabilities(path: Path, options: dict) -> Capabilities:
+    """A fitted model's capabilities: its base's with ``options``, from the base's files."""
+    return static_capabilities(open_folder(path).base, **options)
 
 
 @dataclass(frozen=True)

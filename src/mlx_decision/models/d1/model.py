@@ -140,12 +140,7 @@ class D1Backend:
         self.prefix_cache = (
             PrefixCache(round(prefix_cache_gb * 1e9)) if prefix_cache_gb > 0 else None
         )
-        self.capabilities = Capabilities(
-            max_input_tokens=max_input_tokens,
-            max_choice_options=MAX_CHOICE_OPTIONS,
-            max_score_levels=MAX_SCORE_LEVELS,
-            truncates_input=True,
-        )
+        self.capabilities = _capabilities(max_input_tokens)
 
     def _encode_text(self, text: str) -> list[int]:
         return self.tokenizer.encode(text, add_special_tokens=False).ids
@@ -305,6 +300,32 @@ class D1Backend:
         )
 
 
+def _capabilities(max_input_tokens: int) -> Capabilities:
+    return Capabilities(
+        max_input_tokens=max_input_tokens,
+        max_choice_options=MAX_CHOICE_OPTIONS,
+        max_score_levels=MAX_SCORE_LEVELS,
+        truncates_input=True,
+    )
+
+
+def _input_limit(max_input_tokens: int | None) -> int:
+    """The limit per question's prompt: the model's context unless lowered."""
+    if max_input_tokens is None:
+        return MAX_INPUT_TOKENS
+    if not 1 <= max_input_tokens <= MAX_INPUT_TOKENS:
+        raise ValueError(
+            f"max_input_tokens must be between 1 and {MAX_INPUT_TOKENS} (the model's context)"
+        )
+    return max_input_tokens
+
+
+def capabilities(path: Path, options: dict) -> Capabilities:
+    """What ``load(path, **options)`` gives the backend (nothing of it is read
+    from the folder: d1's limits are fixed)."""
+    return _capabilities(_input_limit(options.get("max_input_tokens")))
+
+
 def load(
     path: Path,
     max_input_tokens: int | None = None,
@@ -324,12 +345,7 @@ def load(
     """
     if prefix_cache_gb < 0:
         raise ValueError("prefix_cache_gb must be 0 (off) or more")
-    if max_input_tokens is None:
-        max_input_tokens = MAX_INPUT_TOKENS
-    if not 1 <= max_input_tokens <= MAX_INPUT_TOKENS:
-        raise ValueError(
-            f"max_input_tokens must be between 1 and {MAX_INPUT_TOKENS} (the model's context)"
-        )
+    max_input_tokens = _input_limit(max_input_tokens)
     for name in REQUIRED_FILES:
         if not (path / name).exists():
             raise FileNotFoundError(f"{path}: {name} is missing")
