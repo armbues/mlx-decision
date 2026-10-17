@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .answers import build_answer
-from .backend import Backend
+from .backend import Backend, Capabilities
 from .errors import DecisionError, require_metal
 from .hub import is_repo_id, resolve_model_path
 from .memory import check_fits
@@ -92,54 +92,76 @@ class DecisionModel:
         return self._checked(request)[0]
 
     def _checked(self, request: Request | Mapping[str, Any]) -> tuple[Request, dict[int, str]]:
-        """The request validated, with the images in its state lifted out (for a
-        model that reads images), and where each lifted image was by its index."""
-        request = parse_request(request)
-        lifted = {}
-        if self.backend.capabilities.supports_images:
-            request, lifted = _lift_state_images(request)
-        self._check_supported(request)
-        return request, lifted
+        return _checked(request, self.backend.capabilities, self.backend.name)
 
-    def _check_supported(self, request: Request) -> None:
-        caps = self.backend.capabilities
-        if request.videos:
+
+def check_request(
+    request: Request | Mapping[str, Any], capabilities: Capabilities, name: str
+) -> Request:
+    """Validate a request for a model with ``capabilities``, named ``name`` in the
+    errors, without the model loaded: what ``DecisionModel.check`` does.
+
+    Raises ``DecisionError`` for an invalid body and for what the model does
+    not support (question types, limits, media). Limits that need the
+    tokenizer (input length) are checked only when the model answers.
+    """
+    return _checked(request, capabilities, name)[0]
+
+
+def check_supported(request: Request, capabilities: Capabilities, name: str) -> None:
+    """Raise ``DecisionError`` for what a parsed request asks that a model with
+    ``capabilities`` does not support: media, question types, instructions,
+    option counts."""
+    if request.videos:
+        raise DecisionError(
+            "videos are not supported yet", param="videos", code="unsupported_media"
+        )
+    if request.images and not capabilities.supports_images:
+        raise DecisionError(
+            f"{name} does not support images",
+            param="images",
+            code="unsupported_media",
+        )
+    for question_id, question in request.questions.items():
+        where = f"questions.{question_id}"
+        if question.type not in capabilities.question_types:
             raise DecisionError(
-                "videos are not supported yet", param="videos", code="unsupported_media"
+                f"{name} does not support {question.type} questions",
+                param=f"{where}.type",
             )
-        if request.images and not caps.supports_images:
+        if capabilities.requires_instructions and question.instructions in (None, ""):
+            raise DecisionError("instructions are required", param=f"{where}.instructions")
+        if (
+            isinstance(question, Choice)
+            and capabilities.max_choice_options is not None
+            and len(question.criteria) > capabilities.max_choice_options
+        ):
             raise DecisionError(
-                f"{self.backend.name} does not support images",
-                param="images",
-                code="unsupported_media",
+                f"a choice can have at most {capabilities.max_choice_options} options",
+                param=f"{where}.criteria",
             )
-        for question_id, question in request.questions.items():
-            where = f"questions.{question_id}"
-            if question.type not in caps.question_types:
-                raise DecisionError(
-                    f"{self.backend.name} does not support {question.type} questions",
-                    param=f"{where}.type",
-                )
-            if caps.requires_instructions and question.instructions in (None, ""):
-                raise DecisionError("instructions are required", param=f"{where}.instructions")
-            if (
-                isinstance(question, Choice)
-                and caps.max_choice_options is not None
-                and len(question.criteria) > caps.max_choice_options
-            ):
-                raise DecisionError(
-                    f"a choice can have at most {caps.max_choice_options} options",
-                    param=f"{where}.criteria",
-                )
-            if (
-                isinstance(question, Score)
-                and caps.max_score_levels is not None
-                and len(question.criteria) > caps.max_score_levels
-            ):
-                raise DecisionError(
-                    f"a score can have at most {caps.max_score_levels} levels",
-                    param=f"{where}.criteria",
-                )
+        if (
+            isinstance(question, Score)
+            and capabilities.max_score_levels is not None
+            and len(question.criteria) > capabilities.max_score_levels
+        ):
+            raise DecisionError(
+                f"a score can have at most {capabilities.max_score_levels} levels",
+                param=f"{where}.criteria",
+            )
+
+
+def _checked(
+    request: Request | Mapping[str, Any], capabilities: Capabilities, name: str
+) -> tuple[Request, dict[int, str]]:
+    """The request validated, with the images in its state lifted out (for a
+    model that reads images), and where each lifted image was by its index."""
+    request = parse_request(request)
+    lifted = {}
+    if capabilities.supports_images:
+        request, lifted = _lift_state_images(request)
+    check_supported(request, capabilities, name)
+    return request, lifted
 
 
 def load(model: str | Path, check_memory: bool = True, **options) -> DecisionModel:

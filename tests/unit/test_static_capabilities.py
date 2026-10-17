@@ -1,12 +1,16 @@
 """Static capabilities (read from a model's files) against the loaded backend's."""
 
+import base64
+from functools import partial
 from pathlib import Path
 
 import mlx.core as mx
 import pytest
 
 from fake_backend import write_fitted, write_model
+from mlx_decision import DecisionError
 from mlx_decision.convert import convert
+from mlx_decision.model import DecisionModel, check_request
 from mlx_decision.registry import load_backend, static_capabilities
 from tiny_models import write_clef, write_d1, write_d3, write_h2o, write_marker, write_pplx
 
@@ -111,3 +115,76 @@ def test_refused_options_give_the_loaders_error(models, name, options):
     with pytest.raises(ValueError) as static:
         static_capabilities(path, **options)
     assert str(static.value) == str(loaded.value)
+
+
+# The checks as a function of capabilities: the same outcome on the static
+# capabilities as ``check`` on the loaded model, for every request below.
+PNG = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n" + bytes(32)).decode()
+
+
+def _choice(n: int) -> dict:
+    return {"type": "choice", "criteria": {f"o{index}": None for index in range(n)}}
+
+
+def _score(n: int) -> dict:
+    return {"type": "score", "criteria": [f"level {index}" for index in range(n)]}
+
+
+NOUL = {"type": "noul", "instructions": "Is it urgent?"}
+REQUESTS = {
+    "valid": {
+        "state": "my card was charged twice",
+        "questions": {"urgent": NOUL, "team": _choice(3), "tone": _score(5)},
+    },
+    "invalid body": {"state": "x", "questions": {"q": {"type": "maybe"}}},
+    "no questions": {"state": "x"},
+    "videos": {"state": "x", "questions": {"q": NOUL}, "videos": ["data:video/mp4;base64,AA=="]},
+    "images": {"state": "x", "questions": {"q": NOUL}, "images": [PNG]},
+    "image in state": {"state": {"photo": PNG}, "questions": {"q": NOUL}},
+    "bad image in state": {"state": "data:image/png;base64,!!!", "questions": {"q": NOUL}},
+    "21 options": {"state": "x", "questions": {"q": _choice(21)}},
+    "256 options": {"state": "x", "questions": {"q": _choice(256)}},
+    "11 levels": {"state": "x", "questions": {"q": _score(11)}},
+    "21 levels": {"state": "x", "questions": {"q": _score(21)}},
+    "no instructions": {"state": "x", "questions": {"q": {"type": "noul"}}},
+    "empty instructions": {"state": "x", "questions": {"q": {**NOUL, "instructions": ""}}},
+}
+
+# Defaults per family, plus a fake model that limits everything the checks cover.
+STRICT = {
+    "question_types": frozenset({"noul", "choice"}),
+    "requires_instructions": True,
+    "max_choice_options": 2,
+    "max_score_levels": 3,
+}
+CHECKED = [(name, {}) for name in dict.fromkeys(name for name, _ in CASES)] + [("fake", STRICT)]
+
+
+def _outcome(check, body):
+    try:
+        return "ok", check(body)
+    except DecisionError as error:
+        return "error", error.message, error.param, error.code
+
+
+@pytest.mark.parametrize(("name", "options"), CHECKED)
+def test_the_checks_on_static_capabilities_are_the_loaded_models(models, name, options):
+    path = models[name]
+    loaded = DecisionModel(load_backend(path, **options))
+    capabilities = static_capabilities(path, **options)
+    for request_name, body in REQUESTS.items():
+        static = _outcome(partial(check_request, capabilities=capabilities, name=loaded.name), body)
+        assert static == _outcome(loaded.check, body), request_name
+
+
+def test_the_requests_cover_every_check(models):
+    """Each check refuses at least one request on one of the models above."""
+    params = set()
+    for name, options in CHECKED:
+        capabilities = static_capabilities(models[name], **options)
+        check = partial(check_request, capabilities=capabilities, name=name)
+        for body in REQUESTS.values():
+            outcome = _outcome(check, body)
+            if outcome[0] == "error":
+                params.add(outcome[2].rsplit(".", 1)[-1] if outcome[2] else None)
+    assert {"type", "instructions", "criteria", "images", "videos", "state"} <= params
