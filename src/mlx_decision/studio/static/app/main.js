@@ -1,35 +1,25 @@
-// The Studio's page: for now a shell that shows what it is serving.
+// The Studio's page: the window, its stores and the stream that keeps them current.
 import { render } from "preact";
 import { html } from "htm/preact";
-import { signal } from "@preact/signals";
+import { App } from "./components/app.js";
+import "./keys.js";
+import { reloadSets } from "./store/sets.js";
+import { loadModels, loadStatus } from "./store/status.js";
+import { openMenu } from "./store/ui.js";
+import { connect } from "./stream.js";
 
-const status = signal(null);
-const problem = signal(null);
+connect();
+loadStatus();
+loadModels();
+reloadSets();
 
-async function load() {
-  try {
-    const response = await fetch("/studio/api/status", { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`status ${response.status}`);
-    status.value = await response.json();
-  } catch (error) {
-    problem.value = String(error);
-  }
-}
+// The CLI may have changed files behind the Studio's back.
+addEventListener("focus", () => {
+  loadModels();
+  reloadSets();
+});
+document.addEventListener("click", () => {
+  openMenu.value = null;
+});
 
-function Shell() {
-  const current = status.value;
-  return html`
-    <main class="placeholder">
-      <h1>mlx-decision Studio</h1>
-      ${problem.value && html`<p class="problem">${problem.value}</p>`}
-      ${current &&
-      html`<p>
-          Version ${current.version} · ${current.models.length} models · API at
-          <code>${current.api.url}</code>
-        </p>`}
-    </main>
-  `;
-}
-
-render(html`<${Shell} />`, document.getElementById("studio"));
-load();
+render(html`<${App} />`, document.getElementById("studio"));
