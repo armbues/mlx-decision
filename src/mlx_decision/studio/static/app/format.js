@@ -14,3 +14,11 @@ export function plural(count, one, many = `${one}s`) {
 export function hostPort(address) {
   return (address || "").replace(/^https?:\/\//, "");
 }
+
+// A latency as people read it: "0.4 ms", "212 ms", "1.6 s".
+export function duration(ms) {
+  if (ms == null) return "";
+  if (ms < 10) return `${ms.toFixed(1)} ms`;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;
+}

@@ -1,59 +1,30 @@
 // The Playground: a question set, the model it runs on, its answers and history.
-import { computed, effect, signal } from "@preact/signals";
+import { computed } from "@preact/signals";
 import { html } from "htm/preact";
-import { api } from "../api.js";
+import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { MenuButton, MenuHeader, MenuItem, MenuNote } from "../components/menu.js";
-import { plural } from "../format.js";
+import { duration, plural } from "../format.js";
+import { onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
-import { remembered } from "../store/prefs.js";
+import { Answers, clock } from "../playground/answers.js";
+import { Editor } from "../playground/editor.js";
+import {
+  built,
+  canRun,
+  chooseModel,
+  entry,
+  lastRun,
+  modelName,
+  problems,
+  run,
+  running,
+  setName,
+  stale,
+  stop,
+} from "../playground/session.js";
 import { sets } from "../store/sets.js";
-import { loadedNames, models, status } from "../store/status.js";
-
-const chosenModel = remembered("playground.model", null);
-const lastSet = remembered("playground.set", null);
-
-// The model Run uses: the one picked here, else the Studio's default, else the first.
-export const modelName = computed(() => {
-  const names = (models.value ?? []).map((model) => model.name);
-  if (names.includes(chosenModel.value)) return chosenModel.value;
-  const fallback = status.value?.default_model;
-  return names.includes(fallback) ? fallback : (names[0] ?? null);
-});
-
-// The set shown: the address's, else the last one opened, else the first.
-export const setName = computed(() => {
-  const item = route.value.page === "playground" ? route.value.item : null;
-  if (item) return item;
-  const names = (sets.value ?? []).map((entry) => entry.name);
-  return names.includes(lastSet.value) ? lastSet.value : (names[0] ?? null);
-});
-
-// The set as loaded: {name, body, sha256}, or {name, error}.
-export const current = signal(null);
-
-let loading = 0;
-effect(() => {
-  const name = setName.value;
-  const ticket = ++loading;
-  if (name === null) {
-    current.value = null;
-    return;
-  }
-  lastSet.value = name;
-  api(`/sets/${encodeURIComponent(name)}`)
-    .then((loaded) => {
-      if (ticket === loading) current.value = loaded;
-    })
-    .catch((error) => {
-      if (ticket === loading) current.value = { name, error: error.message };
-    });
-});
-
-const questionsOf = (body) =>
-  body && body.questions && typeof body.questions === "object" && !Array.isArray(body.questions)
-    ? Object.entries(body.questions)
-    : [];
+import { loadedNames, models } from "../store/status.js";
 
 const title = (name) => {
   const words = name.replace(/[-_.]+/g, " ").trim();
@@ -68,14 +39,11 @@ function SetsList() {
       ${list && list.length === 0 && html`<p class="sb-empty">No sets yet</p>`}
       <ul class="sb-list">
         ${(list ?? []).map(
-          (entry) => html`
-            <li key=${entry.name}>
-              <a
-                class="sb-item"
-                href=${href("playground", entry.name)}
-                aria-current=${entry.name === setName.value ? "true" : undefined}
-              >
-                <${icons.File} /><span class="label">${entry.name}</span>
+          (item) => html`
+            <li key=${item.name}>
+              <a class="sb-item" href=${href("playground", item.name)}
+                 aria-current=${item.name === setName.value ? "true" : undefined}>
+                <${icons.File} /><span class="label">${item.name}</span>
               </a>
             </li>
           `,
@@ -88,106 +56,95 @@ function SetsList() {
 function Target() {
   const list = models.value ?? [];
   const name = setName.value;
-  const model = modelName.value;
+  const current = modelName.value;
   const loaded = loadedNames.value;
+  const modelProblem = problems.value.find((problem) => problem.where.model);
   return html`
     <div class="target" role="group" aria-label="What Run runs">
-      <${MenuButton}
-        id="target-set"
-        className="set"
-        title="Question set"
+      <${MenuButton} id="target-set" className="set" title="Question set"
         label=${html`<${icons.File} className="" /><span>${name ?? "No set"}</span>`}
-        menuStyle="top:34px; left:0; width:280px"
-      >
+        menuStyle="top:34px; left:0; width:280px">
         <${MenuHeader}>Question Sets<//>
         ${(sets.value ?? []).map(
-          (entry) => html`<${MenuItem}
-            ticked=${entry.name === name}
-            onSelect=${() => navigate("playground", entry.name)}
-            >${entry.name}<//
-          >`,
+          (item) => html`<${MenuItem} ticked=${item.name === name}
+            onSelect=${() => navigate("playground", item.name)}>${item.name}<//>`,
         )}
         ${(sets.value ?? []).length === 0 && html`<${MenuNote}>No question sets yet.<//>`}
       <//>
       <${icons.Crumb} />
-      <${MenuButton}
-        id="target-model"
-        className="mdl"
-        title="Model"
+      <${MenuButton} id="target-model" className=${`mdl ${modelProblem ? "bad" : ""}`}
+        title=${modelProblem ? modelProblem.message : "Model"}
         label=${html`
-          ${model && html`<span class="dot" style=${loaded.has(model) ? "" : "background: var(--fg-3)"}></span>`}
-          <span class="name">${model ?? "No model"}</span>
+          ${current && html`<span class="dot" style=${loaded.has(current) ? "" : "background: var(--fg-3)"}></span>`}
+          <span class="name">${current ?? "No model"}</span>
           <${icons.Chevrons} />
         `}
-        menuStyle="top:34px; left:0; width:320px"
-      >
-        <${MenuHeader}>Models<//>
+        menuStyle="top:34px; left:0; width:320px">
+        <${MenuHeader}>Run on<//>
         ${list.map(
-          (entry) => html`<${MenuItem}
-            ticked=${entry.name === model}
-            right=${loaded.has(entry.name) ? "Loaded" : entry.family}
-            sub=${entry.fitted ? `fitted on ${entry.base}` : null}
-            onSelect=${() => {
-              chosenModel.value = entry.name;
-            }}
-            ><span class="mono">${entry.name}</span><//
-          >`,
+          (item) => html`<${MenuItem} ticked=${item.name === current}
+            right=${loaded.has(item.name) ? "Loaded" : item.family}
+            sub=${item.fitted ? `fitted on ${item.base}` : null}
+            onSelect=${() => chooseModel(item.name)}><span class="mono">${item.name}</span><//>`,
         )}
-        ${list.length === 0 &&
-        html`<${MenuNote}>No models yet. Download one: <code>mlx-decision download</code><//>`}
+        ${list.length === 0 && html`<${MenuNote}>No models yet. Download one: <code>mlx-decision download</code><//>`}
       <//>
     </div>
   `;
 }
 
-const status_ = computed(() => {
+const questionCount = computed(() => (built.value ? Object.keys(built.value.body.questions).length : 0));
+
+const status = computed(() => {
   if (models.value && models.value.length === 0)
     return { icon: "info", text: html`No models yet · <code>mlx-decision download</code>` };
   if (sets.value && setName.value === null) return { icon: "info", text: "No question set yet" };
-  const set = current.value;
-  if (set?.error) return { icon: "warn", text: set.error };
-  if (!set || !modelName.value) return null;
-  const count = questionsOf(set.body).length;
+  if (entry.value?.error) return { icon: "warn", text: entry.value.error };
+  if (!built.value || !modelName.value) return null;
+  const flight = running.value;
+  if (flight)
+    return {
+      icon: "spin",
+      text: html`Asking <b>${flight.model}</b> ${plural(questionCount.value, "question")}…${flight.loads ? " · loading it first" : ""}`,
+    };
+  if (problems.value.length) return { icon: "warn", text: problems.value[0].message };
+  const result = lastRun.value;
+  const changed = stale.value;
+  if (result && (changed.all || changed.ids.size))
+    return {
+      icon: "warn",
+      text: changed.all
+        ? html`State changed since the run at ${clock(result.time)} · Run to update`
+        : html`<b>${[...changed.ids].join(", ")}</b> edited since the run · Run to update`,
+    };
+  if (result)
+    return {
+      icon: "ok",
+      text: html`<b>${result.model}</b> answered in ${duration(result.latency_ms)} · ${clock(result.time)}`,
+    };
   const loads = loadedNames.value.has(modelName.value) ? "" : " · loads it first";
   return {
     icon: "ok",
-    text: html`Run sends <b>${plural(count, "question")}</b> to <b>${modelName.value}</b>${loads}`,
+    text: html`Run sends <b>${plural(questionCount.value, "question")}</b> to <b>${modelName.value}</b>${loads}`,
   };
 });
 
-const action = computed(() => ({
-  label: "Run",
-  disabled: true,
-  stop: null,
-  running: false,
-}));
-
-function Questions({ body }) {
-  const questions = questionsOf(body);
-  if (questions.length === 0) return html`<div class="empty"><b>No questions in this set</b></div>`;
-  return html`
-    <section class="gsec">
-      <div class="gsec-head"><h2>Questions</h2><span class="tag">${questions.length}</span></div>
-      <div class="group">
-        ${questions.map(
-          ([id, question]) => html`
-            <div class="row" key=${id}>
-              <span class="mono">${id}</span>
-              <span>
-                <span class="tag-inline">${question?.type ?? "?"}</span>
-                ${question?.instructions && html` ${question.instructions}`}
-              </span>
-            </div>
-          `,
-        )}
-      </div>
-    </section>
-  `;
-}
+const action = computed(() => {
+  const changed = stale.value;
+  return {
+    label: "Run",
+    disabled: !canRun.value,
+    run,
+    stop,
+    running: !!running.value,
+    badge: !!lastRun.value && (changed.all || changed.ids.size > 0),
+  };
+});
 
 function Centre() {
+  useEffect(() => onKey("run", () => run()), []);
   const list = sets.value;
-  const set = current.value;
+  const current = entry.value;
   if (list && list.length === 0 && !route.value.item) {
     return html`
       <div class="centre-inner">
@@ -202,30 +159,23 @@ function Centre() {
       </div>
     `;
   }
-  if (!set) return html`<div class="centre-inner"></div>`;
+  if (!current) return html`<div class="centre-inner"></div>`;
   return html`
     <div class="centre-inner">
       <div class="pane-head">
         <div>
-          <h1>${title(set.name)}</h1>
-          <p><code>sets/${set.name}.json</code></p>
+          <h1>${title(setName.value)}</h1>
+          <p><code>sets/${setName.value}.json</code></p>
         </div>
       </div>
-      ${set.error ? html`<div class="empty"><b>${set.error}</b></div>` : html`<${Questions} body=${set.body} />`}
+      ${current.error ? html`<div class="empty"><b>${current.error}</b></div>` : html`<${Editor} />`}
     </div>
   `;
 }
 
-const Answers = () => html`
-  <div class="empty">
-    <b>No run yet</b>
-    <span>Run answers this set's questions here, one card per question.</span>
-  </div>
-`;
-
 const History = () => html`
   <div class="empty">
-    <b>No runs of this set yet</b>
+    <b>Runs of this set</b>
     <span>Every run is kept in the workspace's <code>history/</code> folder until you clear it.</span>
   </div>
 `;
@@ -236,7 +186,7 @@ export default {
   SidebarList: SetsList,
   Target,
   action,
-  status: status_,
+  status,
   Centre,
   tabs: [
     { id: "answers", label: "Answers", Body: Answers },
