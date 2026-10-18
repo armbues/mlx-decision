@@ -10,6 +10,7 @@ their speed too (``Recorder.answered``).
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -24,6 +25,7 @@ from ...memory import ModelTooLargeError
 from ...model import check_request
 from ...registry import static_capabilities
 from ...server import Answered, answer
+from ..catalog import model_facts
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
 
@@ -32,12 +34,37 @@ logger = logging.getLogger(__name__)
 
 class Models:
     """The pool's models as the Studio needs them before loading: static
-    capabilities and fingerprints, each read once per model."""
+    capabilities, fingerprints and the Models page's facts, each read once
+    per model."""
 
-    def __init__(self, gpu: Gpu):
+    def __init__(self, gpu: Gpu, workspace_models: Path | None = None):
         self.gpu = gpu
+        self.workspace_models = workspace_models
         self._capabilities: dict[str, Capabilities] = {}
         self._fingerprints: dict[str, str] = {}
+        self._facts: dict[str, dict] = {}
+
+    def facts(self, name: str) -> dict:
+        """``catalog.model_facts`` for the model (blocks: call it off the loop)."""
+        if name not in self._facts:
+            self._facts[name] = model_facts(self.gpu.pool.specs[name], self.workspace_models)
+        return self._facts[name]
+
+    def memory(self, name: str) -> dict:
+        """What loading the model takes: ``bytes`` alone (with its base), ``added``
+        when the weights it shares (``group``'s) are loaded, and ``over_budget``
+        when it alone does not fit the budget."""
+        pool = self.gpu.pool
+        try:
+            alone, added, group = pool.footprint(name)
+            return {"bytes": alone, "added": added, "group": group, "over_budget": False}
+        except ModelTooLargeError as error:
+            return {
+                "bytes": error.required,
+                "added": error.required,
+                "group": pool.footprint_group(name),
+                "over_budget": True,
+            }
 
     def capabilities(self, name: str) -> Capabilities:
         if name not in self._capabilities:

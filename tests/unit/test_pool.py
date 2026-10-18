@@ -416,6 +416,27 @@ def test_unload_all_frees_every_model_and_they_load_again(fits):
     assert loads.names == ["base", "other", "base"]
 
 
+def test_unload_frees_a_model_with_everything_sharing_its_base(fits, caplog):
+    pool, loads = make_pool(fits, budget=10**6)
+    seen = []
+    pool.on_change = lambda: seen.append(pool.loaded())
+    base = weakref.ref(pool.get("fit-a").backend.base)
+    pool.get("other")
+    pool.get("fit-b")
+    with caplog.at_level(logging.INFO, logger="mlx_decision.pool"):
+        assert pool.unload("fit-b") == ["fit-a", "fit-b"]
+    assert "unloaded fit-a, fit-b with their base base" in caplog.text
+    assert pool.loaded() == ["other"] and base() is None
+    assert pool.used_bytes() == pool.size("other")
+    assert pool.unload("base") == []  # not loaded: nothing to do, no change
+    assert seen[-1] == ["other"] and len(seen) == 4
+    assert pool.unload("other") == ["other"] and pool.loaded() == []
+    with pytest.raises(KeyError):
+        pool.unload("missing")
+    pool.get("fit-a")
+    assert loads.names == ["base", "other", "base"]
+
+
 def test_added_models_load_on_demand_and_share_a_listed_base(fits, tmp_path):
     pool, loads = make_pool(fits / "base", budget=10**6)
     pool.get("base")

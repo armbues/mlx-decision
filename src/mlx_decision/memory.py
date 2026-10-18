@@ -112,6 +112,60 @@ def required_bytes(path: Path, options: dict | None = None) -> int:
     return round(weight_bytes(path, options) * MARGIN)
 
 
+FLOAT_NAMES = {"F64": "fp64", "F32": "fp32", "F16": "fp16", "BF16": "bf16"}
+LOAD_DTYPE_NAMES = {"float32": "fp32", "float16": "fp16", "bfloat16": "bf16"}
+
+
+def weights_summary(path: Path, options: dict | None = None) -> tuple[int, str | None]:
+    """``(parameters, precision)`` of the weights a model loads, from the headers.
+
+    A quantized weight (packed ``U32`` beside its ``.scales``) counts the
+    parameters it packs, read from ``config.json``'s ``quantization`` (its
+    ``bits``, or a module's own entry); its scales and biases are not
+    parameters. Precision is "8-bit" or "4-bit" when quantized ("mixed 4 /
+    8-bit" for more than one width), else the floating-point type most
+    parameters load in ("bf16", "fp16", "fp32"); None when it cannot be told.
+    """
+    try:
+        config = json.loads((path / "config.json").read_text())
+    except (OSError, ValueError):
+        config = {}
+    quantization = config.get("quantization") if isinstance(config, dict) else None
+    quantization = quantization if isinstance(quantization, dict) else {}
+    parameters = 0
+    widths: set[int] = set()
+    floats: dict[str, int] = {}
+    for file, load_dtype in weight_files(path, options or {}):
+        header = read_header(file)
+        for name, entry in header.items():
+            prefix, _, kind = name.rpartition(".")
+            packed = header.get(f"{prefix}.weight", {}).get("dtype") == "U32"
+            if kind in ("scales", "biases") and packed and f"{prefix}.scales" in header:
+                continue  # a quantized weight's scales and biases
+            count = element_count(entry["shape"])
+            if kind == "weight" and packed and f"{prefix}.scales" in header:
+                own = quantization.get(prefix)
+                bits = own.get("bits") if isinstance(own, dict) else quantization.get("bits")
+                if not isinstance(bits, int) or bits <= 0:
+                    return parameters, None
+                widths.add(bits)
+                parameters += count * 32 // bits
+                continue
+            parameters += count
+            if entry["dtype"] in FLOAT_DTYPES:
+                kind_name = (
+                    LOAD_DTYPE_NAMES[load_dtype] if load_dtype else FLOAT_NAMES[entry["dtype"]]
+                )
+                floats[kind_name] = floats.get(kind_name, 0) + count
+    if widths:
+        if len(widths) == 1:
+            return parameters, f"{next(iter(widths))}-bit"
+        return parameters, "mixed " + " / ".join(str(bits) for bits in sorted(widths)) + "-bit"
+    if floats:
+        return parameters, max(floats, key=floats.get)
+    return parameters, None
+
+
 def quantized_size(weights: int, bits: int) -> int:
     """About the size of 16-bit ``weights`` quantized to ``bits``, every
     tensor counted as quantized, which the small unquantized parts barely change."""

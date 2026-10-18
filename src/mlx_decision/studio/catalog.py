@@ -9,11 +9,15 @@ one is listed by its repo id.
 """
 
 import dataclasses
+import json
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from ..hub import cached_models
+from ..hub import cached_models, snapshot_revision
+from ..memory import weights_summary
+from ..picker import folder_size
 from ..pool import ModelSpec, discover, folder_models, model_name
+from ..registry import MARKER_FILE
 
 
 def studio_models(
@@ -62,3 +66,47 @@ def studio_models(
             name = model_name(repo_id)
             add(spec, repo_id if name in names else name)
     return specs
+
+
+def model_facts(spec: ModelSpec, workspace_models: Path | None) -> dict:
+    """What the Models page says about a model, read from its files (nothing loaded).
+
+    ``maker`` and ``family_title`` from the family's listing; ``parameters``
+    and ``precision`` from the weights it loads (a fitted model: its base's);
+    ``place``: "cache" (with ``repo`` and ``revision``), "studio" (the
+    workspace's ``models/``) or "folder"; ``converted_from``, the repo a
+    converted copy was made from; ``disk_bytes``, the folder's size;
+    ``licence_note``, the family's note on terms of use.
+    """
+    family = spec.family
+    weights = spec.fit.base if spec.fit is not None else spec.path
+    try:
+        parameters, precision = weights_summary(weights, spec.options)
+    except (OSError, ValueError, KeyError):
+        parameters, precision = None, None
+    path = spec.path
+    cached = snapshot_revision(path)
+    if cached is not None:
+        place = "cache"
+    elif workspace_models is not None and path.resolve().is_relative_to(workspace_models.resolve()):
+        place = "studio"
+    else:
+        place = "folder"
+    try:
+        marker = json.loads((path / MARKER_FILE).read_text())
+        converted_from = marker.get("source") if isinstance(marker, dict) else None
+    except (OSError, ValueError):
+        converted_from = None
+    return {
+        "family_title": family.listing.title if family.listing else family.name,
+        "maker": family.listing.maker if family.listing else None,
+        "parameters": parameters,
+        "precision": precision,
+        "path": str(path),
+        "place": place,
+        "repo": cached[0] if cached else None,
+        "revision": cached[1] if cached else None,
+        "converted_from": converted_from if isinstance(converted_from, str) else None,
+        "disk_bytes": folder_size(path),
+        "licence_note": family.licence,
+    }

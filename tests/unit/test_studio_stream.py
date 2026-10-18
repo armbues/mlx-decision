@@ -248,7 +248,13 @@ def test_the_stream_starts_with_a_snapshot_and_sends_changes(studio):
         [(snapshot_id, snapshot)] = read_messages(lines, 1)
         assert snapshot == {
             "type": "snapshot",
-            "status": {"busy": None, "loaded": [], "memory": {"used": 0, "budget": 10**9}},
+            "status": {
+                "busy": None,
+                "loaded": [],
+                "groups": [],
+                "used": {},
+                "memory": {"used": 0, "budget": 10**9},
+            },
         }
         assert snapshot_id == studio.app.state.hub.last_id
         # A request through the Jev API loads the model: a status message.
@@ -256,10 +262,14 @@ def test_the_stream_starts_with_a_snapshot_and_sends_changes(studio):
         [(_, loaded)] = read_messages(lines, 1)
         assert loaded["type"] == "status" and loaded["loaded"] == ["fake"]
         assert loaded["memory"]["used"] > 0
-        # The same request again changes nothing: no message. A set saved does.
+        # The same request again changes only when the model was last used (a
+        # message only when that moved to the next second). A set saved sends one.
         assert studio.client.post("/v1/systemone", json=BODY).status_code == 200
         studio.app.state.workspace.save_set("tickets", SET)
         [(_, saved)] = read_messages(lines, 1)
+        if saved["type"] == "status":
+            assert {**saved, "used": None} == {**loaded, "used": None}
+            [(_, saved)] = read_messages(lines, 1)
         assert saved == {
             "type": "workspace",
             "folder": "sets",

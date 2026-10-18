@@ -5,6 +5,7 @@ import { href } from "../router.js";
 import { jobs } from "../store/jobs.js";
 import { busy, connection, loadedNames, models, status } from "../store/status.js";
 import * as icons from "./icons.js";
+import { UnloadMark } from "./load-button.js";
 
 const PAGE_LINKS = [
   { id: "playground", label: "Playground", Icon: icons.Playground },
@@ -56,7 +57,9 @@ function Memory() {
       <div class="mem-legend">
         ${loaded.length === 0
           ? html`<div>No model loaded</div>`
-          : loaded.map((name) => html`<div><s style="background: var(--accent)"></s><span class="mono-s">${name}</span></div>`)}
+          : loaded.map(
+              (name) => html`<div key=${name}><s style="background: var(--accent)"></s><span class="mono-s">${name}</span><${UnloadMark} name=${name} /></div>`,
+            )}
       </div>
     </div>
   `;

@@ -391,6 +391,60 @@ def test_busy_gives_503_with_retry_after(studio):
     assert run(studio).status_code == 200
 
 
+# Load and Unload
+
+
+def test_load_and_unload(studio):
+    load = studio.post("/studio/api/models/load", json={"model": "fake-fit"})
+    assert load.status_code == 200
+    body = load.json()
+    assert (body["model"], body["loaded"], body["unloaded"]) == ("fake-fit", ["fake-fit"], [])
+    assert body["load_ms"] >= 0
+    again = studio.post("/studio/api/models/load", json={"model": "fake-fit"}).json()
+    assert again["load_ms"] is None
+    studio.post("/studio/api/models/load", json={"model": "fake"})
+    assert studio.get("/studio/api/status").json()["loaded"] == ["fake-fit", "fake"]
+    # The fit and its base share their weights: they go together.
+    unload = studio.post("/studio/api/models/unload", json={"model": "fake"})
+    assert unload.json() == {"model": "fake", "unloaded": ["fake-fit", "fake"]}
+    assert studio.get("/studio/api/status").json()["loaded"] == []
+    nothing = studio.post("/studio/api/models/unload", json={"model": "seeing"})
+    assert nothing.json() == {"model": "seeing", "unloaded": []}
+
+
+def test_load_reports_what_made_room(tmp_path, models_folder):
+    pool = ModelPool(discover([models_folder]), budget=10**9)
+    pool.budget = pool.size("fake") + pool.size("seeing") - 1  # room for one of them
+    app = create_studio(pool, workspace=tmp_path / "ws")
+    with TestClient(app, base_url=HERE, client=("127.0.0.1", 50000)) as client:
+        client.get(f"/?token={app.state.session.token}")
+        client.post("/studio/api/models/load", json={"model": "fake"})
+        body = client.post("/studio/api/models/load", json={"model": "seeing"}).json()
+    assert (body["loaded"], body["unloaded"]) == (["seeing"], ["fake"])
+
+
+def test_load_and_unload_errors(studio):
+    for action in ("load", "unload"):
+        path = f"/studio/api/models/{action}"
+        missing = studio.post(path, json={"model": "nope"})
+        assert missing.status_code == 404 and missing.json()["error"]["param"] == "model"
+        assert studio.post(path, json={}).status_code == 400
+        plain = studio.post(path, content="fake", headers={"Content-Type": "text/plain"})
+        assert plain.status_code == 415
+
+
+def test_load_and_unload_while_busy(studio):
+    gpu = studio.app_state.gpu
+    studio.portal.call(gpu.acquire, "fit-1")
+    for action in ("load", "unload"):
+        response = studio.post(f"/studio/api/models/{action}", json={"model": "fake"})
+        assert response.status_code == 503
+        assert response.headers["retry-after"] == "10"
+        assert "fit-1" in response.json()["error"]["message"]
+    gpu.release("fit-1")
+    assert studio.post("/studio/api/models/load", json={"model": "fake"}).status_code == 200
+
+
 def test_a_set_saved_through_the_api_answers_the_same_with_run_q(studio, models_folder):
     studio.put("/studio/api/sets/tickets", json={"body": BODY})
     body = studio.get("/studio/api/sets/tickets").json()["body"]

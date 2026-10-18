@@ -2,7 +2,8 @@
 
 ``GET /status`` gives what the page shows in its sidebar and Get Code
 sheet; ``GET /models`` the models a run can pick, with what each takes
-(from its files, before loading), for the live check's hints.
+(from its files, before loading), for the live check's hints, and what
+the Models page shows (``catalog.model_facts``, the memory a load takes).
 """
 
 import asyncio
@@ -118,6 +119,12 @@ def status_router(
                 except (ValueError, OSError) as error:
                     entry["capabilities"] = None
                     entry["error"] = str(error)
+                try:
+                    entry.update(models.facts(name))
+                    entry["memory"] = models.memory(name)
+                except (ValueError, OSError) as error:
+                    entry["memory"] = None
+                    entry["error"] = entry["error"] or str(error)
                 listed.append(entry)
             return listed
 

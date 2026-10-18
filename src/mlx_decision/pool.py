@@ -15,6 +15,7 @@ the base unloads them all.
 import gc
 import json
 import logging
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -227,8 +228,10 @@ class ModelPool:
     ``check_memory=False`` a model larger than the budget is loaded anyway
     (alone). ``on_change``, when set, is called with no arguments after
     models were loaded or unloaded and after ``add``, on the thread that
-    made the change. Not thread-safe: use it from the thread that answers
-    requests (``loaded`` and ``names`` excepted).
+    made the change; ``on_use`` likewise after a loaded model was used
+    (``last_used`` changed). Not thread-safe: use it from the thread that
+    answers requests (``loaded``, ``groups``, ``last_used``, ``used_bytes``
+    and ``names`` excepted).
     """
 
     def __init__(
@@ -257,6 +260,9 @@ class ModelPool:
         # Copies for other threads (the server's /health), replaced after each change.
         self._loaded_names: tuple[str, ...] = ()
         self._used_bytes = 0
+        self._groups_view: tuple[dict, ...] = ()
+        self._used_at: dict[str, float] = {}
+        self.on_use: Callable[[], None] | None = None
 
     def _root_of(self, spec: ModelSpec) -> ModelSpec:
         """What a model loads: itself, or the base it shares (a listed model where
@@ -293,14 +299,37 @@ class ModelPool:
             return names
         self._groups.clear()
         self._loaded.clear()
+        self._used_at.clear()
         logger.info("unloaded %s", ", ".join(names))
         _release_memory()
         self._changed()
         return names
 
-    def _changed(self) -> None:
+    def unload(self, name: str) -> list[str]:
+        """Unload ``name`` with everything that shares its weights (a base and
+        the fitted models on it) and free their memory; returns the names
+        unloaded, none when it is not loaded. Raises ``KeyError`` for a name
+        the pool does not have."""
+        if name not in self.specs:
+            raise KeyError(name)
+        if name not in self._loaded:
+            return []
+        names = self._drop(self._keys[name], "")
+        _release_memory()
+        self._changed()
+        return names
+
+    def _snapshot(self) -> None:
+        """The copies other threads read, replaced after each change."""
         self._loaded_names = tuple(self._loaded)
         self._used_bytes = sum(group.total for group in self._groups.values())
+        self._groups_view = tuple(
+            {"root": group.root.name, "members": list(group.members), "bytes": group.total}
+            for group in self._groups.values()
+        )
+
+    def _changed(self) -> None:
+        self._snapshot()
         if self.on_change is not None:
             try:
                 self.on_change()
@@ -310,6 +339,33 @@ class ModelPool:
     def loaded(self) -> list[str]:
         """The loaded models, least recently used first; safe to call from any thread."""
         return list(self._loaded_names)
+
+    def groups(self) -> list[dict]:
+        """The loaded models by the weights they share, least recently used first:
+        ``{"root", "members", "bytes"}`` each, ``root`` the model whose weights
+        the group loaded (a member, or a base no request named), ``bytes`` what
+        the group counts against the budget. Safe to call from any thread."""
+        return [dict(group, members=list(group["members"])) for group in self._groups_view]
+
+    def last_used(self) -> dict[str, float]:
+        """When each loaded model was last loaded or used (``time.time()``);
+        safe to call from any thread."""
+        used = dict(self._used_at)
+        return {name: used[name] for name in self._loaded_names if name in used}
+
+    def footprint(self, name: str) -> tuple[int, int, str]:
+        """``(alone, added, root)``: the bytes ``name`` needs loaded on its own
+        (with its base), the bytes it adds when the weights it shares (``root``'s)
+        are loaded already, and that root's name. Raises ``ModelTooLargeError``
+        as ``size`` does."""
+        spec, root = self.specs[name], self._roots[name]
+        alone = self.size(name)
+        added = alone if spec is root else max(alone - self._root_size(root), 0)
+        return alone, added, root.name
+
+    def footprint_group(self, name: str) -> str:
+        """The name of the model whose weights ``name`` loads (itself or its base)."""
+        return self._roots[name].name
 
     def used_bytes(self) -> int:
         """What the loaded models count against the budget (the estimates, not
@@ -366,6 +422,11 @@ class ModelPool:
         name = self.resolve(name)
         if name in self._loaded:
             self._touch(name)
+            if self.on_use is not None:
+                try:
+                    self.on_use()
+                except Exception:
+                    logger.exception("the pool's use callback failed")
             return self._loaded[name]
         spec, root, key = self.specs[name], self._roots[name], self._keys[name]
         size = self.size(name)
@@ -394,7 +455,8 @@ class ModelPool:
     def _touch(self, name: str) -> None:
         self._loaded.move_to_end(name)
         self._groups.move_to_end(self._keys[name])
-        self._loaded_names = tuple(self._loaded)
+        self._used_at[name] = time.time()
+        self._snapshot()
 
     def _make_room(self, needed: int, name: str, keep: tuple[str, str]) -> None:
         """Unload the least recently used models (with all that share their base)
@@ -405,19 +467,27 @@ class ModelPool:
             old = next((key for key in self._groups if key != keep), None)
             if old is None:
                 break
-            # Delete without binding the model, so no local keeps it (and its
-            # weights) alive through the release and the next load.
-            members, root = list(self._groups[old].members), self._groups[old].root.name
-            del self._groups[old]
-            for member in members:
-                del self._loaded[member]
-            with_base = "" if root in members else f" with their base {root}"
-            logger.info("unloaded %s%s to make room for %s", ", ".join(members), with_base, name)
-            self._loaded_names = tuple(self._loaded)
+            self._drop(old, f"to make room for {name}")
             unloaded = True
         if unloaded:
             _release_memory()
             self._changed()
+
+    def _drop(self, key: tuple[str, str], why: str) -> list[str]:
+        """Forget the group ``key`` (its base and every model sharing it); returns
+        their names. The caller releases the memory and reports the change."""
+        # Delete without binding the model, so no local keeps it (and its
+        # weights) alive through the release and the next load.
+        members, root = list(self._groups[key].members), self._groups[key].root.name
+        del self._groups[key]
+        for member in members:
+            del self._loaded[member]
+        with_base = "" if root in members else f" with their base {root}"
+        logger.info("unloaded %s%s%s", ", ".join(members), with_base, f" {why}" if why else "")
+        for member in members:
+            self._used_at.pop(member, None)
+        self._snapshot()
+        return members
 
 
 def _release_memory() -> None:

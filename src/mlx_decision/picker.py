@@ -40,7 +40,7 @@ def choices(config: Config) -> list[Choice]:
         seen.add(key)
         family, fitted = identified or (None, False)
         label = "" if family is None else _title(family) + (", fitted" if fitted else "")
-        size = _size(path) if path is not None else None
+        size = folder_size(path) if path is not None else None
         rank = order.get(family.name, len(order)) if family is not None else len(order)
         groups[group].append(Choice(reference, name, label, size, place, rank))
 
@@ -115,7 +115,7 @@ def _title(family: Family) -> str:
     return family.listing.title if family.listing else family.name
 
 
-def _size(folder: Path) -> int:
+def folder_size(folder: Path) -> int:
     """The bytes of the files in ``folder`` (a cache snapshot's links followed)."""
     total = 0
     for file in folder.rglob("*"):

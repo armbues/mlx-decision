@@ -23,6 +23,7 @@ from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
 from .page import Page
+from .routes.models import models_router
 from .routes.run import Models, Recorder, run_router
 from .routes.sets import sets_router
 from .routes.status import status_router
@@ -75,7 +76,7 @@ def create_studio(
     app.state.workspace = files
     app.state.hub = hub
     security.install(app, session, host, port, api_key)
-    models = Models(gpu)
+    models = Models(gpu, files.root / "models")
     recorder = Recorder(files, models)
     routes.install_errors(app)
     add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
@@ -85,6 +86,7 @@ def create_studio(
     app.include_router(status_router(gpu, files, models, config, host, port, api_key, status))
     app.include_router(sets_router(files, max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
+    app.include_router(models_router(gpu, max_body_bytes))
     app.include_router(stream_router(hub))
     return app
 
@@ -108,8 +110,10 @@ def server(app: FastAPI, **config: Any):
 
 def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
     """What the ``status`` message says: who holds the GPU (None when no one
-    does), the loaded models (least recently used first) and the memory they
-    count against the budget, in bytes. Safe to call from any thread."""
+    does), the loaded models (least recently used first), the groups they
+    load in (``ModelPool.groups``), when each was last used (Unix seconds)
+    and the memory they count against the budget, in bytes. Safe to call
+    from any thread."""
     pool = gpu.pool
     budget = None
 
@@ -120,6 +124,9 @@ def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
         return {
             "busy": gpu.holder,
             "loaded": pool.loaded(),
+            "groups": pool.groups(),
+            # Whole seconds: a model used twice in a second sends one message.
+            "used": {name: int(when) for name, when in pool.last_used().items()},
             "memory": {"used": pool.used_bytes(), "budget": budget},
         }
 
@@ -149,6 +156,7 @@ def studio_lifespan(
         # The pool and the workspace change on other threads; the status is read
         # on the loop, so messages never arrive out of order.
         gpu.pool.on_change = lambda: hub.soon(publish_status)
+        gpu.pool.on_use = lambda: hub.soon(publish_status)  # last used
         files.on_change = lambda change: hub.soon(hub.publish, "workspace", change)
         try:
             if load_default:
@@ -157,7 +165,7 @@ def studio_lifespan(
         finally:  # also when the default model fails to load
             hub.close()
             gpu.close()
-            gpu.on_change = gpu.pool.on_change = files.on_change = None
+            gpu.on_change = gpu.pool.on_change = gpu.pool.on_use = files.on_change = None
 
     return lifespan
 
