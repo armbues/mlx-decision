@@ -22,3 +22,7 @@ export function duration(ms) {
   if (ms < 1000) return `${Math.round(ms)} ms`;
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;
 }
+
+// A run's time of day, from its ISO time.
+export const clock = (iso) =>
+  iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";

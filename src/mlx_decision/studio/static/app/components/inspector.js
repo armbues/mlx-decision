@@ -4,6 +4,10 @@ import { signal } from "@preact/signals";
 
 const chosenTab = signal({}); // page id -> tab id
 
+export function showTab(pageId, tabId) {
+  chosenTab.value = { ...chosenTab.value, [pageId]: tabId };
+}
+
 export function Inspector({ page }) {
   const tabs = page.tabs ?? [];
   if (tabs.length === 0) return html`<aside class="inspector" aria-label="Inspector"></aside>`;

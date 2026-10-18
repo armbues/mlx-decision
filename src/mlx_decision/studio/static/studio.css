@@ -656,3 +656,10 @@ a.sb-item { color: var(--fg); }
 .name-field > span:first-child { width: 60px; color: var(--fg-2); }
 .sheet-input { flex: 1; border: 0; background: transparent; outline: none; min-width: 0; font: 13px var(--mono); }
 .sheet-problem { color: var(--red); font-size: 11.5px; padding: 0 4px; }
+
+/* ---------- Playground: history ---------- */
+.inspector .hist-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
+.inspector .hist-foot .dim { font-size: 11px; }
+.btn.plain.danger { color: var(--red); }
+.inspector .diff-head h4 { flex: 1; }
+.inspector .moves h4 + .stack-rows { margin-top: -4px; }

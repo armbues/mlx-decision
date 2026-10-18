@@ -4,12 +4,13 @@ import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { MenuButton, MenuHeader, MenuItem, MenuNote, MenuSeparator } from "../components/menu.js";
-import { duration, plural } from "../format.js";
+import { clock, duration, plural } from "../format.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
-import { Answers, clock } from "../playground/answers.js";
+import { Answers } from "../playground/answers.js";
 import { Editor } from "../playground/editor.js";
 import * as files from "../playground/files.js";
+import { History } from "../playground/history.js";
 import {
   built,
   canRun,
@@ -239,13 +240,6 @@ function Centre() {
     </div>
   `;
 }
-
-const History = () => html`
-  <div class="empty">
-    <b>Runs of this set</b>
-    <span>Every run is kept in the workspace's <code>history/</code> folder until you clear it.</span>
-  </div>
-`;
 
 export default {
   id: "playground",

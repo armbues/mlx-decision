@@ -3,14 +3,32 @@
 import { html } from "htm/preact";
 import { ChoiceBars, NoulBar, ScoreColumns, two } from "../charts/answers.js";
 import * as icons from "../components/icons.js";
-import { duration } from "../format.js";
+import { clock, duration } from "../format.js";
 import { loadedNames } from "../store/status.js";
+import { answerValue } from "./changes.js";
 import { TYPE_LABELS } from "./draft.js";
 import { focusLater } from "./editor.js";
+import { cardContext, openRun } from "./history.js";
 import { canRun, draft, lastRun, linked, modelName, run, running, stale } from "./session.js";
 
-export const clock = (iso) =>
-  iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+// How the answer moved since the run before on the same model, and whether
+// its question was reworded in this run.
+function Chips({ id, answer, edited }) {
+  const context = cardContext.value;
+  const chips = [];
+  if (edited) chips.push(html`<span class="chip edit" key="edit">Edited</span>`);
+  const previous = context?.previous?.response?.answers?.[id];
+  if (previous) {
+    const delta = answerValue(answer) - answerValue(previous, answer);
+    if (Math.abs(delta) >= 0.005)
+      chips.push(html`<span class=${`chip ${delta > 0 ? "up" : "down"} num`} key="delta"
+        title=${`Change since run #${context.previousNumber}`}>${delta > 0 ? "+" : "−"}${two(Math.abs(delta))} since #${context.previousNumber}</span>`);
+  }
+  if (context?.reworded.has(id))
+    chips.push(html`<button class="chip link" key="reworded" title="See what changed"
+      onClick=${() => openRun(lastRun.value.id)}>Reworded in #${context.number}</button>`);
+  return html`<div class="chips">${chips}</div>`;
+}
 
 // Hovering links a card and its question, unless a question is being edited.
 export const hoverLink = (id) => {
@@ -40,7 +58,7 @@ function Card({ question, answer, isStale, edited }) {
         ${answer.confidence != null &&
         html`<span class="right"><span class="conf num">Confidence <b>${two(answer.confidence)}</b></span></span>`}
       </div>
-      <div class="chips">${edited && html`<span class="chip edit">Edited</span>`}</div>
+      <${Chips} id=${question.id} answer=${answer} edited=${edited} />
       ${body}
     </article>
   `;
@@ -102,7 +120,7 @@ export function Answers() {
   const answers = result.response.answers ?? {};
   return html`
     <div class="run-head">
-      <h3>Answers<small class="num">${clock(result.time)} · ${result.model}</small></h3>
+      <h3>${cardContext.value ? `Run #${cardContext.value.number}` : "Answers"}<small class="num">${clock(result.time)} · ${result.model}</small></h3>
     </div>
     <div class="run-stats num">
       <span><b>${duration(result.latency_ms)}</b></span>

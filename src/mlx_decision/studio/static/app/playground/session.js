@@ -183,6 +183,17 @@ export const lastRun = computed(() =>
   setName.value && modelName.value ? (runs.value[runKey(setName.value, modelName.value)] ?? null) : null,
 );
 
+export function rememberRun(set, name, result) {
+  runs.value = { ...runs.value, [runKey(set, name)]: result };
+}
+
+// Drop a set's runs (its history was cleared).
+export function forgetRuns(set) {
+  runs.value = Object.fromEntries(
+    Object.entries(runs.value).filter(([key]) => !key.startsWith(`${set}\u0000`)),
+  );
+}
+
 export const running = signal(null); // {model, loads, controller}
 
 // What changed since the last run: {all, ids}.
