@@ -93,19 +93,42 @@ const units = computed(() => {
   };
 });
 
-function Status({ model }) {
-  const doing = pending.value[model.name];
-  if (doing)
-    return html`<span class="state busy"><i></i>${doing === "load" ? "Loading…" : "Unloading…"}</span>`;
-  if (loadedNames.value.has(model.name))
-    return html`<span class="state on"><i></i>${usedWords(status.value?.used?.[model.name])}</span>`;
-  const sharing = (status.value?.groups ?? []).find((group) => group.root === model.name);
-  if (sharing)
-    return html`<span class="state on" title="Its weights are in memory for these fitted models; it answers without loading"><i></i>with ${sharing.members.join(", ")}</span>`;
-  if (model.memory?.over_budget)
-    return html`<span class="state over" title="It needs more than the memory budget"><i></i>Over budget</span>`;
-  if (model.error) return html`<span class="state over" title=${model.error}><i></i>Can't read</span>`;
-  return html`<span class="state off">Not loaded</span>`;
+// The row's state as a pill; while the pointer is on it (or it has focus) it
+// turns into the Load / Unload button in place (D157). States without an
+// action stay a pill and say why in the tooltip.
+function StatePill({ model }) {
+  const name = model.name;
+  const doing = pending.value[name];
+  const loaded = loadedNames.value.has(name);
+  const sharing = (status.value?.groups ?? []).find((group) => group.root === name);
+  let kind, text, why = null;
+  if (doing) [kind, text] = ["busy", doing === "load" ? "Loading…" : "Unloading…"];
+  else if (loaded) [kind, text] = ["on", usedWords(status.value?.used?.[name])];
+  else if (sharing) {
+    [kind, text] = ["on", `with ${sharing.members.join(", ")}`];
+  } else if (model.memory?.over_budget) {
+    [kind, text] = ["over", "Over budget"];
+    why = `${name} needs more than the memory budget, so it cannot load`;
+  } else if (model.error) [kind, text, why] = ["over", "Can't read", model.error];
+  else [kind, text] = ["off", "Not loaded"];
+  if (doing) why = text;
+  else if (busy.value) why = `A job holds the GPU (${busy.value}): models load again when it is done`;
+  const action = loaded ? "Unload" : "Load";
+  const act = (event) => {
+    event.stopPropagation();
+    if (why) return;
+    if (loaded) unloadModel(name);
+    else loadModel(name);
+  };
+  return html`
+    <button class=${`pill-act ${kind}${why ? "" : " can"}${loaded ? " unload" : " load"}`}
+            aria-disabled=${why ? "true" : undefined} title=${why ?? `${action} ${name}`}
+            aria-label=${`${name}: ${text}${why ? "" : `. ${action}`}`}
+            onClick=${act} onDblClick=${(event) => event.stopPropagation()}>
+      <span class="as-state">${kind !== "off" && html`<i></i>`}${text}</span>
+      <span class="as-action" aria-hidden="true">${action}</span>
+    </button>
+  `;
 }
 
 function memoryCell(model) {
@@ -125,9 +148,14 @@ function Row({ model, nested }) {
     contextMenu.value = { name, x: event.clientX, y: event.clientY };
     openMenu.value = "model-context";
   };
+  const select = () => {
+    location.hash = href("models", name);
+  };
+  // A list item, not a link: it holds the pill's button (D157).
   return html`
-    <a class=${`mrow${nested ? " fitted" : ""}`} href=${href("models", name)} role="option"
-       aria-selected=${current ? "true" : "false"} onContextMenu=${menu}
+    <div class=${`mrow${nested ? " fitted" : ""}`} data-name=${name} role="option" tabindex="0"
+       aria-selected=${current ? "true" : "false"} onClick=${select} onContextMenu=${menu}
+       onKeyDown=${(event) => event.key === "Enter" && event.target === event.currentTarget && select()}
        onDblClick=${() => openInPlayground(name)}
        onMouseEnter=${() => (hovered.value = name)} onMouseLeave=${() => (hovered.value = null)}>
       <span class="nm">
@@ -137,8 +165,8 @@ function Row({ model, nested }) {
       <span class="cell r num c-size">${parameters(model.parameters)}</span>
       <span class="cell r num"><b>${memoryCell(model)}</b></span>
       <span class="cell r c-reads">${reads(model)}</span>
-      <span class="st"><${Status} model=${model} /></span>
-    </a>
+      <span class="st"><${StatePill} model=${model} /></span>
+    </div>
   `;
 }
 

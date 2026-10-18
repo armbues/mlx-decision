@@ -616,16 +616,31 @@ a.sb-item { color: var(--fg); }
 }
 .ficon.big { width: 44px; height: 44px; border-radius: 10px; font-size: 14px; }
 
-/* A model's state: a dot and text, never shaped like a button. */
-.state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; color: var(--fg-2); }
-.state i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.state.on i { background: var(--green); }
-.state.busy { color: var(--accent); }
-.state.busy i { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
-.state.over { color: var(--orange); }
-.state.over i { width: 0; height: 0; border-radius: 0; background: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 7px solid var(--orange); }
-.state.off { color: var(--fg-3); }
+/* The row's state pill, which turns into Load / Unload under the pointer or
+   on focus (D157): one element, never a pill beside a button. */
+.pill-act {
+  position: relative; width: 124px; height: 24px; padding: 0 9px; border: 0; border-radius: 12px;
+  font-size: 11.5px; font-weight: 600; white-space: nowrap; cursor: default;
+  display: inline-grid; place-items: center; transition: background 0.12s, box-shadow 0.12s, color 0.12s;
+}
+.pill-act > span { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pill-act i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.pill-act.on { color: var(--green); background: color-mix(in srgb, var(--green) 13%, transparent); }
+.pill-act.off { color: var(--fg-2); background: var(--fill); font-weight: 500; }
+.pill-act.over { color: var(--orange); background: var(--orange-fill); }
+.pill-act.over i { width: 0; height: 0; border-radius: 0; background: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 7px solid currentColor; }
+.pill-act.busy { color: var(--accent); background: var(--selection); }
+.pill-act.busy i { animation: pulse 1s ease-in-out infinite; }
+.pill-act .as-action { visibility: hidden; }
+.pill-act.can:hover, .pill-act.can:focus-visible {
+  cursor: pointer; border-radius: 6px; background: var(--group); box-shadow: var(--shadow); color: var(--fg); font-weight: 500;
+}
+.pill-act.can.load:hover, .pill-act.can.load:focus-visible { color: var(--accent); }
+.pill-act.can:hover .as-state, .pill-act.can:focus-visible .as-state { visibility: hidden; }
+.pill-act.can:hover .as-action, .pill-act.can:focus-visible .as-action { visibility: visible; }
+.pill-act:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
 @keyframes pulse { 50% { opacity: 0.35; } }
+
 
 .memcard { padding: 14px 16px; display: grid; gap: 10px; }
 .memcard-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
