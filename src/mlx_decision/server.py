@@ -65,14 +65,8 @@ def busy_response(error: Busy) -> JSONResponse:
     return response
 
 
-def create_app(
-    gpu: Gpu | ModelPool, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
-) -> FastAPI:
-    """The app, which owns ``gpu`` (a pool gets a ``Gpu`` of its own) and closes it
-    when it stops; the default model, if there is one, loads at startup."""
-    if isinstance(gpu, ModelPool):
-        gpu = Gpu(gpu)
-    pool = gpu.pool
+def gpu_lifespan(gpu: Gpu):
+    """A lifespan that starts ``gpu`` (its default model loads) and closes it at the end."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -82,7 +76,26 @@ def create_app(
         finally:  # also when the default model fails to load
             gpu.close()
 
-    app = FastAPI(title="mlx-decision", lifespan=lifespan)
+    return lifespan
+
+
+def create_app(
+    gpu: Gpu | ModelPool, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
+) -> FastAPI:
+    """The app, which owns ``gpu`` (a pool gets a ``Gpu`` of its own) and closes it
+    when it stops; the default model, if there is one, loads at startup."""
+    if isinstance(gpu, ModelPool):
+        gpu = Gpu(gpu)
+    app = FastAPI(title="mlx-decision", lifespan=gpu_lifespan(gpu))
+    add_jev_api(app, gpu, api_key, max_body_bytes)
+    return app
+
+
+def add_jev_api(
+    app: FastAPI, gpu: Gpu, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
+) -> None:
+    """Add the Jev API (``/v1/systemone``, ``/v1/models``) and ``/health`` to ``app``."""
+    pool = gpu.pool
     guards = []
 
     if api_key:
@@ -163,4 +176,3 @@ def create_app(
         }
 
     app.include_router(api)
-    return app

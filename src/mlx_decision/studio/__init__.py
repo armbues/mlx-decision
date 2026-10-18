@@ -1,0 +1,90 @@
+"""The Studio: the Jev API, the Studio's pages and its own API in one app.
+
+Needs the ``web`` extra (FastAPI, uvicorn). One ``Gpu`` serves both APIs,
+so the Studio's runs and the Jev API's requests share one worker and one
+model pool. ``security`` holds what every request goes through.
+"""
+
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from .. import __version__
+from ..gpu import Gpu
+from ..pool import ModelPool
+from ..server import MAX_BODY_BYTES, add_jev_api, gpu_lifespan
+from . import security
+from .security import NO_STORE, Session
+
+# Stands in for the Studio's page until its files ship.
+PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mlx-decision Studio</title></head>
+<body><p>mlx-decision Studio</p></body></html>
+"""
+
+
+def create_studio(
+    gpu: Gpu | ModelPool,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    api_key: str | None = None,
+    session: Session | None = None,
+    max_body_bytes: int = MAX_BODY_BYTES,
+) -> FastAPI:
+    """The Studio's app for a process serving ``host:port``.
+
+    It owns ``gpu`` as ``server.create_app`` does. ``app.state.session``
+    holds the session, whose token goes into the address ``web`` opens.
+    Raises ``ValueError`` for an address beyond this machine without an
+    API key.
+    """
+    if isinstance(gpu, ModelPool):
+        gpu = Gpu(gpu)
+    session = session or Session(port)
+    security.check_bind(host, api_key)  # before the lifespan could load a model
+    app = FastAPI(
+        title="mlx-decision Studio",
+        lifespan=gpu_lifespan(gpu),
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    app.state.gpu = gpu
+    app.state.session = session
+    security.install(app, session, host, port, api_key)
+    add_jev_api(app, gpu, api_key, max_body_bytes)
+    app.include_router(page_router(session, api_key))
+    app.include_router(api_router(gpu))
+    return app
+
+
+def page_router(session: Session, api_key: str | None) -> APIRouter:
+    """``/``: the page, and the exchange of the address's token for the cookie."""
+    router = APIRouter()
+
+    @router.get("/")
+    async def page(request: Request, token: str | None = None):
+        to_page = RedirectResponse("/", status_code=303, headers=NO_STORE)  # drops the token
+        if session.has_cookie(request.cookies):
+            return to_page if token is not None else HTMLResponse(PAGE, headers=NO_STORE)
+        if token is not None and session.matches_token(token):
+            client = request.client.host if request.client else None
+            # With a key, the address alone does not let in another machine.
+            if not api_key or security.is_loopback(client):
+                return session.set_cookie(to_page)
+        return security.page_without_session(api_key)
+
+    return router
+
+
+def api_router(gpu: Gpu) -> APIRouter:
+    """The Studio's own API under ``/studio/api`` (the guard requires the session)."""
+    router = APIRouter(prefix="/studio/api")
+
+    @router.get("/status")
+    async def status():
+        return {"version": __version__, "busy": gpu.holder}
+
+    return router
