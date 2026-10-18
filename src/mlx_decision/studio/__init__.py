@@ -2,8 +2,11 @@
 
 Needs the ``web`` extra (FastAPI, uvicorn). One ``Gpu`` serves both APIs,
 so the Studio's runs and the Jev API's requests share one worker and one
-model pool. ``security`` holds what every request goes through.
+model pool. ``security`` holds what every request goes through;
+``workspace`` the files the Studio keeps.
 """
+
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,6 +17,7 @@ from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api, gpu_lifespan
 from . import security
 from .security import NO_STORE, Session
+from .workspace import Workspace, root_folder
 
 # Stands in for the Studio's page until its files ship.
 PAGE = """<!doctype html>
@@ -31,19 +35,23 @@ def create_studio(
     port: int = 8000,
     api_key: str | None = None,
     session: Session | None = None,
+    workspace: Path | None = None,
     max_body_bytes: int = MAX_BODY_BYTES,
 ) -> FastAPI:
     """The Studio's app for a process serving ``host:port``.
 
     It owns ``gpu`` as ``server.create_app`` does. ``app.state.session``
-    holds the session, whose token goes into the address ``web`` opens.
-    Raises ``ValueError`` for an address beyond this machine without an
-    API key.
+    holds the session, whose token goes into the address ``web`` opens;
+    ``app.state.workspace`` the workspace (``workspace``, else ``home()``),
+    created and cleaned up here. Raises ``ValueError`` for an address beyond
+    this machine without an API key.
     """
     if isinstance(gpu, ModelPool):
         gpu = Gpu(gpu)
     session = session or Session(port)
     security.check_bind(host, api_key)  # before the lifespan could load a model
+    files = Workspace(workspace if workspace is not None else root_folder())
+    files.open()
     app = FastAPI(
         title="mlx-decision Studio",
         lifespan=gpu_lifespan(gpu),
@@ -53,6 +61,7 @@ def create_studio(
     )
     app.state.gpu = gpu
     app.state.session = session
+    app.state.workspace = files
     security.install(app, session, host, port, api_key)
     add_jev_api(app, gpu, api_key, max_body_bytes)
     app.include_router(page_router(session, api_key))
