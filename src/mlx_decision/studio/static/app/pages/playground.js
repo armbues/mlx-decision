@@ -18,11 +18,13 @@ import {
   edited,
   editedNames,
   entry,
+  example,
   justAnswered,
   lastRun,
   modelName,
   problems,
   run,
+  runAll,
   running,
   setName,
   stale,
@@ -113,10 +115,13 @@ const status = computed(() => {
   if (entry.value?.error) return { icon: "warn", text: entry.value.error };
   if (!built.value || !modelName.value) return null;
   const flight = running.value;
+  const several = (entry.value?.draft?.examples.length ?? 1) > 1;
   if (flight)
     return {
       icon: "spin",
-      text: html`Asking <b>${flight.model}</b> ${plural(questionCount.value, "question")}…${flight.loads ? " · loading it first" : ""}`,
+      text: flight.all
+        ? html`Run All on <b>${flight.model}</b>: <b>${flight.example}</b>, ${flight.all.done + 1} of ${flight.all.total}…${flight.loads ? " · loading it first" : ""}`
+        : html`Asking <b>${flight.model}</b> ${plural(questionCount.value, "question")}${several ? html` about <b>${flight.example}</b>` : ""}…${flight.loads ? " · loading it first" : ""}`,
     };
   if (problems.value.length) return { icon: "warn", text: problems.value[0].message };
   const result = lastRun.value;
@@ -135,8 +140,9 @@ const status = computed(() => {
       text: html`<b>${result.model}</b> answered in ${duration(result.latency_ms)} · ${clock(result.time)}`,
     };
   const loads = loadedNames.value.has(modelName.value) ? "" : " · loads it first";
+  const about = several ? html` about <b>${example.value.name}</b>` : "";
   return {
-    text: html`Run sends <b>${plural(questionCount.value, "question")}</b> to <b>${modelName.value}</b>${loads}`,
+    text: html`Run sends <b>${plural(questionCount.value, "question")}</b>${about} to <b>${modelName.value}</b>${loads}`,
   };
 });
 
@@ -159,11 +165,14 @@ function MoreMenu() {
       menuStyle="top:32px; right:0; width:260px">
       <${MenuItem} right=${SHORTCUTS.saveAs} onSelect=${files.saveAs}>Save As…<//>
       <${MenuItem} onSelect=${files.duplicate}>Duplicate<//>
+      <${MenuItem} onSelect=${files.renameSet}>Rename…<//>
       <${MenuItem} right=${SHORTCUTS.newSet} onSelect=${files.newSet}>New Question Set…<//>
       <${MenuItem} right=${SHORTCUTS.import} sub="A -q questions file or a whole request body" onSelect=${files.importSet}>Import Questions…<//>
       <${MenuSeparator} />
       <${MenuItem} sub=${edited.value ? "The saved file, without your edits" : null} onSelect=${files.exportSet}>Export<//>
       <${MenuItem} onSelect=${files.reveal}>Show in Workspace Folder<//>
+      <${MenuSeparator} />
+      <${MenuItem} onSelect=${files.deleteSet}>Delete…<//>
     <//>
   `;
 }
@@ -190,6 +199,7 @@ function Centre() {
   useEffect(() => {
     const off = [
       onKey("run", () => run()),
+      onKey("runAll", () => runAll()),
       onKey("save", () => files.save()),
       onKey("saveAs", () => files.saveAs()),
       onKey("newSet", () => files.newSet()),

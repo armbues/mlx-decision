@@ -5,6 +5,7 @@ import { inspectorShown, narrow, openMenu, toggleInspector } from "./store/ui.js
 
 export const SHORTCUTS = {
   run: "⌘↩",
+  runAll: "⌥⌘↩",
   download: "⌘D",
   newSet: "⌥⌘N", // ⌘N belongs to Chrome
   import: "⌘O",
@@ -24,7 +25,7 @@ export function actionFor(event) {
   if (event.key === "Escape") return "escape";
   if (!event.metaKey || event.ctrlKey) return null;
   const { shiftKey: shift, altKey: alt } = event;
-  if (event.key === "Enter" && !shift && !alt) return "run";
+  if (event.key === "Enter" && !shift) return alt ? "runAll" : "run";
   if (event.code === "KeyD" && !shift && !alt) return "download";
   if (event.code === "KeyN" && alt && !shift) return "newSet";
   if (event.code === "KeyO" && !shift && !alt) return "import";

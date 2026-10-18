@@ -59,19 +59,71 @@ function questionFrom(id, value) {
   return question;
 }
 
-export function fromBody(body) {
-  const { state, questions, images, ...rest } = body && typeof body === "object" ? body : {};
+// ---------- examples (D161) ----------
+//
+// A set holds named examples, each a state with its images. The file keeps
+// them in `examples`, the first also as the top-level state and images (so
+// `run -q` and the API read the file as before); a plain request body is one
+// example named "Example".
+
+export const FIRST_EXAMPLE = "Example";
+
+function exampleFrom(name, state, images) {
   const json = state !== undefined && typeof state !== "string";
   return {
-    rest,
+    uid: uid(),
+    name,
     stateMode: json ? "json" : "text",
     stateText: json ? JSON.stringify(state, null, 2) : (state ?? ""),
     images: Array.isArray(images) ? images : [],
+  };
+}
+
+function examplesFrom(body) {
+  const listed = Array.isArray(body.examples)
+    ? body.examples.filter((item) => item && typeof item === "object" && !Array.isArray(item))
+    : [];
+  if (!listed.length) return [exampleFrom(FIRST_EXAMPLE, body.state, body.images)];
+  const taken = new Set();
+  return listed.map((item, index) => {
+    const base = typeof item.name === "string" && item.name.trim() ? item.name.trim() : `Example ${index + 1}`;
+    let name = base;
+    for (let n = 2; taken.has(name); n += 1) name = `${base} ${n}`;
+    taken.add(name);
+    return exampleFrom(name, item.state, item.images);
+  });
+}
+
+export function fromBody(body) {
+  const value = body && typeof body === "object" ? body : {};
+  const { state, questions, images, examples: listed, ...rest } = value;
+  const examples = examplesFrom(value);
+  return {
+    rest,
+    examples,
+    current: examples[0].uid,
     questions:
       questions && typeof questions === "object" && !Array.isArray(questions)
-        ? Object.entries(questions).map(([id, value]) => questionFrom(id, value))
+        ? Object.entries(questions).map(([id, item]) => questionFrom(id, item))
         : [],
   };
+}
+
+// The selected example (the first when the selection is gone).
+export const currentExample = (draft) =>
+  draft.examples.find((item) => item.uid === draft.current) ?? draft.examples[0];
+
+export const exampleByName = (draft, name) => draft.examples.find((item) => item.name === name) ?? null;
+
+// An example's state for the request, or a problem when its JSON does not parse.
+function exampleState(example) {
+  if (example.stateMode !== "json") return { state: example.stateText, problem: null };
+  try {
+    return { state: JSON.parse(example.stateText), problem: null };
+  } catch (error) {
+    const where = { state: true, example: example.uid };
+    return { state: example.stateText, problem: { where, message: `The state is not valid JSON: ${error.message}` } };
+  }
 }
 
 function questionValue(question) {
@@ -92,18 +144,9 @@ function questionValue(question) {
   return value;
 }
 
-// The request body, and the problems that keep it from being one: each
-// {where, message}, where naming the question (uid) and field.
-export function toBody(draft) {
+// The questions as the request has them, and their problems.
+function questionsOf(draft) {
   const problems = [];
-  let state = draft.stateText;
-  if (draft.stateMode === "json") {
-    try {
-      state = JSON.parse(draft.stateText);
-    } catch (error) {
-      problems.push({ where: { state: true }, message: `The state is not valid JSON: ${error.message}` });
-    }
-  }
   const questions = {};
   const seen = new Set();
   for (const question of draft.questions) {
@@ -125,17 +168,106 @@ export function toBody(draft) {
     }
     questions[id] = questionValue(question);
   }
+  return { questions, problems };
+}
+
+// The request one example makes (the selected one by default), and the
+// problems that keep it from being one: each {where, message}, where naming
+// the question (uid) and field, or the state.
+export function toBody(draft, exampleUid = draft.current) {
+  const example = draft.examples.find((item) => item.uid === exampleUid) ?? draft.examples[0];
+  const { state, problem } = exampleState(example);
+  const { questions, problems } = questionsOf(draft);
   const body = { ...draft.rest, state, questions };
-  if (draft.images.length) body.images = draft.images;
+  if (example.images.length) body.images = example.images;
+  return { body, problems: problem ? [problem, ...problems] : problems };
+}
+
+// The set's file: the first example as the top-level state and images, and
+// every example in `examples` (left out for one example named "Example").
+// Problems are every example's and the questions'.
+export function toFile(draft) {
+  const { questions, problems } = questionsOf(draft);
+  const states = draft.examples.map((example) => {
+    const { state, problem } = exampleState(example);
+    if (problem) problems.unshift(problem);
+    return state;
+  });
+  const names = new Set();
+  for (const example of draft.examples) {
+    if (!example.name.trim())
+      problems.push({ where: { example: example.uid, name: true }, message: "Give the example a name" });
+    else if (names.has(example.name))
+      problems.push({ where: { example: example.uid, name: true }, message: `Two examples are named ${example.name}` });
+    names.add(example.name);
+  }
+  const [first] = draft.examples;
+  const body = { ...draft.rest, state: states[0], questions };
+  if (first.images.length) body.images = first.images;
+  if (draft.examples.length > 1 || first.name !== FIRST_EXAMPLE)
+    body.examples = draft.examples.map((example, index) => {
+      const item = { name: example.name, state: states[index] };
+      if (example.images.length) item.images = example.images;
+      return item;
+    });
   return { body, problems };
 }
 
-// Where a server error's param points: the state, an image, a question and
-// its field, or the model.
+// Editing examples: each returns a new draft.
+
+export const editExample = (draft, exampleUid, fields) => ({
+  ...draft,
+  examples: draft.examples.map((item) => (item.uid === exampleUid ? { ...item, ...fields } : item)),
+});
+
+export const selectExample = (draft, exampleUid) => ({ ...draft, current: exampleUid });
+
+export function freeExampleName(draft, base = "Example") {
+  const taken = new Set(draft.examples.map((item) => item.name));
+  for (let n = draft.examples.length + 1; ; n += 1) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
+}
+
+export function addExample(draft) {
+  const example = exampleFrom(freeExampleName(draft), "", []);
+  return { ...draft, examples: [...draft.examples, example], current: example.uid };
+}
+
+export function duplicateExample(draft, exampleUid) {
+  const index = draft.examples.findIndex((item) => item.uid === exampleUid);
+  const source = draft.examples[index];
+  const taken = new Set(draft.examples.map((item) => item.name));
+  let name = `${source.name} copy`;
+  for (let n = 2; taken.has(name); n += 1) name = `${source.name} copy ${n}`;
+  const copy = { ...source, uid: uid(), name };
+  const examples = [...draft.examples];
+  examples.splice(index + 1, 0, copy);
+  return { ...draft, examples, current: copy.uid };
+}
+
+// Remove an example; the last one stays. The neighbour is selected.
+export function removeExample(draft, exampleUid) {
+  if (draft.examples.length < 2) return draft;
+  const index = draft.examples.findIndex((item) => item.uid === exampleUid);
+  const examples = draft.examples.filter((item) => item.uid !== exampleUid);
+  const current = draft.current === exampleUid ? examples[Math.min(index, examples.length - 1)].uid : draft.current;
+  return { ...draft, examples, current };
+}
+
+export function moveExample(draft, exampleUid, by) {
+  const examples = [...draft.examples];
+  const from = examples.findIndex((item) => item.uid === exampleUid);
+  const to = from + by;
+  if (from < 0 || to < 0 || to >= examples.length) return draft;
+  [examples[from], examples[to]] = [examples[to], examples[from]];
+  return { ...draft, examples };
+}
+
+// Where a server error's param points: the state or an image (of the selected
+// example), a question and its field, or the model.
 export function locate(draft, param) {
   if (!param) return { general: true };
-  if (param === "state" || param.startsWith("state.")) return { state: true };
-  if (param === "images" || param.startsWith("images")) return { images: true };
+  if (param === "state" || param.startsWith("state.")) return { state: true, example: draft.current };
+  if (param === "images" || param.startsWith("images")) return { images: true, example: draft.current };
   if (param === "model") return { model: true };
   if (!param.startsWith("questions.")) return { general: true };
   const path = param.slice("questions.".length);
@@ -294,27 +426,27 @@ export function moveItem(draft, questionUid, list, itemUid, toIndex) {
   });
 }
 
-// The state as the other mode shows it.
-export function switchStateMode(draft, mode) {
-  if (draft.stateMode === mode) return draft;
+// An example's state as the other mode shows it.
+export function switchStateMode(example, mode) {
+  if (example.stateMode === mode) return example;
   if (mode === "json") {
-    const text = draft.stateText;
+    const text = example.stateText;
     try {
       JSON.parse(text);
-      return { ...draft, stateMode: "json" };
+      return { ...example, stateMode: "json" };
     } catch {
-      return { ...draft, stateMode: "json", stateText: JSON.stringify(text) };
+      return { ...example, stateMode: "json", stateText: JSON.stringify(text) };
     }
   }
   try {
-    const value = JSON.parse(draft.stateText);
+    const value = JSON.parse(example.stateText);
     return {
-      ...draft,
+      ...example,
       stateMode: "text",
       stateText: typeof value === "string" ? value : JSON.stringify(value, null, 2),
     };
   } catch {
-    return { ...draft, stateMode: "text" };
+    return { ...example, stateMode: "text" };
   }
 }
 

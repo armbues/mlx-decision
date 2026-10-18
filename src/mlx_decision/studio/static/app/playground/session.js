@@ -7,7 +7,7 @@ import { remembered } from "../store/prefs.js";
 import { sets } from "../store/sets.js";
 import { loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
-import { changedSince, fromBody, locate, toBody } from "./draft.js";
+import { changedSince, currentExample, fromBody, locate, toBody, toFile } from "./draft.js";
 
 const CHECK_DELAY_MS = 150;
 
@@ -45,7 +45,8 @@ export const setName = computed(() => {
 // draft (an unedited draft just loads the new file).
 export const drafts = signal({});
 
-const bodyText = (current) => JSON.stringify(toBody(current).body);
+// The file a draft writes: what "Edited" compares (switching examples is not an edit).
+const bodyText = (current) => JSON.stringify(toFile(current).body);
 
 export function loadedEntry(loaded, modified = null) {
   const loadedDraft = fromBody(loaded.body);
@@ -128,8 +129,11 @@ export function updateDraft(change) {
   setEntry(name, { ...current, draft: change(current.draft) });
 }
 
-// The request the draft makes, with the problems that need no server.
+// The selected example, and the request it makes with the problems that need
+// no server; the file's problems (every example's) for saving and Run All.
+export const example = computed(() => (draft.value ? currentExample(draft.value) : null));
 export const built = computed(() => (draft.value ? toBody(draft.value) : null));
+export const fileProblems = computed(() => (draft.value ? toFile(draft.value).problems : []));
 const requestKey = computed(() =>
   built.value ? JSON.stringify([modelName.value, built.value.body]) : null,
 );
@@ -176,25 +180,66 @@ export const problems = computed(() => {
   return checked.value.key === key ? located(checked.value.errors) : [];
 });
 
-// Runs: the latest per set and model, {request, response, model, latency_ms, ...}.
+// Runs: the latest per set, model and example, {request, response, model,
+// example, latency_ms, ...}.
 export const runs = signal({});
-const runKey = (set, name) => `${set}\u0000${name}`;
+export const runKey = (set, name, exampleName) => `${set}\u0000${name}\u0000${exampleName}`;
 export const lastRun = computed(() =>
-  setName.value && modelName.value ? (runs.value[runKey(setName.value, modelName.value)] ?? null) : null,
+  setName.value && modelName.value && example.value
+    ? (runs.value[runKey(setName.value, modelName.value, example.value.name)] ?? null)
+    : null,
 );
 
-export function rememberRun(set, name, result) {
-  runs.value = { ...runs.value, [runKey(set, name)]: result };
+export function rememberRun(set, name, exampleName, result) {
+  runs.value = { ...runs.value, [runKey(set, name, exampleName)]: result };
 }
 
-// Drop a set's runs (its history was cleared).
-export function forgetRuns(set) {
+// A renamed example's answers in this tab follow it.
+export function renameExampleRuns(set, from, to) {
+  const suffix = `\u0000${from}`;
   runs.value = Object.fromEntries(
-    Object.entries(runs.value).filter(([key]) => !key.startsWith(`${set}\u0000`)),
+    Object.entries(runs.value).map(([key, value]) =>
+      key.startsWith(`${set}\u0000`) && key.endsWith(suffix) ? [`${key.slice(0, -from.length)}${to}`, value] : [key, value],
+    ),
   );
 }
 
-export const running = signal(null); // {model, loads, controller}
+// Run All: the latest batch per set and model, {id, time, examples: [name],
+// results: {name: run | {error}}} (filled as the answers come).
+export const batches = signal({});
+const batchKey = (set, name) => `${set}\u0000${name}`;
+export const lastBatch = computed(() =>
+  setName.value && modelName.value ? (batches.value[batchKey(setName.value, modelName.value)] ?? null) : null,
+);
+export function rememberBatch(set, name, value) {
+  batches.value = { ...batches.value, [batchKey(set, name)]: value };
+}
+
+// A renamed set's answers in this tab follow it.
+export function moveRuns(from, to) {
+  const move = (map) =>
+    Object.fromEntries(
+      Object.entries(map).map(([key, value]) =>
+        key.startsWith(`${from}\u0000`) ? [`${to}${key.slice(from.length)}`, value] : [key, value],
+      ),
+    );
+  batch(() => {
+    runs.value = move(runs.value);
+    batches.value = move(batches.value);
+  });
+}
+
+// Drop a set's runs and batches (its history was cleared).
+export function forgetRuns(set) {
+  const keep = (map) => Object.fromEntries(Object.entries(map).filter(([key]) => !key.startsWith(`${set}\u0000`)));
+  batch(() => {
+    runs.value = keep(runs.value);
+    batches.value = keep(batches.value);
+  });
+}
+
+// The run in flight: {model, loads, controller, example, all: {done, total}?}.
+export const running = signal(null);
 
 // True for a few seconds after a run is answered: the status field's check.
 export const justAnswered = signal(false);
@@ -217,34 +262,102 @@ export const canRun = computed(
     Object.keys(built.value.body.questions).length > 0,
 );
 
+function answered() {
+  justAnswered.value = true;
+  clearTimeout(answeredTimer);
+  answeredTimer = setTimeout(() => {
+    justAnswered.value = false;
+  }, ANSWERED_MS);
+}
+
 export async function run() {
   if (!canRun.value) return;
   const set = setName.value;
   const name = modelName.value;
+  const exampleName = example.value.name;
   const body = built.value.body;
   const key = requestKey.value;
   const controller = new AbortController();
-  running.value = { model: name, loads: !loadedNames.value.has(name), controller };
+  running.value = { model: name, loads: !loadedNames.value.has(name), controller, example: exampleName };
   try {
     const result = await api("/run", {
       method: "POST",
-      body: { request: body, model: name, set },
+      body: { request: body, model: name, set, example: exampleName },
       signal: controller.signal,
     });
     batch(() => {
-      runs.value = { ...runs.value, [runKey(set, name)]: { ...result, request: body } };
+      rememberRun(set, name, exampleName, { ...result, request: body });
       refused.value = { key: null, errors: [] };
-      justAnswered.value = true;
     });
-    clearTimeout(answeredTimer);
-    answeredTimer = setTimeout(() => {
-      justAnswered.value = false;
-    }, ANSWERED_MS);
+    answered();
   } catch (error) {
     if (error.name === "AbortError") return;
     if (error.status === 422) refused.value = { key, errors: [error] };
     else if (error.status === 503) toast(error.message);
     else toast(`The run failed: ${error.message}`);
+  } finally {
+    running.value = null;
+  }
+}
+
+// Run All: each example in turn on the model, as one batch. The Studio
+// records each run with the batch's id; a refused example shows in its row
+// and the batch goes on; Stop ends it after the request in flight.
+export const canRunAll = computed(
+  () =>
+    !running.value &&
+    !!draft.value &&
+    draft.value.examples.length > 1 &&
+    !!modelName.value &&
+    fileProblems.value.length === 0 &&
+    Object.keys(built.value?.body.questions ?? {}).length > 0,
+);
+
+const newBatchId = () => Math.random().toString(36).slice(2, 10);
+
+export async function runAll() {
+  if (!canRunAll.value) return;
+  const set = setName.value;
+  const name = modelName.value;
+  const current = draft.value;
+  const id = newBatchId();
+  const examples = current.examples.map((item) => ({ name: item.name, body: toBody(current, item.uid).body }));
+  const controller = new AbortController();
+  const value = { id, time: new Date().toISOString(), examples: examples.map((item) => item.name), results: {} };
+  rememberBatch(set, name, value);
+  try {
+    for (const [index, item] of examples.entries()) {
+      if (controller.signal.aborted) break;
+      running.value = {
+        model: name,
+        loads: !loadedNames.value.has(name),
+        controller,
+        example: item.name,
+        all: { done: index, total: examples.length },
+      };
+      try {
+        const result = await api("/run", {
+          method: "POST",
+          body: { request: item.body, model: name, set, example: item.name, batch: id },
+          signal: controller.signal,
+        });
+        const recorded = { ...result, request: item.body };
+        batch(() => {
+          rememberRun(set, name, item.name, recorded);
+          value.results = { ...value.results, [item.name]: recorded };
+          rememberBatch(set, name, { ...value });
+        });
+      } catch (error) {
+        if (error.name === "AbortError") break;
+        if (error.status === 503) {
+          toast(error.message);
+          break;
+        }
+        value.results = { ...value.results, [item.name]: { error: error.message, param: error.param } };
+        rememberBatch(set, name, { ...value });
+      }
+    }
+    if (!controller.signal.aborted) answered();
   } finally {
     running.value = null;
   }

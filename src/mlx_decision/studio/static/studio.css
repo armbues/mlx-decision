@@ -367,6 +367,42 @@ button { cursor: default; }
 .gsec-head .tag { font-size: 11px; color: var(--fg-2); background: var(--fill); padding: 1px 7px; border-radius: 5px; }
 .gsec-head .stale-tag { font-size: 11px; color: var(--orange); background: var(--orange-fill); padding: 1px 7px; border-radius: 5px; }
 .gsec-head .right { margin-left: auto; display: flex; gap: 2px; align-items: center; }
+/* Examples (D161): chips above the state; the selected one has its menu. */
+.examples { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 4px 0; }
+.ex-chip { display: inline-flex; align-items: center; height: 26px; border-radius: 13px; background: var(--fill); max-width: 240px; }
+.ex-chip > button[role="tab"] {
+  height: 26px; border: 0; background: transparent; padding: 0 11px; border-radius: 13px; min-width: 0;
+  display: inline-flex; align-items: center; gap: 6px; color: var(--fg-2); font-size: 12px; cursor: pointer;
+}
+.ex-chip > button[role="tab"] span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-chip:hover { background: var(--fill-2); }
+.ex-chip.on { background: var(--selection); }
+.ex-chip.on > button[role="tab"] { color: var(--accent); font-weight: 600; padding-right: 2px; }
+.ex-chip .ex-problem { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); flex: none; }
+.ex-chip .menu-wrap { position: relative; }
+.ex-chip .ex-more { width: 22px; height: 22px; margin-right: 2px; border: 0; border-radius: 11px; background: transparent; color: var(--accent); display: grid; place-items: center; cursor: pointer; }
+.ex-chip .ex-more:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ex-add { width: 26px; height: 26px; border: 0; border-radius: 13px; background: transparent; color: var(--fg-2); display: grid; place-items: center; cursor: pointer; }
+.ex-add:hover { background: var(--fill); color: var(--fg); }
+.ex-add svg { width: 12px; height: 12px; }
+.ex-runall { margin-left: auto; height: 26px; }
+.ex-runall:disabled { opacity: 0.5; }
+
+.answers-view { margin-bottom: 12px; }
+/* Run All's grid in the Answers tab: examples by questions. */
+.grid-wrap { overflow-x: auto; margin: 0 -2px; }
+.ex-grid { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.ex-grid th, .ex-grid td { padding: 6px 6px; text-align: left; border-bottom: 0.5px solid var(--sep); white-space: nowrap; }
+.ex-grid thead th { font: 600 11px var(--mono); color: var(--fg-2); }
+.ex-grid tbody th { font-weight: 600; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.ex-grid tbody tr { cursor: pointer; }
+.ex-grid tbody tr:hover { background: var(--fill); }
+.ex-grid tbody tr.sel { background: var(--selection); }
+.ex-grid td .v { font-weight: 600; }
+.ex-grid td .p { color: var(--fg-2); margin-left: 4px; }
+.ex-grid td.stale, .ex-grid th.stale { opacity: 0.5; }
+.ex-grid td.err { color: var(--orange); white-space: normal; }
+.ex-grid td.wait { color: var(--fg-3); }
 .group {
   background: var(--group); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden;
   transition: box-shadow 0.2s ease;
@@ -778,5 +814,7 @@ a.sb-item { color: var(--fg); }
 .inspector .hist-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
 .inspector .hist-foot .dim { font-size: 11px; }
 .btn.plain.danger { color: var(--red); }
+.btn.primary.danger { background: var(--red); }
+.btn.primary.danger:hover { background: color-mix(in srgb, var(--red) 88%, black); }
 .inspector .diff-head h4 { flex: 1; }
 .inspector .moves h4 + .stack-rows { margin-top: -4px; }

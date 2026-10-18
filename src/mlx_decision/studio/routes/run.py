@@ -10,6 +10,7 @@ their speed too (``Recorder.answered``).
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,10 @@ from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
 
 logger = logging.getLogger(__name__)
+
+# An example's name and a Run All's id, as a run may name them.
+MAX_TAG = 80
+BATCH_ID = re.compile(r"[A-Za-z0-9-]{1,40}")
 
 
 class Models:
@@ -110,8 +115,16 @@ class Recorder:
             },
         )
 
-    def run(self, set_name: str | None, request: dict, answered: Answered) -> dict[str, Any]:
-        """Record a Playground run: its speed and, for a set, its history line.
+    def run(
+        self,
+        set_name: str | None,
+        request: dict,
+        answered: Answered,
+        example: str | None = None,
+        batch: str | None = None,
+    ) -> dict[str, Any]:
+        """Record a Playground run: its speed and, for a set, its history line
+        (with the example it asked and the Run All it belongs to, when given).
         Returns what the page gets besides the answers (blocks)."""
         result = answered.result
         run = {
@@ -129,17 +142,19 @@ class Recorder:
             logger.exception("recording the speed failed")
         if set_name is None:
             return {**run, "id": None, "time": None}
+        tags = {key: value for key, value in (("example", example), ("batch", batch)) if value}
         line = self.files.append_history(
             set_name,
             {
                 "model": answered.model,
                 "fingerprint": self.models.fingerprint(answered.model),
+                **tags,
                 "request": request,
                 "response": result.to_wire(),
                 **{key: value for key, value in run.items() if key != "model"},
             },
         )
-        return {**run, "id": line["id"], "time": line["time"]}
+        return {**run, **tags, "id": line["id"], "time": line["time"]}
 
     def answered(self, answered: Answered) -> None:
         """The Jev API's hook: record the speed in the background (on the loop)."""
@@ -185,8 +200,10 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
 
     @router.post("/run")
     async def run(request: Request):
-        """``{request, model, set}`` -> the answers, the timings and the history
-        line's id (``set`` names the set whose history gets the run; optional)."""
+        """``{request, model, set, example, batch}`` -> the answers, the timings
+        and the history line's id (``set`` names the set whose history gets the
+        run; ``example`` the example it asks, ``batch`` the Run All it belongs
+        to; all optional)."""
         gpu.check()  # before reading the body
         body = await json_body(request, max_body_bytes)
         decision = field(body, "request", dict)
@@ -194,6 +211,12 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
         if name is None and isinstance(decision.get("model"), str):
             name = decision["model"]
         set_name = field(body, "set", str, required=False)
+        example = field(body, "example", str, required=False)
+        if example is not None and not 0 < len(example) <= MAX_TAG:
+            raise ApiError(400, f"example must be 1 to {MAX_TAG} characters", param="example")
+        batch = field(body, "batch", str, required=False)
+        if batch is not None and not BATCH_ID.fullmatch(batch):
+            raise ApiError(400, "batch must be 1 to 40 letters, digits or '-'", param="batch")
         if set_name is not None:
             try:
                 check_name(set_name, "a set's name")
@@ -211,7 +234,9 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
             raise ApiError(
                 500, "the model failed to answer the request", kind="api_error"
             ) from None
-        recorded = await asyncio.to_thread(recorder.run, set_name, decision, answered)
+        recorded = await asyncio.to_thread(
+            recorder.run, set_name, decision, answered, example, batch
+        )
         return {"response": answered.result.to_wire(), **recorded}
 
     return router

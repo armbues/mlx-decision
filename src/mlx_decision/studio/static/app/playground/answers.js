@@ -1,15 +1,33 @@
-// The inspector's Answers: the last run on this set and model, one card per
-// question, stale where the question changed since.
+// The inspector's Answers: the last run of this set's selected example on the
+// model, one card per question, stale where the question changed since; with
+// several examples, also the last Run All as a grid (D161).
+import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { ChoiceBars, NoulBar, ScoreColumns, two } from "../charts/answers.js";
 import * as icons from "../components/icons.js";
 import { clock, duration } from "../format.js";
 import { loadedNames } from "../store/status.js";
+import { SHORTCUTS } from "../keys.js";
 import { answerValue } from "./changes.js";
-import { TYPE_LABELS } from "./draft.js";
+import { TYPE_LABELS, changedSince, toBody } from "./draft.js";
 import { focusLater } from "./editor.js";
-import { cardContext, openRun } from "./history.js";
-import { canRun, draft, lastRun, linked, modelName, run, running, stale } from "./session.js";
+import { Grid } from "./grid.js";
+import { batchFromHistory, cardContext, openRun, showExample } from "./history.js";
+import {
+  built,
+  canRun,
+  canRunAll,
+  draft,
+  example,
+  lastBatch,
+  lastRun,
+  linked,
+  modelName,
+  run,
+  runAll,
+  running,
+  stale,
+} from "./session.js";
 
 // How the answer moved since the run before on the same model, and whether
 // its question was reworded in this run.
@@ -94,22 +112,90 @@ function StaleBanner() {
 }
 const run_ = () => run();
 
+// "one" (the selected example) or "all" (the last Run All), when there are several.
+const view = signal("one");
+
+function ViewSwitch() {
+  return html`
+    <div class="seg small answers-view" role="tablist" aria-label="Answers for">
+      <button role="tab" aria-pressed=${view.value === "one"} onClick=${() => (view.value = "one")}>This Example</button>
+      <button role="tab" aria-pressed=${view.value === "all"} onClick=${() => (view.value = "all")}>All Examples</button>
+    </div>
+  `;
+}
+
+function AllExamples() {
+  const current = draft.value;
+  const name = modelName.value;
+  const flight = running.value;
+  const shown = lastBatch.value ?? batchFromHistory(name);
+  if (!shown)
+    return html`
+      <div class="empty">
+        <b>No Run All on ${name} yet</b>
+        <span>Run All (${SHORTCUTS.runAll}) asks each example in turn and shows the answers here, an example a row.</span>
+        <div class="empty-actions"><button class="btn primary" disabled=${!canRunAll.value} onClick=${() => runAll()}>Run All</button></div>
+      </div>
+    `;
+  const questions = current.questions.map((question) => question.id);
+  const rows = shown.examples.map((exampleName) => {
+    const result = shown.results[exampleName];
+    const target = current.examples.find((item) => item.name === exampleName);
+    if (!result) return { name: exampleName, pending: !!flight?.all };
+    if (result.error) return { name: exampleName, error: result.error };
+    const changed = target ? changedSince(toBody(current, target.uid).body, result.request) : { all: true, ids: new Set() };
+    return { name: exampleName, run: result, stale: !target || changed.all || changed.ids.size > 0 };
+  });
+  const asked = rows.find((row) => row.run)?.run.request.questions;
+  const questionsChanged = !!built.value && !!asked && JSON.stringify(asked) !== JSON.stringify(built.value.body.questions);
+  const missing = current.examples.filter((item) => !shown.examples.includes(item.name)).map((item) => item.name);
+  return html`
+    <div class="run-head">
+      <h3>${shown.number ? `Run All #${shown.number}` : "Run All"}<small class="num">${clock(shown.time)} · ${name}</small></h3>
+    </div>
+    ${(questionsChanged || missing.length > 0) &&
+    html`<div class="stale-banner">
+      <${icons.StatusIcon} kind="warn" />
+      <span class="msg">${questionsChanged ? "Questions edited since this Run All. " : ""}${
+        missing.length ? html`Not in it: <b>${missing.join(", ")}</b>. ` : ""
+      }</span>
+      <button class="btn primary" disabled=${!canRunAll.value} onClick=${() => runAll()}>Run All</button>
+    </div>`}
+    <${Grid} rows=${rows} questions=${questions} selected=${example.value?.name}
+      onPick=${(picked) => {
+        showExample(picked);
+        view.value = "one";
+      }} />
+  `;
+}
+
 export function Answers() {
+  const current = draft.value;
+  const name = modelName.value;
+  if (!current || !name)
+    return html`<div class="empty"><b>Nothing to run yet</b><span>Pick a question set and a model.</span></div>`;
+  if (current.examples.length < 2) return html`<${OneExample} />`;
+  return html`
+    <${ViewSwitch} />
+    ${view.value === "all" ? html`<${AllExamples} />` : html`<${OneExample} />`}
+  `;
+}
+
+function OneExample() {
   const current = draft.value;
   const result = lastRun.value;
   const name = modelName.value;
   const flight = running.value;
-  if (!current || !name)
-    return html`<div class="empty"><b>Nothing to run yet</b><span>Pick a question set and a model.</span></div>`;
+  const exampleName = current.examples.length > 1 ? example.value.name : null;
   if (!result) {
-    if (flight)
+    if (flight && flight.example === example.value.name)
       return html`<div class="empty"><b>Asking ${flight.model}…</b>${
         flight.loads ? html`<span>It loads first; that can take a while the first time.</span>` : null
       }</div>`;
     const loads = !loadedNames.value.has(name);
     return html`
       <div class="empty">
-        <b>No answers from ${name} yet</b>
+        <b>No answers from ${name}${exampleName ? ` for ${exampleName}` : ""} yet</b>
         <span>Run (⌘↩) answers this set's questions here, one card per question.${
           loads ? " It loads the model first." : ""
         }</span>
@@ -120,7 +206,7 @@ export function Answers() {
   const answers = result.response.answers ?? {};
   return html`
     <div class="run-head">
-      <h3>${cardContext.value ? `Run #${cardContext.value.number}` : "Answers"}<small class="num">${clock(result.time)} · ${result.model}</small></h3>
+      <h3>${cardContext.value ? `Run #${cardContext.value.number}` : "Answers"}<small class="num">${clock(result.time)} · ${result.model}${exampleName ? ` · ${exampleName}` : ""}</small></h3>
     </div>
     <div class="run-stats num">
       <span><b>${duration(result.latency_ms)}</b></span>

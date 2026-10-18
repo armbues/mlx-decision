@@ -457,6 +457,47 @@ def test_a_set_saved_through_the_api_answers_the_same_with_run_q(studio, models_
     assert json.loads(result.stdout) == through_studio
 
 
+# Examples (several states per set) and Run All
+
+
+def test_a_run_records_its_example_and_batch(studio):
+    first = run(studio, BODY, "fake", set="tickets", example="Stripe outage", batch="b1x-2")
+    assert first.status_code == 200
+    assert (first.json()["example"], first.json()["batch"]) == ("Stripe outage", "b1x-2")
+    run(studio, {**BODY, "state": "plain"}, "fake", set="tickets")
+    lines = studio.get("/studio/api/history/tickets").json()["runs"]
+    assert (lines[0]["example"], lines[0]["batch"]) == ("Stripe outage", "b1x-2")
+    assert "example" not in lines[1] and "batch" not in lines[1]
+    for extra, param in (
+        ({"example": ""}, "example"),
+        ({"example": "x" * 81}, "example"),
+        ({"batch": "no spaces"}, "batch"),
+        ({"batch": "x" * 41}, "batch"),
+    ):
+        refused = run(studio, BODY, "fake", set="tickets", **extra)
+        assert refused.status_code == 400 and refused.json()["error"]["param"] == param
+
+
+def test_a_set_with_examples_answers_its_first_with_run_q(studio, models_folder):
+    """The file keeps the first example as its top-level state, so run -q and
+    the API read it as before; the other examples ride along unread."""
+    examples = [
+        {"name": "Stripe outage", "state": BODY["state"]},
+        {"name": "Refund ask", "state": "I was charged twice, please refund one"},
+    ]
+    saved = {**BODY, "examples": examples}
+    assert studio.put("/studio/api/sets/many", json={"body": saved}).status_code == 200
+    assert studio.get("/studio/api/sets/many").json()["body"] == saved
+    path = studio.app_state.workspace.root / "sets" / "many.json"
+    result = CliRunner().invoke(
+        cli_app, ["run", "-m", str(models_folder / "fake"), "-q", str(path), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == run(studio, BODY, "fake").json()["response"]
+    through_api = studio.post("/v1/systemone", json={**saved, "model": "fake"})
+    assert through_api.status_code == 200
+
+
 def test_the_api_needs_the_session(tmp_path, models_folder):
     pool = ModelPool(discover([models_folder]), budget=10**9)
     app = create_studio(pool, workspace=tmp_path / "ws")

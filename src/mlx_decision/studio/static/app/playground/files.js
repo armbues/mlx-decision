@@ -1,5 +1,5 @@
 // Question sets as files in the workspace: New, Save, Save As, Duplicate,
-// Import, Export, Show in Finder. A save names the version it was loaded
+// Rename, Delete, Import, Export, Show in Finder. A save names the version it was loaded
 // from, so a file changed on disk since is never overwritten: the Studio
 // says so and offers Reload or Save As.
 import { signal } from "@preact/signals";
@@ -7,10 +7,20 @@ import { html } from "htm/preact";
 import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { navigate } from "../router.js";
-import { sets } from "../store/sets.js";
+import { reloadSets, sets } from "../store/sets.js";
 import { toast } from "../store/ui.js";
-import { toBody } from "./draft.js";
-import { drafts, editedNames, loadSet, loadedEntry, setEntry, setName } from "./session.js";
+import { toFile } from "./draft.js";
+import { plural } from "../format.js";
+import {
+  drafts,
+  editedNames,
+  forgetRuns,
+  loadSet,
+  loadedEntry,
+  moveRuns,
+  setEntry,
+  setName,
+} from "./session.js";
 
 const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
 const EMPTY_SET = { state: "", questions: {} };
@@ -93,12 +103,12 @@ function askName({ title, purpose, initial, action, onName }) {
 
 // ---------- the actions ----------
 
-// The draft's request, unless it has problems that would lose part of it
-// (two questions or options with one name).
+// The draft's file (every example), unless it has problems that would lose
+// part of it (two questions, options or examples with one name).
 function bodyToSave(name) {
   const value = drafts.value[name];
   if (!value?.draft) return null;
-  const { body, problems } = toBody(value.draft);
+  const { body, problems } = toFile(value.draft);
   if (problems.length) {
     toast(`${problems[0].message}: fix it before saving`);
     return null;
@@ -229,6 +239,72 @@ export async function duplicate() {
   } catch (error) {
     toast(`Not duplicated: ${error.message}`);
   }
+}
+
+// Rename the open set; its history and this tab's edits and answers go with it.
+export function renameSet() {
+  const from = setName.value;
+  if (!from) return;
+  askName({
+    title: "Rename",
+    purpose: `A new name for ${from}. Its history moves with it; unsaved edits stay unsaved.`,
+    initial: from,
+    action: "Rename",
+    onName: async (name) => {
+      const value = drafts.value[from] ?? null;
+      await api(`/sets/${encodeURIComponent(from)}/rename`, { method: "POST", body: { name } });
+      moveRuns(from, name);
+      setEntry(name, value);
+      setEntry(from, null);
+      reloadSets();
+      navigate("playground", name);
+      toast(`Renamed to ${fileOf(name)}`);
+    },
+  });
+}
+
+// Delete the open set and its history, after asking; the next set opens.
+export async function deleteSet() {
+  const name = setName.value;
+  if (!name) return;
+  let count = 0;
+  try {
+    count = (await api(`/history/${encodeURIComponent(name)}`)).runs.length;
+  } catch {
+    // No history to count: the question still says what goes.
+  }
+  const edits = editedNames.value.has(name) ? " Your unsaved edits go too." : "";
+  openSheet({
+    title: `Delete ${name}?`,
+    purpose: count
+      ? `The set's file and its history (${plural(count, "run")}) are deleted. This cannot be undone.${edits}`
+      : `The set's file is deleted. This cannot be undone.${edits}`,
+    note: "Export keeps a copy of the file first.",
+    actions: [
+      {
+        label: "Delete",
+        primary: true,
+        danger: true,
+        onSelect: async () => {
+          try {
+            await api(`/sets/${encodeURIComponent(name)}`, { method: "DELETE" });
+          } catch (error) {
+            if (error.status !== 404) {
+              toast(`Not deleted: ${error.message}`);
+              return;
+            }
+          }
+          closeSheet();
+          forgetRuns(name);
+          setEntry(name, null);
+          reloadSets();
+          const next = (sets.value ?? []).find((item) => item.name !== name)?.name ?? null;
+          navigate("playground", next ?? undefined);
+          toast(`Deleted ${fileOf(name)}`);
+        },
+      },
+    ],
+  });
 }
 
 // Pick a JSON file (a -q questions map or a whole request body) and add it as

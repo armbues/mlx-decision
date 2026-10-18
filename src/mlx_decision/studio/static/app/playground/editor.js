@@ -1,20 +1,30 @@
 // The Playground's centre: the state, one group per question, Add Question
 // and the live check, each problem shown at the field it is about.
+import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useRef, useState } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { MenuButton, MenuHeader, MenuItem, MenuSeparator } from "../components/menu.js";
+import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
+import { SHORTCUTS } from "../keys.js";
 import { toast } from "../store/ui.js";
 import * as edit from "./draft.js";
 import {
   built,
+  canRunAll,
   draft,
+  example,
+  fileProblems,
   lastRun,
   linked,
   model,
   modelName,
   problems,
+  renameExampleRuns,
+  runAll,
+  running,
+  setName,
   stale,
   updateDraft,
 } from "./session.js";
@@ -66,17 +76,24 @@ export async function addImages(files) {
   if (images.length < files.length) toast("Only PNG, JPEG and WebP images can be added");
   if (!images.length) return;
   const urls = await Promise.all(images.map(readImage));
-  updateDraft((current) => ({ ...current, images: [...current.images, ...urls] }));
+  updateExample((current) => ({ images: [...current.images, ...urls] }));
+}
+
+// Change the selected example: `change` gets it and returns the fields to set.
+function updateExample(change) {
+  updateDraft((value) => {
+    const current = edit.currentExample(value);
+    return edit.editExample(value, current.uid, change(current));
+  });
 }
 
 function Images() {
-  const current = draft.value;
+  const current = example.value;
   const reads = model.value?.capabilities?.supports_images ?? false;
   const picker = useRef(null);
   const [over, setOver] = useState(false);
   const problem = problemWhere((where) => where.images);
-  const remove = (index) =>
-    updateDraft((value) => ({ ...value, images: value.images.filter((_, i) => i !== index) }));
+  const remove = (index) => updateExample((value) => ({ images: value.images.filter((_, i) => i !== index) }));
   const onDrop = (event) => {
     event.preventDefault();
     setOver(false);
@@ -136,12 +153,114 @@ function Images() {
 const rowsFor = (text, least = 3, most = 14) =>
   Math.min(most, Math.max(least, text.split("\n").length + 1));
 
-function State() {
+// ---------- examples (D161) ----------
+
+const exampleName = signal("");
+const exampleNameError = signal(null);
+
+function exampleNameProblem(name, uid) {
+  if (!name.trim()) return "Give the example a name";
+  if (name.length > 80) return "At most 80 characters";
+  if (draft.value.examples.some((item) => item.uid !== uid && item.name === name.trim()))
+    return `An example named ${name.trim()} exists already`;
+  return null;
+}
+
+function ExampleNameField() {
+  const problem = exampleNameError.value;
+  return html`
+    <label class="name-field">
+      <span>Name</span>
+      <input class="sheet-input" value=${exampleName.value} aria-label="Example name"
+             onInput=${(event) => {
+               exampleName.value = event.target.value;
+               exampleNameError.value = null;
+             }} />
+    </label>
+    ${problem && html`<div class="field-problem sheet-problem" role="alert">${problem}</div>`}
+  `;
+}
+
+function renameExample(target) {
+  exampleName.value = target.name;
+  exampleNameError.value = null;
+  const submit = () => {
+    const name = exampleName.value.trim();
+    const problem = exampleNameProblem(name, target.uid);
+    if (problem) {
+      exampleNameError.value = problem;
+      return;
+    }
+    closeSheet();
+    if (name === target.name) return;
+    updateDraft((value) => edit.editExample(value, target.uid, { name }));
+    renameExampleRuns(setName.value, target.name, name);
+  };
+  openSheet({
+    title: "Rename Example",
+    purpose: `A new name for ${target.name}. Runs already in the History keep the old name.`,
+    Body: ExampleNameField,
+    actions: [{ label: "Rename", primary: true, onSelect: submit }],
+  });
+}
+
+function ExampleMenu({ item, index, count }) {
+  const change = (fn) => () => updateDraft((value) => fn(value, item.uid));
+  return html`
+    <${MenuButton} id=${`example-${item.uid}`} className="ex-more" ariaLabel=${`Actions for ${item.name}`}
+      label=${html`<svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11"><path d="M3 4.5 6 7.5 9 4.5z" /></svg>`}
+      menuStyle="top:26px; left:0; width:220px">
+      <${MenuItem} onSelect=${() => renameExample(item)}>Rename…<//>
+      <${MenuItem} onSelect=${change(edit.duplicateExample)}>Duplicate<//>
+      <${MenuSeparator} />
+      <${MenuItem} disabled=${index === 0} onSelect=${() => updateDraft((value) => edit.moveExample(value, item.uid, -1))}>Move Left<//>
+      <${MenuItem} disabled=${index === count - 1} onSelect=${() => updateDraft((value) => edit.moveExample(value, item.uid, 1))}>Move Right<//>
+      <${MenuSeparator} />
+      <${MenuItem} disabled=${count < 2} sub=${count < 2 ? "A set keeps at least one example" : null}
+        onSelect=${change(edit.removeExample)}>Remove<//>
+    <//>
+  `;
+}
+
+function Examples() {
   const current = draft.value;
+  const selected = example.value;
+  const marked = new Set(fileProblems.value.map((problem) => problem.where.example).filter(Boolean));
+  const flight = running.value;
+  return html`
+    <div class="examples" role="tablist" aria-label="Examples">
+      ${current.examples.map(
+        (item, index) => html`
+          <span class=${`ex-chip ${item.uid === selected.uid ? "on" : ""}`} key=${item.uid}>
+            <button role="tab" aria-selected=${item.uid === selected.uid ? "true" : "false"}
+                    title=${marked.has(item.uid) ? "This example has a problem" : item.name}
+                    onClick=${() => updateDraft((value) => edit.selectExample(value, item.uid))}
+                    onDblClick=${() => renameExample(item)}>
+              ${marked.has(item.uid) && html`<i class="ex-problem" aria-label="has a problem"></i>`}
+              <span>${item.name}</span>
+            </button>
+            ${item.uid === selected.uid && html`<${ExampleMenu} item=${item} index=${index} count=${current.examples.length} />`}
+          </span>
+        `,
+      )}
+      <button class="ex-add" aria-label="Add an example" title="Add an example"
+              onClick=${() => updateDraft((value) => edit.addExample(value))}><${icons.Plus} /></button>
+      ${current.examples.length > 1 &&
+      html`<button class="btn ex-runall" disabled=${!canRunAll.value}
+                   title=${`Ask every example in turn (${SHORTCUTS.runAll})`} onClick=${() => runAll()}>
+        ${flight?.all ? `Running ${flight.all.done + 1} of ${flight.all.total}…` : "Run All"}
+        <kbd>${SHORTCUTS.runAll}</kbd>
+      </button>`}
+    </div>
+  `;
+}
+
+function State() {
+  const current = example.value;
   const json = current.stateMode === "json";
   const problem = problemWhere((where) => where.state);
   const run = lastRun.value;
-  const setMode = (mode) => updateDraft((value) => edit.switchStateMode(value, mode));
+  const setMode = (mode) => updateExample((value) => edit.switchStateMode(value, mode));
   const onPaste = (event) => {
     const files = [...(event.clipboardData?.files ?? [])];
     if (files.length && model.value?.capabilities?.supports_images) {
@@ -153,7 +272,7 @@ function State() {
     <section class="gsec">
       <div class="gsec-head">
         <h2>State</h2>
-        <span class="tag">What the model reads</span>
+        <span class="tag">What the model reads, one example at a time</span>
         <div class="right">
           <div class="seg small" role="group" aria-label="State format">
             <button aria-pressed=${!json} onClick=${() => setMode("text")}>Text</button>
@@ -161,6 +280,7 @@ function State() {
           </div>
         </div>
       </div>
+      <${Examples} />
       <div class=${`group ${problem ? "has-problem" : ""}`}>
         <div class="state-box">
           <textarea
@@ -170,7 +290,10 @@ function State() {
             spellcheck=${!json}
             placeholder=${json ? '{"ticket": "..."}' : "What the model reads: a ticket, a review, a message…"}
             value=${current.stateText}
-            onInput=${(event) => updateDraft((value) => ({ ...value, stateText: event.target.value }))}
+            onInput=${(event) => {
+              const text = event.target.value;
+              updateExample(() => ({ stateText: text }));
+            }}
             onPaste=${onPaste}
           ></textarea>
           ${json && html`<${Problem} problem=${problem} />`}

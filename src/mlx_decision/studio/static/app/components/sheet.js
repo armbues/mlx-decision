@@ -4,7 +4,7 @@ import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect, useRef } from "preact/hooks";
 
-// {title, purpose, Body, actions: [{label, primary, disabled, onSelect}], note}
+// {title, purpose, Body, actions: [{label, primary, danger, disabled, onSelect}], note}
 export const sheet = signal(null);
 
 export function openSheet(value) {
@@ -42,7 +42,7 @@ export function Sheet() {
         ${note && html`<span class="note">${note}</span>`}
         <button class="btn" onClick=${closeSheet}>Cancel</button>
         ${actions.map(
-          (action) => html`<button class=${`btn ${action.primary ? "primary" : ""}`}
+          (action) => html`<button class=${`btn${action.primary ? " primary" : ""}${action.danger ? " danger" : ""}`}
             disabled=${action.disabled} onClick=${action.onSelect}>${action.label}</button>`,
         )}
       </div>
