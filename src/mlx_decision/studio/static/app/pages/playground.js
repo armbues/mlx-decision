@@ -18,6 +18,7 @@ import {
   edited,
   editedNames,
   entry,
+  justAnswered,
   lastRun,
   modelName,
   problems,
@@ -107,8 +108,8 @@ const questionCount = computed(() => (built.value ? Object.keys(built.value.body
 
 const status = computed(() => {
   if (models.value && models.value.length === 0)
-    return { icon: "info", text: html`No models yet · <code>mlx-decision download</code>` };
-  if (sets.value && setName.value === null) return { icon: "info", text: "No question set yet" };
+    return { text: html`No models yet · <code>mlx-decision download</code>` };
+  if (sets.value && setName.value === null) return { text: "No question set yet" };
   if (entry.value?.error) return { icon: "warn", text: entry.value.error };
   if (!built.value || !modelName.value) return null;
   const flight = running.value;
@@ -129,12 +130,12 @@ const status = computed(() => {
     };
   if (result)
     return {
-      icon: "ok",
+      // The check only right after the answer came; then the line is plain.
+      icon: justAnswered.value ? "ok" : null,
       text: html`<b>${result.model}</b> answered in ${duration(result.latency_ms)} · ${clock(result.time)}`,
     };
   const loads = loadedNames.value.has(modelName.value) ? "" : " · loads it first";
   return {
-    icon: "ok",
     text: html`Run sends <b>${plural(questionCount.value, "question")}</b> to <b>${modelName.value}</b>${loads}`,
   };
 });

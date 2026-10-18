@@ -1084,6 +1084,15 @@ def web(
     noul_floor: NoulFloorOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: ApiKeyOption = None,
+    dev: Annotated[
+        bool,
+        typer.Option(
+            "--dev",
+            hidden=True,
+            help="For developing the Studio: serve its page files uncached and reload "
+            "open tabs when one changes.",
+        ),
+    ] = False,
 ) -> None:
     """Open the Studio in the browser: the Playground, and the Jev API as server has it.
 
@@ -1149,6 +1158,7 @@ def web(
             workspace=folder,
             config=config,
             load_default=default_model is not None,
+            dev=dev,
         )
     except (OSError, ValueError) as error:
         sock.close()
@@ -1169,6 +1179,8 @@ def web(
                 f"from another machine: open http://<this Mac>:{port}/ and log in with the key",
                 err=True,
             )
+    if dev:
+        typer.echo("dev: open tabs reload when a page file changes", err=True)
     typer.echo(f"Studio: {url}", err=True)
     served = studio_server(app, host=host, port=port, log_level="info")
     if not no_browser:

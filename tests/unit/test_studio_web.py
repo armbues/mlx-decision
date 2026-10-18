@@ -1,9 +1,11 @@
 """``mlx-decision web``: the command, the page and its static files, the models it serves."""
 
+import asyncio
 import base64
 import hashlib
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -22,7 +24,7 @@ from mlx_decision import cli
 from mlx_decision.cli import app as cli_app
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import catalog, create_studio
-from mlx_decision.studio.page import STATIC, Page, static_id
+from mlx_decision.studio.page import DEV_PREFIX, STATIC, Page, static_id, watch
 
 HERE = "http://127.0.0.1:8000"
 VENDORED = [
@@ -84,6 +86,58 @@ def test_static_files_are_immutable_and_need_no_session(logged_in, tmp_path):
     assert anonymous.get(f"{prefix}/missing.js").status_code == 404
     assert anonymous.get("/static/000000000000/app/main.js").status_code == 404
     assert anonymous.get(f"{prefix}/../pyproject.toml").status_code == 404
+
+
+# web --dev: page files served uncached, open tabs told to reload on a change
+
+
+def test_the_dev_page_serves_its_files_uncached(tmp_path):
+    write_model(tmp_path / "models" / "fake")
+    app = create_studio(
+        ModelPool(discover([tmp_path / "models"])), workspace=tmp_path / "ws", dev=True
+    )
+    with TestClient(app, base_url=HERE, follow_redirects=False) as client:
+        client.get(f"/?token={app.state.session.token}")
+        assert f'src="{DEV_PREFIX}/app/main.js"' in client.get("/").text
+        script = client.get(f"{DEV_PREFIX}/app/main.js")
+        assert script.status_code == 200 and script.headers["cache-control"] == "no-store"
+        assert "etag" not in script.headers
+
+
+def test_a_dev_page_sees_its_files_change(tmp_path):
+    folder = tmp_path / "static"
+    shutil.copytree(STATIC, folder)
+    page = Page(folder, dev=True)
+    assert page.prefix == DEV_PREFIX and page.changed() is False
+    (folder / "studio.css").write_text((folder / "studio.css").read_text() + "\n/* edit */\n")
+    assert page.changed() is True and page.changed() is False
+    index = folder / "index.html"
+    index.write_text(index.read_text().replace("<title>", "<title>Edited "))
+    assert page.changed() is True and "<title>Edited " in page.html
+    (folder / "app" / "new.js").write_text("export {};\n")
+    assert page.changed() is True
+    assert Page(folder).prefix != DEV_PREFIX  # without dev: hashed and cached
+
+
+def test_watch_asks_open_tabs_to_reload(tmp_path):
+    folder = tmp_path / "static"
+    shutil.copytree(STATIC, folder)
+    page = Page(folder, dev=True)
+    reloads = []
+
+    async def run():
+        task = asyncio.create_task(watch(page, lambda: reloads.append(1), interval=0.01))
+        await asyncio.sleep(0.05)
+        assert reloads == []
+        (folder / "app" / "main.js").write_text("// edited\n")
+        for _ in range(100):
+            if reloads:
+                break
+            await asyncio.sleep(0.01)
+        task.cancel()
+
+    asyncio.run(run())
+    assert reloads == [1]
 
 
 def test_the_page_has_its_icon(logged_in):

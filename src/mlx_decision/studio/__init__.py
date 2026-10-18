@@ -22,7 +22,7 @@ from ..gpu import Gpu
 from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
-from .page import Page
+from .page import Page, watch
 from .routes.models import models_router
 from .routes.run import Models, Recorder, run_router
 from .routes.sets import sets_router
@@ -43,6 +43,7 @@ def create_studio(
     config: Config | None = None,
     load_default: bool = True,
     max_body_bytes: int = MAX_BODY_BYTES,
+    dev: bool = False,
 ) -> FastAPI:
     """The Studio's app for a process serving ``host:port``.
 
@@ -52,7 +53,8 @@ def create_studio(
     created and cleaned up here; ``app.state.hub`` the stream's hub.
     ``config`` is the config file the process read (read here when not
     given), shown by the status route. The pool's default model loads at
-    startup unless ``load_default`` is False. Raises ``ValueError`` for an address
+    startup unless ``load_default`` is False. With ``dev`` the page's files
+    are served uncached and open tabs reload when one changes. Raises ``ValueError`` for an address
     beyond this machine without an API key.
     """
     if isinstance(gpu, ModelPool):
@@ -62,11 +64,12 @@ def create_studio(
     config = config if config is not None else load_config()
     files = Workspace(workspace if workspace is not None else root_folder(config))
     files.open()
+    page = Page(dev=dev)
     status = status_reader(gpu)
     hub = Hub(lambda: {"status": status()})
     app = FastAPI(
         title="mlx-decision Studio",
-        lifespan=studio_lifespan(gpu, files, hub, status, load_default),
+        lifespan=studio_lifespan(gpu, files, hub, status, load_default, page),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -80,7 +83,6 @@ def create_studio(
     recorder = Recorder(files, models)
     routes.install_errors(app)
     add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
-    page = Page()
     page.mount(app)
     app.include_router(page_router(page, session, api_key))
     app.include_router(status_router(gpu, files, models, config, host, port, api_key, status))
@@ -139,6 +141,7 @@ def studio_lifespan(
     hub: Hub,
     status: Callable[[], dict[str, Any]],
     load_default: bool = True,
+    page: Page | None = None,
 ):
     """Start the GPU (its default model loads, with ``load_default``) and close it
     at the end, as ``server.gpu_lifespan`` does, plus the stream: changes to the
@@ -158,11 +161,16 @@ def studio_lifespan(
         gpu.pool.on_change = lambda: hub.soon(publish_status)
         gpu.pool.on_use = lambda: hub.soon(publish_status)  # last used
         files.on_change = lambda change: hub.soon(hub.publish, "workspace", change)
+        watcher = None
+        if page is not None and page.dev:  # open tabs reload when a page file changes
+            watcher = asyncio.create_task(watch(page, lambda: hub.publish("reload", {})))
         try:
             if load_default:
                 await gpu.start()
             yield
         finally:  # also when the default model fails to load
+            if watcher is not None:
+                watcher.cancel()
             hub.close()
             gpu.close()
             gpu.on_change = gpu.pool.on_change = gpu.pool.on_use = files.on_change = None

@@ -8,6 +8,8 @@ import * as icons from "./icons.js";
 import { MenuButton, MenuItem } from "./menu.js";
 
 // What the status field says: the Studio's own state first, then the page's.
+// ``icon`` only when it means something: "spin" while working, "warn" when
+// something needs attention, "ok" right after a run is answered; else none.
 function fieldContent(page) {
   if (connection.value === "lost")
     return { icon: "warn", text: html`Not connected to the Studio · reload the page` };
@@ -20,8 +22,8 @@ function StatusField({ page }) {
   const content = fieldContent(page);
   return html`
     <div class="activity" role="status" aria-live="polite">
-      ${content &&
-      html`<${icons.StatusIcon} kind=${content.icon} /><span class="txt">${content.text}</span>`}
+      ${content?.icon && html`<${icons.StatusIcon} kind=${content.icon} />`}
+      ${content && html`<span class="txt">${content.text}</span>`}
       ${content?.progress != null &&
       html`<span class="prog" style=${`width:${(content.progress * 100).toFixed(1)}%`}></span>`}
     </div>
@@ -87,6 +89,7 @@ export function Toolbar({ page }) {
   const inspectorLabel = inspectorShown.value ? "Hide Inspector" : "Show Inspector";
   return html`
     <header class="toolbar">
+      <div class="tb-left">
       <button
         class="icon-btn"
         aria-label=${sidebarLabel}
@@ -98,8 +101,9 @@ export function Toolbar({ page }) {
       >
         <${icons.SidebarToggle} />
       </button>
-      <${MainAction} action=${page.action?.value} />
-      ${Target && html`<${Target} />`}
+        <${MainAction} action=${page.action?.value} />
+        ${Target && html`<${Target} />`}
+      </div>
       <${StatusField} page=${page} />
       <div class="tb-right">
         ${Tools && html`<${Tools} />`}

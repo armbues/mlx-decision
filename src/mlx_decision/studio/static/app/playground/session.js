@@ -196,6 +196,11 @@ export function forgetRuns(set) {
 
 export const running = signal(null); // {model, loads, controller}
 
+// True for a few seconds after a run is answered: the status field's check.
+export const justAnswered = signal(false);
+const ANSWERED_MS = 4000;
+let answeredTimer = null;
+
 // What changed since the last run: {all, ids}.
 export const stale = computed(() => {
   const run = lastRun.value;
@@ -229,7 +234,12 @@ export async function run() {
     batch(() => {
       runs.value = { ...runs.value, [runKey(set, name)]: { ...result, request: body } };
       refused.value = { key: null, errors: [] };
+      justAnswered.value = true;
     });
+    clearTimeout(answeredTimer);
+    answeredTimer = setTimeout(() => {
+      justAnswered.value = false;
+    }, ANSWERED_MS);
   } catch (error) {
     if (error.name === "AbortError") return;
     if (error.status === 422) refused.value = { key, errors: [error] };

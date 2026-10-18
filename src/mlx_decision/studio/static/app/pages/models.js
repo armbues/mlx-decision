@@ -295,9 +295,8 @@ const status_ = computed(() => {
   const list = models.value;
   if (!list) return null;
   if (list.length === 0)
-    return { icon: "info", text: html`No models yet · <code>mlx-decision download</code>` };
+    return { text: html`No models yet · <code>mlx-decision download</code>` };
   return {
-    icon: "ok",
     text: html`<b>${plural(list.length, "model")}</b> · ${loadedNames.value.size} loaded`,
   };
 });

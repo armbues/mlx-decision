@@ -3,7 +3,6 @@ import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 
 const status = computed(() => ({
-  icon: "info",
   text: html`Fit from the command line: <code>mlx-decision training fit</code>`,
 }));
 

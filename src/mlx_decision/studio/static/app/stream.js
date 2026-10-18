@@ -27,6 +27,9 @@ function apply(message) {
       if (message.folder === "sets") setsChanged();
       workspaceChange.value = message;
       break;
+    case "reload": // web --dev: a page file changed
+      location.reload();
+      break;
     default:
       break; // jobs and the models catalog arrive with their pages
   }

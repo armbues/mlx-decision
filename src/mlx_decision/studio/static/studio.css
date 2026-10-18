@@ -217,6 +217,10 @@ button { cursor: default; }
 .serving .ver { margin-left: auto; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 /* ---------- toolbar ---------- */
+/* The left group, the status field and the right group. The two groups grow
+   alike from nothing, so the field (a fixed width) sits in the middle on
+   every page; a group never gets less than its content, so in a narrow
+   toolbar the field moves aside, then narrows, before anything is covered. */
 .toolbar {
   grid-column: 2 / -1; grid-row: 1;
   display: flex; align-items: center; gap: 10px;
@@ -251,7 +255,7 @@ button { cursor: default; }
 
 .target {
   display: inline-flex; align-items: center; height: 28px; border-radius: 7px; background: var(--fill);
-  min-width: 0; flex: 0 1 auto;
+  min-width: 0; max-width: 320px; flex: 0 1 auto;
 }
 .target button.set, .target button.mdl {
   height: 28px; border: 0; background: transparent; display: inline-flex; align-items: center; gap: 6px;
@@ -267,8 +271,9 @@ button { cursor: default; }
 .target .mdl .meta { color: var(--fg-2); font-size: 11px; }
 .target .chev { width: 8px; height: 12px; color: var(--fg-2); flex: none; }
 
+.tb-left { flex: 1 1 0; min-width: max-content; display: flex; align-items: center; gap: 10px; }
 .activity {
-  flex: 1 1 auto; min-width: 180px; max-width: 460px; margin: 0 auto;
+  flex: 0 1 clamp(200px, 32vw, 440px); min-width: 160px;
   height: 28px; border-radius: 7px; background: var(--fill);
   display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px;
   color: var(--fg-2); font-size: 12px; position: relative; overflow: hidden; white-space: nowrap;
@@ -282,7 +287,7 @@ button { cursor: default; }
 .activity .prog { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); width: 0; transition: width 0.6s ease; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.tb-right { display: flex; align-items: center; gap: 4px; flex: none; }
+.tb-right { flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .btn {
   height: 26px; padding: 0 11px; border-radius: 6px; border: 0;
   background: var(--group); box-shadow: var(--shadow); white-space: nowrap;
