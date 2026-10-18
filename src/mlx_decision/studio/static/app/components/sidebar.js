@@ -3,7 +3,8 @@ import { html } from "htm/preact";
 import { gigabytes, hostPort } from "../format.js";
 import { href } from "../router.js";
 import { jobs } from "../store/jobs.js";
-import { busy, connection, loadedNames, models, status } from "../store/status.js";
+import { groupColour, groupLabel } from "../families.js";
+import { busy, connection, models, status } from "../store/status.js";
 import * as icons from "./icons.js";
 import { UnloadMark } from "./load-button.js";
 
@@ -45,20 +46,26 @@ function Jobs() {
 function Memory() {
   const memory = status.value?.memory;
   if (!memory) return null;
-  const loaded = [...loadedNames.value];
-  const share = memory.budget ? Math.min(memory.used / memory.budget, 1) : 0;
+  const groups = status.value?.groups ?? [];
+  const budget = memory.budget || 1;
+  const width = (bytes) => `${Math.min(100, (bytes / budget) * 100).toFixed(1)}%`;
   return html`
     <div class="mem" title="What the loaded models count against the memory budget (the memory check's estimates; --memory-budget sets it)">
       <div class="mem-head">
         <span>Memory budget</span>
         <span><b class="num">${gigabytes(memory.used)}</b> of ${gigabytes(memory.budget)}</span>
       </div>
-      <div class="membar"><i style=${`width:${(share * 100).toFixed(1)}%; background: var(--accent)`}></i></div>
+      <div class="membar">
+        ${groups.map((group) => html`<i key=${group.root} style=${`width:${width(group.bytes)}; background:${groupColour(group, groups)}`}></i>`)}
+      </div>
       <div class="mem-legend">
-        ${loaded.length === 0
+        ${groups.length === 0
           ? html`<div>No model loaded</div>`
-          : loaded.map(
-              (name) => html`<div key=${name}><s style="background: var(--accent)"></s><span class="mono-s">${name}</span><${UnloadMark} name=${name} /></div>`,
+          : groups.map(
+              (group) => html`<div key=${group.root}>
+                <s style=${`background:${groupColour(group, groups)}`}></s><span class="mono-s">${groupLabel(group)}</span>
+                <${UnloadMark} name=${group.members[group.members.length - 1]} label=${groupLabel(group)} />
+              </div>`,
             )}
       </div>
     </div>

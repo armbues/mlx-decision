@@ -206,7 +206,7 @@ button { cursor: default; }
 .mem-head { display: flex; justify-content: space-between; gap: 8px; color: var(--fg-2); font-size: 11px; white-space: nowrap; }
 .mem-head b { color: var(--fg); font-weight: 500; }
 .membar { display: flex; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; gap: 1px; }
-.membar i { display: block; height: 100%; }
+.membar i { display: block; height: 100%; flex: none; }
 .mem-legend { display: grid; gap: 2px; font-size: 11px; color: var(--fg-2); }
 .mem-legend div { display: flex; align-items: center; gap: 6px; }
 .mem-legend s { width: 7px; height: 7px; border-radius: 2px; text-decoration: none; display: inline-block; }
@@ -678,6 +678,8 @@ a.sb-item { color: var(--fg); }
 .mrow.fitted .nm::before { content: ""; position: absolute; left: 27px; top: -1px; height: 24px; width: 12px; border-left: 1px solid var(--sep-strong); border-bottom: 1px solid var(--sep-strong); border-bottom-left-radius: 5px; }
 .mrow .cell { font-size: 12px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mrow .cell b { color: var(--fg); font-weight: 500; }
+.mrow .c-reads .pic-slot { display: inline-block; width: 14px; height: 14px; margin-left: 6px; vertical-align: -3px; }
+.mrow .c-reads .picture { width: 14px; height: 14px; display: block; color: var(--fg-2); }
 .mrow .st { display: flex; justify-content: flex-end; }
 /* A narrow centre (the inspector open below about 1,300 px): Size and Reads
    step aside (the inspector has them), the name keeps its room. */

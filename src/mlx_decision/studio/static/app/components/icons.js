@@ -49,6 +49,16 @@ export const File = ({ className = "file" }) => html`
   </svg>
 `;
 
+// A picture: the model reads images (the Models page's Reads column).
+export const Picture = () => html`
+  <svg class="picture" viewBox="0 0 16 16" ...${stroke(1.2)} role="img" aria-label="Reads images">
+    <title>Reads images</title>
+    <rect x="2" y="3" width="12" height="10" rx="2" />
+    <circle cx="6" cy="6.6" r="1.2" />
+    <path d="M2.6 11.6l3.4-3.1 2.5 2.3 2-1.7 2.9 2.5" />
+  </svg>
+`;
+
 export const Plus = () => html`
   <svg viewBox="0 0 12 12" width="11" height="11" ...${stroke(1.5)} aria-hidden="true">
     <path d="M6 1.5v9M1.5 6h9" />

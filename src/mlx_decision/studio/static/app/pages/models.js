@@ -3,7 +3,9 @@
 // sit in the inspector, the memory card and a row's context menu (D156).
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
+import { Picture } from "../components/icons.js";
 import { LoadButton } from "../components/load-button.js";
+import { groupColour, groupLabel, markOf } from "../families.js";
 import { MenuItem, MenuSeparator } from "../components/menu.js";
 import { gigabytes, plural } from "../format.js";
 import { chooseModel } from "../playground/session.js";
@@ -11,18 +13,6 @@ import { href, route } from "../router.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
 import { busy, loadedNames, models, status } from "../store/status.js";
 import { openMenu, toast } from "../store/ui.js";
-
-// Family marks and colours (the R20 design); other families get a grey mark.
-const FAMILIES = {
-  clef: ["Cf", "#e8730c"],
-  pplx: ["px", "#1f8a8a"],
-  d3: ["d3", "#5b5bd6"],
-  h2o: ["H2", "#d4a20b"],
-  d1: ["d1", "#2f7dd1"],
-  laya: ["La", "#2e9d5b"],
-  julia: ["Ju", "#c2417a"],
-};
-const markOf = (family) => FAMILIES[family] ?? [family.slice(0, 2), "#8e8e93"];
 
 function Mark({ family, big = false }) {
   const [text, colour] = markOf(family);
@@ -43,7 +33,8 @@ function reads(model) {
   const caps = model.capabilities;
   if (!caps) return "";
   const limit = caps.max_input_tokens ? tokens(caps.max_input_tokens) : "no limit";
-  return caps.supports_images ? `${limit} · images` : limit;
+  // Every row keeps the icon's slot, so the limits line up.
+  return html`${limit}<span class="pic-slot">${caps.supports_images && html`<${Picture} />`}</span>`;
 }
 
 const PLACES = { cache: "HF cache", studio: "made here", folder: "your folder" };
@@ -181,9 +172,6 @@ function preview(model) {
   return { model, over: false, needs, leaving };
 }
 
-// A group by the models a request named; a base loaded only for its fits says so.
-const groupLabel = (group) =>
-  group.members.includes(group.root) ? group.members.join(", ") : `${group.members.join(", ")} (with ${group.root})`;
 
 function MemoryCard() {
   const memory = status.value?.memory;
@@ -196,10 +184,6 @@ function MemoryCard() {
   // The bar holds the budget, or more while a preview needs it (the line marks the budget).
   const scale = Math.max(budget, memory.used + (plan && !plan.over ? plan.needs : 0));
   const share = (bytes) => `${Math.min(100, (bytes / scale) * 100).toFixed(2)}%`;
-  const familyOf = (group) => {
-    const named = byName.value.get(group.root) ?? byName.value.get(group.members[0]);
-    return named?.family ?? "";
-  };
   let note;
   if (plan?.over)
     note = html`<b>${plan.model.name}</b> needs <b>${gigabytes(plan.needs)}</b>, more than the budget: it cannot load. <code>--memory-budget</code> or <code>memory_budget_gb</code> sets the budget.`;
@@ -220,7 +204,7 @@ function MemoryCard() {
       <div class="membig">
         <div class="segs">
           ${groups.map((group) => {
-            const [, colour] = markOf(familyOf(group));
+            const colour = groupColour(group, groups);
             return html`<i key=${group.root} class=${leaving.has(group.root) ? "leaving" : ""}
                          style=${`width:${share(group.bytes)}; background:${colour}`} title=${`${groupLabel(group)} · ${gigabytes(group.bytes)}`}>
               <span>${groupLabel(group)}</span></i>`;
@@ -233,7 +217,7 @@ function MemoryCard() {
       ${groups.length > 0 &&
       html`<div class="mem-groups">
         ${groups.map((group) => {
-          const [, colour] = markOf(familyOf(group));
+          const colour = groupColour(group, groups);
           const name = group.members[group.members.length - 1];
           const doing = group.members.some((member) => pending.value[member]);
           return html`<span class="mem-group" key=${group.root}>

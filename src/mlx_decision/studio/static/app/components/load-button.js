@@ -26,13 +26,13 @@ export function LoadButton({ name, className = "btn" }) {
 }
 
 // The sidebar's small unload button next to a loaded model's name.
-export function UnloadMark({ name }) {
+export function UnloadMark({ name, label = name }) {
   const doing = pending.value[name];
   const holder = busy.value;
   return html`
     <button class="mem-x" disabled=${Boolean(doing || holder)}
-            title=${holder ? `A job holds the GPU (${holder})` : `Unload ${name}`}
-            aria-label=${`Unload ${name}`} onClick=${() => unloadModel(name)}>
+            title=${holder ? `A job holds the GPU (${holder})` : `Unload ${label}`}
+            aria-label=${`Unload ${label}`} onClick=${() => unloadModel(name)}>
       <svg viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
         <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
       </svg>
