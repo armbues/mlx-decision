@@ -3,16 +3,19 @@ import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
-import { MenuButton, MenuHeader, MenuItem, MenuNote } from "../components/menu.js";
+import { MenuButton, MenuHeader, MenuItem, MenuNote, MenuSeparator } from "../components/menu.js";
 import { duration, plural } from "../format.js";
-import { onKey } from "../keys.js";
+import { SHORTCUTS, onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
 import { Answers, clock } from "../playground/answers.js";
 import { Editor } from "../playground/editor.js";
+import * as files from "../playground/files.js";
 import {
   built,
   canRun,
   chooseModel,
+  edited,
+  editedNames,
   entry,
   lastRun,
   modelName,
@@ -35,7 +38,12 @@ function SetsList() {
   const list = sets.value;
   return html`
     <div class="sb-sec">
-      <h3>Question Sets</h3>
+      <h3>
+        Question Sets
+        <button aria-label="New question set" title=${`New Question Set (${SHORTCUTS.newSet})`} onClick=${files.newSet}>
+          <${icons.Plus} />
+        </button>
+      </h3>
       ${list && list.length === 0 && html`<p class="sb-empty">No sets yet</p>`}
       <ul class="sb-list">
         ${(list ?? []).map(
@@ -44,6 +52,7 @@ function SetsList() {
               <a class="sb-item" href=${href("playground", item.name)}
                  aria-current=${item.name === setName.value ? "true" : undefined}>
                 <${icons.File} /><span class="label">${item.name}</span>
+                ${editedNames.value.has(item.name) && html`<span class="edited" title="Edited, not saved"></span>`}
               </a>
             </li>
           `,
@@ -141,8 +150,51 @@ const action = computed(() => {
   };
 });
 
+function MoreMenu() {
+  return html`
+    <${MenuButton} id="set-more" className="btn" ariaLabel="More actions for this set"
+      label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
+      menuStyle="top:32px; right:0; width:260px">
+      <${MenuItem} right=${SHORTCUTS.saveAs} onSelect=${files.saveAs}>Save As…<//>
+      <${MenuItem} onSelect=${files.duplicate}>Duplicate<//>
+      <${MenuItem} right=${SHORTCUTS.newSet} onSelect=${files.newSet}>New Question Set…<//>
+      <${MenuItem} right=${SHORTCUTS.import} sub="A -q questions file or a whole request body" onSelect=${files.importSet}>Import Questions…<//>
+      <${MenuSeparator} />
+      <${MenuItem} sub=${edited.value ? "The saved file, without your edits" : null} onSelect=${files.exportSet}>Export<//>
+      <${MenuItem} onSelect=${files.reveal}>Show in Workspace Folder<//>
+    <//>
+  `;
+}
+
+function DiskBanner() {
+  const where = entry.value?.onDisk;
+  if (!where) return null;
+  return html`
+    <div class="banner disk-banner" role="status">
+      <${icons.StatusIcon} kind="warn" />
+      <span>
+        ${where === "deleted"
+          ? html`<b>sets/${setName.value}.json</b> was deleted on disk. Your edits are only here.`
+          : html`<b>sets/${setName.value}.json</b> changed on disk. Saving will not overwrite it.`}
+      </span>
+      ${where === "changed" &&
+      html`<button class="btn" onClick=${() => files.reloadFromDisk()}>Reload</button>`}
+      <button class="btn" onClick=${files.saveAs}>Save As…</button>
+    </div>
+  `;
+}
+
 function Centre() {
-  useEffect(() => onKey("run", () => run()), []);
+  useEffect(() => {
+    const off = [
+      onKey("run", () => run()),
+      onKey("save", () => files.save()),
+      onKey("saveAs", () => files.saveAs()),
+      onKey("newSet", () => files.newSet()),
+      onKey("import", () => files.importSet()),
+    ];
+    return () => off.forEach((remove) => remove());
+  }, []);
   const list = sets.value;
   const current = entry.value;
   if (list && list.length === 0 && !route.value.item) {
@@ -155,6 +207,10 @@ function Centre() {
             A question set is a request body saved in the workspace's${" "}
             <code>sets/</code> folder; <code>mlx-decision run -q sets/NAME.json</code> answers it too.
           </span>
+          <div class="empty-actions">
+            <button class="btn primary" onClick=${files.newSet}>New Question Set…</button>
+            <button class="btn" onClick=${files.importSet}>Import Questions…</button>
+          </div>
         </div>
       </div>
     `;
@@ -165,10 +221,21 @@ function Centre() {
       <div class="pane-head">
         <div>
           <h1>${title(setName.value)}</h1>
-          <p><code>sets/${setName.value}.json</code></p>
+          <p><code>sets/${setName.value}.json</code>${edited.value && html`<span class="edited-tag">· Edited</span>`}</p>
         </div>
+        ${!current.error &&
+        html`<div class="actions">
+          <button class="btn" disabled=${!edited.value} title=${`Save (${SHORTCUTS.save})`} onClick=${files.save}>Save</button>
+          <${MoreMenu} />
+        </div>`}
       </div>
-      ${current.error ? html`<div class="empty"><b>${current.error}</b></div>` : html`<${Editor} />`}
+      <${DiskBanner} />
+      ${current.error
+        ? html`<div class="empty"><b>${current.error}</b>${
+            current.status === 404 &&
+            html`<div class="empty-actions"><button class="btn" onClick=${files.newSet}>New Question Set…</button></div>`
+          }</div>`
+        : html`<${Editor} />`}
     </div>
   `;
 }

@@ -246,7 +246,7 @@ function ChoiceRows({ question }) {
           <span class="key-cell">
             <span class="grip-handle" title="Drag to reorder (or ⌥↑ / ⌥↓)" ...${drag.grip(item)}><${Grip} /></span>
             <input class=${`opt-key ${at(question.uid, item.uid) ? "bad" : ""}`} data-cell="key"
-                   aria-label="Option key" spellcheck="false" value=${item.key}
+                   aria-label="Option key" spellcheck=${false} value=${item.key}
                    onInput=${(event) => change(item, { key: event.target.value })}
                    onKeyDown=${(event) => moveOnKeys(event, question, "options", item, index)} />
           </span>
@@ -383,7 +383,7 @@ function Question({ question, index, count }) {
       <div class="gsec-head">
         <h2>
           <input class=${`qid-input mono ${at(question.uid, "id") ? "bad" : ""}`} aria-label="Question id"
-                 spellcheck="false" size=${Math.max(4, question.id.length + 1)} value=${question.id}
+                 spellcheck=${false} size=${Math.max(4, question.id.length + 1)} value=${question.id}
                  onInput=${(event) => updateDraft((value) => edit.editQuestion(value, question.uid, { id: event.target.value }))} />
         </h2>
         <span class=${`tag ${typeProblem ? "bad" : ""}`}>${edit.TYPE_LABELS[question.type]}</span>

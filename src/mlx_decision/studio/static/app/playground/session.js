@@ -38,34 +38,94 @@ export const setName = computed(() => {
   return names.includes(lastSet.value) ? lastSet.value : (names[0] ?? null);
 });
 
-// Set name -> {sha256, draft} as loaded and edited in this tab, or {error}.
+// Set name -> the set as loaded and edited in this tab: {sha256, modified,
+// baseline, draft, onDisk}, or {error}. `baseline` is the request the loaded
+// file makes (as the draft writes it), so an edit is any difference from it;
+// `onDisk` is "changed" or "deleted" when the file moved on behind an edited
+// draft (an unedited draft just loads the new file).
 export const drafts = signal({});
+
+const bodyText = (current) => JSON.stringify(toBody(current).body);
+
+export function loadedEntry(loaded, modified = null) {
+  const loadedDraft = fromBody(loaded.body);
+  return {
+    sha256: loaded.sha256,
+    modified,
+    baseline: bodyText(loadedDraft),
+    draft: loadedDraft,
+    onDisk: null,
+  };
+}
+
+export function setEntry(name, value) {
+  const next = { ...drafts.value };
+  if (value === null) delete next[name];
+  else next[name] = value;
+  drafts.value = next;
+}
+
+const modifiedOf = (name) => (sets.peek() ?? []).find((item) => item.name === name)?.modified ?? null;
+
+// Load the set from disk, replacing any draft of it.
+export async function loadSet(name) {
+  try {
+    const loaded = await api(`/sets/${encodeURIComponent(name)}`);
+    setEntry(name, loadedEntry(loaded, modifiedOf(name)));
+  } catch (error) {
+    setEntry(name, { error: error.message, status: error.status });
+  }
+}
 
 effect(() => {
   const name = setName.value;
   if (name === null) return;
   lastSet.value = name;
-  if (drafts.peek()[name]) return;
-  api(`/sets/${encodeURIComponent(name)}`)
-    .then((loaded) => {
-      drafts.value = {
-        ...drafts.value,
-        [name]: { sha256: loaded.sha256, draft: fromBody(loaded.body) },
-      };
-    })
-    .catch((error) => {
-      drafts.value = { ...drafts.value, [name]: { error: error.message } };
-    });
+  if (!drafts.peek()[name]) loadSet(name);
+});
+
+export const isEdited = (value) => !!value?.draft && bodyText(value.draft) !== value.baseline;
+
+// When the sets list shows a file changed or gone (the CLI, an editor, another
+// tab): reload an unedited draft, mark an edited one.
+effect(() => {
+  const list = sets.value;
+  if (!list) return;
+  const onDisk = new Map(list.map((item) => [item.name, item.modified]));
+  for (const [name, value] of Object.entries(drafts.peek())) {
+    if (!value.draft) continue;
+    if (!onDisk.has(name)) {
+      if (value.modified === null) continue; // created here, not in this list yet
+      if (isEdited(value)) setEntry(name, { ...value, onDisk: "deleted" });
+      else loadSet(name); // shows that it is gone
+      continue;
+    }
+    const modified = onDisk.get(name);
+    if (modified === value.modified) continue;
+    api(`/sets/${encodeURIComponent(name)}`)
+      .then((loaded) => {
+        const current = drafts.peek()[name];
+        if (!current?.draft) return;
+        if (loaded.sha256 === current.sha256) setEntry(name, { ...current, modified, onDisk: null });
+        else if (isEdited(current)) setEntry(name, { ...current, modified, onDisk: "changed" });
+        else setEntry(name, loadedEntry(loaded, modified));
+      })
+      .catch(() => {});
+  }
 });
 
 export const entry = computed(() => (setName.value ? (drafts.value[setName.value] ?? null) : null));
 export const draft = computed(() => entry.value?.draft ?? null);
+export const edited = computed(() => isEdited(entry.value));
+export const editedNames = computed(
+  () => new Set(Object.entries(drafts.value).filter(([, value]) => isEdited(value)).map(([name]) => name)),
+);
 
 export function updateDraft(change) {
   const name = setName.value;
   const current = drafts.value[name];
   if (!current?.draft) return;
-  drafts.value = { ...drafts.value, [name]: { ...current, draft: change(current.draft) } };
+  setEntry(name, { ...current, draft: change(current.draft) });
 }
 
 // The request the draft makes, with the problems that need no server.

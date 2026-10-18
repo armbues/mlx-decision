@@ -1,5 +1,6 @@
 // Keyboard shortcuts. Pages register what an action does while they are shown;
 // a key whose action nobody handles is left to the browser.
+import { closeSheet, sheet } from "./components/sheet.js";
 import { inspectorShown, narrow, openMenu, toggleInspector } from "./store/ui.js";
 
 export const SHORTCUTS = {
@@ -38,14 +39,17 @@ export function trigger(action, event = null) {
   return handler(event) !== false;
 }
 
-// Esc closes the open menu, else the inspector opened over a narrow window.
+// Esc closes the open menu, else the sheet, else the inspector opened over a
+// narrow window.
 onKey("escape", () => {
   if (openMenu.value !== null) openMenu.value = null;
+  else if (sheet.value !== null) closeSheet();
   else if (narrow.value && inspectorShown.value) toggleInspector();
   else return false;
 });
 
 addEventListener("keydown", (event) => {
   const action = actionFor(event);
+  if (action && action !== "escape" && sheet.value !== null) return;
   if (action && trigger(action, event)) event.preventDefault();
 });
