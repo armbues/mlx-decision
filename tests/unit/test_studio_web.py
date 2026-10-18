@@ -86,6 +86,16 @@ def test_static_files_are_immutable_and_need_no_session(logged_in, tmp_path):
     assert anonymous.get(f"{prefix}/../pyproject.toml").status_code == 404
 
 
+def test_the_page_has_its_icon(logged_in):
+    prefix = f"/static/{static_id()}"
+    assert f'<link rel="icon" type="image/svg+xml" href="{prefix}/favicon.svg">' in (
+        logged_in.get("/").text
+    )
+    icon = TestClient(logged_in.app, base_url=HERE).get(f"{prefix}/favicon.svg")
+    assert icon.status_code == 200
+    assert icon.headers["content-type"].startswith("image/svg+xml")
+
+
 def test_the_static_id_follows_the_contents(tmp_path):
     folder = tmp_path / "static"
     (folder / "app").mkdir(parents=True)

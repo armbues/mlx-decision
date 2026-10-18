@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 26">
+  <!-- The sidebar's brand mark (components/icons.js) with studio.css's colours written in. -->
+  <style>
+    .a { stop-color: #3a3f4b; }
+    .b { stop-color: #1c1f26; }
+    .accent { fill: #007aff; }
+    @media (prefers-color-scheme: dark) {
+      .a { stop-color: #4a505e; }
+      .b { stop-color: #22262e; }
+      .accent { fill: #0a84ff; }
+    }
+  </style>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" class="a" />
+      <stop offset="1" class="b" />
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="25" height="25" rx="6.5" fill="url(#g)" />
+  <rect x="6" y="7.2" width="7" height="2.6" rx="1.3" fill="#ffffff" opacity="0.38" />
+  <rect class="accent" x="6" y="11.7" width="14" height="2.6" rx="1.3" />
+  <rect x="6" y="16.2" width="4.5" height="2.6" rx="1.3" fill="#ffffff" opacity="0.38" />
+</svg>
