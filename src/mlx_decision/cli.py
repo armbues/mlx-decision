@@ -14,7 +14,8 @@ from .errors import DecisionError, PlatformError
 app = typer.Typer(
     help="Run and fine-tune decision models on Apple Silicon.\n\n"
     "Defaults for some flags (-m, --default-model, --memory-budget, --host, --port) can "
-    "be set in ~/.mlx-decision/config.toml; MLX_DECISION_HOME moves the folder.",
+    "be set in ~/.mlx-decision/config.toml; MLX_DECISION_HOME moves the folder. With "
+    "models_dir set there, -m takes the name of a model in that folder.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -75,13 +76,37 @@ def config_default(config) -> str | None:
         fail(str(error))
 
 
-def model_or_default(model: str | None, config) -> str:
-    """-m, else the config file's default model."""
+def model_reference(model: str, config) -> str:
+    """-m's value as a reference: a folder of that name, else the model of that name
+    in models_dir or models, else as it is (a path or repo id the loader checks)."""
+    from .config import is_bare_name
+
+    if not is_bare_name(model) or Path(model).exists():
+        return model
+    if (reference := config.lookup(model)) is not None:
+        return reference
+    if names := config.model_names():
+        fail(f"no model named {model} in {config.places()}; there are: {', '.join(names)}")
+    return model
+
+
+def model_or_default(model: str | None, config, picker: bool = False) -> str:
+    """-m (a name looked up), else the config file's default model, else (with
+    ``picker``, in a terminal) the model picked in a menu."""
     if model is None:
         model = config_default(config)
+    if model is None and picker and stdin_is_terminal():
+        from .picker import choices, pick
+
+        if options := choices(config):
+            model = pick(options)
+            if model is None:
+                fail("cancelled")
     if model is None:
-        fail(f"pass -m MODEL (or set default_model in {config.path})")
-    return model
+        names = config.model_names()
+        listed = f"; models: {', '.join(names)}" if names else ""
+        fail(f"pass -m MODEL (or set default_model in {config.path}){listed}")
+    return model_reference(model, config)
 
 
 def config_models(config) -> list[str]:
@@ -303,7 +328,8 @@ ModelOption = Annotated[
     typer.Option(
         "--model",
         "-m",
-        help="Model folder or Hugging Face repo id. Default: default_model in the config file.",
+        help="Model folder, Hugging Face repo id, or a model's name in models_dir. Default: "
+        "default_model in the config file.",
     ),
 ]
 QuestionsOption = Annotated[
@@ -474,7 +500,7 @@ def run(
     from .model import load
     from .types import parse_request
 
-    model = model_or_default(model, read_config())
+    model = model_or_default(model, read_config(), picker=True)
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
     if states is not None:
         if state is not None or state_file is not None or state_json:
@@ -559,7 +585,7 @@ def chat(
 
     if not sys.stdin.isatty():
         fail("chat needs a terminal; for many states in a script use: run --states FILE")
-    model = model_or_default(model, read_config())
+    model = model_or_default(model, read_config(), picker=True)
     shorthand = shorthand_questions(noul or [], choice or [], score or [])
     body: dict[str, Any] = {}
     if questions is not None or shorthand:
@@ -700,21 +726,47 @@ def pick_repo() -> str | None:
 
 
 def ask_models_dir() -> Path | None:
-    """The folder that gets the model's own folder, or None for the Hub cache.
+    """The folder where models go (each in a folder of its own), or None for the
+    Hub cache.
 
     Raises ``typer.Exit`` when the prompt is cancelled.
     """
     from prompt_toolkit import prompt
     from prompt_toolkit.completion import PathCompleter
 
+    typer.echo(
+        "Where should models go? A folder keeps each model in a folder of its own, and "
+        "-m takes their names; the answer is saved as models_dir in the config file.",
+        err=True,
+    )
     try:
         parent = prompt(
-            "Download into this folder instead of the Hugging Face cache (empty: the cache): ",
+            "Models folder (empty: the Hugging Face cache): ",
             completer=PathCompleter(only_directories=True, expanduser=True),
         ).strip()
     except (KeyboardInterrupt, EOFError):
         raise typer.Exit(1) from None
     return Path(parent).expanduser() if parent else None
+
+
+def models_parent(config, terminal: bool) -> tuple[Path | None, bool]:
+    """Where ``download`` puts the model's folder: models_dir, else (asked once in a
+    terminal and saved to the config file) the answer; None for the Hub cache. The
+    flag says whether the folder is models_dir, so -m takes the model's name."""
+    from .config import HF_CACHE, ConfigError, set_models_dir
+
+    if isinstance(config.models_dir, Path):
+        return config.models_dir, True
+    if config.models_dir == HF_CACHE or not terminal:
+        return None, False
+    parent = ask_models_dir()
+    try:
+        line = set_models_dir(parent, config.path)
+    except ConfigError as error:
+        typer.echo(f"warning: {error}", err=True)
+        return parent, False
+    typer.echo(f"saved {line} in {config.path}; change it there", err=True)
+    return parent, parent is not None
 
 
 def pick_bits(check) -> int:
@@ -760,9 +812,10 @@ def download(
     local_dir: Annotated[
         Path | None,
         typer.Option(
-            help="Download into this folder instead of the Hugging Face cache. "
-            "Default in a terminal: asks for a folder, and the model goes into a "
-            "folder named after the repo inside it."
+            help="Download into this folder. Default: a folder named after the repo in "
+            "models_dir of the config file, or the Hugging Face cache when models_dir is "
+            '"hf-cache"; when it is unset, a terminal asks once and saves the answer '
+            "there, and otherwise the model goes into the cache."
         ),
     ] = None,
     bits: Annotated[
@@ -796,7 +849,7 @@ def download(
         raise typer.BadParameter("must be 8 or 4", param_hint="--bits")
 
     terminal = stdin_is_terminal()
-    parent = ask_models_dir() if local_dir is None and terminal else None
+    parent, by_name = models_parent(read_config(), terminal) if local_dir is None else (None, False)
     if repo_id is None:
         if not terminal:
             fail("give a repo id, e.g. mlx-decision download Cloudflare/clef-flash")
@@ -862,6 +915,8 @@ def download(
     typer.echo(f"downloaded {repo_id} to {path}", err=True)
     if check.family is not None:  # none could load it, as the warning said
         model = str(local_dir) if local_dir else repo_id
+        if by_name:
+            model = local_dir.name  # -m finds it in models_dir
         typer.echo(f"try it: mlx-decision chat -m {model}", err=True)
 
 
@@ -882,8 +937,9 @@ def server(
         typer.Option(
             "--model",
             "-m",
-            help="Model folder, Hugging Face repo id, or a folder of models (each subfolder "
-            "a model named after it). Repeat for several. Default: models in the config file.",
+            help="Model folder, Hugging Face repo id, a model's name in models_dir, or a "
+            "folder of models (each subfolder a model named after it). Repeat for several. "
+            "Default: models_dir and models in the config file.",
         ),
     ] = None,
     default_model: Annotated[
@@ -946,9 +1002,9 @@ def server(
         package_logger.addHandler(handler)
     package_logger.setLevel(logging.INFO)
     config = read_config()
-    references = model or config_models(config)
+    references = [model_reference(m, config) for m in model or []] or config_models(config)
     if not references:
-        fail(f"pass -m MODEL (or set models in {config.path})")
+        fail(f"pass -m MODEL (or set models_dir or models in {config.path})")
     memory_budget = config.resolve(memory_budget, "memory_budget_gb")
     host = config.resolve(host, "host", "127.0.0.1")
     port = config.resolve(port, "port", 8000)
@@ -1080,7 +1136,12 @@ def mcp(
 @app.command()
 def convert(
     model: Annotated[
-        str, typer.Option("--model", "-m", help="Model folder or Hugging Face repo id.")
+        str,
+        typer.Option(
+            "--model",
+            "-m",
+            help="Model folder, Hugging Face repo id, or a model's name in models_dir.",
+        ),
     ],
     output: Annotated[
         Path | None,
@@ -1136,6 +1197,7 @@ def convert(
         )
     if quantize and bits is None:
         bits = 8
+    model = model_reference(model, read_config())
     options = {}
     if target_bits is not None:
 
@@ -1254,9 +1316,10 @@ def benchmark(
         typer.Option(
             "--model",
             "-m",
-            help="Model folder, Hugging Face repo id, or a folder of models (each "
-            "subfolder benchmarked in a process of its own, in alphabetical order). "
-            "Default: the models in the config file, each in a process of its own.",
+            help="Model folder, Hugging Face repo id, a model's name in models_dir, or a "
+            "folder of models (each subfolder benchmarked in a process of its own, in "
+            "alphabetical order). Default: the models of models_dir and models in the "
+            "config file, each in a process of its own.",
         ),
     ] = None,
     lengths: Annotated[
@@ -1301,9 +1364,9 @@ def benchmark(
     if min(grid["question_counts"]) < 1:
         raise typer.BadParameter("at least one question per request", param_hint="--questions")
     config = read_config()
-    references = [model] if model is not None else config_models(config)
+    references = [model_reference(model, config)] if model is not None else config_models(config)
     if not references:
-        fail(f"pass -m MODEL (or set models in {config.path})")
+        fail(f"pass -m MODEL (or set models_dir or models in {config.path})")
     if len(references) > 1 or is_folder_of_models(references[0]):
         arguments = ["--questions", questions, "--repeats", str(repeats)]
         arguments += ["--lengths", lengths] if lengths else []
@@ -1368,8 +1431,9 @@ def training_fit(
         typer.Option(
             "--model",
             "-m",
-            help="The base: a model folder or Hugging Face repo id, or a fitted model (its "
-            "fit is replaced, its base kept). Default: default_model in the config file.",
+            help="The base: a model folder, Hugging Face repo id or name in models_dir, or a "
+            "fitted model (its fit is replaced, its base kept). Default: default_model in "
+            "the config file.",
         ),
     ] = None,
     data: DataOption = None,
@@ -1451,8 +1515,7 @@ def training_fit(
     from .training.wizard import FitPlan, ask_fit
 
     config = read_config()
-    if model is None:
-        model = config_default(config)
+    model = config_default(config) if model is None else model_reference(model, config)
     plan = FitPlan(
         model=model,
         data=str(data) if data is not None else None,
@@ -1540,8 +1603,8 @@ def training_eval(
         typer.Option(
             "--model",
             "-m",
-            help="Model folder or Hugging Face repo id (or a fitted model). Default: "
-            "default_model in the config file.",
+            help="Model folder, Hugging Face repo id or name in models_dir (or a fitted "
+            "model). Default: default_model in the config file.",
         ),
     ] = None,
     data: DataOption = None,
@@ -1563,8 +1626,9 @@ def training_eval(
     from .training.console import Progress, format_eval, interrupt_cancels
 
     config = read_config()
-    if model is None:
-        model = config_default(config)
+    model = config_default(config) if model is None else model_reference(model, config)
+    if compare is not None:
+        compare = model_reference(compare, config)
     if (model is None or data is None) and terminal():
         from .training.wizard import Cancelled as MenusLeft
         from .training.wizard import ask_eval

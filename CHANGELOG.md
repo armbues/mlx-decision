@@ -16,6 +16,19 @@ change the interface).
   `memory_budget_gb`, `host` and `port`. Flags win over the file. An
   unknown key is a warning, a value of the wrong type an error naming
   the file and the key.
+- `models_dir` in the config file: the folder where models live (or
+  `"hf-cache"`). `-m NAME` finds a model there by name in every command
+  that takes `-m`; `server` and `benchmark` without `-m` serve its
+  models; `download` stores into it. When it is unset, the first
+  `download` in a terminal asks for it and adds it to the file.
+- A model menu for `run` and `chat` without `-m` or a default model: the
+  models in `models_dir`, in `models` and in the Hugging Face cache (a
+  stopped download is left out), with family and size on disk.
+
+### Changed
+
+- `download` in a terminal no longer asks for a folder on every run: it
+  follows `models_dir`.
 
 ## [0.9.1] - 2026-10-15
 

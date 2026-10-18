@@ -139,3 +139,56 @@ def _weights_cached(repo_id: str, patterns: list[str] | None) -> bool:
     except Exception:  # not cached (or a stand-in that cannot tell)
         return False
     return any(Path(folder).glob("*.safetensors"))
+
+
+def cached_models() -> list[tuple[str, Path]]:
+    """The models in the Hub cache: (repo id, snapshot folder) for each repo whose
+    snapshot a family loads and whose weight files are all there (a stopped
+    download is left out), by repo id. The snapshot is main's, else the newest.
+    Needs no network and loads nothing.
+    """
+    from huggingface_hub.constants import HF_HUB_CACHE
+
+    found = []
+    try:
+        folders = sorted(Path(HF_HUB_CACHE).glob("models--*"))
+    except OSError:
+        return []
+    for folder in folders:
+        snapshot = _main_snapshot(folder)
+        if snapshot is not None and _complete(snapshot):
+            found.append(("/".join(folder.name.split("--")[1:]), snapshot))
+    return found
+
+
+def _main_snapshot(folder: Path) -> Path | None:
+    snapshots = folder / "snapshots"
+    try:
+        commit = (folder / "refs" / "main").read_text().strip()
+    except OSError:
+        commit = ""
+    if commit and (snapshots / commit).is_dir():
+        return snapshots / commit
+    try:
+        found = [path for path in snapshots.iterdir() if path.is_dir()]
+    except OSError:
+        return None
+    return max(found, key=lambda path: path.stat().st_mtime, default=None)
+
+
+def _complete(snapshot: Path) -> bool:
+    """Whether a family loads ``snapshot`` and every weight file it needs is there."""
+    import json
+
+    from .memory import weight_files
+
+    try:
+        files = [file for file, _ in weight_files(snapshot, {})]
+        index = snapshot / "model.safetensors.index.json"
+        if index.exists():
+            files += [
+                snapshot / name for name in json.loads(index.read_text())["weight_map"].values()
+            ]
+    except (ValueError, KeyError, OSError):  # no family loads it, or a broken index
+        return False
+    return bool(files) and all(file.exists() for file in files)

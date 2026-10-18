@@ -290,7 +290,7 @@ def test_a_terminal_asks_for_the_folder_before_the_model(hub, terminal, tmp_path
     target = tmp_path / "models" / "clef-flash"
     assert hub[-1][2] == target
     assert f"(19.1 GB) to {target} ..." in result.stderr
-    assert f"chat -m {target}" in result.stderr
+    assert "chat -m clef-flash" in result.stderr  # saved as models_dir, which -m reads
 
 
 def test_an_empty_folder_keeps_the_cache(hub, terminal):
@@ -858,3 +858,96 @@ def test_bars_stay_off_when_the_user_turned_them_off(real_snapshot):
     finally:
         enable_progress_bars()
     assert real_snapshot.terminal.getvalue() == ""
+
+
+# models_dir: asked once, saved, then followed
+
+
+def test_the_first_download_saves_the_folder_and_the_next_one_follows_it(
+    hub, terminal, tmp_path, mlx_decision_home
+):
+    terminal.folders.append(tmp_path / "Decision")
+    assert invoke("Cloudflare/clef-flash").exit_code == 0
+    config = mlx_decision_home / "config.toml"
+    assert config.read_text() == f'models_dir = "{tmp_path / "Decision"}"\n'
+    result = invoke("Cloudflare/clef-flash")
+    assert result.exit_code == 0, result.output
+    assert terminal.asked == ["folder", "size", "size"]  # asked once
+    assert hub[-1][2] == tmp_path / "Decision" / "clef-flash"
+
+
+def test_choosing_the_cache_is_saved_too(hub, terminal, mlx_decision_home):
+    terminal.folders.append(None)
+    result = invoke("Cloudflare/clef-flash")
+    assert result.exit_code == 0, result.output
+    assert 'saved models_dir = "hf-cache" in ' in result.stderr
+    assert invoke("Cloudflare/clef-flash").exit_code == 0
+    assert terminal.asked == ["folder", "size", "size"]
+    assert hub[-1][2] is None
+
+
+def test_a_set_models_dir_is_followed_without_asking(hub, terminal, tmp_path, mlx_decision_home):
+    (mlx_decision_home / "config.toml").write_text(f'models_dir = "{tmp_path / "m"}"\n')
+    result = invoke("Cloudflare/clef-flash")
+    assert result.exit_code == 0, result.output
+    assert terminal.asked == ["size"]
+    assert hub[-1][2] == tmp_path / "m" / "clef-flash"
+    assert "chat -m clef-flash" in result.stderr
+    result = invoke("Cloudflare/clef-flash", "--local-dir", str(tmp_path / "here"))
+    assert hub[-1][2] == tmp_path / "here"
+
+
+def test_without_a_terminal_nothing_is_asked_or_saved(hub, mlx_decision_home):
+    assert invoke("Cloudflare/clef-flash").exit_code == 0
+    assert hub[-1][2] is None
+    assert not (mlx_decision_home / "config.toml").exists()
+
+
+FAKE_HUB = """
+from pathlib import Path
+
+import mlx_decision.download as download
+
+download.check_repo = lambda repo_id: download.RepoCheck(repo_id, 843_000_000, "laya")
+
+
+def fetch(repo_id, local_dir, files, revision):
+    folder = Path(local_dir) if local_dir else Path({cache!r}) / repo_id
+    folder.mkdir(parents=True)
+    (folder / "rl_agent_config.json").write_text("{{}}")
+    return folder
+
+
+download.download = fetch
+"""
+
+
+def test_the_first_download_asks_in_a_terminal_and_saves_the_answer(tmp_path, monkeypatch):
+    from mlx_decision.config import load
+    from terminal import ENTER, Terminal
+
+    fakes = tmp_path / "fakes"
+    fakes.mkdir()
+    (fakes / "sitecustomize.py").write_text(FAKE_HUB.format(cache=str(tmp_path / "cache")))
+    monkeypatch.setenv("PYTHONPATH", str(fakes))
+    home = tmp_path / "home"
+    monkeypatch.setenv("MLX_DECISION_HOME", str(home))
+    home.mkdir()
+    (home / "config.toml").write_text("# mine\nport = 8100\n")
+    term = Terminal(["download", "convaiinnovations/laya"], tmp_path)
+    term.expect("Where should models go?")
+    term.expect("Models folder (empty: the Hugging Face cache):")
+    term.send(str(tmp_path / "Decision") + ENTER)
+    assert term.wait() == 0, term.text()
+    screen = term.text()
+    flat = screen.replace("\n", "")  # long lines wrap at the terminal's width
+    assert f'saved models_dir = "{tmp_path / "Decision"}" in {home / "config.toml"}' in flat
+    assert "try it: mlx-decision chat -m laya" in screen
+    assert (tmp_path / "Decision" / "laya" / "rl_agent_config.json").exists()
+    config = load(home / "config.toml")
+    assert config.models_dir == tmp_path / "Decision" and config.port == 8100
+    assert (home / "config.toml").read_text().startswith("# mine\nport = 8100\n")
+    again = Terminal(["download", "convaiinnovations/laya"], tmp_path)
+    assert again.wait() == 1  # the fake refuses an existing folder: the same one
+    assert "Where should models go?" not in again.text()
+    assert str(tmp_path / "Decision" / "laya") in again.text().replace("\n", "")

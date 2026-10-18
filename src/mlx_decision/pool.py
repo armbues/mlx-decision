@@ -150,6 +150,22 @@ def _identify(path: Path, family: Family) -> tuple[Family, fitted.FittedFolder |
     return fit.family, fit
 
 
+def identify(path: Path) -> tuple[Family, bool]:
+    """The family that loads the model at ``path`` (a fitted model's base) and
+    whether it is fitted; ``ValueError`` when no family loads it."""
+    family, fit = _identify(path, detect_family(path))
+    return family, fit is not None
+
+
+def folder_models(folder: Path) -> list[str]:
+    """The names of the models in a folder of models (subfolders a family loads),
+    in ``discover``'s order; nothing is loaded."""
+    try:
+        return [name for name, *_ in _scan(folder, lambda path, reason: None)]
+    except OSError:
+        return []
+
+
 def _scan(
     folder: Path, on_skip: Callable[[Path, str], None]
 ) -> list[tuple[str, Path, Family, fitted.FittedFolder | None]]:

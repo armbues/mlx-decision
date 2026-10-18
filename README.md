@@ -280,12 +280,22 @@ flags. A flag on the command line wins over the file, the file over the
 built-in default:
 
 ```toml
-models = ["~/Models", "Cloudflare/clef-flash"]  # -m of server, mcp and benchmark
+models_dir = "~/Models"       # where models live: -m takes their names; download stores there
+models = ["Cloudflare/clef-flash"]  # more models for server, mcp and benchmark without -m
 default_model = "clef-flash"  # run, chat, mcp and training without -m; server's --default-model
 memory_budget_gb = 30         # server's --memory-budget
 host = "127.0.0.1"            # server's and mcp's --host
 port = 8000                   # server's and mcp's --port
 ```
+
+`models_dir` is a folder of models (each subfolder a model named after
+it) or `"hf-cache"` for the Hugging Face cache. Its models are served
+with `models` where `-m` is absent, `-m laya` finds `~/Models/laya`, and
+`download` puts a model into it. When it is not set, the first
+`download` in a terminal asks for a folder (or the cache) and adds the
+key to the file; that is the only time the file is written. `run` and
+`chat` without `-m` or a `default_model` show a menu of the models in
+`models_dir`, in `models` and in the Hugging Face cache.
 
 `models` takes what `-m` takes; `default_model` is the name of one of
 those models, or a model folder or repo id of its own. Paths start with

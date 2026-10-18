@@ -226,7 +226,10 @@ def test_server_takes_models_host_port_budget_and_default_from_the_file(
     serve, mlx_decision_home, models_folder
 ):
     missing, _, _ = serve()
-    assert missing.exit_code == 1 and "pass -m MODEL (or set models in " in missing.stderr
+    assert (
+        missing.exit_code == 1
+        and "pass -m MODEL (or set models_dir or models in " in missing.stderr
+    )
     write_config(
         mlx_decision_home,
         f"""
@@ -291,3 +294,181 @@ def test_mcp_without_m_or_a_default_model_says_how(mlx_decision_home):
     result = CliRunner().invoke(app, ["mcp"])
     assert result.exit_code == 1
     assert "pass -m MODEL (or set default_model in " in result.stderr
+
+
+# models_dir
+
+
+@pytest.fixture
+def models_dir(tmp_path):
+    """A models_dir with ``alpha`` and ``beta`` and a subfolder that is no model."""
+    root = tmp_path / "Decision"
+    for name in ("alpha", "beta"):
+        write_sized_model(root / name, 1000)
+    (root / "notes").mkdir()
+    return root
+
+
+def test_models_dir_is_a_folder_or_the_cache(tmp_path, models_dir):
+    home = tmp_path / "home"
+    assert load(write_config(home, f'models_dir = "{models_dir}"\n')).models_dir == models_dir
+    assert load(write_config(home, 'models_dir = "./mine"\n')).models_dir == home / "mine"
+    assert load(write_config(home, 'models_dir = "~/m"\n')).models_dir == Path.home() / "m"
+    config = load(write_config(home, 'models_dir = "hf-cache"\n'))
+    assert config.models_dir == "hf-cache" and config.models_folder is None
+    assert config.model_references() == [] and config.warnings == ()
+
+
+def test_models_dir_errors_and_warnings(tmp_path):
+    home = tmp_path / "home"
+    path = write_config(home, "models_dir = 3\n")
+    with pytest.raises(ConfigError, match=f"{path}: models_dir must be a string"):
+        load(path)
+    (home / "file").write_text("x")
+    with pytest.raises(ConfigError, match="models_dir must be a folder"):
+        load(write_config(home, 'models_dir = "./file"\n'))
+    config = load(write_config(home, 'models_dir = "./missing"\n'))
+    assert config.warnings == (f"{path}: models_dir {home / 'missing'} does not exist "
+                               "(no models listed from it)",)  # fmt: skip
+    assert config.models_folder is None and config.model_references() == []
+
+
+def test_names_are_looked_up_in_models_dir_then_models(tmp_path, models_dir, folders):
+    other = write_model(tmp_path / "elsewhere/alpha")
+    models = (str(other), str(folders / "many"), "Cloudflare/clef-flash")
+    config = Config(tmp_path / "config.toml", models=models, models_dir=models_dir)
+    assert config.lookup("alpha") == str(models_dir / "alpha")  # models_dir first
+    assert config.lookup("two") == str(folders / "many/two")
+    assert config.lookup("clef-flash") == "Cloudflare/clef-flash"
+    for reference in ("x", "./alpha", "~/alpha", "org/alpha"):
+        assert config.lookup(reference) is None
+    assert config.model_names() == ["alpha", "beta", "one", "two", "clef-flash"]
+    assert Config(tmp_path, models_dir="hf-cache").lookup("alpha") is None
+
+
+def test_the_default_model_is_found_in_models_dir(tmp_path, models_dir):
+    config = Config(tmp_path / "config.toml", models_dir=models_dir, default_model="beta")
+    assert config.default_reference() == str(models_dir / "beta")
+    assert config.model_references() == [str(models_dir)]
+    wrong = Config(config.path, models_dir=models_dir, default_model="gamma")
+    with pytest.raises(ConfigError, match="none of the models in models_dir: gamma"):
+        wrong.default_reference()
+
+
+def test_models_dir_is_served_first_without_listing_a_model_twice(tmp_path, models_dir, folders):
+    path = tmp_path / "config.toml"
+    models = (str(folders / "laya"), str(models_dir / "alpha"), str(models_dir))
+    config = Config(
+        path, models=models, models_dir=models_dir, default_model=str(models_dir / "beta")
+    )
+    assert config.model_references() == [str(models_dir), str(folders / "laya")]
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert Config(path, models=models[:1], models_dir=empty).model_references() == list(models[:1])
+
+
+def test_run_takes_a_name_in_models_dir(mlx_decision_home, models_dir, tmp_path, monkeypatch):
+    write_config(mlx_decision_home, f'models_dir = "{models_dir}"\n')
+    result = run_fake("-m", "beta")
+    assert result.exit_code == 0, result.output
+    unknown = run_fake("-m", "gamma")
+    assert unknown.exit_code == 1
+    assert "no model named gamma in models_dir; there are: alpha, beta" in unknown.stderr
+    # A folder of that name in the working directory wins over the name.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "beta").mkdir()
+    shadowed = run_fake("-m", "beta")
+    assert shadowed.exit_code == 1 and "beta" in shadowed.stderr
+
+
+def test_without_models_dir_a_name_goes_to_the_loader_as_before(tmp_path):
+    from mlx_decision.cli import model_reference
+
+    # A repo id without an organisation, such as gpt2, stays one.
+    assert model_reference("beta", Config(tmp_path / "config.toml")) == "beta"
+
+
+def test_server_serves_models_dir_and_takes_names(serve, mlx_decision_home, models_dir):
+    write_config(mlx_decision_home, f'models_dir = "{models_dir}"\ndefault_model = "beta"\n')
+    result, pool, _ = serve()
+    assert result.exit_code == 0, result.output
+    assert pool.names == ["alpha", "beta"] and pool.default == "beta"
+    result, pool, _ = serve("-m", "alpha")
+    assert result.exit_code == 0, result.output
+    assert pool.names == ["alpha"]
+
+
+def test_training_eval_takes_names_for_both_models(mlx_decision_home, models_dir):
+    data = mlx_decision_home / "labelled.jsonl"
+    line = {"state": "x", "questions": {"q": {"type": "noul"}}, "labels": {"q": True}}
+    data.write_text(json.dumps(line) + "\n")
+    write_config(mlx_decision_home, f'models_dir = "{models_dir}"\n')
+    args = ["training", "eval", "-m", "alpha", "--compare", "beta", "--data", str(data), "--json"]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+    models = [entry["model"] for entry in json.loads(result.stdout)["models"]]
+    assert models == [str(models_dir / "alpha"), str(models_dir / "beta")]
+
+
+# the one write: models_dir
+
+
+def test_set_models_dir_creates_the_file(tmp_path):
+    from mlx_decision.config import set_models_dir
+
+    path = tmp_path / "new home" / "config.toml"
+    assert set_models_dir(tmp_path / "Decision", path) == f'models_dir = "{tmp_path / "Decision"}"'
+    assert load(path).models_dir == tmp_path / "Decision"
+    other = tmp_path / "other.toml"
+    assert set_models_dir(None, other) == 'models_dir = "hf-cache"'
+    assert load(other).models_dir == "hf-cache"
+    home_path = tmp_path / "home.toml"
+    assert set_models_dir(Path.home() / "Data/Models", home_path) == 'models_dir = "~/Data/Models"'
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("# mine\nport = 8100  # note\n", '# mine\nport = 8100  # note\nmodels_dir = "{v}"\n'),
+        ("port = 8100", 'port = 8100\nmodels_dir = "{v}"\n'),
+        (
+            'host = "x"\n\n[later]\nkey = 1\n',
+            'host = "x"\n\nmodels_dir = "{v}"\n\n[later]\nkey = 1\n',
+        ),
+    ],
+)
+def test_set_models_dir_keeps_the_rest_of_the_file(tmp_path, before, after):
+    from mlx_decision.config import set_models_dir
+
+    path = tmp_path / "config.toml"
+    path.write_text(before)
+    folder = tmp_path / "M"
+    set_models_dir(folder, path)
+    assert path.read_text() == after.format(v=folder)
+
+
+def test_set_models_dir_quotes_the_value(tmp_path):
+    from mlx_decision.config import set_models_dir
+
+    folder = tmp_path / 'with "quotes" and \\ back'
+    path = tmp_path / "config.toml"
+    set_models_dir(folder, path)
+    assert load(path).models_dir == folder
+
+
+def test_set_models_dir_refuses_what_it_cannot_do_cleanly(tmp_path):
+    from mlx_decision.config import set_models_dir
+
+    path = tmp_path / "config.toml"
+    path.write_text('models_dir = "hf-cache"\n')
+    with pytest.raises(ConfigError, match="already sets models_dir"):
+        set_models_dir(None, path)
+    path.write_text("port = \n")
+    with pytest.raises(ConfigError, match="not valid TOML"):
+        set_models_dir(None, path)
+    nested = 'models = [\n["a"]\n]\n'  # a line that looks like a table
+    path.write_text(nested)
+    with pytest.raises(ConfigError, match="add models_dir"):
+        set_models_dir(None, path)
+    assert path.read_text() == nested
+    assert not list(tmp_path.glob(".*.tmp"))
