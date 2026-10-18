@@ -18,8 +18,9 @@ class FakeBackend:
     """Gives the first option the most weight: probabilities fall as n, n-1, ..., 1.
 
     A noul answers 0.75. ``fixed`` overrides the probabilities of a question
-    id. The input length is the number of words in the state, which is cut to
-    ``max_input_tokens``, if given.
+    id. With ``open_images`` it opens each image as the real backends do, so
+    an unreadable one is refused. The input length is the number of words in
+    the state, which is cut to ``max_input_tokens``, if given.
     """
 
     def __init__(
@@ -27,13 +28,20 @@ class FakeBackend:
         name: str = "fake",
         fixed: dict[str, dict[str, float]] | None = None,
         max_input_tokens: int | None = None,
+        open_images: bool = False,
         **capabilities,
     ):
         self.name = name
+        self.open_images = open_images
         self.fixed = fixed or {}
         self.capabilities = _capabilities(max_input_tokens, **capabilities)
 
     def score(self, request: Request) -> BackendOutput:
+        if self.open_images:  # as the real backends do before answering
+            from mlx_decision.images import open_image
+
+            for index, image in enumerate(request.images or ()):
+                open_image(image, index)
         state = request.state if isinstance(request.state, str) else json.dumps(request.state)
         words = len(state.split())
         limit = self.capabilities.max_input_tokens
@@ -67,7 +75,7 @@ def _capabilities(max_input_tokens: int | None = None, **capabilities) -> Capabi
 def capabilities(path: Path, options: dict) -> Capabilities:
     """What ``load(path, **options)`` gives the backend, from the marker file."""
     config = {**json.loads((path / MARKER_FILE).read_text()), **options}
-    for key in ("family", "name", "fixed", "fit_weights"):
+    for key in ("family", "name", "fixed", "fit_weights", "open_images"):
         config.pop(key, None)
     return _capabilities(**config)
 

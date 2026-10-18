@@ -16,11 +16,15 @@ from typing import Any
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import __version__
+from ..config import Config
+from ..config import load as load_config
 from ..gpu import Gpu
 from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api, gpu_lifespan
-from . import security
+from . import routes, security
+from .routes.run import Models, Recorder, run_router
+from .routes.sets import sets_router
+from .routes.status import status_router
 from .security import NO_STORE, Session
 from .stream import Hub, stream_router
 from .workspace import Workspace, root_folder
@@ -42,6 +46,7 @@ def create_studio(
     api_key: str | None = None,
     session: Session | None = None,
     workspace: Path | None = None,
+    config: Config | None = None,
     max_body_bytes: int = MAX_BODY_BYTES,
 ) -> FastAPI:
     """The Studio's app for a process serving ``host:port``.
@@ -49,14 +54,17 @@ def create_studio(
     It owns ``gpu`` as ``server.create_app`` does. ``app.state.session``
     holds the session, whose token goes into the address ``web`` opens;
     ``app.state.workspace`` the workspace (``workspace``, else ``home()``),
-    created and cleaned up here; ``app.state.hub`` the stream's hub. Raises
-    ``ValueError`` for an address beyond this machine without an API key.
+    created and cleaned up here; ``app.state.hub`` the stream's hub.
+    ``config`` is the config file the process read (read here when not
+    given), shown by the status route. Raises ``ValueError`` for an address
+    beyond this machine without an API key.
     """
     if isinstance(gpu, ModelPool):
         gpu = Gpu(gpu)
     session = session or Session(port)
     security.check_bind(host, api_key)  # before the lifespan could load a model
-    files = Workspace(workspace if workspace is not None else root_folder())
+    config = config if config is not None else load_config()
+    files = Workspace(workspace if workspace is not None else root_folder(config))
     files.open()
     status = status_reader(gpu)
     hub = Hub(lambda: {"status": status()})
@@ -72,9 +80,14 @@ def create_studio(
     app.state.workspace = files
     app.state.hub = hub
     security.install(app, session, host, port, api_key)
-    add_jev_api(app, gpu, api_key, max_body_bytes)
+    models = Models(gpu)
+    recorder = Recorder(files, models)
+    routes.install_errors(app)
+    add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
     app.include_router(page_router(session, api_key))
-    app.include_router(api_router(gpu))
+    app.include_router(status_router(gpu, files, models, config, host, port, api_key, status))
+    app.include_router(sets_router(files, max_body_bytes))
+    app.include_router(run_router(gpu, models, recorder, max_body_bytes))
     app.include_router(stream_router(hub))
     return app
 
@@ -157,16 +170,5 @@ def page_router(session: Session, api_key: str | None) -> APIRouter:
             if not api_key or security.is_loopback(client):
                 return session.set_cookie(to_page)
         return security.page_without_session(api_key)
-
-    return router
-
-
-def api_router(gpu: Gpu) -> APIRouter:
-    """The Studio's own API under ``/studio/api`` (the guard requires the session)."""
-    router = APIRouter(prefix="/studio/api")
-
-    @router.get("/status")
-    async def status():
-        return {"version": __version__, "busy": gpu.holder}
 
     return router

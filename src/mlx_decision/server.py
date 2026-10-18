@@ -11,7 +11,11 @@ mounted (a mount or a proxy's root path).
 
 import hmac
 import logging
+import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -21,7 +25,7 @@ from .gpu import RETRY_AFTER, Busy, Gpu
 from .images import check_data_urls
 from .memory import ModelTooLargeError
 from .pool import ModelPool
-from .types import decode_json, parse_request
+from .types import Result, decode_json, parse_request
 
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
 # Room for several large images as data URLs.
@@ -58,6 +62,44 @@ async def read_body(request: Request, limit: int) -> bytes | None:
     return b"".join(chunks)
 
 
+@dataclass(frozen=True)
+class Answered:
+    """A request answered: by which model, how long answering took (without
+    the load) and the load's time when the request loaded the model."""
+
+    model: str
+    result: Result
+    seconds: float
+    load_seconds: float | None
+
+
+def answer(
+    pool: ModelPool,
+    name: str | None,
+    body: Any,
+    check: Callable[[str, Any], None] | None = None,
+) -> Answered:
+    """Answer ``body`` with the model ``name`` resolves to; run it on the worker.
+
+    What needs no model comes first (``parse_request``, then ``check`` with the
+    chosen model's name), so a bad body loads and unloads nothing.
+    """
+    chosen = pool.resolve(name)
+    parse_request(body)
+    if check is not None:
+        check(chosen, body)
+    load_seconds = None
+    if chosen not in pool.loaded():
+        started = time.perf_counter()
+        model = pool.get(chosen)
+        load_seconds = time.perf_counter() - started
+    else:
+        model = pool.get(chosen)
+    started = time.perf_counter()
+    result = model.decide_request(body)
+    return Answered(chosen, result, time.perf_counter() - started, load_seconds)
+
+
 def busy_response(error: Busy) -> JSONResponse:
     """The 503 for model work refused while something holds the GPU."""
     response = error_response(503, str(error), "api_error", code="busy")
@@ -92,9 +134,17 @@ def create_app(
 
 
 def add_jev_api(
-    app: FastAPI, gpu: Gpu, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
+    app: FastAPI,
+    gpu: Gpu,
+    api_key: str | None = None,
+    max_body_bytes: int = MAX_BODY_BYTES,
+    on_answer: Callable[[Answered], None] | None = None,
 ) -> None:
-    """Add the Jev API (``/v1/systemone``, ``/v1/models``) and ``/health`` to ``app``."""
+    """Add the Jev API (``/v1/systemone``, ``/v1/models``) and ``/health`` to ``app``.
+
+    ``on_answer``, when given, is called on the event loop with each request
+    answered, before the response is sent; it must not block.
+    """
     pool = gpu.pool
     guards = []
 
@@ -134,15 +184,9 @@ def add_jev_api(
             return error_response(400, error.message, "invalid_request_error")
         name = body.get("model") if isinstance(body, dict) else None
 
-        def answer():
-            # What needs no model first, so a bad body loads and unloads nothing.
-            chosen = pool.resolve(name if isinstance(name, str) else None)
-            parse_request(body)
-            return pool.get(chosen).decide_request(body)
-
         try:
             check_data_urls(body)
-            result = await gpu.run(answer)
+            answered = await gpu.run(answer, pool, name if isinstance(name, str) else None, body)
         except Busy as error:
             return busy_response(error)
         except DecisionError as error:
@@ -154,6 +198,12 @@ def add_jev_api(
         except Exception:
             logger.exception("request failed")
             return error_response(500, "the model failed to answer the request", "api_error")
+        if on_answer is not None:
+            try:
+                on_answer(answered)
+            except Exception:
+                logger.exception("the answer callback failed")
+        result = answered.result
         headers = {TRUNCATED_HEADER: "true"} if result.truncated else None
         return JSONResponse(result.to_wire(), headers=headers)
 

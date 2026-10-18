@@ -96,16 +96,31 @@ class DecisionModel:
 
 
 def check_request(
-    request: Request | Mapping[str, Any], capabilities: Capabilities, name: str
+    request: Request | Mapping[str, Any],
+    capabilities: Capabilities,
+    name: str,
+    open_images: bool = False,
 ) -> Request:
     """Validate a request for a model with ``capabilities``, named ``name`` in the
     errors, without the model loaded: what ``DecisionModel.check`` does.
 
     Raises ``DecisionError`` for an invalid body and for what the model does
     not support (question types, limits, media). Limits that need the
-    tokenizer (input length) are checked only when the model answers.
+    tokenizer (input length) are checked only when the model answers. With
+    ``open_images``, each image is also opened (its header read, not
+    decoded), as the models do before answering, so an unreadable or
+    oversized image is refused here too; files are not read.
     """
-    return _checked(request, capabilities, name)[0]
+    checked, lifted = _checked(request, capabilities, name)
+    if open_images:
+        from .images import open_image
+
+        for index, image in enumerate(checked.images or ()):
+            try:
+                open_image(image, index, allow_paths=False)
+            except DecisionError as error:
+                raise _in_state(error, lifted) from None
+    return checked
 
 
 def check_supported(request: Request, capabilities: Capabilities, name: str) -> None:
