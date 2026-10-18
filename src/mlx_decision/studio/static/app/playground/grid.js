@@ -3,14 +3,15 @@
 import { html } from "htm/preact";
 import { two } from "../charts/answers.js";
 
-// A short verdict and its value: "technical .80", "1.4 of 2", "yes .91".
+// A short verdict and its value: "technical .80", "2.4 of 3" (levels from 1),
+// "yes .91".
 function cell(answer) {
   if (!answer) return null;
   if (answer.type === "choice")
     return { verdict: answer.choice, value: two(answer.probabilities?.[answer.choice] ?? 0) };
   if (answer.type === "score") {
-    const top = Math.max(1, Object.keys(answer.probabilities ?? {}).length - 1);
-    return { verdict: two(answer.score), value: `of ${top}` };
+    const levels = Math.max(2, Object.keys(answer.probabilities ?? {}).length);
+    return { verdict: two(answer.score + 1), value: `of ${levels}` };
   }
   return { verdict: answer.noul >= 0.5 ? "yes" : "no", value: two(answer.noul) };
 }

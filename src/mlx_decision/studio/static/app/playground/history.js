@@ -14,7 +14,7 @@ import { showTab } from "../components/inspector.js";
 import { clock, duration, plural } from "../format.js";
 import { workspaceChange } from "../stream.js";
 import { toast } from "../store/ui.js";
-import { answerMax, answerValue, requestChanges, summary, touched, valueLabel, wordDiff } from "./changes.js";
+import { answerMax, answerValue, requestChanges, shownValue, summary, touched, valueLabel, wordDiff } from "./changes.js";
 import { FIRST_EXAMPLE, exampleByName, fromBody, selectExample } from "./draft.js";
 import { Grid } from "./grid.js";
 import {
@@ -334,7 +334,7 @@ function Moves({ list, line }) {
           <div class="move" key=${id}>
             <span class="qid">${id}<small>${valueLabel(answer)}</small></span>
             <${Sparkline} values=${values} max=${answerMax(answer)} mark=${mark} />
-            <span class=${`delta num ${kind}`}>${two(values[mark])}<small>${
+            <span class=${`delta num ${kind}`}>${two(shownValue(answer, values[mark]))}<small>${
               delta == null ? "first run" : `${delta >= 0 ? "+" : "−"}${two(Math.abs(delta))} vs #${before}`
             }</small></span>
           </div>
@@ -354,9 +354,9 @@ function Moves({ list, line }) {
                   <span class="num">#${numberOfLine(entry.id)}</span>
                   <span class="stack">${Object.values(answer.probabilities).map(
                     (p, level) => html`<i style=${`width:${(p * 100).toFixed(1)}%; background:${shades[level] ?? "var(--fg-3)"}`}
-                                          title=${`level ${level}: ${two(p)}`}></i>`,
+                                          title=${`level ${level + 1}: ${two(p)}`}></i>`,
                   )}</span>
-                  <span class="num">${two(answer.score)}</span>
+                  <span class="num">${two(answer.score + 1)}</span>
                 </div>
               `;
             })}

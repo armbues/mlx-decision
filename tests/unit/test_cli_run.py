@@ -135,7 +135,11 @@ def test_readable_output(cli, questions_file):
     assert result.exit_code == 0, result.output
     out = result.stdout
     assert "department (choice): technical, confidence" in out
-    assert "frustration (score):" in out and "on 0-2" in out
+    # Levels counted from 1 in the text; --json keeps the API's 0-based value.
+    score = json.loads(cli("-q", str(questions_file), "-s", "Stripe is down", "--json").stdout)
+    expected = score["answers"]["frustration"]["score"] + 1
+    assert f"frustration (score): {expected:.2f} on 1-3," in out
+    assert "\n   1  " in out and "\n   3  " in out and "\n   0  " not in out
     assert "is_urgent (noul): yes, p(yes) 0.750" in out
     assert "fake · 3 input tokens" in out
 

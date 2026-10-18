@@ -406,10 +406,10 @@ function ScoreRows({ question }) {
              data-item=${item.uid} ...${drag.target(index)}>
           <span class="level-lbl">
             <span class="grip-handle" title="Drag to reorder (or ⌥↑ / ⌥↓)" ...${drag.grip(item)}><${Grip} /></span>
-            <span class="level-n num">${index}</span>
+            <span class="level-n num">${index + 1}</span>
             <span class="hint">${index === 0 ? "lowest" : index === last ? "highest" : ""}</span>
           </span>
-          <input class="field" data-cell="description" aria-label=${`Level ${index}`}
+          <input class="field" data-cell="description" aria-label=${`Level ${index + 1}`}
                  placeholder="Describe this level" value=${item.description.text}
                  onInput=${(event) =>
                    updateDraft((value) =>
@@ -418,7 +418,7 @@ function ScoreRows({ question }) {
                      }),
                    )}
                  onKeyDown=${(event) => moveOnKeys(event, question, "levels", item, index)} />
-          <${Minus} label=${`Remove level ${index}`}
+          <${Minus} label=${`Remove level ${index + 1}`}
                     onClick=${() => updateDraft((value) => edit.removeItem(value, question.uid, "levels", item.uid))} />
           <${Problem} problem=${at(question.uid, item.uid)} />
         </div>

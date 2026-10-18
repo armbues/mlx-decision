@@ -224,16 +224,18 @@ team (choice): billing, confidence 0.98
   technical  0.007
   sales      0.004
 
-anger (score): 1.05 on 0-2, confidence 0.54
-   0  0.128  ███                       calm
-   1  0.695  █████████████████         annoyed
-   2  0.177  ████                      angry
+anger (score): 2.05 on 1-3, confidence 0.54
+   1  0.128  ███                       calm
+   2  0.695  █████████████████         annoyed
+   3  0.177  ████                      angry
 
 clef-flash · 291 input tokens
 ```
 
 A score's answer is the expected level, weighted by the probabilities:
-0 × 0.128 + 1 × 0.695 + 2 × 0.177 = 1.05 on a scale of 0 to 2.
+1 × 0.128 + 2 × 0.695 + 3 × 0.177 = 2.05 on a scale of 1 to 3. The text
+counts levels from 1, as people rate; `--json` and the API give Jev's
+value, which counts from 0 (here 1.05, levels `"0"` to `"2"`).
 
 The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`

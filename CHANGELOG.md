@@ -27,6 +27,9 @@ change the interface).
 
 ### Changed
 
+- `run` and `chat` print a score's levels counted from 1 (`2.05 on 1-3`),
+  as people rate; `--json`, the server, MCP and the API keep the
+  Jev-compatible value, which counts from 0.
 - `download` in a terminal no longer asks for a folder on every run: it
   follows `models_dir`.
 

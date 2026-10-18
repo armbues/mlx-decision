@@ -35,12 +35,15 @@ export function ScoreColumns({ answer, width = 340 }) {
   const x = (level) => padLeft + step * (level + 0.5);
   const top = levels.indexOf(Math.max(...levels));
   const expected = count > 1 ? x(0) + (x(count - 1) - x(0)) * (answer.score / (count - 1)) : x(0);
+  // Levels are shown from 1, as people rate; the API's value counts from 0.
+  const shown = two(answer.score + 1);
   return html`
     <div class="verdict">
-      <span class="big num">${two(answer.score)}</span>
-      <span class="small">expected level, 0 to ${count - 1}</span>
+      <span class="big num">${shown}</span>
+      <span class="small">expected level, 1 to ${count}</span>
+      <span class="small api-value num" title="The score field in the API's answer counts levels from 0">API value ${two(answer.score)} (0 to ${count - 1})</span>
     </div>
-    <svg class="score-svg" viewBox=${`0 0 ${width} ${height}`} role="img" aria-label=${`Expected level ${two(answer.score)}`}>
+    <svg class="score-svg" viewBox=${`0 0 ${width} ${height}`} role="img" aria-label=${`Expected level ${shown} of ${count}`}>
       ${levels.map((p, level) => {
         const h = p * maxHeight;
         const fill = level === top ? "var(--accent)" : "var(--fg-3)";
@@ -49,7 +52,7 @@ export function ScoreColumns({ answer, width = 340 }) {
                 opacity=${level === top ? 1 : 0.55} />
           <text x=${x(level)} y=${base - h - 5} text-anchor="middle" class="val">${two(p)}</text>
           <line x1=${x(level)} x2=${x(level)} y1=${base + 6} y2=${base + 12} stroke="var(--fg-3)" />
-          <text x=${x(level)} y=${base + 23} text-anchor="middle">${level}</text>
+          <text x=${x(level)} y=${base + 23} text-anchor="middle">${level + 1}</text>
         `;
       })}
       <line x1=${x(0)} x2=${x(count - 1)} y1=${base + 9} y2=${base + 9} stroke="var(--sep-strong)" />
@@ -57,12 +60,12 @@ export function ScoreColumns({ answer, width = 340 }) {
       <path d=${`M${expected - 5} ${base + 2} L${expected + 5} ${base + 2} L${expected} ${base + 9} Z`} fill="var(--fg)" />
       <rect x=${expected - 50} y=${base + 29} width="100" height="17" rx="8.5" fill="var(--fg)" />
       <text x=${expected} y=${base + 41.5} text-anchor="middle" class="val" style="fill: var(--group)">
-        expected ${two(answer.score)}
+        expected ${shown}
       </text>
     </svg>
     <div class="score-legend">
       ${Object.entries(answer.legend ?? {}).map(
-        ([level, text]) => html`<div key=${level}><b class="num">${level}</b> ${
+        ([level, text]) => html`<div key=${level}><b class="num">${Number(level) + 1}</b> ${
           typeof text === "string" ? text : JSON.stringify(text)
         }</div>`,
       )}

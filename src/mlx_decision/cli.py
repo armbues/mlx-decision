@@ -306,14 +306,15 @@ def format_result(result) -> str:
             for option, p in sorted(answer.probabilities.items(), key=lambda item: -item[1]):
                 lines.append(f"  {option:<{width}}  {p:.3f}  {bar(p)}")
         else:
-            top = len(answer.probabilities) - 1
+            # Levels counted from 1, as people rate; --json keeps the API's 0-based value.
+            top = len(answer.probabilities)
             lines.append(
-                f"{question_id} (score): {answer.score:.2f} on 0-{top}, "
+                f"{question_id} (score): {answer.score + 1:.2f} on 1-{top}, "
                 f"confidence {answer.confidence:.2f}"
             )
             for level, p in answer.probabilities.items():
                 legend = short(answer.legend[level])
-                lines.append(f"  {level:>2}  {p:.3f}  {bar(p):<{BAR_WIDTH}}  {legend}")
+                lines.append(f"  {int(level) + 1:>2}  {p:.3f}  {bar(p):<{BAR_WIDTH}}  {legend}")
         lines.append("")
     footer = f"{result.model} · {result.usage.input_tokens} input tokens"
     if result.truncated:

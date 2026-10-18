@@ -502,6 +502,8 @@ textarea.field { resize: vertical; line-height: 1.45; }
 .verdict { display: flex; align-items: baseline; gap: 8px; }
 .verdict .big { font: 600 20px/1.1 var(--font-display); letter-spacing: -0.01em; }
 .verdict .small { color: var(--fg-2); }
+.verdict { flex-wrap: wrap; }
+.verdict .api-value { margin-left: auto; font-size: 11px; color: var(--fg-3); }
 
 .pbars { display: grid; gap: 5px; }
 .pbar { display: grid; grid-template-columns: 76px minmax(0, 1fr) 40px; gap: 8px; align-items: center; }

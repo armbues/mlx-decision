@@ -76,10 +76,10 @@ function criteriaChanges(id, type, before, after, changes) {
   const isMap = (value) => value && typeof value === "object" && !Array.isArray(value);
   if (type === "score" && Array.isArray(before) && Array.isArray(after)) {
     for (let level = 0; level < Math.max(before.length, after.length); level += 1) {
-      if (level >= after.length) changes.push({ where: `${id}.level ${level}`, note: "removed" });
-      else if (level >= before.length) changes.push({ where: `${id}.level ${level}`, after: after[level] });
+      if (level >= after.length) changes.push({ where: `${id}.level ${level + 1}`, note: "removed" });
+      else if (level >= before.length) changes.push({ where: `${id}.level ${level + 1}`, after: after[level] });
       else if (!same(before[level], after[level]))
-        changes.push({ where: `${id}.level ${level}`, before: before[level], after: after[level] });
+        changes.push({ where: `${id}.level ${level + 1}`, before: before[level], after: after[level] });
     }
     return;
   }
@@ -123,13 +123,16 @@ export function answerValue(answer, reference = answer) {
   return null;
 }
 
-// The top of the scale: 1, or a score's highest level.
+// The top of the scale: 1, or a score's highest level (0-based, as answerValue).
 export const answerMax = (answer) =>
   answer?.type === "score" ? Math.max(1, Object.keys(answer.probabilities ?? {}).length - 1) : 1;
 
-// What the value means, for a label: "technical, p", "score, 0 to 2", "p(yes)".
+// What the value means, for a label: "technical, p", "score, 1 to 3", "p(yes)".
 export function valueLabel(answer) {
   if (answer.type === "choice") return `${answer.choice}, p`;
-  if (answer.type === "score") return `score, 0 to ${answerMax(answer)}`;
+  if (answer.type === "score") return `score, 1 to ${answerMax(answer) + 1}`;
   return "p(yes)";
 }
+
+// An answer's value as the page shows it: a score's level counted from 1.
+export const shownValue = (answer, value) => (value == null ? null : answer?.type === "score" ? value + 1 : value);
