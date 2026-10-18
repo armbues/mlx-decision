@@ -62,6 +62,7 @@ def discover(
     references: Iterable[str | Path],
     options: dict | None = None,
     on_skip: Callable[[Path, str], None] = _log_skip,
+    strict_options: bool = True,
 ) -> list[ModelSpec]:
     """The models that ``references`` name, in order; nothing is loaded.
 
@@ -70,8 +71,9 @@ def discover(
     model named after the subfolder, in alphabetical order; the others are
     passed to ``on_skip`` with the reason (logged by default). ``options``
     go to every model whose family takes them. Raises ``ValueError`` for a
-    folder without models, two models with the same name and an option no
-    model takes; ``ModelNotFoundError`` for a reference that is not found.
+    folder without models, two models with the same name and (with
+    ``strict_options``) an option no model takes; ``ModelNotFoundError`` for a
+    reference that is not found.
     """
     found: list[tuple[str, Path, Family, fitted.FittedFolder | None]] = []
     for reference in references:
@@ -99,7 +101,7 @@ def discover(
     used = [family for family in families() if family.name in names]
     taken = {key for family in used for key in accepted_options(family, options)}
     unused = [key for key in options if key not in taken]
-    if unused:
+    if unused and strict_options:
         listed = ", ".join(family.name for family in used)
         raise ValueError(f"{listed} models do not take {', '.join(unused)}")
     specs = []

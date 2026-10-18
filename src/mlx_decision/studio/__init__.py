@@ -20,22 +20,15 @@ from ..config import Config
 from ..config import load as load_config
 from ..gpu import Gpu
 from ..pool import ModelPool
-from ..server import MAX_BODY_BYTES, add_jev_api, gpu_lifespan
+from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
+from .page import Page
 from .routes.run import Models, Recorder, run_router
 from .routes.sets import sets_router
 from .routes.status import status_router
 from .security import NO_STORE, Session
 from .stream import Hub, stream_router
 from .workspace import Workspace, root_folder
-
-# Stands in for the Studio's page until its files ship.
-PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mlx-decision Studio</title></head>
-<body><p>mlx-decision Studio</p></body></html>
-"""
 
 
 def create_studio(
@@ -47,6 +40,7 @@ def create_studio(
     session: Session | None = None,
     workspace: Path | None = None,
     config: Config | None = None,
+    load_default: bool = True,
     max_body_bytes: int = MAX_BODY_BYTES,
 ) -> FastAPI:
     """The Studio's app for a process serving ``host:port``.
@@ -56,7 +50,8 @@ def create_studio(
     ``app.state.workspace`` the workspace (``workspace``, else ``home()``),
     created and cleaned up here; ``app.state.hub`` the stream's hub.
     ``config`` is the config file the process read (read here when not
-    given), shown by the status route. Raises ``ValueError`` for an address
+    given), shown by the status route. The pool's default model loads at
+    startup unless ``load_default`` is False. Raises ``ValueError`` for an address
     beyond this machine without an API key.
     """
     if isinstance(gpu, ModelPool):
@@ -70,7 +65,7 @@ def create_studio(
     hub = Hub(lambda: {"status": status()})
     app = FastAPI(
         title="mlx-decision Studio",
-        lifespan=studio_lifespan(gpu, files, hub, status),
+        lifespan=studio_lifespan(gpu, files, hub, status, load_default),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -84,7 +79,9 @@ def create_studio(
     recorder = Recorder(files, models)
     routes.install_errors(app)
     add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
-    app.include_router(page_router(session, api_key))
+    page = Page()
+    page.mount(app)
+    app.include_router(page_router(page, session, api_key))
     app.include_router(status_router(gpu, files, models, config, host, port, api_key, status))
     app.include_router(sets_router(files, max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
@@ -129,9 +126,17 @@ def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
     return status
 
 
-def studio_lifespan(gpu: Gpu, files: Workspace, hub: Hub, status: Callable[[], dict[str, Any]]):
-    """``gpu_lifespan`` plus the stream: changes to the GPU's holder, the pool and
-    the workspace become messages; the streams end when the Studio stops."""
+def studio_lifespan(
+    gpu: Gpu,
+    files: Workspace,
+    hub: Hub,
+    status: Callable[[], dict[str, Any]],
+    load_default: bool = True,
+):
+    """Start the GPU (its default model loads, with ``load_default``) and close it
+    at the end, as ``server.gpu_lifespan`` does, plus the stream: changes to the
+    GPU's holder, the pool and the workspace become messages; the streams end
+    when the Studio stops."""
 
     def publish_status() -> None:
         hub.publish_changed("status", status())
@@ -146,24 +151,28 @@ def studio_lifespan(gpu: Gpu, files: Workspace, hub: Hub, status: Callable[[], d
         gpu.pool.on_change = lambda: hub.soon(publish_status)
         files.on_change = lambda change: hub.soon(hub.publish, "workspace", change)
         try:
-            async with gpu_lifespan(gpu)(app):
-                yield
-        finally:
+            if load_default:
+                await gpu.start()
+            yield
+        finally:  # also when the default model fails to load
             hub.close()
+            gpu.close()
             gpu.on_change = gpu.pool.on_change = files.on_change = None
 
     return lifespan
 
 
-def page_router(session: Session, api_key: str | None) -> APIRouter:
+def page_router(page: Page, session: Session, api_key: str | None) -> APIRouter:
     """``/``: the page, and the exchange of the address's token for the cookie."""
     router = APIRouter()
 
     @router.get("/")
-    async def page(request: Request, token: str | None = None):
+    async def serve_page(request: Request, token: str | None = None):
         to_page = RedirectResponse("/", status_code=303, headers=NO_STORE)  # drops the token
         if session.has_cookie(request.cookies):
-            return to_page if token is not None else HTMLResponse(PAGE, headers=NO_STORE)
+            if token is not None:
+                return to_page
+            return HTMLResponse(page.html, headers=page.headers)
         if token is not None and session.matches_token(token):
             client = request.client.host if request.client else None
             # With a key, the address alone does not let in another machine.

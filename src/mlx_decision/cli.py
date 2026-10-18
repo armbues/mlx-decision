@@ -930,37 +930,64 @@ PortOption = Annotated[
 ]
 
 
+ServedModelsOption = Annotated[
+    list[str],
+    typer.Option(
+        "--model",
+        "-m",
+        help="Model folder, Hugging Face repo id, a model's name in models_dir, or a "
+        "folder of models (each subfolder a model named after it). Repeat for several. "
+        "Default: models_dir and models in the config file.",
+    ),
+]
+DefaultModelOption = Annotated[
+    str | None,
+    typer.Option(
+        help="Model for requests that name none or an unknown one (such as the Jev SDK's "
+        "jev-latest). Default: default_model in the config file when it is one of the "
+        "models, else the only model; with several and no default, such requests get "
+        "a 422.",
+    ),
+]
+MemoryBudgetOption = Annotated[
+    float | None,
+    typer.Option(
+        min=0,
+        metavar="GB",
+        help="Memory for loaded models; the least recently used are unloaded to stay "
+        "within it. Default: memory_budget_gb in the config file, else the GPU's "
+        "recommended working set.",
+    ),
+]
+ApiKeyOption = Annotated[
+    str | None,
+    typer.Option(
+        envvar="MLX_DECISION_API_KEY",
+        help="Require 'Authorization: Bearer KEY' on /v1/* (API clients send "
+        "TYPESAFE_API_KEY this way).",
+        show_envvar=True,
+    ),
+]
+
+
+def log_to_stderr() -> None:
+    """Show the package's log lines (loads and unloads) on stderr; uvicorn
+    configures only its own loggers."""
+    import logging
+
+    package_logger = logging.getLogger("mlx_decision")
+    if not package_logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        package_logger.addHandler(handler)
+    package_logger.setLevel(logging.INFO)
+
+
 @app.command()
 def server(
-    model: Annotated[
-        list[str],
-        typer.Option(
-            "--model",
-            "-m",
-            help="Model folder, Hugging Face repo id, a model's name in models_dir, or a "
-            "folder of models (each subfolder a model named after it). Repeat for several. "
-            "Default: models_dir and models in the config file.",
-        ),
-    ] = None,
-    default_model: Annotated[
-        str | None,
-        typer.Option(
-            help="Model for requests that name none or an unknown one (such as the Jev SDK's "
-            "jev-latest). Default: default_model in the config file when it is one of the "
-            "models, else the only model; with several and no default, such requests get "
-            "a 422.",
-        ),
-    ] = None,
-    memory_budget: Annotated[
-        float | None,
-        typer.Option(
-            min=0,
-            metavar="GB",
-            help="Memory for loaded models; the least recently used are unloaded to stay "
-            "within it. Default: memory_budget_gb in the config file, else the GPU's "
-            "recommended working set.",
-        ),
-    ] = None,
+    model: ServedModelsOption = None,
+    default_model: DefaultModelOption = None,
+    memory_budget: MemoryBudgetOption = None,
     host: HostOption = None,
     port: PortOption = None,
     max_image_mp: MaxImageOption = None,
@@ -968,15 +995,7 @@ def server(
     prefix_cache: PrefixCacheOption = None,
     noul_floor: NoulFloorOption = None,
     no_memory_check: NoMemoryCheckOption = False,
-    api_key: Annotated[
-        str | None,
-        typer.Option(
-            envvar="MLX_DECISION_API_KEY",
-            help="Require 'Authorization: Bearer KEY' on /v1/* (API clients send "
-            "TYPESAFE_API_KEY this way).",
-            show_envvar=True,
-        ),
-    ] = None,
+    api_key: ApiKeyOption = None,
 ) -> None:
     """Serve models over HTTP (Jev-compatible API: POST /v1/systemone).
 
@@ -990,17 +1009,9 @@ def server(
         from .server import create_app
     except ImportError:
         fail("the server needs extra packages: pip install 'mlx-decision[server]'")
-    import logging
-
     from .pool import ModelPool, discover
 
-    # Loads and unloads; uvicorn configures only its own loggers.
-    package_logger = logging.getLogger("mlx_decision")
-    if not package_logger.handlers:
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        package_logger.addHandler(handler)
-    package_logger.setLevel(logging.INFO)
+    log_to_stderr()
     config = read_config()
     references = [model_reference(m, config) for m in model or []] or config_models(config)
     if not references:
@@ -1039,6 +1050,183 @@ def server(
         typer.echo("API key required on /v1/*", err=True)
     app = create_app(pool, api_key=api_key)
     uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+@app.command()
+def web(
+    model: ServedModelsOption = None,
+    default_model: Annotated[
+        str | None,
+        typer.Option(
+            help="Model to load at startup and to answer requests that name none. Default: "
+            "default_model in the config file when it is one of the models; without one, "
+            "nothing loads until a request names a model.",
+        ),
+    ] = None,
+    memory_budget: MemoryBudgetOption = None,
+    host: HostOption = None,
+    port: PortOption = None,
+    workspace: Annotated[
+        Path | None,
+        typer.Option(
+            file_okay=False,
+            help="Folder for the Studio's question sets, history, data and models. Default: "
+            "workspace in the config file, else the folder of the config file "
+            "(~/.mlx-decision).",
+        ),
+    ] = None,
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="Do not open the Studio in the browser.")
+    ] = False,
+    max_image_mp: MaxImageOption = None,
+    max_input_tokens: MaxInputOption = None,
+    prefix_cache: PrefixCacheOption = None,
+    noul_floor: NoulFloorOption = None,
+    no_memory_check: NoMemoryCheckOption = False,
+    api_key: ApiKeyOption = None,
+) -> None:
+    """Open the Studio in the browser: the Playground, and the Jev API as server has it.
+
+    One process serves the Studio's pages and the Jev-compatible API
+    (POST /v1/systemone) with one model pool. Models: those -m or the
+    config file names, the Studio's own in the workspace's models/ and the
+    known families' downloads in the Hugging Face cache.
+    """
+    try:
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
+
+        from .studio import create_studio
+        from .studio import server as studio_server
+        from .studio.catalog import studio_models
+        from .studio.routes.status import address
+        from .studio.security import Session, check_bind, is_loopback
+    except ImportError:
+        fail("the Studio needs extra packages: pip install 'mlx-decision[web]'")
+    from .config import home
+    from .pool import ModelPool
+
+    log_to_stderr()
+    config = read_config()
+    host = config.resolve(host, "host", "127.0.0.1")
+    port = config.resolve(port, "port", 8000)
+    try:
+        check_bind(host, api_key)
+    except ValueError as error:
+        fail(str(error))
+    folder = Path(config.resolve(workspace, "workspace", home())).expanduser()
+    if folder.exists() and not folder.is_dir():
+        fail(f"--workspace {folder} is not a folder")
+    references = [model_reference(m, config) for m in model or []] or config_models(config)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
+    memory_budget = config.resolve(memory_budget, "memory_budget_gb")
+    budget = round(memory_budget * 1e9) if memory_budget is not None else None
+    try:
+        specs = studio_models(
+            references,
+            folder / "models",
+            options,
+            on_skip=lambda path, reason: typer.echo(f"skipped {reason}", err=True),
+        )
+        if default_model is None:
+            default_model = config.default_name([spec.name for spec in specs])
+        pool = ModelPool(
+            specs, default=default_model, budget=budget, check_memory=not no_memory_check
+        )
+        if default_model is not None:
+            pool.size(pool.default)
+    except (FileNotFoundError, ValueError) as error:
+        fail(str(error))
+    sock = listen(host, port)
+    session = Session(port)
+    try:
+        app = create_studio(
+            pool,
+            host=host,
+            port=port,
+            api_key=api_key,
+            session=session,
+            workspace=folder,
+            config=config,
+            load_default=default_model is not None,
+        )
+    except (OSError, ValueError) as error:
+        sock.close()
+        fail(str(error))
+    home_address = address(host, port)
+    url = f"{home_address}/?token={session.token}"
+    if pool.names:
+        default = f"; default {pool.default}" if default_model is not None else ""
+        typer.echo(f"models: {', '.join(pool.names)}{default}", err=True)
+    else:
+        typer.echo("no models yet: download one (mlx-decision download) or pass -m MODEL", err=True)
+    typer.echo(f"workspace: {app.state.workspace.root}", err=True)
+    typer.echo(f"Jev API: {home_address}/v1/systemone", err=True)
+    if api_key:
+        typer.echo("API key required on /v1/*", err=True)
+        if not is_loopback(host):
+            typer.echo(
+                f"from another machine: open http://<this Mac>:{port}/ and log in with the key",
+                err=True,
+            )
+    typer.echo(f"Studio: {url}", err=True)
+    served = studio_server(app, host=host, port=port, log_level="info")
+    if not no_browser:
+        open_when_started(served, url)
+    try:
+        served.run(sockets=[sock])
+    finally:
+        sock.close()
+
+
+def listen(host: str, port: int):
+    """A socket listening on ``host:port`` for the Studio, or a failure naming
+    ``--port`` when something serves there already. Something listening on the
+    same port at another of this Mac's addresses counts too (macOS would let
+    both bind)."""
+    import socket
+
+    from .studio.security import WILDCARDS
+
+    in_use = f"port {port} is in use on {host or 'every address'}: pass --port with another one"
+    probe = "127.0.0.1" if host in WILDCARDS else host.strip("[]")
+    try:
+        with socket.create_connection((probe, port), timeout=0.5):
+            fail(in_use)
+    except OSError:
+        pass  # nothing answers: free
+    try:
+        info = socket.getaddrinfo(
+            host or None, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE
+        )
+        family, kind, protocol, _, bind_address = info[0]
+        sock = socket.socket(family, kind, protocol)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # as uvicorn does
+        sock.bind(bind_address)
+        sock.listen(2048)
+        sock.set_inheritable(True)
+    except OSError as error:
+        if error.errno == 48:  # EADDRINUSE
+            fail(in_use)
+        fail(f"cannot listen on {host}:{port}: {error.strerror or error}")
+    return sock
+
+
+def open_when_started(served, url: str) -> None:
+    """Open ``url`` in the default browser once ``served`` accepts requests."""
+    import threading
+    import time
+    import webbrowser
+
+    def wait_and_open() -> None:
+        deadline = time.monotonic() + 60
+        while not served.started:
+            if served.should_exit or time.monotonic() > deadline:
+                return
+            time.sleep(0.05)
+        webbrowser.open(url)
+
+    threading.Thread(target=wait_and_open, name="open-browser", daemon=True).start()
 
 
 @app.command()
