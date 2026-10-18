@@ -252,8 +252,9 @@ class ModelPool:
         self._groups: OrderedDict[tuple[str, str], _Group] = OrderedDict()
         self._loaded: OrderedDict[str, DecisionModel] = OrderedDict()
         self._sizes: dict[str, int] = {}
-        # A copy for other threads (the server's /health), replaced after each change.
+        # Copies for other threads (the server's /health), replaced after each change.
         self._loaded_names: tuple[str, ...] = ()
+        self._used_bytes = 0
 
     def _root_of(self, spec: ModelSpec) -> ModelSpec:
         """What a model loads: itself, or the base it shares (a listed model where
@@ -297,6 +298,7 @@ class ModelPool:
 
     def _changed(self) -> None:
         self._loaded_names = tuple(self._loaded)
+        self._used_bytes = sum(group.total for group in self._groups.values())
         if self.on_change is not None:
             try:
                 self.on_change()
@@ -306,6 +308,15 @@ class ModelPool:
     def loaded(self) -> list[str]:
         """The loaded models, least recently used first; safe to call from any thread."""
         return list(self._loaded_names)
+
+    def used_bytes(self) -> int:
+        """What the loaded models count against the budget (the estimates, not
+        measured memory); safe to call from any thread."""
+        return self._used_bytes
+
+    def limit(self) -> int:
+        """The budget in bytes: ``budget``, else the GPU's recommended working set."""
+        return self.budget if self.budget is not None else memory.working_set()
 
     def resolve(self, name: str | None) -> str:
         """The model that answers a request naming ``name``."""
@@ -386,7 +397,7 @@ class ModelPool:
     def _make_room(self, needed: int, name: str, keep: tuple[str, str]) -> None:
         """Unload the least recently used models (with all that share their base)
         until ``needed`` more bytes fit; never the group ``keep``."""
-        limit = self._limit()
+        limit = self.limit()
         unloaded = False
         while sum(group.total for group in self._groups.values()) + needed > limit:
             old = next((key for key in self._groups if key != keep), None)
@@ -405,9 +416,6 @@ class ModelPool:
         if unloaded:
             _release_memory()
             self._changed()
-
-    def _limit(self) -> int:
-        return self.budget if self.budget is not None else memory.working_set()
 
 
 def _release_memory() -> None:

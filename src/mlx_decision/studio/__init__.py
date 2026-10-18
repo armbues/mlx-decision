@@ -3,10 +3,15 @@
 Needs the ``web`` extra (FastAPI, uvicorn). One ``Gpu`` serves both APIs,
 so the Studio's runs and the Jev API's requests share one worker and one
 model pool. ``security`` holds what every request goes through;
-``workspace`` the files the Studio keeps.
+``workspace`` the files the Studio keeps; ``stream`` the messages that
+keep every open tab up to date.
 """
 
+import asyncio
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -17,6 +22,7 @@ from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api, gpu_lifespan
 from . import security
 from .security import NO_STORE, Session
+from .stream import Hub, stream_router
 from .workspace import Workspace, root_folder
 
 # Stands in for the Studio's page until its files ship.
@@ -43,8 +49,8 @@ def create_studio(
     It owns ``gpu`` as ``server.create_app`` does. ``app.state.session``
     holds the session, whose token goes into the address ``web`` opens;
     ``app.state.workspace`` the workspace (``workspace``, else ``home()``),
-    created and cleaned up here. Raises ``ValueError`` for an address beyond
-    this machine without an API key.
+    created and cleaned up here; ``app.state.hub`` the stream's hub. Raises
+    ``ValueError`` for an address beyond this machine without an API key.
     """
     if isinstance(gpu, ModelPool):
         gpu = Gpu(gpu)
@@ -52,9 +58,11 @@ def create_studio(
     security.check_bind(host, api_key)  # before the lifespan could load a model
     files = Workspace(workspace if workspace is not None else root_folder())
     files.open()
+    status = status_reader(gpu)
+    hub = Hub(lambda: {"status": status()})
     app = FastAPI(
         title="mlx-decision Studio",
-        lifespan=gpu_lifespan(gpu),
+        lifespan=studio_lifespan(gpu, files, hub, status),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -62,11 +70,76 @@ def create_studio(
     app.state.gpu = gpu
     app.state.session = session
     app.state.workspace = files
+    app.state.hub = hub
     security.install(app, session, host, port, api_key)
     add_jev_api(app, gpu, api_key, max_body_bytes)
     app.include_router(page_router(session, api_key))
     app.include_router(api_router(gpu))
+    app.include_router(stream_router(hub))
     return app
+
+
+def server(app: FastAPI, **config: Any):
+    """A uvicorn server for the Studio's ``app`` (``config`` as ``uvicorn.Config``).
+
+    It ends the open streams when it starts shutting down: uvicorn waits for
+    open responses before the app's own shutdown, so a tab left open would
+    otherwise keep the Studio from stopping.
+    """
+    import uvicorn
+
+    class StudioServer(uvicorn.Server):
+        async def shutdown(self, sockets=None) -> None:
+            app.state.hub.close()
+            await super().shutdown(sockets=sockets)
+
+    return StudioServer(uvicorn.Config(app, **config))
+
+
+def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
+    """What the ``status`` message says: who holds the GPU (None when no one
+    does), the loaded models (least recently used first) and the memory they
+    count against the budget, in bytes. Safe to call from any thread."""
+    pool = gpu.pool
+    budget = None
+
+    def status() -> dict[str, Any]:
+        nonlocal budget
+        if budget is None:  # the working set does not change: read it once
+            budget = pool.limit()
+        return {
+            "busy": gpu.holder,
+            "loaded": pool.loaded(),
+            "memory": {"used": pool.used_bytes(), "budget": budget},
+        }
+
+    return status
+
+
+def studio_lifespan(gpu: Gpu, files: Workspace, hub: Hub, status: Callable[[], dict[str, Any]]):
+    """``gpu_lifespan`` plus the stream: changes to the GPU's holder, the pool and
+    the workspace become messages; the streams end when the Studio stops."""
+
+    def publish_status() -> None:
+        hub.publish_changed("status", status())
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        hub.attach(asyncio.get_running_loop())
+        publish_status()  # the baseline; later ones are changes
+        gpu.on_change = publish_status
+        # The pool and the workspace change on other threads; the status is read
+        # on the loop, so messages never arrive out of order.
+        gpu.pool.on_change = lambda: hub.soon(publish_status)
+        files.on_change = lambda change: hub.soon(hub.publish, "workspace", change)
+        try:
+            async with gpu_lifespan(gpu)(app):
+                yield
+        finally:
+            hub.close()
+            gpu.on_change = gpu.pool.on_change = files.on_change = None
+
+    return lifespan
 
 
 def page_router(session: Session, api_key: str | None) -> APIRouter:

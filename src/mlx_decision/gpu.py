@@ -10,7 +10,8 @@ cannot load a model after the pool has been emptied. ``release`` ends it;
 models load again on their next request.
 
 The holder is set and cleared on the event loop and read on the worker;
-a plain attribute is enough for that.
+a plain attribute is enough for that. ``on_change``, when set, is called
+on the event loop after the holder changed.
 """
 
 import asyncio
@@ -43,6 +44,7 @@ class Gpu:
     def __init__(self, pool: ModelPool):
         self.pool = pool
         self.holder: str | None = None
+        self.on_change: Callable[[], None] | None = None
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-decision")
 
     def check(self) -> None:
@@ -81,16 +83,26 @@ class Gpu:
         """
         self.check()
         self.holder = holder
+        self._changed()
         try:
             await self.run(self.pool.unload_all, check=False)
         except BaseException:
             self.holder = None
+            self._changed()
             raise
 
     def release(self, holder: str) -> None:
         """Give the GPU back; does nothing unless ``holder`` holds it."""
         if self.holder == holder:
             self.holder = None
+            self._changed()
+
+    def _changed(self) -> None:
+        if self.on_change is not None:
+            try:
+                self.on_change()
+            except Exception:
+                logger.exception("the GPU's change callback failed")
 
     def close(self) -> None:
         """Stop the worker after the work queued on it."""

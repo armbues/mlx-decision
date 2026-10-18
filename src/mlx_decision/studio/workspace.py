@@ -19,18 +19,23 @@ the version it was loaded from (its SHA-256), so a set changed on disk in
 the meantime is not overwritten.
 
 The methods block on file work: the Studio calls them off the event loop.
+``on_change``, when set, is called after each change to a set or a history
+(on the thread that made it) with what changed: ``folder`` (``sets`` or
+``history``), ``name``, ``action`` and details (``old_name`` for a rename,
+``id`` for a run added).
 """
 
 import base64
 import binascii
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
 import threading
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,6 +61,8 @@ STALE_SUFFIXES = (".tmp", ".partial")
 INTERRUPTED = "interrupted"
 DATA_URL = re.compile(r"data:image/([A-Za-z0-9.+-]+)((?:;[^;,]*)*?);base64,(.*)", re.S | re.I)
 EXTENSIONS = {"jpeg": "jpg", "svg+xml": "svg"}
+
+logger = logging.getLogger(__name__)
 
 README = """\
 # mlx-decision workspace
@@ -155,6 +162,14 @@ class Workspace:
     def __init__(self, root: Path):
         self.root = Path(root).expanduser().resolve()
         self.lock = threading.Lock()
+        self.on_change: Callable[[dict[str, str]], None] | None = None
+
+    def changed(self, folder: str, name: str, action: str, **details: str) -> None:
+        if self.on_change is not None:
+            try:
+                self.on_change({"folder": folder, "name": name, "action": action, **details})
+            except Exception:
+                logger.exception("the workspace's change callback failed")
 
     # Layout and paths
 
@@ -274,6 +289,7 @@ class Workspace:
                 what = "was deleted" if current is None else "changed on disk"
                 raise Conflict(f"the set {name!r} {what} since it was loaded", current)
             self.write(path, data)
+        self.changed("sets", name, "saved")
         return sha256(data)
 
     def rename_set(self, name: str, new_name: str) -> None:
@@ -292,6 +308,7 @@ class Workspace:
             os.rename(source, target)
             if history.exists():
                 os.rename(history, new_history)
+        self.changed("sets", new_name, "renamed", old_name=name)
 
     def delete_set(self, name: str) -> None:
         """Delete the set and its history (and images no other history uses)."""
@@ -302,6 +319,7 @@ class Workspace:
             path.unlink()
             history.unlink(missing_ok=True)
             self._prune_images()
+        self.changed("sets", name, "deleted")
 
     # History
 
@@ -323,6 +341,7 @@ class Workspace:
                 if handle.tell() and not _ends_with_newline(path):
                     data = b"\n" + data  # after a line cut short by a crash
                 handle.write(data)
+        self.changed("history", name, "added", id=entry["id"])
         return entry
 
     def read_history(self, name: str) -> list[dict[str, Any]]:
@@ -334,6 +353,7 @@ class Workspace:
         with self.lock:
             path.unlink(missing_ok=True)
             self._prune_images()
+        self.changed("history", name, "cleared")
 
     def restore_images(self, request: dict[str, Any]) -> dict[str, Any]:
         """A history line's request with its images as data URLs again; an image

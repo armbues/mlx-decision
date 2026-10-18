@@ -513,3 +513,31 @@ def test_two_saves_over_one_version_one_wins(space):
     winners = [result for result in results if result is not None]
     assert len(winners) == 1
     assert space.load_set("tickets")[1] == winners[0]
+
+
+def test_changes_are_reported(space):
+    seen = []
+    space.on_change = seen.append
+    space.save_set("tickets", BODY)
+    line = space.append_history("tickets", {"request": BODY})
+    space.rename_set("tickets", "support")
+    space.clear_history("support")
+    space.delete_set("support")
+    with pytest.raises(NotFound):
+        space.delete_set("support")  # nothing changed: nothing reported
+    assert seen == [
+        {"folder": "sets", "name": "tickets", "action": "saved"},
+        {"folder": "history", "name": "tickets", "action": "added", "id": line["id"]},
+        {"folder": "sets", "name": "support", "action": "renamed", "old_name": "tickets"},
+        {"folder": "history", "name": "support", "action": "cleared"},
+        {"folder": "sets", "name": "support", "action": "deleted"},
+    ]
+
+
+def test_a_failing_change_callback_does_not_fail_the_change(space):
+    def broken(change):
+        raise RuntimeError("boom")
+
+    space.on_change = broken
+    space.save_set("tickets", BODY)
+    assert space.load_set("tickets")[0] == BODY
