@@ -97,7 +97,7 @@ function askName({ title, purpose, initial, action, onName, Extra = null }) {
     title,
     purpose,
     Body: Extra ? () => html`<${NameField} /><${Extra} />` : NameField,
-    note: "Sets live in the workspace's sets/ folder; mlx-decision run -q reads them.",
+    note: "Sets live in the workspace's sets/ folder.",
     actions: [{ label: action, primary: true, onSelect: submit }],
   });
 }
@@ -355,7 +355,6 @@ export async function deleteSet() {
     purpose: count
       ? `The set's file and its history (${plural(count, "run")}) are deleted. This cannot be undone.${edits}`
       : `The set's file is deleted. This cannot be undone.${edits}`,
-    note: "Export keeps a copy of the file first.",
     actions: [
       {
         label: "Delete",

@@ -257,7 +257,7 @@ function Centre() {
           <b>No question sets yet</b>
           <span>
             A question set is a request body saved in the workspace's${" "}
-            <code>sets/</code> folder; <code>mlx-decision run -q sets/NAME.json</code> answers it too.
+            <code>sets/</code> folder.
           </span>
           <div class="empty-actions">
             <button class="btn primary" onClick=${files.newSet}>New Question Set…</button>
