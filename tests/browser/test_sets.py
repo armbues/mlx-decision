@@ -180,6 +180,24 @@ def test_import_adds_a_file_as_a_set(studio, page, tmp_path):
     assert studio.set_file("my-questions-2-") == {"questions": questions}
 
 
+def test_save_as_and_import_have_their_keys(studio, page, tmp_path):
+    open_studio(page, studio, "playground/ticket-triage")
+    edit_state(page, "Kept in the copy")
+    page.keyboard.press("Meta+Shift+s")
+    expect(page.locator(".sheet-input")).to_be_focused()
+    expect(page.locator(".sheet-input")).to_have_value("ticket-triage-copy")
+    page.keyboard.press("Enter")
+    at(page, studio, "ticket-triage-copy")
+    assert studio.set_file("ticket-triage-copy")["state"] == "Kept in the copy"
+
+    file = tmp_path / "keys.json"
+    file.write_text(json.dumps({"questions": {"spam": {"type": "noul"}}}))
+    with page.expect_file_chooser() as chooser:
+        page.keyboard.press("Meta+o")
+    chooser.value.set_files(str(file))
+    at(page, studio, "keys")
+
+
 def test_export_downloads_the_saved_file_not_the_edits(studio, page):
     open_studio(page, studio, "playground/ticket-triage")
     saved = studio.set_file("ticket-triage")

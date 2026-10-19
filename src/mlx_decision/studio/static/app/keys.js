@@ -53,6 +53,12 @@ onKey("escape", () => {
 
 addEventListener("keydown", (event) => {
   const action = actionFor(event);
-  if (action && action !== "escape" && (sheet.value !== null || preview.value !== null)) return;
-  if (action && trigger(action, event)) event.preventDefault();
+  if (!action) return;
+  if (action !== "escape" && (sheet.value !== null || preview.value !== null)) {
+    // Off while a sheet or the preview is open, but not passed on to Chrome
+    // either (its Save Page As for cmd-S, say) when a page handles the key.
+    if (handlers.get(action)?.length) event.preventDefault();
+    return;
+  }
+  if (trigger(action, event)) event.preventDefault();
 });

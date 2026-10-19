@@ -190,6 +190,20 @@ def test_the_token_becomes_a_strict_http_only_cookie(make):
         assert status.status_code == 200 and status.json()["busy"] is None
 
 
+@pytest.mark.parametrize("other", ['prefs={"theme":"dark"}', "note=two words", 'x="unclosed'])
+def test_another_apps_cookie_does_not_hide_the_session(make, other):
+    """Cookies ignore the port: another app on this machine may set ones the
+    strict parser of the standard library rejects."""
+    app, _ = make()
+    with client(app) as browser:
+        sign_in(browser, app)
+        name = app.state.session.cookie
+        header = f"{other}; {name}={browser.cookies.get(name)}"
+        browser.cookies.clear()
+        response = browser.get("/studio/api/status", headers={"Cookie": header})
+        assert response.status_code == 200, response.text
+
+
 def test_a_wrong_token_sets_no_cookie(make):
     app, _ = make()
     with client(app) as browser:

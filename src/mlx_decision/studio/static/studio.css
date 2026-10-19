@@ -377,7 +377,7 @@ button { cursor: default; }
 .gsec-head .tag { font-size: 11px; color: var(--fg-2); background: var(--fill); padding: 1px 7px; border-radius: 5px; }
 .gsec-head .stale-tag { font-size: 11px; color: var(--orange); background: var(--orange-fill); padding: 1px 7px; border-radius: 5px; }
 .gsec-head .right { margin-left: auto; display: flex; gap: 2px; align-items: center; }
-/* Examples (D161): chips above the state; the selected one has its menu. */
+/* Examples: chips above the state; the selected one has its menu. */
 .examples { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 4px 0; }
 .ex-chip { display: inline-flex; align-items: center; height: 26px; border-radius: 13px; background: var(--fill); max-width: 240px; }
 .ex-chip > button[role="tab"] {
@@ -683,7 +683,7 @@ a.sb-item { color: var(--fg); }
 }
 .app.narrow.inspector-open .inspector { transform: none; visibility: visible; }
 
-/* ---------- Models: list, memory card, inspector (D156) ---------- */
+/* ---------- Models: list, memory card, inspector ---------- */
 .page-models .centre-inner { max-width: 980px; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
 .page-models .warn-text { color: var(--orange); font-size: 12px; }
 .ficon {
@@ -693,7 +693,7 @@ a.sb-item { color: var(--fg); }
 .ficon.big { width: 44px; height: 44px; border-radius: 10px; font-size: 14px; }
 
 /* The row's state pill, which turns into Load / Unload under the pointer or
-   on focus (D157): one element, never a pill beside a button. */
+   on focus: one element, never a pill beside a button. */
 .pill-act {
   position: relative; width: 124px; height: 24px; padding: 0 9px; border: 0; border-radius: 12px;
   font-size: 11.5px; font-weight: 600; white-space: nowrap; cursor: default;

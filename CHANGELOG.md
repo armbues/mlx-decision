@@ -11,7 +11,7 @@ change the interface).
 
 - A config file, `~/.mlx-decision/config.toml` (`MLX_DECISION_HOME`
   moves the folder), with defaults for existing flags: `models` (`-m` of
-  `server`, `mcp` and `benchmark`), `default_model` (`run`, `chat`,
+  `server` and `benchmark`), `default_model` (`run`, `chat`,
   `mcp` and `training` without `-m`; `server --default-model`),
   `memory_budget_gb`, `host` and `port`. Flags win over the file. An
   unknown key is a warning, a value of the wrong type an error naming

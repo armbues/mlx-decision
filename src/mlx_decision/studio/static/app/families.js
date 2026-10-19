@@ -1,4 +1,4 @@
-// Family marks and colours (the R20 design), and how a loaded group is named
+// Family marks and colours (the Studio's design brief), and how a loaded group is named
 // and coloured wherever memory is shown (the Models page, the sidebar).
 import { models } from "./store/status.js";
 

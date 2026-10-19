@@ -20,11 +20,11 @@ import hmac
 import ipaddress
 import json
 import secrets
-from http.cookies import SimpleCookie
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.datastructures import Headers
+from starlette.requests import cookie_parser
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ..server import error_response, read_body
@@ -112,12 +112,10 @@ class Session:
 
 
 def _cookies(headers: Headers) -> dict[str, str]:
-    jar = SimpleCookie()
-    try:
-        jar.load(headers.get("cookie", ""))
-    except Exception:  # a malformed header counts as no cookies
-        return {}
-    return {name: morsel.value for name, morsel in jar.items()}
+    # Starlette's lenient parser (as ``request.cookies``): cookies ignore the
+    # port, so another app on this machine may set ones that the standard
+    # library's strict parser rejects, and it would then drop ours with them.
+    return cookie_parser(headers.get("cookie", ""))
 
 
 class Guard:

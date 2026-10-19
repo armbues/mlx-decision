@@ -154,7 +154,7 @@ function Images() {
 const rowsFor = (text, least = 3, most = 14) =>
   Math.min(most, Math.max(least, text.split("\n").length + 1));
 
-// ---------- examples (D161) ----------
+// ---------- examples ----------
 
 const exampleName = signal("");
 const exampleNameError = signal(null);

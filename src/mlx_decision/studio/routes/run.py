@@ -159,6 +159,8 @@ class Recorder:
                 **{key: value for key, value in run.items() if key != "model"},
             },
         )
+        if line is None:  # the set is gone
+            return {**run, **tags, "id": None, "time": None}
         return {**run, **tags, "id": line["id"], "time": line["time"]}
 
     def answered(self, answered: Answered) -> None:

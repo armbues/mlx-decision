@@ -1,5 +1,5 @@
 // Run All's grid: a row per example, a column per question, each cell the
-// verdict and its value (D161). Used by the Answers tab and the History.
+// verdict and its value. Used by the Answers tab and the History.
 import { html } from "htm/preact";
 import { two } from "../charts/answers.js";
 

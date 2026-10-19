@@ -32,7 +32,7 @@ export function App() {
       <${Sidebar} page=${page} current=${current} />
       <${Toolbar} page=${page} />
       <main class="centre">
-        <div class="banner-wrap"><${BusyBanner} /></div>
+        <div class="banner-wrap"><${BusyBanner} page=${page.id} /></div>
         <${Centre} />
       </main>
       <${Inspector} page=${page} />

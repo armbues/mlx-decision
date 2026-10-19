@@ -173,6 +173,22 @@ def test_a_json_problem_marks_its_chip_and_blocks_run_all(studio, page):
     shot(page, "examples-editor")
 
 
+def test_a_problem_the_live_check_finds_blocks_run_all(studio, page):
+    open_two_examples(page, studio)
+    expect(page.locator(".run-btn")).to_have_text("Run All")
+    department = page.locator(".question[data-q='department']")
+    # fake takes at most 4 options: a fifth is a problem for every example.
+    department.locator(".add-row .btn").click()
+    department.locator(".add-row .btn").click()
+    expect(department.locator(".field-problem")).to_contain_text("at most 4 options")
+    expect(page.locator(".run-btn")).to_be_disabled()
+    page.keyboard.press("Meta+Enter")
+    page.wait_for_timeout(300)
+    assert studio.history_lines("examples") == []  # nothing was sent
+    department.locator(".opt-row .minus").last.click()
+    expect(page.locator(".run-btn")).to_be_enabled()
+
+
 def test_removing_examples_keeps_one(studio, page):
     open_two_examples(page, studio)
     chip(page, "Refund ask").click()

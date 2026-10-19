@@ -72,8 +72,9 @@ file in a format the command line reads as it is. The Studio rewrites this
 README when it starts.
 
 - `config.toml`: defaults for the commands' flags; read by `run`, `chat`,
-  `server`, `mcp`, `web`, `training` and `benchmark`. The Studio only reads
-  it.
+  `server`, `mcp`, `web`, `training` and `benchmark`. It lives in
+  `~/.mlx-decision` (or `MLX_DECISION_HOME`), so it is not here when
+  `--workspace` or the file's `workspace` moved the workspace.
 - `sets/`: question sets. Each file is a request body (`state`,
   `questions`, `images` as data URLs):
   `mlx-decision run -q sets/NAME.json -m MODEL` answers it as the Studio does.
@@ -323,8 +324,10 @@ class Workspace:
 
     # History
 
-    def append_history(self, name: str, run: dict[str, Any]) -> dict[str, Any]:
-        """Add a run to the set's history and return the line as stored.
+    def append_history(self, name: str, run: dict[str, Any]) -> dict[str, Any] | None:
+        """Add a run to the set's history and return the line as stored; None
+        when the set does not exist (deleted while the run was answered), so no
+        history is left without its set.
 
         ``run`` holds what the Studio keeps of it (``model``, ``fingerprint``,
         ``request``, ``response``, timings); ``id`` and ``time`` are added. The
@@ -334,6 +337,8 @@ class Workspace:
         path = self.history_path(name)
         entry = {"id": uuid.uuid4().hex, "time": now(), **run}
         with self.lock:
+            if not self.set_path(name).is_file():
+                return None
             if isinstance(request := entry.get("request"), dict):
                 entry["request"] = self._store_images(request)
             data = line(entry)
@@ -454,12 +459,22 @@ def check_body(body: Any) -> None:
     edited can be saved with problems still open."""
     if not isinstance(body, dict):
         raise WorkspaceError("a set must be a JSON object: a request body")
-    if "images" in body and not isinstance(body["images"], list):
-        raise WorkspaceError("a set's images must be a list of data URLs")
-    try:
-        check_data_urls(body)
-    except DecisionError as error:
-        raise WorkspaceError(f"{error.param}: {error.message}") from None
+    examples = body.get("examples", [])
+    if not isinstance(examples, list):
+        raise WorkspaceError("a set's examples must be a list")
+    # The set's own images, then each example's (``examples.N.images.M``).
+    parts = [("", body)] + [
+        (f"examples.{index}.", example)
+        for index, example in enumerate(examples)
+        if isinstance(example, dict)
+    ]
+    for where, part in parts:
+        if "images" in part and not isinstance(part["images"], list):
+            raise WorkspaceError(f"{where}images: must be a list of data URLs")
+        try:
+            check_data_urls(part)
+        except DecisionError as error:
+            raise WorkspaceError(f"{where}{error.param}: {error.message}") from None
 
 
 def _entries(folder: Path) -> Iterator[Path]:

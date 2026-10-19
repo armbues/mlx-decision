@@ -2,7 +2,7 @@
 // cards say about the run before.
 //
 // Lines are grouped into entries: a single run, a Run All (the lines that
-// share a `batch` id, D161) or a Compare (those that share a `compare` id).
+// share a `batch` id) or a Compare (those that share a `compare` id).
 // Entries are numbered from #1 (the first in the file); a line belongs to an
 // example (`example`, or the set's first for lines from before examples).
 import { batch, computed, effect, signal } from "@preact/signals";

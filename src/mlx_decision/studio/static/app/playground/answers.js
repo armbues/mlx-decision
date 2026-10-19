@@ -1,6 +1,6 @@
 // The inspector's Answers: the last run of this set's selected example on the
 // model, one card per question, stale where the question changed since; with
-// several examples, also the last Run All as a grid (D161).
+// several examples, also the last Run All as a grid.
 import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { ChoiceBars, NoulBar, ScoreColumns, two } from "../charts/answers.js";

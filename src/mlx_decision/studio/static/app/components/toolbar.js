@@ -14,7 +14,7 @@ function fieldContent(page) {
   if (connection.value === "lost")
     return { icon: "warn", text: html`Not connected to the Studio · reload the page` };
   if (busy.value)
-    return { icon: "warn", text: html`<b>${busy.value}</b> has the GPU · runs wait until it is done` };
+    return { icon: "warn", text: html`<b>${busy.value}</b> has the GPU · nothing else runs until it is done` };
   return page.status?.value ?? null;
 }
 

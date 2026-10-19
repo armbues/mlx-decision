@@ -10,7 +10,7 @@ fit fake-fit (+0.05 GB on it), fake-vision 3.2, fake-strict 4.6 and fake-big
 import re
 
 import pytest
-from drive import menu_item, open_studio, shot
+from drive import hold_gpu, menu_item, open_studio, release_gpu, shot
 
 expect = pytest.importorskip("playwright.sync_api").expect
 pytestmark = pytest.mark.browser
@@ -53,28 +53,6 @@ def load(page, studio, name: str) -> None:
     """Load a model through the Studio's API, as another tab would."""
     response = page.request.post(f"{studio.base}/studio/api/models/load", data={"model": name})
     assert response.ok, response.text()
-
-
-def on_server_loop(studio, function) -> None:
-    studio.app.state.hub.loop.call_soon_threadsafe(function)
-
-
-def hold_gpu(studio, job: str) -> None:
-    """Hold the GPU for ``job`` as ``Gpu.acquire`` does, but without unloading
-    the models, so their disabled controls can be seen; the status reaches the
-    page through the stream."""
-    gpu = studio.app.state.gpu
-
-    def hold():
-        gpu.holder = job
-        gpu.on_change()
-
-    on_server_loop(studio, hold)
-
-
-def release_gpu(studio, job: str) -> None:
-    gpu = studio.app.state.gpu
-    on_server_loop(studio, lambda: gpu.release(job))
 
 
 def test_the_list_groups_models_and_shows_their_state_as_text(sized, page):

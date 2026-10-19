@@ -1183,7 +1183,8 @@ def web(
     if dev:
         typer.echo("dev: open tabs reload when a page file changes", err=True)
     typer.echo(f"Studio: {url}", err=True)
-    served = studio_server(app, host=host, port=port, log_level="info")
+    # No access log: a page load alone fetches some 45 files.
+    served = studio_server(app, host=host, port=port, log_level="info", access_log=False)
     if not no_browser:
         open_when_started(served, url)
     try:
@@ -1209,8 +1210,11 @@ def listen(host: str, port: int):
     except OSError:
         pass  # nothing answers: free
     try:
+        # As uvicorn (and so `server`) binds: IPv6 only for an IPv6 address, so
+        # `localhost` listens on 127.0.0.1, where clients that name it connect.
+        family = socket.AF_INET6 if ":" in host else socket.AF_INET
         info = socket.getaddrinfo(
-            host or None, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE
+            host or None, port, family, socket.SOCK_STREAM, flags=socket.AI_PASSIVE
         )
         family, kind, protocol, _, bind_address = info[0]
         sock = socket.socket(family, kind, protocol)

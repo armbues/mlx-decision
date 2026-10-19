@@ -6,7 +6,7 @@ import { showTab } from "../components/inspector.js";
 import { route } from "../router.js";
 import { remembered } from "../store/prefs.js";
 import { sets } from "../store/sets.js";
-import { loadedNames, models, status } from "../store/status.js";
+import { busy, loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 import { changedSince, currentExample, fromBody, locate, toBody, toFile } from "./draft.js";
 
@@ -273,9 +273,11 @@ export const stale = computed(() => {
   return changedSince(built.value.body, run.request);
 });
 
+// Nothing runs while a job holds the GPU (the API would answer 503 busy).
 export const canRun = computed(
   () =>
     !running.value &&
+    !busy.value &&
     !!built.value &&
     !!modelName.value &&
     problems.value.length === 0 &&
@@ -337,10 +339,12 @@ export const comparing = computed(() => answersView.value === "compare");
 export const canRunAll = computed(
   () =>
     !running.value &&
+    !busy.value &&
     !!draft.value &&
     draft.value.examples.length > 1 &&
     !!modelName.value &&
     fileProblems.value.length === 0 &&
+    problems.value.length === 0 &&
     Object.keys(built.value?.body.questions ?? {}).length > 0,
 );
 
@@ -436,6 +440,7 @@ export function toggleCompared(name) {
 export const canCompare = computed(
   () =>
     !running.value &&
+    !busy.value &&
     !!built.value &&
     compareModels.value.length > 1 &&
     problems.value.length === 0 &&

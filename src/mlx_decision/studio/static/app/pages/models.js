@@ -1,6 +1,6 @@
 // Models: what the Studio serves, what each needs and reads, and what is in memory.
-// A model's state is a dot and text, never shaped like a button; Load / Unload
-// sit in the inspector, the memory card and a row's context menu (D156).
+// A row's status pill turns into Load / Unload under the pointer or on focus;
+// they are also in the inspector, the memory card and a row's context menu.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { Picture } from "../components/icons.js";
@@ -9,6 +9,7 @@ import { groupColour, groupLabel, markOf } from "../families.js";
 import { MenuItem, MenuSeparator } from "../components/menu.js";
 import { gigabytes, parameters, plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
+import { SHORTCUTS } from "../keys.js";
 import { href, route } from "../router.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
 import { busy, loadedNames, models, status } from "../store/status.js";
@@ -86,7 +87,7 @@ const units = computed(() => {
 });
 
 // The row's state as a pill; while the pointer is on it (or it has focus) it
-// turns into the Load / Unload button in place (D157). States without an
+// turns into the Load / Unload button in place. States without an
 // action stay a pill and say why in the tooltip.
 function StatePill({ model }) {
   const name = model.name;
@@ -143,7 +144,7 @@ function Row({ model, nested }) {
   const select = () => {
     location.hash = href("models", name);
   };
-  // A list item, not a link: it holds the pill's button (D157).
+  // A list item, not a link: it holds the pill's button.
   return html`
     <div class=${`mrow${nested ? " fitted" : ""}`} data-name=${name} role="option" tabindex="0"
        aria-selected=${current ? "true" : "false"} onClick=${select} onContextMenu=${menu}
@@ -293,7 +294,12 @@ const status_ = computed(() => {
   };
 });
 
-const action = computed(() => ({ label: "Download Model…", icon: false, disabled: true }));
+const action = computed(() => ({
+  label: "Download Model…",
+  title: `Download Model… (${SHORTCUTS.download})`,
+  icon: false,
+  disabled: true,
+}));
 
 function Centre() {
   const list = models.value;

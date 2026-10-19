@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import os
+import re
 
 import pytest
 from typer.testing import CliRunner
@@ -395,6 +396,7 @@ def test_delete_removes_the_set_its_history_and_unused_images(space):
 
 
 def test_history_lines_with_images_by_hash(space):
+    space.save_set("tickets", BODY)
     image = png()
     run = {
         "model": "fake",
@@ -423,6 +425,7 @@ def test_history_lines_with_images_by_hash(space):
 
 
 def test_restore_images(space):
+    space.save_set("tickets", BODY)
     image = png()
     line = space.append_history("tickets", {"request": {**BODY, "images": [image]}})
     assert space.restore_images(line["request"]) == {**BODY, "images": [image]}
@@ -433,12 +436,40 @@ def test_restore_images(space):
 
 
 def test_a_line_cut_short_by_a_crash_is_skipped(space):
+    space.save_set("tickets", BODY)
     space.append_history("tickets", {"request": BODY, "model": "a"})
     path = space.root / "history" / "tickets.jsonl"
     with open(path, "ab") as handle:
         handle.write(b'{"id": "half", "requ')
     space.append_history("tickets", {"request": BODY, "model": "b"})
     assert [entry["model"] for entry in space.read_history("tickets")] == ["a", "b"]
+
+
+def test_no_history_for_a_set_that_is_gone(space):
+    """A run answered after its set was deleted leaves no history behind."""
+    run = {"model": "fake", "request": BODY, "response": {"answers": {}}}
+    assert space.append_history("gone", run) is None
+    assert not space.history_path("gone").exists()
+    space.save_set("gone", BODY)
+    assert space.append_history("gone", run) is not None
+
+
+@pytest.mark.parametrize(
+    ("body", "where"),
+    [
+        ({**BODY, "images": "a.png"}, "images"),
+        ({**BODY, "images": ["/etc/hosts"]}, "images.0"),
+        ({**BODY, "examples": {"a": 1}}, "examples"),
+        ({**BODY, "examples": [{"name": "A", "images": "a.png"}]}, "examples.0.images"),
+        (
+            {**BODY, "examples": [{"name": "A"}, {"name": "B", "images": ["/etc/hosts"]}]},
+            "examples.1.images.0",
+        ),
+    ],
+)
+def test_a_sets_images_and_its_examples_images_must_be_data_urls(space, body, where):
+    with pytest.raises(WorkspaceError, match=re.escape(where)):
+        space.save_set("tickets", body)
 
 
 def test_clear_history(space):

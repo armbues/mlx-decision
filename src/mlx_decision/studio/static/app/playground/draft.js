@@ -59,7 +59,7 @@ function questionFrom(id, value) {
   return question;
 }
 
-// ---------- examples (D161) ----------
+// ---------- examples ----------
 //
 // A set holds named examples, each a state with its images. The file keeps
 // them in `examples`, the first also as the top-level state and images (so

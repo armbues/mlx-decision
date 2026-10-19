@@ -105,7 +105,7 @@ function Cell({ answer }) {
       <${Bars} entries=${Object.entries(answer.probabilities ?? {})} top=${answer.choice} />
     `;
   if (answer.type === "score") {
-    // Levels are shown from 1 (D162).
+    // Levels are shown from 1.
     const levels = Object.values(answer.probabilities ?? {});
     const most = Math.max(...levels);
     return html`

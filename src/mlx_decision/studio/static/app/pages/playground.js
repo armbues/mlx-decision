@@ -40,7 +40,7 @@ import {
   toggleCompared,
 } from "../playground/session.js";
 import { sets } from "../store/sets.js";
-import { loadedNames, models } from "../store/status.js";
+import { busy, loadedNames, models } from "../store/status.js";
 
 const title = (name) => {
   const words = name.replace(/[-_.]+/g, " ").trim();
@@ -243,6 +243,9 @@ function compareStatus() {
 
 // With several examples the button is Run All (⌘↩); ⌥⌘↩ and the example's
 // chip menu ask the selected example only. In the Compare view it is Compare.
+// While a job holds the GPU the main action is off, and its tooltip says why.
+const heldTitle = (label) => busy.value && `${busy.value} has the GPU: ${label} is off until it is done`;
+
 const action = computed(() => {
   const many = several.value;
   const changed = stale.value;
@@ -251,7 +254,9 @@ const action = computed(() => {
     const state = shownCompare.value;
     return {
       label: "Compare",
-      title: `Compare: ask the same questions on ${compareModels.value.join(", ")} in turn (${SHORTCUTS.run})`,
+      title:
+        heldTitle("Compare") ||
+        `Compare: ask the same questions on ${compareModels.value.join(", ")} in turn (${SHORTCUTS.run})`,
       disabled: !canRunMain.value,
       run: runMain,
       stop,
@@ -261,9 +266,11 @@ const action = computed(() => {
   }
   return {
     label: many ? "Run All" : "Run",
-    title: many
-      ? `Run All: ask every example in turn (${SHORTCUTS.run}); ${SHORTCUTS.runExample} asks the selected one`
-      : undefined,
+    title:
+      heldTitle(many ? "Run All" : "Run") ||
+      (many
+        ? `Run All: ask every example in turn (${SHORTCUTS.run}); ${SHORTCUTS.runExample} asks the selected one`
+        : undefined),
     disabled: !canRunMain.value,
     run: runMain,
     stop,

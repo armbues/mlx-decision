@@ -61,6 +61,12 @@ def studio(tmp_path, models_folder):
 
 
 def run(studio, request=BODY, model="fake", **extra):
+    """Run ``request``; a ``set`` named in ``extra`` is saved first when it is
+    not there (a run keeps history only for a set that exists)."""
+    files = studio.app_state.workspace
+    name = extra.get("set")
+    if name and "/" not in name and not files.set_path(name).exists():
+        files.save_set(name, BODY)
     return studio.post("/studio/api/run", json={"request": request, "model": model, **extra})
 
 
@@ -392,6 +398,16 @@ def test_run_answers_as_the_model_does(studio, models_folder):
 def test_run_without_a_set_keeps_no_history(studio):
     data = run(studio).json()
     assert data["id"] is None
+    assert list((studio.app_state.workspace.root / "history").glob("*.jsonl")) == []
+
+
+def test_a_run_for_a_set_that_is_gone_keeps_no_history(studio):
+    """Deleted while the run was answered (or by hand): the answer comes back,
+    but no history file is left without its set."""
+    body = {"request": BODY, "model": "fake", "set": "gone"}
+    response = studio.post("/studio/api/run", json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()["id"] is None and response.json()["response"]["answers"]
     assert list((studio.app_state.workspace.root / "history").glob("*.jsonl")) == []
 
 

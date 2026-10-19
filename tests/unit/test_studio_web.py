@@ -283,6 +283,27 @@ def test_web_serves_the_studio(web, tmp_path):
     assert sock.fileno() == -1  # closed after the server ran
 
 
+def test_web_logs_no_line_per_request(web):
+    result, served, _ = web("--no-browser")
+    assert result.exit_code == 0, result.output
+    assert served.config["access_log"] is False
+
+
+@pytest.mark.parametrize(
+    ("host", "family"),
+    [
+        ("localhost", socket.AF_INET),  # as uvicorn binds it for `server`
+        ("127.0.0.1", socket.AF_INET),
+        ("::1", socket.AF_INET6),
+    ],
+)
+def test_web_binds_a_name_as_server_does(web, host, family):
+    result, served, _ = web("--host", host, "--no-browser")
+    assert result.exit_code == 0, result.output
+    [sock] = served.ran_with
+    assert sock.family == family
+
+
 def test_web_with_no_models_starts(web, mlx_decision_home):
     result, served, _ = web("--no-browser")
     assert result.exit_code == 0, result.output
