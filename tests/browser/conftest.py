@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import fake_studio
 import httpx
 import pytest
 
@@ -45,14 +46,22 @@ def chrome():
 
 @pytest.fixture
 def page(chrome):
-    """A fresh tab (its own cookies and storage) at the Studio's design size."""
+    """A fresh tab (its own cookies and storage) at the Studio's design size; a
+    script error or a ``console.error`` in the page fails the test (not the
+    browser's own line for a request answered 4xx, which tests cause on purpose)."""
     context = chrome.new_context(viewport={"width": 1440, "height": 900})
     tab = context.new_page()
     errors = []
     tab.on("pageerror", lambda error: errors.append(str(error)))
-    tab.errors = errors
+
+    def console(message):
+        if message.type == "error" and not message.text.startswith("Failed to load resource"):
+            errors.append(f"console.error: {message.text}")
+
+    tab.on("console", console)
     yield tab
     context.close()
+    assert errors == [], f"script errors in the page: {errors}"
 
 
 def free_port() -> int:
@@ -109,3 +118,26 @@ def fake_web(tmp_path):
         if process.poll() is None:
             process.kill()
             process.wait()
+
+
+@pytest.fixture
+def make_studio(tmp_path):
+    """Start a fake Studio in this process (``fake_studio.serve``): call it with
+    ``sizes=True`` and / or ``slow=True`` for those models; one per test."""
+    running = []
+
+    def start(**options) -> fake_studio.Served:
+        assert not running, "one fake Studio per test"
+        context = fake_studio.serve(tmp_path / "studio", **options)
+        running.append(context)
+        return context.__enter__()
+
+    yield start
+    for context in running:
+        context.__exit__(None, None, None)
+
+
+@pytest.fixture
+def studio(make_studio) -> fake_studio.Served:
+    """A fake Studio with its three plain models and two sample sets."""
+    return make_studio()

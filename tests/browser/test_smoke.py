@@ -52,4 +52,3 @@ def test_edit_a_question_run_it_and_see_the_answer(fake_web, page):
     runs = (fake_web.workspace / "history" / "smoke.jsonl").read_text().splitlines()
     asked = [json.loads(line)["request"]["questions"]["noul"]["instructions"] for line in runs]
     assert asked == ["The customer asks for money back", "Does the customer want a refund?"]
-    assert page.errors == []

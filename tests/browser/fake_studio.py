@@ -1,0 +1,173 @@
+"""A Studio on fake models (``fake_backend``) with two sample sets.
+
+``write_studio`` writes the models and sets under a folder and builds the app;
+``serve`` runs it on a thread. The browser tests use both; so does
+``_helpers/studio_fake.py``, which serves one to drive by hand.
+
+Models: ``fake`` (at most 4 options, 50 input tokens), ``fake-vision`` (reads
+images), ``fake-strict`` (needs instructions; choice and noul only). With
+``sizes`` they count made-up sizes against an 8 GB budget, and a fitted
+``fake-fit`` and an over-budget ``fake-big`` are added (the Models page's
+memory card); with ``slow`` also ``fake-slow`` (1.5 s an answer, other
+probabilities; Compare's Stop and its notes where models differ).
+"""
+
+import json
+import socket
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from fastapi import FastAPI
+
+from fake_backend import write_fitted, write_model
+from mlx_decision.memory import ModelTooLargeError
+from mlx_decision.pool import ModelPool, discover
+from mlx_decision.studio import create_studio, server
+
+GB = 10**9
+SIZES = {
+    "fake": 1.8 * GB,
+    "fake-fit": 1.85 * GB,
+    "fake-vision": 3.2 * GB,
+    "fake-strict": 4.6 * GB,
+    "fake-big": 19 * GB,
+    "fake-slow": 2.5 * GB,
+}
+TICKET_TRIAGE = {
+    "state": "Hi, I've been trying to connect my Stripe account for 3 days and the "
+    "integration keeps failing. I'm losing sales. Please help ASAP.",
+    "questions": {
+        "department": {
+            "type": "choice",
+            "instructions": "Which team should handle this",
+            "criteria": {
+                "billing": "Payment or subscription issues",
+                "technical": "Bugs or integration problems",
+                "sales": "Pricing or account questions",
+            },
+        },
+        "frustration": {
+            "type": "score",
+            "instructions": "How frustrated the customer appears",
+            "criteria": [
+                "Calm, just stating facts",
+                "Frustrated but civil",
+                "Very angry, strong language",
+            ],
+        },
+        "is_urgent": {"type": "noul", "instructions": "Does this need a reply today?"},
+    },
+}
+ORDER_JSON = {
+    "state": {"order": 1234, "items": ["mug", "plate"], "total": 31.5},
+    "questions": {
+        "refund": {
+            "type": "noul",
+            "criteria": {"true": "the customer asks for money back", "false": "anything else"},
+        }
+    },
+}
+
+
+class SizedPool(ModelPool):
+    """Made-up sizes, so the memory card shows something like a real Mac."""
+
+    def size(self, name):
+        if name not in SIZES:
+            return super().size(name)
+        if SIZES[name] > self.budget:
+            raise ModelTooLargeError(
+                f"{name} needs more than the budget", int(SIZES[name]), self.budget
+            )
+        return int(SIZES[name])
+
+
+def write_studio(
+    home: Path, port: int, sizes: bool = False, slow: bool = False, dev: bool = False
+) -> FastAPI:
+    """Write the fake models under ``home/fake-models`` and the sample sets in
+    ``home/ws/sets`` (kept when there), and build the Studio for ``port``."""
+    models = home / "fake-models"
+    write_model(models / "fake", max_choice_options=4, max_input_tokens=50)
+    write_model(models / "fake-vision", supports_images=True, open_images=True)
+    write_model(
+        models / "fake-strict", requires_instructions=True, question_types=["choice", "noul"]
+    )
+    if slow:
+        fixed = {
+            "department": {"billing": 0.2, "technical": 0.7, "sales": 0.1},
+            "frustration": {"0": 0.1, "1": 0.3, "2": 0.6},
+            "is_urgent": {"true": 0.4, "false": 0.6},
+        }
+        write_model(models / "fake-slow", delay=1.5, fixed=fixed)
+    sets = home / "ws" / "sets"
+    sets.mkdir(parents=True, exist_ok=True)
+    if not (sets / "ticket-triage.json").exists():
+        (sets / "ticket-triage.json").write_text(json.dumps(TICKET_TRIAGE, indent=2))
+        (sets / "order-json.json").write_text(json.dumps(ORDER_JSON, indent=2))
+    if sizes:
+        write_fitted(models / "fake-fit", models / "fake")
+        write_model(models / "fake-big")
+        pool = SizedPool(discover([models]), budget=8 * GB)
+    else:
+        pool = ModelPool(discover([models]), budget=GB)
+    return create_studio(pool, port=port, workspace=home / "ws", load_default=False, dev=dev)
+
+
+@dataclass
+class Served:
+    app: FastAPI
+    base: str  # http://127.0.0.1:PORT
+    url: str  # the address with the session token, which logs a tab in
+    home: Path
+
+    @property
+    def workspace(self) -> Path:
+        return self.home / "ws"
+
+    @property
+    def sets(self) -> Path:
+        return self.home / "ws" / "sets"
+
+    @property
+    def history(self) -> Path:
+        return self.home / "ws" / "history"
+
+    def set_file(self, name: str) -> dict:
+        return json.loads((self.sets / f"{name}.json").read_text())
+
+    def history_lines(self, name: str) -> list[dict]:
+        path = self.history / f"{name}.jsonl"
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def serve(home: Path, **options):
+    """Serve a fake Studio on a free port, on a thread; a context manager that
+    yields ``Served`` and stops the server on exit."""
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    sock.listen()
+    port = sock.getsockname()[1]
+    app = write_studio(home, port, **options)
+    studio = server(app, host="127.0.0.1", port=port, log_level="warning")
+    thread = threading.Thread(target=studio.run, kwargs={"sockets": [sock]}, daemon=True)
+
+    class Running:
+        def __enter__(self) -> Served:
+            thread.start()
+            deadline = time.monotonic() + 10
+            while not studio.started:
+                if not thread.is_alive() or time.monotonic() > deadline:
+                    raise RuntimeError("the fake Studio did not start")
+                time.sleep(0.02)
+            base = f"http://127.0.0.1:{port}"
+            return Served(app, base, f"{base}/?token={app.state.session.token}", home)
+
+        def __exit__(self, *exc):
+            studio.should_exit = True
+            thread.join(10)
+            sock.close()
+
+    return Running()
