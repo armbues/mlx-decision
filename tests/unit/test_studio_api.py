@@ -111,6 +111,13 @@ def test_models(studio):
     assert models["fake-fit"]["fitted"] and models["fake-fit"]["base"] == "fake"
     assert models["fake-fit"]["capabilities"] == models["fake"]["capabilities"]
     assert not any(entry["loaded"] for entry in models.values())
+    # How a terminal names each (no config file here: the folder).
+    assert models["fake"]["cli"]["short"] == [
+        "-m",
+        str(studio.app_state.gpu.pool.specs["fake"].path),
+    ]
+    status = studio.get("/studio/api/status").json()
+    assert status["cli_path"].endswith("mlx-decision")
     run(studio)
     assert studio.get("/studio/api/models").json()["models"][0]["loaded"] is True
 
@@ -538,6 +545,18 @@ def test_a_run_records_its_example_and_batch(studio):
     ):
         refused = run(studio, BODY, "fake", set="tickets", **extra)
         assert refused.status_code == 400 and refused.json()["error"]["param"] == param
+
+
+def test_a_run_records_its_compare(studio):
+    """A Compare's runs (one per model) share an id, which History groups by."""
+    first = run(studio, BODY, "fake", set="tickets", example="Stripe outage", compare="c-7")
+    assert first.status_code == 200 and first.json()["compare"] == "c-7"
+    line = studio.get("/studio/api/history/tickets").json()["runs"][0]
+    assert (line["example"], line["compare"]) == ("Stripe outage", "c-7")
+    assert "batch" not in line
+    for extra in ({"compare": "no spaces"}, {"compare": "x" * 41}, {"compare": "c", "batch": "b"}):
+        refused = run(studio, BODY, "fake", set="tickets", **extra)
+        assert refused.status_code == 400 and refused.json()["error"]["param"] == "compare"
 
 
 def test_a_set_with_examples_answers_its_first_with_run_q(studio, models_folder):

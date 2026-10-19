@@ -5,6 +5,7 @@ model, so it runs through ``load``, ``run`` and ``server`` unchanged.
 """
 
 import json
+import time
 from pathlib import Path
 
 from mlx_decision.backend import BackendOutput, Capabilities
@@ -20,7 +21,8 @@ class FakeBackend:
     A noul answers 0.75. ``fixed`` overrides the probabilities of a question
     id. With ``open_images`` it opens each image as the real backends do, so
     an unreadable one is refused. The input length is the number of words in
-    the state, which is cut to ``max_input_tokens``, if given.
+    the state, which is cut to ``max_input_tokens``, if given. ``delay``
+    seconds pass before each answer (for driving a page that waits).
     """
 
     def __init__(
@@ -29,14 +31,18 @@ class FakeBackend:
         fixed: dict[str, dict[str, float]] | None = None,
         max_input_tokens: int | None = None,
         open_images: bool = False,
+        delay: float = 0,
         **capabilities,
     ):
         self.name = name
+        self.delay = delay
         self.open_images = open_images
         self.fixed = fixed or {}
         self.capabilities = _capabilities(max_input_tokens, **capabilities)
 
     def score(self, request: Request) -> BackendOutput:
+        if self.delay:
+            time.sleep(self.delay)
         if self.open_images:  # as the real backends do before answering
             from mlx_decision.images import open_image
 
@@ -75,7 +81,7 @@ def _capabilities(max_input_tokens: int | None = None, **capabilities) -> Capabi
 def capabilities(path: Path, options: dict) -> Capabilities:
     """What ``load(path, **options)`` gives the backend, from the marker file."""
     config = {**json.loads((path / MARKER_FILE).read_text()), **options}
-    for key in ("family", "name", "fixed", "fit_weights", "open_images"):
+    for key in ("family", "name", "fixed", "fit_weights", "open_images", "delay"):
         config.pop(key, None)
     return _capabilities(**config)
 

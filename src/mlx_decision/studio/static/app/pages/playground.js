@@ -8,16 +8,23 @@ import { clock, duration, plural } from "../format.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
 import { Answers, shownBatch } from "../playground/answers.js";
+import { CodeButton } from "../playground/code.js";
+import { shownCompare } from "../playground/compare.js";
 import { Editor } from "../playground/editor.js";
 import * as files from "../playground/files.js";
 import { History } from "../playground/history.js";
 import {
+  MAX_COMPARED,
   built,
   canRunMain,
   chooseModel,
+  compareModels,
+  compareWith,
+  comparing,
   edited,
   editedNames,
   entry,
+  example,
   fileProblems,
   justAnswered,
   lastRun,
@@ -30,6 +37,7 @@ import {
   several,
   stale,
   stop,
+  toggleCompared,
 } from "../playground/session.js";
 import { sets } from "../store/sets.js";
 import { loadedNames, models } from "../store/status.js";
@@ -78,6 +86,9 @@ function Target() {
   const current = modelName.value;
   const loaded = loadedNames.value;
   const modelProblem = problems.value.find((problem) => problem.where.model);
+  const others = comparing.value ? compareWith.value : [];
+  const picked = compareWith.value;
+  const full = picked.length >= MAX_COMPARED - 1;
   return html`
     <div class="target" role="group" aria-label="What Run runs">
       <${MenuButton} id="target-set" className="set" title="Question set"
@@ -96,6 +107,7 @@ function Target() {
         label=${html`
           ${current && html`<span class="dot" style=${loaded.has(current) ? "" : "background: var(--fg-3)"}></span>`}
           <span class="name">${current ?? "No model"}</span>
+          ${others.length > 0 && html`<span class="plus num" title=${`Compared with ${others.join(", ")}`}>+ ${others.length}</span>`}
           <${icons.Chevrons} />
         `}
         menuStyle="top:34px; left:0; width:320px">
@@ -107,6 +119,18 @@ function Target() {
             onSelect=${() => chooseModel(item.name)}><span class="mono">${item.name}</span><//>`,
         )}
         ${list.length === 0 && html`<${MenuNote}>No models yet. Download one: <code>mlx-decision download</code><//>`}
+        ${list.length > 1 &&
+        html`<${MenuSeparator} />
+          <${MenuHeader}>Compare With<//>
+          ${list
+            .filter((item) => item.name !== current)
+            .map(
+              (item) => html`<${MenuItem} ticked=${picked.includes(item.name)}
+                disabled=${!picked.includes(item.name) && full}
+                right=${loaded.has(item.name) ? "Loaded" : item.family}
+                onSelect=${() => toggleCompared(item.name)}><span class="mono">${item.name}</span><//>`,
+            )}
+          <${MenuNote}>Up to two more models. Compare asks the same questions on each in turn.<//>`}
       <//>
     </div>
   `;
@@ -130,6 +154,11 @@ const status = computed(() => {
   if (!built.value || !modelName.value) return null;
   const flight = running.value;
   const many = several.value;
+  if (flight?.compare)
+    return {
+      icon: "spin",
+      text: html`Compare: asking <b>${flight.model}</b>${many ? html` about <b>${flight.example}</b>` : ""}, ${flight.compare.done + 1} of ${flight.compare.total}…${flight.loads ? " · loading it first" : ""}`,
+    };
   if (flight)
     return {
       icon: "spin",
@@ -138,6 +167,7 @@ const status = computed(() => {
         : html`Asking <b>${flight.model}</b> ${plural(questionCount.value, "question")}${many ? html` about <b>${flight.example}</b>` : ""}…${flight.loads ? " · loading it first" : ""}`,
     };
   if (problems.value.length) return { icon: "warn", text: problems.value[0].message };
+  if (comparing.value) return compareStatus();
   const loads = loadedNames.value.has(modelName.value) ? "" : " · loads it first";
   if (many) {
     if (fileProblems.value.length) return { icon: "warn", text: exampleProblem(fileProblems.value[0]) };
@@ -180,12 +210,55 @@ const status = computed(() => {
   };
 });
 
+// "a, b and c".
+const listed = (names) =>
+  names.length < 2 ? html`<b>${names[0]}</b>` : html`${names.slice(0, -1).map((name, i) => html`${i ? ", " : ""}<b>${name}</b>`)} and <b>${names.at(-1)}</b>`;
+
+// The status field in the Compare view.
+function compareStatus() {
+  const names = compareModels.value;
+  if (names.length < 2) return { text: "Compare: pick one or two more models in the model menu" };
+  const state = shownCompare.value;
+  const about = several.value ? html` about <b>${example.value.name}</b>` : "";
+  if (state?.done && (state.changed.all || state.changed.ids.size || state.modelsChanged))
+    return { icon: "warn", text: html`Edited since the Compare at ${clock(state.shown.time)} · Compare to update` };
+  if (state?.done) {
+    const total = state.shown.models.length;
+    const answered = state.shown.models.filter((name) => state.shown.results[name]?.response).length;
+    const count = answered === total ? plural(total, "model") : `${answered} of ${plural(total, "model")}`;
+    return {
+      icon: justAnswered.value ? "ok" : null,
+      text: html`<b>${count}</b> answered${about} · ${clock(state.shown.time)}`,
+    };
+  }
+  if (state?.stopped)
+    return { icon: "warn", text: html`The Compare at ${clock(state.shown.time)} was stopped · Compare to ask them all` };
+  const toLoad = names.filter((name) => !loadedNames.value.has(name)).length;
+  return {
+    text: html`Compare sends <b>${plural(questionCount.value, "question")}</b>${about} to ${listed(names)} in turn${
+      toLoad ? ` · ${toLoad === names.length ? "all load" : `${toLoad} load`} first` : ""
+    }`,
+  };
+}
+
 // With several examples the button is Run All (⌘↩); ⌥⌘↩ and the example's
-// chip menu ask the selected example only.
+// chip menu ask the selected example only. In the Compare view it is Compare.
 const action = computed(() => {
   const many = several.value;
   const changed = stale.value;
   const batch = shownBatch.value;
+  if (comparing.value) {
+    const state = shownCompare.value;
+    return {
+      label: "Compare",
+      title: `Compare: ask the same questions on ${compareModels.value.join(", ")} in turn (${SHORTCUTS.run})`,
+      disabled: !canRunMain.value,
+      run: runMain,
+      stop,
+      running: !!running.value,
+      badge: !!state && !state.inFlight && (state.changed.all || state.changed.ids.size > 0 || state.modelsChanged),
+    };
+  }
   return {
     label: many ? "Run All" : "Run",
     title: many
@@ -299,6 +372,8 @@ export default {
   Target,
   action,
   status,
+  wide: comparing,
+  Tools: CodeButton,
   Centre,
   tabs: [
     { id: "answers", label: "Answers", Body: Answers },

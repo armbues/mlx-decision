@@ -7,7 +7,7 @@ import { Picture } from "../components/icons.js";
 import { LoadButton } from "../components/load-button.js";
 import { groupColour, groupLabel, markOf } from "../families.js";
 import { MenuItem, MenuSeparator } from "../components/menu.js";
-import { gigabytes, plural } from "../format.js";
+import { gigabytes, parameters, plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { href, route } from "../router.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
@@ -17,14 +17,6 @@ import { openMenu, toast } from "../store/ui.js";
 function Mark({ family, big = false }) {
   const [text, colour] = markOf(family);
   return html`<span class=${big ? "ficon big" : "ficon"} style=${`background:${colour}`} aria-hidden="true">${text}</span>`;
-}
-
-// "421M", "0.6B", "3.1B", "27B".
-function parameters(count) {
-  if (!count) return "";
-  if (count < 1e9) return `${Math.round(count / 1e6)}M`;
-  const billions = count / 1e9;
-  return `${billions < 10 ? billions.toFixed(1).replace(/\.0$/, "") : Math.round(billions)}B`;
 }
 
 const tokens = (count) => (count >= 1024 ? `${Math.round(count / 1024)}k` : `${count}`);
@@ -409,7 +401,7 @@ function Details() {
 
       <section class="igroup"><h4>From code</h4><dl>
         <${Kv} label="API"><code>"model": "${model.name}"</code><//>
-        <${Kv} label="CLI"><code>-m ${model.name}</code><//>
+        <${Kv} label="CLI"><code>${(model.cli?.short ?? ["-m", model.name]).map(shellWord).join(" ")}</code><//>
       </dl></section>
     </div>
   `;

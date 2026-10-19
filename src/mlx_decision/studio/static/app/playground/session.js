@@ -2,6 +2,7 @@
 // check, the runs and the one in flight.
 import { batch, computed, effect, signal } from "@preact/signals";
 import { api } from "../api.js";
+import { showTab } from "../components/inspector.js";
 import { route } from "../router.js";
 import { remembered } from "../store/prefs.js";
 import { sets } from "../store/sets.js";
@@ -194,14 +195,21 @@ export function rememberRun(set, name, exampleName, result) {
   runs.value = { ...runs.value, [runKey(set, name, exampleName)]: result };
 }
 
-// A renamed example's answers in this tab follow it.
+// A renamed example's answers and Compares in this tab follow it.
 export function renameExampleRuns(set, from, to) {
   const suffix = `\u0000${from}`;
-  runs.value = Object.fromEntries(
-    Object.entries(runs.value).map(([key, value]) =>
-      key.startsWith(`${set}\u0000`) && key.endsWith(suffix) ? [`${key.slice(0, -from.length)}${to}`, value] : [key, value],
-    ),
-  );
+  const move = (map) =>
+    Object.fromEntries(
+      Object.entries(map).map(([key, value]) =>
+        key.startsWith(`${set}\u0000`) && key.endsWith(suffix)
+          ? [`${key.slice(0, -from.length)}${to}`, value.example === from ? { ...value, example: to } : value]
+          : [key, value],
+      ),
+    );
+  batch(() => {
+    runs.value = move(runs.value);
+    compares.value = move(compares.value);
+  });
 }
 
 // Run All: the latest batch per set and model, {id, time, examples: [name],
@@ -215,6 +223,15 @@ export function rememberBatch(set, name, value) {
   batches.value = { ...batches.value, [batchKey(set, name)]: value };
 }
 
+// Compare: the latest per set and example, {id, time, example, models,
+// request, results: {model: run | {error, param}}, stopped?: the model being
+// asked when Stop came} (filled as the answers come).
+export const compares = signal({});
+export const compareKey = (set, exampleName) => `${set}\u0000${exampleName}`;
+export function rememberCompare(set, exampleName, value) {
+  compares.value = { ...compares.value, [compareKey(set, exampleName)]: value };
+}
+
 // A renamed set's answers in this tab follow it.
 export function moveRuns(from, to) {
   const move = (map) =>
@@ -226,19 +243,22 @@ export function moveRuns(from, to) {
   batch(() => {
     runs.value = move(runs.value);
     batches.value = move(batches.value);
+    compares.value = move(compares.value);
   });
 }
 
-// Drop a set's runs and batches (its history was cleared).
+// Drop a set's runs, batches and Compares (its history was cleared).
 export function forgetRuns(set) {
   const keep = (map) => Object.fromEntries(Object.entries(map).filter(([key]) => !key.startsWith(`${set}\u0000`)));
   batch(() => {
     runs.value = keep(runs.value);
     batches.value = keep(batches.value);
+    compares.value = keep(compares.value);
   });
 }
 
-// The run in flight: {model, loads, controller, example, all: {done, total}?}.
+// The run in flight: {model, loads, controller, example, and for a Run All
+// all: {done, total}, for a Compare compare: {id, done, total}}.
 export const running = signal(null);
 
 // True for a few seconds after a run is answered: the status field's check.
@@ -308,9 +328,11 @@ export async function run() {
 // button); Run asks the selected example only (⌥⌘↩, its chip's menu).
 export const several = computed(() => (draft.value?.examples.length ?? 1) > 1);
 
-// The Answers tab with several examples: "all" (the Run All grid) or "one"
-// (the selected example's cards); each run shows its own.
+// The Answers tab: "one" (the selected example's cards), "all" (the Run All
+// grid, with several examples) or "compare" (the Compare table, which makes
+// Compare the main action); each run shows its own.
 export const answersView = signal("all");
+export const comparing = computed(() => answersView.value === "compare");
 
 export const canRunAll = computed(
   () =>
@@ -324,9 +346,12 @@ export const canRunAll = computed(
 
 const newBatchId = () => Math.random().toString(36).slice(2, 10);
 
-export const canRunMain = computed(() => (several.value ? canRunAll.value : canRun.value));
+export const canRunMain = computed(() =>
+  comparing.value ? canCompare.value : several.value ? canRunAll.value : canRun.value,
+);
 
 export function runMain() {
+  if (comparing.value) return compare();
   return several.value ? runAll() : run();
 }
 
@@ -371,6 +396,96 @@ export async function runAll() {
         }
         value.results = { ...value.results, [item.name]: { error: error.message, param: error.param } };
         rememberBatch(set, name, { ...value });
+      }
+    }
+    if (!controller.signal.aborted) answered();
+  } finally {
+    running.value = null;
+  }
+}
+
+// Compare (PG-7): the selected example on the model and up to two more, one
+// after another; the pool loads each in turn when they do not fit together.
+// Each answer is recorded with the Compare's id; a model's refusal shows in
+// its column and the others go on; Stop sends no more.
+export const MAX_COMPARED = 3;
+const comparedOthers = remembered("playground.compareWith", []);
+
+// The other models picked (those that exist, not the model itself).
+export const compareWith = computed(() => {
+  const names = new Set((models.value ?? []).map((item) => item.name));
+  return comparedOthers.value
+    .filter((name) => names.has(name) && name !== modelName.value)
+    .slice(0, MAX_COMPARED - 1);
+});
+export const compareModels = computed(() => (modelName.value ? [modelName.value, ...compareWith.value] : []));
+
+// Pick or drop a model to compare with; picking one shows the Compare view.
+export function toggleCompared(name) {
+  const now = compareWith.value;
+  if (now.includes(name)) {
+    comparedOthers.value = now.filter((item) => item !== name);
+    return;
+  }
+  if (now.length >= MAX_COMPARED - 1) return;
+  comparedOthers.value = [...now, name];
+  answersView.value = "compare";
+  showTab("playground", "answers");
+}
+
+export const canCompare = computed(
+  () =>
+    !running.value &&
+    !!built.value &&
+    compareModels.value.length > 1 &&
+    problems.value.length === 0 &&
+    Object.keys(built.value.body.questions).length > 0,
+);
+
+export async function compare() {
+  if (!canCompare.value) return;
+  answersView.value = "compare";
+  const set = setName.value;
+  const exampleName = example.value.name;
+  const body = built.value.body;
+  const names = [...compareModels.value];
+  const id = newBatchId();
+  const controller = new AbortController();
+  const value = { id, time: new Date().toISOString(), example: exampleName, models: names, request: body, results: {} };
+  rememberCompare(set, exampleName, value);
+  try {
+    for (const [index, name] of names.entries()) {
+      if (controller.signal.aborted) break;
+      running.value = {
+        model: name,
+        loads: !loadedNames.value.has(name),
+        controller,
+        example: exampleName,
+        compare: { id, done: index, total: names.length },
+      };
+      try {
+        const result = await api("/run", {
+          method: "POST",
+          body: { request: body, model: name, set, example: exampleName, compare: id },
+          signal: controller.signal,
+        });
+        const recorded = { ...result, request: body };
+        batch(() => {
+          rememberRun(set, name, exampleName, recorded);
+          value.results = { ...value.results, [name]: recorded };
+          rememberCompare(set, exampleName, { ...value });
+        });
+      } catch (error) {
+        if (error.name === "AbortError") {
+          rememberCompare(set, exampleName, { ...value, stopped: name }); // its answer is not shown
+          break;
+        }
+        if (error.status === 503) {
+          toast(error.message);
+          break;
+        }
+        value.results = { ...value.results, [name]: { error: error.message, param: error.param } };
+        rememberCompare(set, exampleName, { ...value });
       }
     }
     if (!controller.signal.aborted) answered();

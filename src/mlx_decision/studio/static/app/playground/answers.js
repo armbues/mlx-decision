@@ -11,6 +11,7 @@ import { SHORTCUTS } from "../keys.js";
 import { answerValue } from "./changes.js";
 import { TYPE_LABELS, changedSince, toBody } from "./draft.js";
 import { focusLater } from "./editor.js";
+import { CompareView } from "./compare.js";
 import { Grid } from "./grid.js";
 import { batchFromHistory, cardContext, openRun, showExample } from "./history.js";
 import {
@@ -140,11 +141,19 @@ export const shownBatch = computed(() => {
   return { shown, rows, questionsChanged, missing, done, changed };
 });
 
+// One example: One Model / Compare; several: This Example / All Examples / Compare.
 function ViewSwitch() {
+  const many = several.value;
+  const shown = view.value === "compare" ? "compare" : many ? view.value : "one";
+  const choices = many
+    ? [["one", "This Example"], ["all", "All Examples"], ["compare", "Compare"]]
+    : [["one", "One Model"], ["compare", "Compare"]];
   return html`
     <div class="seg small answers-view" role="tablist" aria-label="Answers for">
-      <button role="tab" aria-pressed=${view.value === "one"} onClick=${() => (view.value = "one")}>This Example</button>
-      <button role="tab" aria-pressed=${view.value === "all"} onClick=${() => (view.value = "all")}>All Examples</button>
+      ${choices.map(
+        ([id, label]) => html`<button role="tab" key=${id} aria-pressed=${shown === id}
+          onClick=${() => (view.value = id)}>${label}</button>`,
+      )}
     </div>
   `;
 }
@@ -194,10 +203,15 @@ export function Answers() {
   const name = modelName.value;
   if (!current || !name)
     return html`<div class="empty"><b>Nothing to run yet</b><span>Pick a question set and a model.</span></div>`;
-  if (current.examples.length < 2) return html`<${OneExample} />`;
+  const shown =
+    view.value === "compare"
+      ? html`<${CompareView} />`
+      : view.value === "all" && current.examples.length > 1
+        ? html`<${AllExamples} />`
+        : html`<${OneExample} />`;
   return html`
     <${ViewSwitch} />
-    ${view.value === "all" ? html`<${AllExamples} />` : html`<${OneExample} />`}
+    ${shown}
   `;
 }
 

@@ -1,10 +1,10 @@
 // The set's runs from its history file: the History tab, and what the answer
 // cards say about the run before.
 //
-// Lines are grouped into entries: a single run, or a Run All (the lines that
-// share a `batch` id, D161). Entries are numbered from #1 (the first in the
-// file); a line belongs to an example (`example`, or the set's first for
-// lines from before examples).
+// Lines are grouped into entries: a single run, a Run All (the lines that
+// share a `batch` id, D161) or a Compare (those that share a `compare` id).
+// Entries are numbered from #1 (the first in the file); a line belongs to an
+// example (`example`, or the set's first for lines from before examples).
 import { batch, computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
@@ -16,6 +16,7 @@ import { workspaceChange } from "../stream.js";
 import { toast } from "../store/ui.js";
 import { answerMax, answerValue, requestChanges, shownValue, summary, touched, valueLabel, wordDiff } from "./changes.js";
 import { FIRST_EXAMPLE, exampleByName, fromBody, selectExample } from "./draft.js";
+import { CompareTable } from "./compare.js";
 import { Grid } from "./grid.js";
 import {
   built,
@@ -60,15 +61,25 @@ export const lines = computed(() => histories.value[setName.value]?.runs ?? null
 const firstName = computed(() => draft.value?.examples[0]?.name ?? FIRST_EXAMPLE);
 export const exampleOf = (line) => line.example ?? firstName.value;
 
-// Entries: [{key, batch, lines, number}], oldest first.
+// The entry a line groups into: a Run All's or a Compare's key, else null.
+const groupOf = (line) => (line.batch ? `batch:${line.batch}` : line.compare ? `compare:${line.compare}` : null);
+
+// Entries: [{key, batch, compare, lines, number}], oldest first.
 export const entries = computed(() => {
   const list = lines.value;
   if (!list) return null;
   const grouped = [];
   for (const line of list) {
     const last = grouped.at(-1);
-    if (line.batch && last?.batch === line.batch) last.lines.push(line);
-    else grouped.push({ key: line.batch ? `batch:${line.batch}` : line.id, batch: line.batch ?? null, lines: [line] });
+    const group = groupOf(line);
+    if (group && last?.key === group) last.lines.push(line);
+    else
+      grouped.push({
+        key: group ?? line.id,
+        batch: line.batch ?? null,
+        compare: line.batch ? null : (line.compare ?? null),
+        lines: [line],
+      });
   }
   return grouped.map((entry, index) => ({ ...entry, number: index + 1 }));
 });
@@ -135,6 +146,24 @@ export function batchFromHistory(model) {
   };
 }
 
+// A Compare entry as the Compare table shows it: {id, time, number, example,
+// models, request, results: {model: line}}.
+const compareOf = (entry) => ({
+  id: entry.compare,
+  time: entry.lines[0].time,
+  number: entry.number,
+  example: exampleOf(entry.lines[0]),
+  models: entry.lines.map((line) => line.model),
+  request: entry.lines[0].request,
+  results: Object.fromEntries(entry.lines.map((line) => [line.model, line])),
+});
+
+// The latest Compare of an example in the history, or null.
+export function compareFromHistory(name) {
+  const entry = (entries.value ?? []).findLast((item) => item.compare && exampleOf(item.lines[0]) === name);
+  return entry ? compareOf(entry) : null;
+}
+
 // The entry picked in the History tab (by key), per set; the latest when unset.
 const picked = signal({});
 export const selected = computed(() => {
@@ -184,6 +213,8 @@ function entrySummary(list, entry) {
   const before = previousOf(list, index, null, exampleOf(line));
   const what = summary(before >= 0 ? requestChanges(list[before].request, line.request) : [], before < 0);
   const name = many.value || line.example ? ` · ${exampleOf(line)}` : "";
+  if (entry.compare)
+    return { what: `Compare · ${what}`, meta: `${entry.lines.map((item) => item.model).join(", ")}${name}` };
   return { what, meta: `${line.model}${name} · ${duration(line.latency_ms)}` };
 }
 
@@ -194,7 +225,7 @@ function EntriesList({ list }) {
       ${[...entries.value].reverse().map((entry) => {
         const { what, meta } = entrySummary(list, entry);
         return html`
-          <button class=${`hrow ${entry.batch ? "batch" : ""}`} role="option" key=${entry.key}
+          <button class=${`hrow ${entry.batch ? "batch" : entry.compare ? "compared" : ""}`} role="option" key=${entry.key}
                   aria-selected=${entry.key === current.key} onClick=${() => pick(entry.key)}>
             <span class="n num">#${entry.number}</span>
             <span class="what"><b>${what}</b><span class="num">${meta}</span></span>
@@ -367,6 +398,18 @@ function Moves({ list, line }) {
   `;
 }
 
+// A Compare entry: its table.
+function CompareAnswers({ entry }) {
+  const shown = compareOf(entry);
+  const questions = Object.entries(shown.request.questions ?? {}).map(([id, question]) => ({ id, type: question.type }));
+  return html`
+    <div class="moves">
+      <h4>Answers on ${plural(shown.models.length, "model")}${many.value ? ` for ${shown.example}` : ""}</h4>
+      <${CompareTable} shown=${shown} questions=${questions} />
+    </div>
+  `;
+}
+
 // A Run All entry: its grid (click a row to show that example).
 function BatchAnswers({ entry }) {
   const questions = Object.keys(entry.lines[0].request.questions ?? {});
@@ -426,7 +469,9 @@ export function History() {
     <${Changes} list=${list} entry=${shown} />
     ${shown.batch
       ? html`<${BatchAnswers} entry=${shown} />`
-      : html`<${Moves} list=${list} line=${shown.lines[0]} />`}
+      : shown.compare
+        ? html`<${CompareAnswers} entry=${shown} />`
+        : html`<${Moves} list=${list} line=${shown.lines[0]} />`}
     <div class="hist-foot">
       <span class="dim"><code>history/${setName.value}.jsonl</code> · ${plural(entries.value.length, "entry", "entries")} · ${plural(list.length, "run")}</span>
       <button class="btn plain danger" onClick=${clearHistory}>Clear History…</button>

@@ -7,6 +7,8 @@ the Models page shows (``catalog.model_facts``, the memory a load takes).
 """
 
 import asyncio
+import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,7 @@ from ... import __version__
 from ...backend import Capabilities
 from ...config import Config
 from ...gpu import Gpu
+from ..catalog import cli_arguments
 from ..security import WILDCARDS
 from ..workspace import Workspace
 from .run import Models
@@ -50,6 +53,15 @@ def config_values(config: Config) -> dict[str, Any]:
             str(value) if isinstance(value, Path) else list(value) if key == "models" else value
         )
     return values
+
+
+def cli_path() -> str:
+    """The ``mlx-decision`` command of the environment the Studio runs in (an MCP
+    client needs its full path: it does not search the shell's PATH)."""
+    beside = Path(sys.executable).parent / "mlx-decision"
+    if beside.is_file():
+        return str(beside)
+    return shutil.which("mlx-decision") or "mlx-decision"
 
 
 def capabilities_info(capabilities: Capabilities) -> dict[str, Any]:
@@ -89,6 +101,7 @@ def status_router(
             "api": {"url": f"{home}/v1/systemone", "key_required": bool(api_key)},
             "workspace": str(files.root),
             "sets_folder": str(files.root / "sets"),
+            "cli_path": cli_path(),
             **current,
             "models": pool.names,
             "default_model": pool.default,
@@ -121,6 +134,7 @@ def status_router(
                     entry["error"] = str(error)
                 try:
                     entry.update(models.facts(name))
+                    entry["cli"] = cli_arguments(spec, config, entry.get("repo"))
                     entry["memory"] = models.memory(name)
                 except (ValueError, OSError) as error:
                     entry["memory"] = None

@@ -32,9 +32,9 @@ from . import ApiError, field, json_body
 
 logger = logging.getLogger(__name__)
 
-# An example's name and a Run All's id, as a run may name them.
+# An example's name, and a Run All's or a Compare's id, as a run may name them.
 MAX_TAG = 80
-BATCH_ID = re.compile(r"[A-Za-z0-9-]{1,40}")
+GROUP_ID = re.compile(r"[A-Za-z0-9-]{1,40}")
 
 
 class Models:
@@ -122,10 +122,11 @@ class Recorder:
         answered: Answered,
         example: str | None = None,
         batch: str | None = None,
+        compare: str | None = None,
     ) -> dict[str, Any]:
         """Record a Playground run: its speed and, for a set, its history line
-        (with the example it asked and the Run All it belongs to, when given).
-        Returns what the page gets besides the answers (blocks)."""
+        (with the example it asked and the Run All or Compare it belongs to,
+        when given). Returns what the page gets besides the answers (blocks)."""
         result = answered.result
         run = {
             "model": answered.model,
@@ -142,7 +143,11 @@ class Recorder:
             logger.exception("recording the speed failed")
         if set_name is None:
             return {**run, "id": None, "time": None}
-        tags = {key: value for key, value in (("example", example), ("batch", batch)) if value}
+        tags = {
+            key: value
+            for key, value in (("example", example), ("batch", batch), ("compare", compare))
+            if value
+        }
         line = self.files.append_history(
             set_name,
             {
@@ -200,10 +205,10 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
 
     @router.post("/run")
     async def run(request: Request):
-        """``{request, model, set, example, batch}`` -> the answers, the timings
-        and the history line's id (``set`` names the set whose history gets the
-        run; ``example`` the example it asks, ``batch`` the Run All it belongs
-        to; all optional)."""
+        """``{request, model, set, example, batch, compare}`` -> the answers, the
+        timings and the history line's id (``set`` names the set whose history
+        gets the run; ``example`` the example it asks, ``batch`` the Run All or
+        ``compare`` the Compare it belongs to; all optional)."""
         gpu.check()  # before reading the body
         body = await json_body(request, max_body_bytes)
         decision = field(body, "request", dict)
@@ -214,9 +219,10 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
         example = field(body, "example", str, required=False)
         if example is not None and not 0 < len(example) <= MAX_TAG:
             raise ApiError(400, f"example must be 1 to {MAX_TAG} characters", param="example")
-        batch = field(body, "batch", str, required=False)
-        if batch is not None and not BATCH_ID.fullmatch(batch):
-            raise ApiError(400, "batch must be 1 to 40 letters, digits or '-'", param="batch")
+        batch = group_id(body, "batch")
+        compare = group_id(body, "compare")
+        if batch is not None and compare is not None:
+            raise ApiError(400, "a run is in a Run All or a Compare, not both", param="compare")
         if set_name is not None:
             try:
                 check_name(set_name, "a set's name")
@@ -235,11 +241,19 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
                 500, "the model failed to answer the request", kind="api_error"
             ) from None
         recorded = await asyncio.to_thread(
-            recorder.run, set_name, decision, answered, example, batch
+            recorder.run, set_name, decision, answered, example, batch, compare
         )
         return {"response": answered.result.to_wire(), **recorded}
 
     return router
+
+
+def group_id(body: dict, key: str) -> str | None:
+    """The Run All's (``batch``) or Compare's (``compare``) id a run names."""
+    value = field(body, key, str, required=False)
+    if value is not None and not GROUP_ID.fullmatch(value):
+        raise ApiError(400, f"{key} must be 1 to 40 letters, digits or '-'", param=key)
+    return value
 
 
 def describe(error: DecisionError) -> dict[str, Any]:

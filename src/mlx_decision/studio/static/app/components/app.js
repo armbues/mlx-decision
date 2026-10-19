@@ -24,6 +24,7 @@ export function App() {
     sidebarShown.value ? "" : "no-sidebar",
     narrow.value ? "narrow" : "",
     inspectorShown.value ? "inspector-open" : "no-inspector",
+    page.wide?.value ? "compare" : "", // a wider inspector, for a table of models
   ];
   const Centre = page.Centre;
   return html`

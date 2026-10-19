@@ -95,6 +95,10 @@ export const InspectorToggle = () => html`
   </svg>
 `;
 
+export const Code = () => html`
+  <svg viewBox="0 0 16 16" ...${stroke(1.5)} aria-hidden="true"><path d="m5.5 4-4 4 4 4M10.5 4l4 4-4 4" /></svg>
+`;
+
 export const Theme = () => html`
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
     <circle cx="10" cy="10" r="6.5" /><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor" />

@@ -110,3 +110,50 @@ def model_facts(spec: ModelSpec, workspace_models: Path | None) -> dict:
         "disk_bytes": folder_size(path),
         "licence_note": family.licence,
     }
+
+
+# Load options as the CLI's flags take them.
+OPTION_FLAGS = {
+    "max_input_tokens": "--max-input-tokens",
+    "prefix_cache_gb": "--prefix-cache",
+    "noul_floor": "--noul-floor",
+}
+
+
+def option_arguments(options: dict) -> list[str]:
+    """The flags that give a model these load options (``load_options`` reversed)."""
+    arguments = []
+    if "max_image_pixels" in options:
+        pixels = options["max_image_pixels"]
+        arguments += ["--max-image-mp", "0" if not pixels else f"{pixels / 2**20:g}"]
+    for key, flag in OPTION_FLAGS.items():
+        if options.get(key) is not None:
+            arguments += [flag, f"{options[key]:g}"]
+    return arguments
+
+
+def cli_arguments(spec: ModelSpec, config, repo: str | None) -> dict[str, list[str]]:
+    """What a command in a terminal passes to get this model, as it is served.
+
+    ``short``: ``-m`` with the name when the config file names it (as
+    ``run -m NAME`` looks it up), else as ``full``; ``full``: ``-m`` with the
+    repo id of a model in the Hugging Face cache, else its folder (for an MCP
+    client's config, which reads no config file of ours). Both end with the
+    load options as flags.
+    """
+    full = repo if repo is not None and spec.fit is None else str(spec.path)
+    short = full
+    try:
+        found = config.lookup(spec.name)
+    except (ValueError, OSError):
+        found = None
+    if found is not None and (
+        found == repo
+        or (
+            Path(found).expanduser().exists()
+            and Path(found).expanduser().resolve() == spec.path.resolve()
+        )
+    ):
+        short = spec.name
+    flags = option_arguments(spec.options)
+    return {"short": ["-m", short, *flags], "full": ["-m", full, *flags]}

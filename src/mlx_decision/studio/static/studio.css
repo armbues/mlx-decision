@@ -557,6 +557,25 @@ textarea.field { resize: vertical; line-height: 1.45; }
 .cmp .cols i.top { background: var(--accent); }
 .cmp tfoot td, .cmp tfoot th { font: 11px var(--font); color: var(--fg-2); border-top: 0.5px solid var(--sep); }
 .cmp .spread { display: block; margin-top: 4px; font: 10.5px var(--font); color: var(--orange); }
+.cmp-wrap { overflow-x: auto; margin: 0 -2px; padding: 0 2px 4px; }
+.cmp { table-layout: fixed; min-width: 420px; }
+.cmp thead th:first-child, .cmp tbody th, .cmp tfoot th { width: 118px; }
+.cmp thead th .mono { font-size: 11.5px; overflow-wrap: anywhere; }
+.cmp thead th small.err { color: var(--red); font-size: 11px; white-space: normal; margin-top: 3px; }
+.cmp thead th small.wait { color: var(--fg-3); margin-top: 3px; }
+.cmp tbody th .qid { font: 600 11.5px var(--mono); border: 0; background: none; padding: 0; color: var(--fg); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.cmp tbody th .qid:hover { color: var(--accent); }
+.cmp tbody tr.stale > td { opacity: 0.5; }
+.cmp tbody tr.linked > * { background: var(--selection); }
+.cmp td .dim { font-size: 11.5px; }
+.cmp .mini span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp .warn-text, .cmp-picks .warn-text { color: var(--orange); }
+.cmp-picks { display: grid; gap: 2px; margin-top: 4px; }
+.cmp-picks label { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 3px 2px; font-size: 12px; color: var(--fg); cursor: pointer; }
+.cmp-picks label.off { color: var(--fg-3); cursor: default; }
+.cmp-picks label small { color: var(--fg-3); font-size: 11px; }
+.cmp-picks input { margin: 0; accent-color: var(--accent); }
+.inspector .cmp-picks { margin: 6px 2px 0; }
 
 /* history */
 .hist-list { background: var(--group); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 14px; }
@@ -595,6 +614,12 @@ textarea.field { resize: vertical; line-height: 1.45; }
 .code { margin: 0; background: var(--group); border-radius: 10px; box-shadow: var(--shadow); padding: 12px 14px; font: 11.5px/1.6 var(--mono); white-space: pre; overflow: auto; max-height: 340px; }
 .snip-bar { display: flex; align-items: center; gap: 8px; }
 .snip-bar .btn { margin-left: auto; }
+.sheet.wide { width: min(820px, calc(100vw - 32px)); }
+.sheet .code { max-height: min(440px, calc(100vh - 330px)); }
+.snip-note { margin: 0 2px; line-height: 1.5; }
+.snip-note code { overflow-wrap: anywhere; }
+.sheet .warn-text { color: var(--orange); }
+.btn.tool:disabled { opacity: 0.45; }
 
 @media (max-width: 1280px) {
   .app { --sb-w: 224px; --insp-w: 370px; }
