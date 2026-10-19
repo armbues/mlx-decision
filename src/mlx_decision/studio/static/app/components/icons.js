@@ -65,6 +65,12 @@ export const Plus = () => html`
   </svg>
 `;
 
+export const Trash = () => html`
+  <svg viewBox="0 0 14 14" width="13" height="13" ...${stroke(1.2)} aria-hidden="true">
+    <path d="M2.5 3.8h9M5.6 3.8V2.6h2.8v1.2M3.6 3.8l.6 7.6c0 .5.4.9.9.9h3.8c.5 0 .9-.4.9-.9l.6-7.6M5.9 6v4.2M8.1 6v4.2" />
+  </svg>
+`;
+
 export const Play = () => html`
   <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M2.5 1.3v9.4L10.2 6z" /></svg>
 `;

@@ -52,15 +52,20 @@ function SetsList() {
       ${list && list.length === 0 && html`<p class="sb-empty">No sets yet</p>`}
       <ul class="sb-list">
         ${(list ?? []).map(
-          (item) => html`
-            <li key=${item.name}>
-              <a class="sb-item" href=${href("playground", item.name)}
-                 aria-current=${item.name === setName.value ? "true" : undefined}>
-                <${icons.File} /><span class="label">${item.name}</span>
-                ${editedNames.value.has(item.name) && html`<span class="edited" title="Edited, not saved"></span>`}
-              </a>
-            </li>
-          `,
+          (item) => {
+            const open = item.name === setName.value;
+            return html`
+              <li key=${item.name} class=${open ? "open" : ""}>
+                <a class="sb-item" href=${href("playground", item.name)} aria-current=${open ? "true" : undefined}>
+                  <${icons.File} /><span class="label">${item.name}</span>
+                  ${editedNames.value.has(item.name) && html`<span class="edited" title="Edited, not saved"></span>`}
+                </a>
+                ${open &&
+                html`<button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
+                  onClick=${files.deleteSet}><${icons.Trash} /></button>`}
+              </li>
+            `;
+          },
         )}
       </ul>
     </div>

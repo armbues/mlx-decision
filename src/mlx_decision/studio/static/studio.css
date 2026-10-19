@@ -190,6 +190,16 @@ button { cursor: default; }
 .sb-item .count { margin-left: auto; color: var(--fg-3); font-size: 11px; }
 .sb-item .file { width: 14px; height: 16px; color: var(--fg-2); }
 .sb-item .edited { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); margin-left: auto; flex: none; }
+/* The open set's delete button, over the row's right end on hover or focus. */
+.sb-list li { position: relative; }
+.sb-delete {
+  position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px;
+  display: grid; place-items: center; background: none; color: var(--fg-2); opacity: 0;
+}
+.sb-list li.open:hover .sb-delete, .sb-delete:focus-visible { opacity: 1; }
+.sb-delete:hover { background: color-mix(in srgb, var(--red) 13%, transparent); color: var(--red); }
+.sb-list li.open:hover .sb-item, .sb-list li.open:focus-within .sb-item { padding-right: 30px; }
+.sb-list li.open:hover .sb-item .edited, .sb-list li.open:focus-within .sb-item .edited { visibility: hidden; }
 .job {
   margin: 2px 2px 0; padding: 8px 10px; border-radius: 8px; background: var(--fill);
   display: grid; gap: 5px;
