@@ -6,6 +6,7 @@ import { route } from "../router.js";
 import { inspectorShown, narrow, sidebarShown } from "../store/ui.js";
 import { BusyBanner } from "./banner.js";
 import { Inspector } from "./inspector.js";
+import { Lightbox } from "./lightbox.js";
 import { Sheet } from "./sheet.js";
 import { Sidebar } from "./sidebar.js";
 import { Toasts } from "./toasts.js";
@@ -36,6 +37,7 @@ export function App() {
       <${Inspector} page=${page} />
     </div>
     <${Sheet} />
+    <${Lightbox} />
     <${Toasts} />
   `;
 }

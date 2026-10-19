@@ -1,0 +1,39 @@
+{
+  "title": "Fact check",
+  "description": "Does a passage support a claim? Entailment asked twice: as a yes/no question and as three options.",
+  "set": {
+    "questions": {
+      "supported": {
+        "type": "noul",
+        "instructions": "The passage supports the claim.",
+        "criteria": {
+          "true": "The passage states or clearly implies the claim",
+          "false": "The passage contradicts the claim or does not say"
+        }
+      },
+      "verdict": {
+        "type": "choice",
+        "instructions": "How does the passage relate to the claim?",
+        "criteria": {
+          "supported": "The passage states or clearly implies the claim",
+          "contradicted": "The passage says the opposite of the claim",
+          "not_mentioned": "The passage does not settle the claim either way"
+        }
+      }
+    },
+    "examples": [
+      {
+        "name": "Supported",
+        "state": "Passage: The Eiffel Tower was completed in March 1889 as the entrance arch to the World's Fair held in Paris that year. At 300 metres it was the tallest structure in the world until 1930.\n\nClaim: The Eiffel Tower was built for a world's fair."
+      },
+      {
+        "name": "Contradicted",
+        "state": "Passage: Most bees in a honeybee colony are female workers. The males, called drones, cannot sting and do not collect nectar or pollen.\n\nClaim: Drones gather most of the colony's nectar."
+      },
+      {
+        "name": "Not mentioned",
+        "state": "Passage: The library opens at 9 a.m. on weekdays and at 10 a.m. on Saturdays. It is closed on public holidays.\n\nClaim: The library is open on Sundays."
+      }
+    ]
+  }
+}

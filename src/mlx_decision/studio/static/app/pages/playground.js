@@ -7,26 +7,27 @@ import { MenuButton, MenuHeader, MenuItem, MenuNote, MenuSeparator } from "../co
 import { clock, duration, plural } from "../format.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
-import { Answers } from "../playground/answers.js";
+import { Answers, shownBatch } from "../playground/answers.js";
 import { Editor } from "../playground/editor.js";
 import * as files from "../playground/files.js";
 import { History } from "../playground/history.js";
 import {
   built,
-  canRun,
+  canRunMain,
   chooseModel,
   edited,
   editedNames,
   entry,
-  example,
+  fileProblems,
   justAnswered,
   lastRun,
   modelName,
   problems,
   run,
-  runAll,
+  runMain,
   running,
   setName,
+  several,
   stale,
   stop,
 } from "../playground/session.js";
@@ -108,6 +109,14 @@ function Target() {
 
 const questionCount = computed(() => (built.value ? Object.keys(built.value.body.questions).length : 0));
 
+// A problem in one of the examples (the selected one's show first, with the
+// live check's): "Refund ask: Give the example a name".
+function exampleProblem(problem) {
+  const where = problem.where?.example;
+  const named = where && entry.value?.draft?.examples.find((item) => item.uid === where);
+  return named ? html`<b>${named.name}</b>: ${problem.message}` : problem.message;
+}
+
 const status = computed(() => {
   if (models.value && models.value.length === 0)
     return { text: html`No models yet · <code>mlx-decision download</code>` };
@@ -115,15 +124,37 @@ const status = computed(() => {
   if (entry.value?.error) return { icon: "warn", text: entry.value.error };
   if (!built.value || !modelName.value) return null;
   const flight = running.value;
-  const several = (entry.value?.draft?.examples.length ?? 1) > 1;
+  const many = several.value;
   if (flight)
     return {
       icon: "spin",
       text: flight.all
         ? html`Run All on <b>${flight.model}</b>: <b>${flight.example}</b>, ${flight.all.done + 1} of ${flight.all.total}…${flight.loads ? " · loading it first" : ""}`
-        : html`Asking <b>${flight.model}</b> ${plural(questionCount.value, "question")}${several ? html` about <b>${flight.example}</b>` : ""}…${flight.loads ? " · loading it first" : ""}`,
+        : html`Asking <b>${flight.model}</b> ${plural(questionCount.value, "question")}${many ? html` about <b>${flight.example}</b>` : ""}…${flight.loads ? " · loading it first" : ""}`,
     };
   if (problems.value.length) return { icon: "warn", text: problems.value[0].message };
+  const loads = loadedNames.value.has(modelName.value) ? "" : " · loads it first";
+  if (many) {
+    if (fileProblems.value.length) return { icon: "warn", text: exampleProblem(fileProblems.value[0]) };
+    const batch = shownBatch.value;
+    if (batch?.done && batch.changed)
+      return { icon: "warn", text: html`Edited since the Run All at ${clock(batch.shown.time)} · Run All to update` };
+    if (batch?.done) {
+      const answered = batch.rows.filter((row) => row.run);
+      const total = answered.reduce((sum, row) => sum + (row.run.latency_ms ?? 0), 0);
+      const count = answered.length === batch.rows.length
+        ? plural(answered.length, "example")
+        : `${answered.length} of ${plural(batch.rows.length, "example")}`;
+      return {
+        icon: justAnswered.value ? "ok" : null,
+        text: html`<b>${modelName.value}</b> answered ${count} in ${duration(total)} · ${clock(batch.shown.time)}`,
+      };
+    }
+    const count = entry.value.draft.examples.length;
+    return {
+      text: html`Run All sends <b>${plural(questionCount.value, "question")}</b> about <b>${count} examples</b> to <b>${modelName.value}</b>${loads}`,
+    };
+  }
   const result = lastRun.value;
   const changed = stale.value;
   if (result && (changed.all || changed.ids.size))
@@ -139,22 +170,27 @@ const status = computed(() => {
       icon: justAnswered.value ? "ok" : null,
       text: html`<b>${result.model}</b> answered in ${duration(result.latency_ms)} · ${clock(result.time)}`,
     };
-  const loads = loadedNames.value.has(modelName.value) ? "" : " · loads it first";
-  const about = several ? html` about <b>${example.value.name}</b>` : "";
   return {
-    text: html`Run sends <b>${plural(questionCount.value, "question")}</b>${about} to <b>${modelName.value}</b>${loads}`,
+    text: html`Run sends <b>${plural(questionCount.value, "question")}</b> to <b>${modelName.value}</b>${loads}`,
   };
 });
 
+// With several examples the button is Run All (⌘↩); ⌥⌘↩ and the example's
+// chip menu ask the selected example only.
 const action = computed(() => {
+  const many = several.value;
   const changed = stale.value;
+  const batch = shownBatch.value;
   return {
-    label: "Run",
-    disabled: !canRun.value,
-    run,
+    label: many ? "Run All" : "Run",
+    title: many
+      ? `Run All: ask every example in turn (${SHORTCUTS.run}); ${SHORTCUTS.runExample} asks the selected one`
+      : undefined,
+    disabled: !canRunMain.value,
+    run: runMain,
     stop,
     running: !!running.value,
-    badge: !!lastRun.value && (changed.all || changed.ids.size > 0),
+    badge: many ? !!batch?.done && batch.changed : !!lastRun.value && (changed.all || changed.ids.size > 0),
   };
 });
 
@@ -197,8 +233,8 @@ function DiskBanner() {
 function Centre() {
   useEffect(() => {
     const off = [
-      onKey("run", () => run()),
-      onKey("runAll", () => runAll()),
+      onKey("run", () => runMain()),
+      onKey("runExample", () => run()),
       onKey("save", () => files.save()),
       onKey("saveAs", () => files.saveAs()),
       onKey("newSet", () => files.newSet()),

@@ -1,0 +1,44 @@
+{
+  "title": "Intent routing",
+  "description": "Route a banking chatbot message to one of twelve intents: a choice with many options.",
+  "set": {
+    "questions": {
+      "intent": {
+        "type": "choice",
+        "instructions": "What does the customer want?",
+        "criteria": {
+          "check_balance": "Asks for a balance or recent transactions",
+          "transfer_money": "Wants to send money to another account or person",
+          "card_lost": "Reports a lost or stolen card",
+          "card_declined": "A card payment was refused",
+          "dispute_charge": "Does not recognise a charge or disputes it",
+          "change_address": "Wants to update an address or contact details",
+          "open_account": "Wants to open a new account",
+          "close_account": "Wants to close an account",
+          "loan_inquiry": "Asks about loans, mortgages or credit limits",
+          "exchange_rate": "Asks about currency exchange or foreign fees",
+          "branch_hours": "Asks where a branch is or when it is open",
+          "talk_to_human": "Asks for a person instead of the bot"
+        }
+      }
+    },
+    "examples": [
+      {
+        "name": "Card refused",
+        "state": "my card got rejected at the supermarket just now, but there's money in the account??"
+      },
+      {
+        "name": "Abroad",
+        "state": "How much do you charge if I pay in yen while I'm in Tokyo next month?"
+      },
+      {
+        "name": "Moving",
+        "state": "I'm moving to Leeds next week, where do I put my new address?"
+      },
+      {
+        "name": "Wants a person",
+        "state": "stop sending me menus, I need to speak to someone real"
+      }
+    ]
+  }
+}

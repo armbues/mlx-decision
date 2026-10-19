@@ -1,15 +1,15 @@
-// Question sets as files in the workspace: New, Save, Save As, Rename,
-// Delete, Import, Export, Show in Finder. A save names the version it was loaded
+// Question sets as files in the workspace: New (empty or from a template),
+// Save, Save As, Rename, Delete, Import, Export, Show in Finder. A save names the version it was loaded
 // from, so a file changed on disk since is never overwritten: the Studio
 // says so and offers Reload or Save As.
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
-import { closeSheet, openSheet } from "../components/sheet.js";
+import { closeSheet, openSheet, sheet } from "../components/sheet.js";
 import { navigate } from "../router.js";
 import { reloadSets, sets } from "../store/sets.js";
 import { toast } from "../store/ui.js";
-import { toFile } from "./draft.js";
+import { TYPE_LABELS, toFile } from "./draft.js";
 import { plural } from "../format.js";
 import {
   drafts,
@@ -75,7 +75,8 @@ function NameField() {
   `;
 }
 
-function askName({ title, purpose, initial, action, onName }) {
+// `Extra` is shown under the name field (New's template list).
+function askName({ title, purpose, initial, action, onName, Extra = null }) {
   nameText.value = initial;
   nameError.value = null;
   const submit = async () => {
@@ -95,7 +96,7 @@ function askName({ title, purpose, initial, action, onName }) {
   openSheet({
     title,
     purpose,
-    Body: NameField,
+    Body: Extra ? () => html`<${NameField} /><${Extra} />` : NameField,
     note: "Sets live in the workspace's sets/ folder; mlx-decision run -q reads them.",
     actions: [{ label: action, primary: true, onSelect: submit }],
   });
@@ -210,15 +211,107 @@ export function saveAs() {
   });
 }
 
+// ---------- New, from a template ----------
+
+// The templates the Studio ships (fetched once), the one picked (null: an
+// empty set) and the name it suggested, which a pick replaces only while
+// nobody has typed over it.
+const templates = signal(null);
+const picked = signal(null);
+let suggested = "";
+
+function pick(name) {
+  picked.value = name;
+  if (nameText.value === suggested) {
+    suggested = freeName(name ?? "untitled");
+    nameText.value = suggested;
+    nameError.value = null;
+  }
+}
+
+// A double-click on a row creates the set, as the primary button does.
+function create() {
+  sheet.value?.actions?.find((action) => action.primary)?.onSelect();
+}
+
+function TemplateRow({ name, title, description, tags }) {
+  const on = picked.value === name;
+  return html`
+    <button type="button" role="radio" aria-checked=${on} tabindex=${on ? 0 : -1}
+      class=${`tpl${on ? " on" : ""}`} data-template=${name ?? ""}
+      onClick=${() => pick(name)} onDblClick=${() => (pick(name), create())}>
+      <span class="tpl-title">${title}</span>
+      <span class="tpl-tags">${tags.map((tag) => html`<span class="chip">${tag}</span>`)}</span>
+      <span class="tpl-desc">${description}</span>
+    </button>
+  `;
+}
+
+function TemplateList() {
+  const listed = templates.value;
+  const rows = [
+    { name: null, title: "Empty set", description: "A blank state and no questions yet.", tags: [] },
+    ...(listed ?? []).map((item) => ({
+      name: item.name,
+      title: item.title,
+      description: item.description,
+      tags: [
+        ...item.types.map((type) => TYPE_LABELS[type]),
+        ...(item.images ? ["Images"] : []),
+        `${item.examples} examples`,
+      ],
+    })),
+  ];
+  // Arrow keys move the pick, as in any radio group; Enter creates.
+  const onKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      create();
+      return;
+    }
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const group = event.currentTarget;
+    const at = rows.findIndex((row) => row.name === picked.value);
+    const next = rows[Math.min(rows.length - 1, Math.max(0, at + step))];
+    pick(next.name);
+    requestAnimationFrame(() => group.querySelector(`[data-template="${next.name ?? ""}"]`)?.focus());
+  };
+  return html`
+    <div class="tpl-list" role="radiogroup" aria-label="Start from" onKeyDown=${onKeyDown}>
+      <h3>Start from</h3>
+      ${rows.map((row) => html`<${TemplateRow} key=${row.name ?? ""} ...${row} />`)}
+      ${listed === null && html`<div class="dim tpl-desc">Loading templates…</div>`}
+    </div>
+  `;
+}
+
 export function newSet() {
+  picked.value = null;
+  suggested = freeName("untitled");
+  if (templates.value === null)
+    api("/templates")
+      .then((data) => (templates.value = data.templates))
+      .catch(() => (templates.value = []));
   askName({
     title: "New Question Set",
-    purpose: "Start an empty set: a state and the questions to ask about it.",
-    initial: freeName("untitled"),
+    purpose: "Start with an empty set, or from a template that shows what decision models can do.",
+    initial: suggested,
     action: "Create",
+    Extra: TemplateList,
     onName: async (name) => {
-      const sha256 = await write(name, EMPTY_SET, null);
-      adopt(name, EMPTY_SET, sha256);
+      const template = picked.value;
+      if (template) {
+        const made = await api(`/sets/${encodeURIComponent(name)}/from-template`, {
+          method: "POST",
+          body: { template },
+        });
+        adopt(name, made.body, made.sha256);
+      } else {
+        const sha256 = await write(name, EMPTY_SET, null);
+        adopt(name, EMPTY_SET, sha256);
+      }
       navigate("playground", name);
     },
   });

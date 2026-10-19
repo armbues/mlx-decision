@@ -1,0 +1,54 @@
+{
+  "title": "Screenshot check",
+  "description": "Questions about a screenshot sent with a support ticket, for the models that take images.",
+  "set": {
+    "questions": {
+      "shows_error": {
+        "type": "noul",
+        "instructions": "The screenshot shows an error message."
+      },
+      "screen": {
+        "type": "choice",
+        "instructions": "Which screen of the app is shown?",
+        "criteria": {
+          "sign_in": "The sign-in page",
+          "checkout": "Checkout or payment",
+          "dashboard": "The dashboard or home page",
+          "settings": "Settings or the account profile"
+        }
+      },
+      "severity": {
+        "type": "score",
+        "instructions": "How badly is the user stuck, judging by the screenshot?",
+        "criteria": [
+          "No problem visible",
+          "A minor problem with a clear way around it",
+          "The user cannot finish what they are doing"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "name": "Card declined",
+        "state": "The customer attached this screenshot: \"it won't let me pay\".",
+        "images": [
+          "checkout-declined.png"
+        ]
+      },
+      {
+        "name": "Dashboard",
+        "state": "The customer attached this screenshot: \"is this what it should look like?\"",
+        "images": [
+          "dashboard.png"
+        ]
+      },
+      {
+        "name": "Sign-in failed",
+        "state": "The customer attached this screenshot: \"I'm sure my password is right\".",
+        "images": [
+          "sign-in-failed.png"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "title": "Support triage",
+  "description": "Route a support message to a team, rate the frustration and flag urgency: one question of each type.",
+  "set": {
+    "questions": {
+      "department": {
+        "type": "choice",
+        "instructions": "Which team should handle this message?",
+        "criteria": {
+          "billing": "Charges, invoices, refunds and payment methods",
+          "technical": "Bugs, errors, outages and how the product works",
+          "account": "Sign-in, passwords, users and permissions",
+          "sales": "Pricing, plans, upgrades and buying more"
+        }
+      },
+      "frustration": {
+        "type": "score",
+        "instructions": "How frustrated is the customer?",
+        "criteria": [
+          "Calm or friendly",
+          "Mildly annoyed",
+          "Clearly frustrated",
+          "Angry or about to leave"
+        ]
+      },
+      "is_urgent": {
+        "type": "noul",
+        "instructions": "The message needs an answer today: something is broken, blocked or about to cost money."
+      }
+    },
+    "examples": [
+      {
+        "name": "Double charge",
+        "state": "Hi, I was charged twice for my March invoice (INV-2291). Could you refund one of the payments? Thanks!"
+      },
+      {
+        "name": "Outage",
+        "state": "Our whole team has been locked out since this morning and the dashboard only shows error 502. We have a client demo in two hours. This is the third time this month."
+      },
+      {
+        "name": "Upgrade question",
+        "state": "We're a team of 12 thinking of moving from Starter to Business. Is single sign-on included, and is there a discount for paying yearly?"
+      },
+      {
+        "name": "Lost access",
+        "state": "I changed phones and my authenticator codes no longer work, so I can't sign in. How do I reset two-factor?"
+      }
+    ]
+  }
+}

@@ -272,6 +272,7 @@ function answered() {
 
 export async function run() {
   if (!canRun.value) return;
+  answersView.value = "one";
   const set = setName.value;
   const name = modelName.value;
   const exampleName = example.value.name;
@@ -303,6 +304,14 @@ export async function run() {
 // Run All: each example in turn on the model, as one batch. The Studio
 // records each run with the batch's id; a refused example shows in its row
 // and the batch goes on; Stop ends it after the request in flight.
+// With several examples Run All is the main action (⌘↩, the toolbar's
+// button); Run asks the selected example only (⌥⌘↩, its chip's menu).
+export const several = computed(() => (draft.value?.examples.length ?? 1) > 1);
+
+// The Answers tab with several examples: "all" (the Run All grid) or "one"
+// (the selected example's cards); each run shows its own.
+export const answersView = signal("all");
+
 export const canRunAll = computed(
   () =>
     !running.value &&
@@ -315,8 +324,15 @@ export const canRunAll = computed(
 
 const newBatchId = () => Math.random().toString(36).slice(2, 10);
 
+export const canRunMain = computed(() => (several.value ? canRunAll.value : canRun.value));
+
+export function runMain() {
+  return several.value ? runAll() : run();
+}
+
 export async function runAll() {
   if (!canRunAll.value) return;
+  answersView.value = "all";
   const set = setName.value;
   const name = modelName.value;
   const current = draft.value;

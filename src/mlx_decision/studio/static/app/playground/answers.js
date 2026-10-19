@@ -1,7 +1,7 @@
 // The inspector's Answers: the last run of this set's selected example on the
 // model, one card per question, stale where the question changed since; with
 // several examples, also the last Run All as a grid (D161).
-import { signal } from "@preact/signals";
+import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { ChoiceBars, NoulBar, ScoreColumns, two } from "../charts/answers.js";
 import * as icons from "../components/icons.js";
@@ -15,6 +15,7 @@ import { Grid } from "./grid.js";
 import { batchFromHistory, cardContext, openRun, showExample } from "./history.js";
 import {
   built,
+  answersView as view,
   canRun,
   canRunAll,
   draft,
@@ -26,6 +27,7 @@ import {
   run,
   runAll,
   running,
+  several,
   stale,
 } from "./session.js";
 
@@ -106,14 +108,37 @@ function StaleBanner() {
     <div class="stale-banner">
       <${icons.StatusIcon} kind="warn" />
       <span class="msg">These answers are from ${clock(run.time)}. ${what}.</span>
-      <button class="btn primary" disabled=${!canRun.value} onClick=${run_}>Run</button>
+      <button class="btn primary" disabled=${!canRun.value} onClick=${run_}>${several.value ? "Run This Example" : "Run"}</button>
     </div>
   `;
 }
 const run_ = () => run();
 
-// "one" (the selected example) or "all" (the last Run All), when there are several.
-const view = signal("one");
+// The Run All shown for the model: this tab's latest, else the history's;
+// with each example's row and what changed since (questions edited,
+// examples edited or not in it). Null without one.
+export const shownBatch = computed(() => {
+  const current = draft.value;
+  const name = modelName.value;
+  if (!current || !name || current.examples.length < 2) return null;
+  const shown = lastBatch.value ?? batchFromHistory(name);
+  if (!shown) return null;
+  const flight = running.value;
+  const rows = shown.examples.map((exampleName) => {
+    const result = shown.results[exampleName];
+    const target = current.examples.find((item) => item.name === exampleName);
+    if (!result) return { name: exampleName, pending: !!flight?.all };
+    if (result.error) return { name: exampleName, error: result.error };
+    const changed = target ? changedSince(toBody(current, target.uid).body, result.request) : { all: true, ids: new Set() };
+    return { name: exampleName, run: result, stale: !target || changed.all || changed.ids.size > 0 };
+  });
+  const asked = rows.find((row) => row.run)?.run.request.questions;
+  const questionsChanged = !!built.value && !!asked && JSON.stringify(asked) !== JSON.stringify(built.value.body.questions);
+  const missing = current.examples.filter((item) => !shown.examples.includes(item.name)).map((item) => item.name);
+  const done = rows.every((row) => row.run || row.error);
+  const changed = questionsChanged || missing.length > 0 || rows.some((row) => row.stale);
+  return { shown, rows, questionsChanged, missing, done, changed };
+});
 
 function ViewSwitch() {
   return html`
@@ -127,28 +152,23 @@ function ViewSwitch() {
 function AllExamples() {
   const current = draft.value;
   const name = modelName.value;
-  const flight = running.value;
-  const shown = lastBatch.value ?? batchFromHistory(name);
-  if (!shown)
+  const batch = shownBatch.value;
+  if (!batch) {
+    const flight = running.value;
+    if (flight?.all)
+      return html`<div class="empty"><b>Asking ${flight.model} about ${flight.example}…</b>${
+        flight.loads ? html`<span>It loads first; that can take a while the first time.</span>` : null
+      }</div>`;
     return html`
       <div class="empty">
         <b>No Run All on ${name} yet</b>
-        <span>Run All (${SHORTCUTS.runAll}) asks each example in turn and shows the answers here, an example a row.</span>
+        <span>Run All (${SHORTCUTS.run}) asks each example in turn and shows the answers here, an example a row.</span>
         <div class="empty-actions"><button class="btn primary" disabled=${!canRunAll.value} onClick=${() => runAll()}>Run All</button></div>
       </div>
     `;
+  }
+  const { shown, rows, questionsChanged, missing } = batch;
   const questions = current.questions.map((question) => question.id);
-  const rows = shown.examples.map((exampleName) => {
-    const result = shown.results[exampleName];
-    const target = current.examples.find((item) => item.name === exampleName);
-    if (!result) return { name: exampleName, pending: !!flight?.all };
-    if (result.error) return { name: exampleName, error: result.error };
-    const changed = target ? changedSince(toBody(current, target.uid).body, result.request) : { all: true, ids: new Set() };
-    return { name: exampleName, run: result, stale: !target || changed.all || changed.ids.size > 0 };
-  });
-  const asked = rows.find((row) => row.run)?.run.request.questions;
-  const questionsChanged = !!built.value && !!asked && JSON.stringify(asked) !== JSON.stringify(built.value.body.questions);
-  const missing = current.examples.filter((item) => !shown.examples.includes(item.name)).map((item) => item.name);
   return html`
     <div class="run-head">
       <h3>${shown.number ? `Run All #${shown.number}` : "Run All"}<small class="num">${clock(shown.time)} · ${name}</small></h3>
@@ -196,9 +216,11 @@ function OneExample() {
     return html`
       <div class="empty">
         <b>No answers from ${name}${exampleName ? ` for ${exampleName}` : ""} yet</b>
-        <span>Run (⌘↩) answers this set's questions here, one card per question.${
-          loads ? " It loads the model first." : ""
-        }</span>
+        <span>${
+          several.value
+            ? `Run This Example (${SHORTCUTS.runExample}) answers its questions here, one card per question; Run All (${SHORTCUTS.run}) asks every example.`
+            : `Run (${SHORTCUTS.run}) answers this set's questions here, one card per question.`
+        }${loads ? " It loads the model first." : ""}</span>
       </div>
     `;
   }

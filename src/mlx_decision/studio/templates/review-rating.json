@@ -1,0 +1,41 @@
+{
+  "title": "Review rating",
+  "description": "Rate a review from 1 to 5 stars and check what it mentions: an ordered score and two yes/no questions.",
+  "set": {
+    "questions": {
+      "stars": {
+        "type": "score",
+        "instructions": "How many stars does the review's text imply?",
+        "criteria": [
+          "1 star: terrible, would not recommend",
+          "2 stars: poor, more bad than good",
+          "3 stars: mixed or average",
+          "4 stars: good, with minor complaints",
+          "5 stars: excellent, would recommend"
+        ]
+      },
+      "mentions_price": {
+        "type": "noul",
+        "instructions": "The review comments on the price or on value for money."
+      },
+      "mentions_service": {
+        "type": "noul",
+        "instructions": "The review comments on staff, delivery or customer service."
+      }
+    },
+    "examples": [
+      {
+        "name": "Glowing",
+        "state": "Best ramen in the neighbourhood. The broth is rich, the portions are generous and the staff remembered us from last time. A bit pricey, but worth every cent."
+      },
+      {
+        "name": "Mixed",
+        "state": "The headphones sound great and the battery lasts all week, but the ear cushions started peeling after two months. Okay for the price."
+      },
+      {
+        "name": "Bad",
+        "state": "Arrived three days late with the box crushed and one chair leg missing. Support took a week to reply and then asked me for photos twice. Never again."
+      }
+    ]
+  }
+}

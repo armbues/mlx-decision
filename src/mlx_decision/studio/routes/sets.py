@@ -3,8 +3,10 @@
 A set is saved with the hash it was loaded with (``loaded``), so a set
 changed on disk since is not overwritten (409 with the hash now on disk).
 Import takes a file's text as the browser read it (a ``-q`` questions map
-or a whole request body) and saves it under a free name. Nothing here
-takes a path: only names inside the workspace.
+or a whole request body) and saves it under a free name. Templates are
+the sets that ship with the Studio; one is copied into the workspace under
+the name the page gives. Nothing here takes a path: only names inside the
+workspace.
 """
 
 import asyncio
@@ -18,6 +20,7 @@ from fastapi.responses import FileResponse
 from ...errors import DecisionError
 from ...types import decode_json
 from ..security import is_loopback
+from ..templates import UnknownTemplate, list_templates, template_set
 from ..workspace import Conflict, NotFound, Workspace, check_name
 from . import ApiError, field, json_body
 
@@ -93,6 +96,22 @@ def sets_router(files: Workspace, max_body_bytes: int) -> APIRouter:
 
         saved, digest = await run(save)
         return {"name": saved, "sha256": digest, "body": body}
+
+    @router.get("/templates")
+    async def templates():
+        return {"templates": list_templates()}
+
+    @router.post("/sets/{name}/from-template")
+    async def from_template(name: str, request: Request):
+        """``{template}``: a new set ``name`` (which must be free) holding the
+        template's questions and examples."""
+        template = field(await json_body(request, max_body_bytes), "template", str)
+        try:
+            body = template_set(template)
+        except UnknownTemplate:
+            raise NotFound(f"no template named {template!r}") from None
+        digest = await run(files.save_set, name, body, None)
+        return {"name": name, "sha256": digest, "body": body}
 
     @router.get("/sets/{name}/export")
     async def export_set(name: str):

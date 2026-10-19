@@ -4,6 +4,7 @@ import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useRef, useState } from "preact/hooks";
 import * as icons from "../components/icons.js";
+import { openPreview } from "../components/lightbox.js";
 import { MenuButton, MenuHeader, MenuItem, MenuSeparator } from "../components/menu.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
@@ -12,7 +13,7 @@ import { toast } from "../store/ui.js";
 import * as edit from "./draft.js";
 import {
   built,
-  canRunAll,
+  canRun,
   draft,
   example,
   fileProblems,
@@ -22,8 +23,7 @@ import {
   modelName,
   problems,
   renameExampleRuns,
-  runAll,
-  running,
+  run,
   setName,
   stale,
   updateDraft,
@@ -106,7 +106,8 @@ function Images() {
         (url, index) => html`
           <figure class="thumb" key=${index}>
             ${typeof url === "string" && url.startsWith("data:image/")
-              ? html`<img src=${url} alt=${`Image ${index + 1}`} />`
+              ? html`<button class="thumb-open" title="Show larger" aria-label=${`Show image ${index + 1} larger`}
+                  onClick=${() => openPreview(current.images, index)}><img src=${url} alt=${`Image ${index + 1}`} /></button>`
               : html`<span class="mono">not a data URL</span>`}
             <figcaption class="num">[image ${index + 1}]</figcaption>
             <${Minus} label=${`Remove image ${index + 1}`} onClick=${() => remove(index)} />
@@ -210,6 +211,8 @@ function ExampleMenu({ item, index, count }) {
     <${MenuButton} id=${`example-${item.uid}`} className="ex-more" ariaLabel=${`Actions for ${item.name}`}
       label=${html`<svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11"><path d="M3 4.5 6 7.5 9 4.5z" /></svg>`}
       menuStyle="top:26px; left:0; width:220px">
+      <${MenuItem} right=${SHORTCUTS.runExample} disabled=${!canRun.value} onSelect=${() => run()}>Run This Example<//>
+      <${MenuSeparator} />
       <${MenuItem} onSelect=${() => renameExample(item)}>Rename…<//>
       <${MenuItem} onSelect=${change(edit.duplicateExample)}>Duplicate<//>
       <${MenuSeparator} />
@@ -226,7 +229,6 @@ function Examples() {
   const current = draft.value;
   const selected = example.value;
   const marked = new Set(fileProblems.value.map((problem) => problem.where.example).filter(Boolean));
-  const flight = running.value;
   return html`
     <div class="examples" role="tablist" aria-label="Examples">
       ${current.examples.map(
@@ -245,12 +247,6 @@ function Examples() {
       )}
       <button class="ex-add" aria-label="Add an example" title="Add an example"
               onClick=${() => updateDraft((value) => edit.addExample(value))}><${icons.Plus} /></button>
-      ${current.examples.length > 1 &&
-      html`<button class="btn ex-runall" disabled=${!canRunAll.value}
-                   title=${`Ask every example in turn (${SHORTCUTS.runAll})`} onClick=${() => runAll()}>
-        ${flight?.all ? `Running ${flight.all.done + 1} of ${flight.all.total}…` : "Run All"}
-        <kbd>${SHORTCUTS.runAll}</kbd>
-      </button>`}
     </div>
   `;
 }

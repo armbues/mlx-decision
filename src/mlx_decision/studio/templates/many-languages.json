@@ -1,0 +1,49 @@
+{
+  "title": "Many languages",
+  "description": "The same English questions on messages in German, Spanish, French and Japanese, for the multilingual models.",
+  "set": {
+    "questions": {
+      "sentiment": {
+        "type": "choice",
+        "instructions": "What is the writer's overall sentiment?",
+        "criteria": {
+          "positive": "Happy, thankful or full of praise",
+          "neutral": "Factual, neither happy nor unhappy",
+          "negative": "Unhappy, annoyed or complaining"
+        }
+      },
+      "topic": {
+        "type": "choice",
+        "instructions": "What is the message about?",
+        "criteria": {
+          "delivery": "Shipping, delays or damaged parcels",
+          "product": "How the product works, its quality or its size",
+          "billing": "Invoices, charges and payments",
+          "other": "Anything else"
+        }
+      },
+      "wants_refund": {
+        "type": "noul",
+        "instructions": "The writer asks for their money back."
+      }
+    },
+    "examples": [
+      {
+        "name": "German",
+        "state": "Das Paket kam zwei Wochen zu spät und der Inhalt war beschädigt. Ich möchte mein Geld zurück."
+      },
+      {
+        "name": "Spanish",
+        "state": "¡Me encanta la nueva versión de la aplicación! Ahora es mucho más rápida y fácil de usar."
+      },
+      {
+        "name": "French",
+        "state": "Bonjour, ma facture de ce mois-ci affiche un montant deux fois plus élevé que d'habitude. Pouvez-vous vérifier ?"
+      },
+      {
+        "name": "Japanese",
+        "state": "注文した靴のサイズが合わなかったので、別のサイズに交換できますか？"
+      }
+    ]
+  }
+}

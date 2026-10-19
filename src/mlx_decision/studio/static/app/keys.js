@@ -1,11 +1,12 @@
 // Keyboard shortcuts. Pages register what an action does while they are shown;
 // a key whose action nobody handles is left to the browser.
+import { closePreview, preview } from "./components/lightbox.js";
 import { closeSheet, sheet } from "./components/sheet.js";
 import { inspectorShown, narrow, openMenu, toggleInspector } from "./store/ui.js";
 
 export const SHORTCUTS = {
   run: "⌘↩",
-  runAll: "⌥⌘↩",
+  runExample: "⌥⌘↩", // with several examples; ⌘↩ is then Run All
   download: "⌘D",
   newSet: "⌥⌘N", // ⌘N belongs to Chrome
   import: "⌘O",
@@ -25,7 +26,7 @@ export function actionFor(event) {
   if (event.key === "Escape") return "escape";
   if (!event.metaKey || event.ctrlKey) return null;
   const { shiftKey: shift, altKey: alt } = event;
-  if (event.key === "Enter" && !shift) return alt ? "runAll" : "run";
+  if (event.key === "Enter" && !shift) return alt ? "runExample" : "run";
   if (event.code === "KeyD" && !shift && !alt) return "download";
   if (event.code === "KeyN" && alt && !shift) return "newSet";
   if (event.code === "KeyO" && !shift && !alt) return "import";
@@ -40,10 +41,11 @@ export function trigger(action, event = null) {
   return handler(event) !== false;
 }
 
-// Esc closes the open menu, else the sheet, else the inspector opened over a
-// narrow window.
+// Esc closes the image preview, else the open menu, else the sheet, else the
+// inspector opened over a narrow window.
 onKey("escape", () => {
-  if (openMenu.value !== null) openMenu.value = null;
+  if (preview.value !== null) closePreview();
+  else if (openMenu.value !== null) openMenu.value = null;
   else if (sheet.value !== null) closeSheet();
   else if (narrow.value && inspectorShown.value) toggleInspector();
   else return false;
@@ -51,6 +53,6 @@ onKey("escape", () => {
 
 addEventListener("keydown", (event) => {
   const action = actionFor(event);
-  if (action && action !== "escape" && sheet.value !== null) return;
+  if (action && action !== "escape" && (sheet.value !== null || preview.value !== null)) return;
   if (action && trigger(action, event)) event.preventDefault();
 });

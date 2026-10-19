@@ -1,0 +1,110 @@
+{
+  "title": "Conversation",
+  "description": "Judge a whole support chat given as JSON: the state can be any JSON value, here a list of messages.",
+  "set": {
+    "questions": {
+      "resolved": {
+        "type": "noul",
+        "instructions": "By the end of the chat, the customer's problem is solved."
+      },
+      "satisfaction": {
+        "type": "score",
+        "instructions": "How satisfied is the customer at the end of the chat?",
+        "criteria": [
+          "Very dissatisfied",
+          "Dissatisfied",
+          "Neutral",
+          "Satisfied",
+          "Very satisfied"
+        ]
+      },
+      "agent_tone": {
+        "type": "choice",
+        "instructions": "How did the agent come across?",
+        "criteria": {
+          "helpful": "Friendly, and moved the problem forward",
+          "scripted": "Polite but generic, without engaging with the details",
+          "dismissive": "Impatient, curt or blaming the customer"
+        }
+      }
+    },
+    "examples": [
+      {
+        "name": "Solved",
+        "state": {
+          "channel": "chat",
+          "messages": [
+            {
+              "from": "customer",
+              "text": "Hi, my order #58213 was due on Monday and it still hasn't arrived."
+            },
+            {
+              "from": "agent",
+              "text": "Sorry about that! I can see the parcel was stuck at the depot. I've sent a replacement by express today, it will be with you tomorrow."
+            },
+            {
+              "from": "customer",
+              "text": "Oh great, that's quick. Thank you so much!"
+            },
+            {
+              "from": "agent",
+              "text": "You're welcome. Have a lovely day!"
+            }
+          ]
+        }
+      },
+      {
+        "name": "Escalated",
+        "state": {
+          "channel": "chat",
+          "messages": [
+            {
+              "from": "customer",
+              "text": "I cancelled my subscription in May and you've charged me again in June and July."
+            },
+            {
+              "from": "agent",
+              "text": "Thank you for contacting us. I understand your concern about billing."
+            },
+            {
+              "from": "customer",
+              "text": "Can you refund the two charges?"
+            },
+            {
+              "from": "agent",
+              "text": "I have escalated your case to our billing team. They will get back to you within 5 to 7 business days."
+            },
+            {
+              "from": "customer",
+              "text": "So I just wait another week. Fine."
+            }
+          ]
+        }
+      },
+      {
+        "name": "Dismissive",
+        "state": {
+          "channel": "chat",
+          "messages": [
+            {
+              "from": "customer",
+              "text": "The app crashes every time I open the camera to scan a receipt."
+            },
+            {
+              "from": "agent",
+              "text": "Did you read the FAQ?"
+            },
+            {
+              "from": "customer",
+              "text": "Yes, I reinstalled it like it says. Still crashes."
+            },
+            {
+              "from": "agent",
+              "text": "Then it's probably your phone. Nothing we can do."
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

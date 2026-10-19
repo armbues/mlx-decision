@@ -13,7 +13,7 @@ import mlx_decision
 from fake_backend import write_fitted, write_model
 from mlx_decision.cli import app as cli_app
 from mlx_decision.pool import ModelPool, discover
-from mlx_decision.studio import create_studio
+from mlx_decision.studio import create_studio, templates
 from mlx_decision.studio.routes import sets as sets_routes
 
 HERE = "http://127.0.0.1:8000"
@@ -216,6 +216,68 @@ def test_export(studio):
     assert 'filename="tickets.json"' in response.headers["content-disposition"]
     assert json.loads(response.content) == BODY
     assert studio.get("/studio/api/sets/missing/export").status_code == 404
+
+
+# Templates: the sets that ship with the Studio
+
+
+def test_the_templates_are_listed_in_order(studio):
+    listed = studio.get("/studio/api/templates").json()["templates"]
+    assert [entry["name"] for entry in listed] == list(templates.ORDER)
+    for entry in listed:
+        assert entry["title"] and entry["description"]
+        assert entry["questions"] >= 1 and entry["examples"] >= 3
+    types = {entry["name"]: entry["types"] for entry in listed}
+    assert types["support-triage"] == ["choice", "score", "noul"]
+    assert types["screenshot-check"] == ["choice", "score", "noul"]  # not the set's order
+    assert [entry["name"] for entry in listed if entry["images"]] == ["screenshot-check"]
+
+
+def test_a_set_from_a_template(studio):
+    made = studio.post("/studio/api/sets/triage/from-template", json={"template": "support-triage"})
+    assert made.status_code == 200, made.text
+    body = made.json()["body"]
+    loaded = studio.get("/studio/api/sets/triage").json()
+    assert loaded["body"] == body and loaded["sha256"] == made.json()["sha256"]
+    assert list(body) == ["state", "questions", "examples"]  # as the Studio saves a set
+    assert body["state"] == body["examples"][0]["state"]
+    again = studio.post("/studio/api/sets/triage/from-template", json={"template": "fact-check"})
+    assert again.status_code == 409
+    assert studio.get("/studio/api/sets/triage").json()["body"] == body
+    missing = studio.post("/studio/api/sets/x/from-template", json={"template": "nope"})
+    assert missing.status_code == 404
+    assert studio.post("/studio/api/sets/x/from-template", json={}).status_code == 400
+    bad = studio.post("/studio/api/sets/..x/from-template", json={"template": "fact-check"})
+    assert bad.status_code == 400
+
+
+def test_a_template_with_images_carries_them_as_data_urls(studio):
+    made = studio.post(
+        "/studio/api/sets/shots/from-template", json={"template": "screenshot-check"}
+    ).json()["body"]
+    assert made["images"] == made["examples"][0]["images"]
+    for example in made["examples"]:
+        [image] = example["images"]
+        assert image.startswith("data:image/png;base64,iVBORw0KGgo")
+
+
+@pytest.mark.parametrize("name", templates.ORDER)
+def test_every_example_of_a_template_passes_the_check(studio, name):
+    body = templates.template_set(name)
+    for example in body["examples"]:
+        request = {"state": example["state"], "questions": body["questions"]}
+        if "images" in example:
+            request["images"] = example["images"]
+        checked = studio.post("/studio/api/check", json={"request": request, "model": "seeing"})
+        assert checked.json()["errors"] == [], (name, example["name"])
+
+
+def test_template_set_gives_a_fresh_copy():
+    first = templates.template_set("fact-check")
+    first["questions"].clear()
+    assert templates.template_set("fact-check")["questions"]
+    with pytest.raises(templates.UnknownTemplate):
+        templates.template_set("../support-triage")
 
 
 def test_reveal(studio, monkeypatch):

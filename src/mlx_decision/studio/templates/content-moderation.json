@@ -1,0 +1,50 @@
+{
+  "title": "Content moderation",
+  "description": "Check a post against several policies at once: one yes/no question per policy, each saying what counts as yes and no.",
+  "set": {
+    "questions": {
+      "spam": {
+        "type": "noul",
+        "instructions": "The post is spam.",
+        "criteria": {
+          "true": "Unsolicited advertising, scams, link farming or repeated promotion",
+          "false": "A genuine post, even one that mentions a product"
+        }
+      },
+      "harassment": {
+        "type": "noul",
+        "instructions": "The post harasses or insults a person.",
+        "criteria": {
+          "true": "Insults, threats or slurs aimed at someone",
+          "false": "Disagreement or criticism of ideas without attacking a person"
+        }
+      },
+      "personal_data": {
+        "type": "noul",
+        "instructions": "The post shares someone's personal data.",
+        "criteria": {
+          "true": "A person's phone number, home address, email, ID or card number",
+          "false": "No personal contact or identity details"
+        }
+      }
+    },
+    "examples": [
+      {
+        "name": "Crypto offer",
+        "state": "🚀 Turn $100 into $5,000 in one week! DM me or join our signal group, only 20 spots left!!! 🚀"
+      },
+      {
+        "name": "Insult",
+        "state": "This is the dumbest take I've read all week. People like you shouldn't be allowed near a keyboard."
+      },
+      {
+        "name": "Address posted",
+        "state": "Found the guy who dented my car: Mark Jensen, 42 Elm Street, his number is 555-0147. Go tell him what you think."
+      },
+      {
+        "name": "Fair criticism",
+        "state": "I disagree with the article: the study it cites had only 40 participants, so the conclusion seems premature."
+      }
+    ]
+  }
+}
