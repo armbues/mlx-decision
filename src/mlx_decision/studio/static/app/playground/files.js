@@ -1,5 +1,5 @@
-// Question sets as files in the workspace: New, Save, Save As, Duplicate,
-// Rename, Delete, Import, Export, Show in Finder. A save names the version it was loaded
+// Question sets as files in the workspace: New, Save, Save As, Rename,
+// Delete, Import, Export, Show in Finder. A save names the version it was loaded
 // from, so a file changed on disk since is never overwritten: the Studio
 // says so and offers Reload or Save As.
 import { signal } from "@preact/signals";
@@ -222,23 +222,6 @@ export function newSet() {
       navigate("playground", name);
     },
   });
-}
-
-// A copy of the open set, edits included, under a free name; the original
-// keeps its edits.
-export async function duplicate() {
-  const from = setName.value;
-  const body = bodyToSave(from);
-  if (!body) return;
-  const name = freeName(`${from}-copy`);
-  try {
-    const sha256 = await write(name, body, null);
-    adopt(name, body, sha256);
-    navigate("playground", name);
-    toast(`Duplicated as ${fileOf(name)}`);
-  } catch (error) {
-    toast(`Not duplicated: ${error.message}`);
-  }
 }
 
 // Rename the open set; its history and this tab's edits and answers go with it.

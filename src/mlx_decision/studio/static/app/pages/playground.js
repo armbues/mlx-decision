@@ -164,7 +164,6 @@ function MoreMenu() {
       label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
       menuStyle="top:32px; right:0; width:260px">
       <${MenuItem} right=${SHORTCUTS.saveAs} onSelect=${files.saveAs}>Save As…<//>
-      <${MenuItem} onSelect=${files.duplicate}>Duplicate<//>
       <${MenuItem} onSelect=${files.renameSet}>Rename…<//>
       <${MenuItem} right=${SHORTCUTS.newSet} onSelect=${files.newSet}>New Question Set…<//>
       <${MenuItem} right=${SHORTCUTS.import} sub="A -q questions file or a whole request body" onSelect=${files.importSet}>Import Questions…<//>
