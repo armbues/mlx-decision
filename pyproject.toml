@@ -85,9 +85,11 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Slow tests run only when asked for: pytest -m slow (make test-slow).
-addopts = "-m 'not slow'"
+# Slow and browser tests run only when asked for: pytest -m slow (make
+# test-slow), pytest -m browser (make test-browser).
+addopts = "-m 'not slow and not browser'"
 markers = [
     "weights: needs the model weights (skipped when they are absent)",
     "slow: takes minutes; deselected unless asked for with -m slow",
+    "browser: drives the Studio in Chrome (Playwright); deselected unless asked for with -m browser",
 ]

@@ -1,4 +1,4 @@
-.PHONY: setup test test-slow lint build publish-test publish clean
+.PHONY: setup test test-slow test-browser lint build publish-test publish clean
 
 VERSION := $(shell sed -n 's/^__version__ = "\(.*\)"/\1/p' src/mlx_decision/__init__.py)
 
@@ -10,6 +10,9 @@ test:
 
 test-slow:
 	pytest -m slow
+
+test-browser:
+	pytest -m browser
 
 lint:
 	ruff check src tests scripts

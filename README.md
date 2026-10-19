@@ -1042,6 +1042,7 @@ mlx-decision benchmark -m ~/Models --out results/
 make setup   # editable install with dev tools
 make test       # unit tests; parity tests run when the weights are found
 make test-slow  # Clef 27B 8-bit, d3-flash, H2O-Lightning and d1-3B against their references (about 21 min)
+make test-browser  # the Studio in Chrome (Playwright drives the installed Chrome; skipped without it)
 make lint
 ```
 
