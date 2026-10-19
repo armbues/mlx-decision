@@ -1,5 +1,6 @@
 """The HTTP server, through the fake backend."""
 
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -303,6 +304,64 @@ def test_deeply_nested_json_is_a_400(client):
     response = client.post("/v1/systemone", content=b"[" * 100_000 + b"]" * 100_000)
     assert response.status_code == 400
     assert "nested too deeply" in response.json()["error"]["message"]
+
+
+# Compressed bodies: the Jev SDK sends bodies of 1 KB or more zstd-compressed
+# on Python 3.14 or with its zstd extra.
+
+
+def zstd_post(client, data: bytes, encoding: str = "zstd"):
+    headers = {"Content-Type": "application/json", "Content-Encoding": encoding}
+    return client.post("/v1/systemone", content=data, headers=headers)
+
+
+def test_a_zstd_body_answers_as_the_plain_one(client):
+    from mlx_decision.server import zstd
+
+    data = json.dumps({**BODY, "state": "words " * 400}).encode()
+    plain = client.post("/v1/systemone", content=data, headers={"Content-Type": "application/json"})
+    compressed = zstd_post(client, zstd.compress(data))
+    assert compressed.status_code == 200 and compressed.json() == plain.json()
+    # Several frames are one body; "identity" is no encoding.
+    middle = len(data) // 2
+    framed = zstd.compress(data[:middle]) + zstd.compress(data[middle:])
+    assert zstd_post(client, framed).json() == plain.json()
+    assert zstd_post(client, data, "identity").json() == plain.json()
+
+
+def test_a_zstd_body_too_large_once_decoded_gets_413(tmp_path):
+    from mlx_decision.server import decode_zstd, zstd
+
+    app = create_app(single_pool(tmp_path, RecordingBackend), max_body_bytes=1000)
+    bomb = zstd.compress(json.dumps({**BODY, "state": "x" * 10_000_000}).encode())
+    assert len(bomb) < 1000  # small on the wire
+    with TestClient(app) as small:
+        response = zstd_post(small, bomb)
+        assert response.status_code == 413
+        assert response.json()["error"]["type"] == "invalid_request_error"
+        assert zstd_post(small, zstd.compress(json.dumps(BODY).encode())).status_code == 200
+    # Decoding stops at the limit rather than decoding the whole of it.
+    assert decode_zstd(zstd.compress(b"x" * 10_000_000), 1000) is None
+    assert decode_zstd(zstd.compress(b"x" * 1000), 1000) == b"x" * 1000
+
+
+def test_zstd_data_that_does_not_decode_is_a_400(client):
+    from mlx_decision.server import zstd
+
+    data = zstd.compress(json.dumps(BODY).encode())
+    for broken, words in ((data[:-6], "cut short"), (b"not zstd at all", "not valid zstd")):
+        response = zstd_post(client, broken)
+        assert response.status_code == 400
+        assert words in response.json()["error"]["message"]
+
+
+def test_other_encodings_get_415(client):
+    import gzip
+
+    for encoding in ("gzip", "br", "gzip, zstd"):
+        response = zstd_post(client, gzip.compress(json.dumps(BODY).encode()), encoding)
+        assert response.status_code == 415
+        assert "not supported" in response.json()["error"]["message"]
 
 
 # Several models: three fake models of 1,000 bytes each (1,100 counted).

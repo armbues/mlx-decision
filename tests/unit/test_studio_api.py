@@ -102,6 +102,17 @@ def test_status_shows_the_config_file(tmp_path, models_folder, mlx_decision_home
     assert status["workspace"] == str((mlx_decision_home / "ws").resolve())
 
 
+def test_the_studio_api_reads_zstd_bodies(studio):
+    from mlx_decision.server import zstd
+
+    data = json.dumps({"request": BODY, "model": "fake"}).encode()
+    headers = {**JSON, "Content-Encoding": "zstd"}
+    checked = studio.post("/studio/api/check", content=zstd.compress(data), headers=headers)
+    assert checked.status_code == 200 and checked.json()["errors"] == []
+    headers["Content-Encoding"] = "gzip"
+    assert studio.post("/studio/api/check", content=data, headers=headers).status_code == 415
+
+
 def test_models(studio):
     models = {entry["name"]: entry for entry in studio.get("/studio/api/models").json()["models"]}
     assert list(models) == ["fake", "fake-fit", "seeing"]

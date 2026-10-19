@@ -380,7 +380,9 @@ The server binds to localhost by default (`--host` to change), answers
 one request at a time (others queue),
 returns `422` with the API's error body for invalid requests, and sets
 `X-MLX-Decision-Truncated: true` when the state was truncated. Request
-bodies larger than 64 MB get `413`.
+bodies larger than 64 MB get `413`. Bodies may be zstd-compressed
+(`Content-Encoding: zstd`), as the SDK sends them on Python 3.14 or with
+its `zstd` extra; the limit applies to the decoded body.
 
 Images go in the request's `images` list as base64 data URLs
 (`data:image/png;base64,...`; PNG, JPEG or WebP). The server reads no files

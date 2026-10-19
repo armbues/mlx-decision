@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from ...errors import DecisionError
 from ...gpu import Busy
-from ...server import busy_response, error_response, read_body
+from ...server import UnsupportedEncoding, busy_response, error_response, read_body
 from ...types import decode_json
 from ..workspace import Conflict, WorkspaceError
 
@@ -64,9 +64,14 @@ def install_errors(app: FastAPI) -> None:
 
 
 async def json_body(request: Request, limit: int) -> Any:
-    """The request's JSON body; ``ApiError`` 413 above ``limit`` bytes, 400 when
-    it is not JSON."""
-    raw = await read_body(request, limit)
+    """The request's JSON body (zstd-compressed or not); ``ApiError`` 413 above
+    ``limit`` bytes, 415 for another encoding, 400 when it is not JSON."""
+    try:
+        raw = await read_body(request, limit)
+    except UnsupportedEncoding as error:
+        raise ApiError(415, str(error)) from None
+    except DecisionError as error:
+        raise ApiError(400, error.message) from None
     if raw is None:
         raise ApiError(413, f"the request body is larger than {limit / 2**20:.0f} MB")
     try:

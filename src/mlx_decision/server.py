@@ -27,9 +27,20 @@ from .memory import ModelTooLargeError
 from .pool import ModelPool
 from .types import Result, decode_json, parse_request
 
+try:  # Python 3.14's standard library, else the backport (the server extra's)
+    from compression import zstd
+except ImportError:
+    try:
+        from backports import zstd
+    except ImportError:
+        zstd = None
+
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
-# Room for several large images as data URLs.
+# Room for several large images as data URLs; for a compressed body, the decoded size.
 MAX_BODY_BYTES = 64 * 2**20
+# How a body may be encoded: as it is, or zstd-compressed, as the Jev SDK sends
+# bodies of 1 KB or more on Python 3.14 or with its zstd extra.
+ENCODINGS = ("identity", "zstd")
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +59,53 @@ def error_response(
     return JSONResponse({"error": error}, status_code=status)
 
 
+class UnsupportedEncoding(Exception):
+    """A request body in a ``Content-Encoding`` the server does not decode."""
+
+    def __init__(self, encoding: str):
+        super().__init__(
+            f"Content-Encoding {encoding} is not supported: send the body as it is or "
+            "zstd-compressed"
+        )
+
+
+def decode_zstd(data: bytes, limit: int) -> bytes | None:
+    """The bytes of one or more zstd frames, or None when they decode to more than
+    ``limit`` bytes (decoding stops there). Raises ``DecisionError`` for data that
+    is not zstd or is cut short."""
+    if zstd is None:
+        raise UnsupportedEncoding("zstd (pip install backports.zstd)")
+    parts, size, rest = [], 0, data
+    try:
+        while rest:
+            decompressor = zstd.ZstdDecompressor()
+            part = decompressor.decompress(rest, max_length=limit - size + 1)
+            while True:
+                size += len(part)
+                if size > limit:
+                    return None
+                parts.append(part)
+                if decompressor.eof:
+                    break
+                if decompressor.needs_input:
+                    raise DecisionError("the body's zstd data is cut short")
+                part = decompressor.decompress(b"", max_length=limit - size + 1)
+            rest = decompressor.unused_data
+    except zstd.ZstdError as error:
+        raise DecisionError(f"the body is not valid zstd data: {error}") from None
+    return b"".join(parts)
+
+
 async def read_body(request: Request, limit: int) -> bytes | None:
-    """The request body, or None when it is larger than ``limit`` bytes."""
+    """The request body, decoded when it is zstd-compressed; None when it is
+    larger than ``limit`` bytes, sent or decoded.
+
+    Raises ``UnsupportedEncoding`` (before reading) for another
+    ``Content-Encoding``, and ``DecisionError`` for zstd data that does not decode.
+    """
+    encoding = request.headers.get("content-encoding", "").strip().lower() or "identity"
+    if encoding not in ENCODINGS:
+        raise UnsupportedEncoding(encoding)
     length = request.headers.get("content-length", "")
     if length.isdigit() and int(length) > limit:
         return None
@@ -59,7 +115,8 @@ async def read_body(request: Request, limit: int) -> bytes | None:
         if size > limit:
             return None
         chunks.append(chunk)
-    return b"".join(chunks)
+    body = b"".join(chunks)
+    return decode_zstd(body, limit) if encoding == "zstd" else body
 
 
 @dataclass(frozen=True)
@@ -171,7 +228,12 @@ def add_jev_api(
             gpu.check()  # before reading the body
         except Busy as error:
             return busy_response(error)
-        raw = await read_body(request, max_body_bytes)
+        try:
+            raw = await read_body(request, max_body_bytes)
+        except UnsupportedEncoding as error:
+            return error_response(415, str(error), "invalid_request_error")
+        except DecisionError as error:
+            return error_response(400, error.message, "invalid_request_error")
         if raw is None:
             return error_response(
                 413,

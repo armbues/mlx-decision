@@ -33,6 +33,15 @@ change the interface).
 - `download` in a terminal no longer asks for a folder on every run: it
   follows `models_dir`.
 
+### Fixed
+
+- `server` accepts request bodies compressed with zstd
+  (`Content-Encoding: zstd`), which Jev's Python SDK sends for bodies of
+  1 KB or more on Python 3.14 or with its `zstd` extra; such requests
+  used to fail. The 64 MB limit applies to the decoded body; other
+  encodings get `415`. The `server` extra adds `backports.zstd` before
+  Python 3.14.
+
 ## [0.9.1] - 2026-10-15
 
 ### Added
