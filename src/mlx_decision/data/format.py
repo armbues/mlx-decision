@@ -145,6 +145,46 @@ def parse_examples(lines: Iterable[str | bytes]) -> list[Example]:
     return examples
 
 
+def check_examples(
+    lines: Iterable[str | bytes], limit: int = 20
+) -> tuple[list[Example], list[DecisionError]]:
+    """``parse_examples`` that goes on past a bad line: the examples of the
+    good lines and the errors (each ``DataError`` names its line), at most
+    ``limit`` of them, the file's own (no examples, no labels) last. The file
+    is usable when there are no errors."""
+    examples: list[Example] = []
+    errors: list[DecisionError] = []
+    seen: dict[str, int] = {}
+    for number, text in enumerate(lines, 1):
+        if len(errors) >= limit:
+            break
+        try:
+            if not text.strip():
+                continue
+            if isinstance(text, bytes):
+                try:
+                    text = text.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    raise DataError(f"not valid UTF-8: {error}", number) from None
+            try:
+                data = decode_json(text)
+            except DecisionError as error:
+                raise DataError(error.message, number) from None
+            example = parse_example(data, number)
+            if example.id in seen:
+                raise DataError(f"the same id as line {seen[example.id]}", number, "id")
+        except DataError as error:
+            errors.append(error)
+            continue
+        seen[example.id] = number
+        examples.append(example)
+    if not errors and not examples:
+        errors.append(DecisionError("the data holds no examples"))
+    elif not errors and not any(example.labels for example in examples):
+        errors.append(DecisionError("no example has a label"))
+    return examples, errors
+
+
 def read_examples(path: str | Path) -> list[Example]:
     """The examples of a JSON lines file, checked as a whole."""
     with open(path, "rb") as file:

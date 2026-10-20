@@ -27,6 +27,7 @@ from .catalog import Catalog
 from .jobs import Jobs
 from .page import Page, watch
 from .rescan import Rescans
+from .routes.data import data_router
 from .routes.downloads import downloads_router
 from .routes.jobs import JobMessages, jobs_router
 from .routes.models import models_router
@@ -131,6 +132,7 @@ def create_studio(
     current = lambda: settings.config  # noqa: E731 - read at each request: Settings changes it
     app.include_router(status_router(gpu, files, models, current, host, port, api_key, status))
     app.include_router(sets_router(files, max_body_bytes))
+    app.include_router(data_router(files, max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
     app.include_router(models_router(gpu, max_body_bytes, rescans))
     app.include_router(jobs_router(jobs, gpu, files, current, max_body_bytes))

@@ -1018,3 +1018,20 @@ a.sb-item { color: var(--fg); }
 .memcard-link:hover { text-decoration: underline; }
 .memcard-sub { flex-basis: 100%; color: var(--fg-2); font-size: 11.5px; }
 
+
+/* Training data: the inspector's Data and the upload's sheets */
+.label-counts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.label-counts li { display: grid; grid-template-columns: minmax(60px, auto) minmax(0, 1fr) 36px; gap: 8px; align-items: center; }
+.label-counts li code { font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.label-counts .bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.label-counts .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.label-counts .num { text-align: right; color: var(--fg-2); font-size: 11.5px; }
+.label-counts li.none { color: var(--fg-3); }
+.data-inspector .sample-note { margin: 4px 12px 10px; }
+.sheet .data-errors { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 360px; overflow: auto; }
+.sheet .data-errors li { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; font-size: 12.5px; }
+.sheet .data-errors li .num { color: var(--fg-2); }
+.sheet .data-errors code { font: 11.5px var(--mono); }
+.sheet .name-field .suffix { color: var(--fg-3); font: 13px var(--mono); }
+.page-training .empty .btn { margin-top: 10px; justify-self: start; }
+.data-inspector .idet-head { grid-template-columns: minmax(0, 1fr); }

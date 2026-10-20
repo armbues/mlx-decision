@@ -8,6 +8,7 @@ export class ApiError extends Error {
     this.param = error.param ?? null;
     this.code = error.code ?? null;
     this.current = error.current;
+    this.body = body; // the whole error body (an upload's errors by line)
   }
 }
 

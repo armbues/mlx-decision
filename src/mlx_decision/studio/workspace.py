@@ -48,6 +48,7 @@ from ..images import check_data_urls
 FOLDERS = ("sets", "history", "data", "models", "jobs", "speed")
 NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}")
 SET_SUFFIX = ".json"
+DATA_SUFFIX = ".jsonl"
 HISTORY_SUFFIX = ".jsonl"
 SPEED_SUFFIX = ".jsonl"
 IMAGES = "images"
@@ -242,6 +243,34 @@ class Workspace:
                 self.write(job_file, encode(job))
                 changed.append(job_file)
         return changed
+
+    # Training data
+
+    def data_path(self, name: str) -> Path:
+        return self.path("data", name, DATA_SUFFIX, "a data file's name")
+
+    def list_data(self) -> list[dict[str, Any]]:
+        """The training data files, by name: ``name``, ``bytes``, ``modified``."""
+        found = []
+        for path in sorted((self.root / "data").glob(f"*{DATA_SUFFIX}")):
+            name = path.name[: -len(DATA_SUFFIX)]
+            if not NAME.fullmatch(name) or not path.is_file():
+                continue
+            stat = path.stat()
+            modified = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds")
+            found.append({"name": name, "bytes": stat.st_size, "modified": modified})
+        return sorted(found, key=lambda item: (item["name"].casefold(), item["name"]))
+
+    def save_data(self, name: str, data: bytes) -> Path:
+        """Write a new training data file (checked by the caller); ``Conflict``
+        when one of that name is there."""
+        path = self.data_path(name)
+        with self.lock:
+            if path.exists():
+                raise Conflict(f"a data file named {name} exists already")
+            self.write(path, data)
+        self.changed("data", name, "saved")
+        return path
 
     # Sets
 

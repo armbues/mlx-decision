@@ -4,6 +4,7 @@
 import { batch, signal } from "@preact/signals";
 import { applyEvent, applyJob, applySnapshot } from "./store/jobs.js";
 import { applyStatus, connection, loadModels, loadStatus } from "./store/status.js";
+import { dataChanged } from "./store/data.js";
 import { setsChanged } from "./store/sets.js";
 
 // The latest change to the workspace ({folder, name, action, ...}), for pages
@@ -21,6 +22,7 @@ function apply(message) {
       applyStatus(message.status);
       applySnapshot(message.jobs);
       setsChanged();
+      dataChanged();
       loadModels(); // catalog messages may have been missed
       break;
     case "catalog": // models came or went
@@ -43,6 +45,7 @@ function apply(message) {
     }
     case "workspace":
       if (message.folder === "sets") setsChanged();
+      if (message.folder === "data") dataChanged();
       workspaceChange.value = message;
       break;
     case "reload": // web --dev: a page file changed

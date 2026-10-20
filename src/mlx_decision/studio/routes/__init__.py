@@ -29,8 +29,10 @@ class ApiError(Exception):
         param: str | None = None,
         code: str | None = None,
         kind: str = "invalid_request_error",
+        extra: dict[str, Any] | None = None,
     ):
         super().__init__(message)
+        self.extra = extra or {}  # more fields of the error body
         self.status, self.message, self.param, self.code, self.kind = (
             status,
             message,
@@ -45,7 +47,12 @@ def install_errors(app: FastAPI) -> None:
 
     @app.exception_handler(ApiError)
     async def api_error(request: Request, error: ApiError):
-        return error_response(error.status, error.message, error.kind, error.param, error.code)
+        if not error.extra:
+            return error_response(error.status, error.message, error.kind, error.param, error.code)
+        body = {"message": error.message, "type": error.kind, "param": error.param, **error.extra}
+        if error.code is not None:
+            body["code"] = error.code
+        return JSONResponse({"error": body}, status_code=error.status)
 
     @app.exception_handler(WorkspaceError)
     async def workspace_error(request: Request, error: WorkspaceError):
