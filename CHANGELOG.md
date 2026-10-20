@@ -35,6 +35,13 @@ change the interface).
 
 ### Fixed
 
+- A model whose `joint_config.json` names a request format no family
+  knows (pplx-decider v1.2 and its flash model) is refused with a
+  message naming the format: `load` by repo id fetches no weights,
+  `convert` writes no copy, and `download` names the format and fetches
+  the weights only after a confirmation or with `--yes`. It used to be
+  taken for pplx v1.1: `download` fetched it, `convert` wrote a copy, and
+  loading failed only then, with "unsupported decision config format".
 - `server` accepts request bodies compressed with zstd
   (`Content-Encoding: zstd`), which Jev's Python SDK sends for bodies of
   1 KB or more on Python 3.14 or with its `zstd` extra; such requests

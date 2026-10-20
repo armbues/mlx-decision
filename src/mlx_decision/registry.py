@@ -214,20 +214,40 @@ register_family(
     quantizable=_qwen_text_matrix,
 )
 
+
+class UnknownFormat(ValueError):
+    """A folder of a family's kind that names a prompt or request format no
+    family here knows (a newer release): refused, not loaded or fetched."""
+
+
 # The letter-readout families by the ``prompt`` their ``decision_config.json``
 # names (pplx's names none).
 LETTER_PROMPTS = {None: "pplx", "d3": "d3"}
+# The families by the request format (``template``) a ``joint_config.json``
+# names: none yet (pplx-decider v1.2 declares one).
+JOINT_TEMPLATES: dict[str, str] = {}
 
 
 def _letter_family(path: Path) -> str | None:
     """The letter-readout family of a folder, None if it is not one; refuses a
-    prompt no family knows, so no model loads with another family's prompt."""
+    prompt or request format no family knows, so no model loads with another
+    family's prompt."""
     file = path / "decision_config.json"
     if not file.exists():
         return None
+    joint = path / "joint_config.json"
+    if joint.exists():
+        config = json.loads(joint.read_text())
+        template = config.get("template") if isinstance(config, dict) else None
+        if template not in JOINT_TEMPLATES:
+            raise UnknownFormat(
+                f"{path}: joint_config.json names the request format {template!r}, "
+                "which no family here knows"
+            )
+        return JOINT_TEMPLATES[template]
     prompt = json.loads(file.read_text()).get("prompt")
     if prompt not in LETTER_PROMPTS:
-        raise ValueError(
+        raise UnknownFormat(
             f"{path}: decision_config.json names the prompt {prompt!r}, which no family here knows"
         )
     return LETTER_PROMPTS[prompt]

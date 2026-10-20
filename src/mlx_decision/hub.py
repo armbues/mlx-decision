@@ -112,15 +112,18 @@ def snapshot_revision(path: Path) -> tuple[str, str] | None:
 def _snapshot(repo_id: str, snapshot_download, revision: str | None = None) -> str:
     """The repository in the Hub cache: the files its family needs, or all of it.
 
-    The family is recognised from the JSON files, fetched first.
+    The family is recognised from the JSON files, fetched first. A format
+    no family knows is refused then, before the weights are fetched.
     """
-    from .registry import detect_family
+    from .registry import UnknownFormat, detect_family
 
     if revision is not None:
         snapshot_download = partial(snapshot_download, revision=revision)
     configs = Path(snapshot_download(repo_id, allow_patterns=["*.json"]))
     try:
         family = detect_family(configs)
+    except UnknownFormat as error:
+        raise UnknownFormat(f"{repo_id}: {str(error).split(': ', 1)[-1]}") from None
     except ValueError:
         family = None
     files = family.files if family is not None else None

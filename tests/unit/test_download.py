@@ -17,6 +17,10 @@ REPOS = {
     "Cloudflare/clef-flash": {"joint_head_config.json": "{}", "config.json": "{}"},
     "Qwen/Qwen3.5-9B": {"config.json": "{}"},
     "convaiinnovations/laya": {"rl_agent_config.json": "{}"},
+    "perplexity-ai/pplx-decider-v1.2": {
+        "decision_config.json": '{"format_version": 2}',
+        "joint_config.json": '{"template": "joint-question-inline-readout-v1"}',
+    },
     "LiquidAI/d1-3B": {
         "config.json": '{"model_type": "lfm2_vl", "auto_map": {"AutoModel": "modeling_d1.D1Model"}}'
     },
@@ -127,6 +131,17 @@ def test_an_unsupported_model_needs_yes(hub):
     assert result.exit_code == 0
     assert "downloaded Qwen/Qwen3.5-9B" in result.stderr
     assert "try it" not in result.stderr
+
+
+def test_a_request_format_no_family_knows_names_it_and_needs_yes(hub):
+    result = invoke("perplexity-ai/pplx-decider-v1.2")
+    assert result.exit_code == 1
+    assert (
+        "warning: perplexity-ai/pplx-decider-v1.2: joint_config.json names the request format "
+        "'joint-question-inline-readout-v1', which no family here knows"
+    ) in result.stderr
+    assert "not downloaded" in result.stderr
+    assert len(hub) == 1  # only the JSON files
 
 
 def test_d1_notes_its_licence_and_downloads_without_a_terminal(hub):

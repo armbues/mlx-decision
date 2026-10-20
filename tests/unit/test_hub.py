@@ -101,6 +101,25 @@ def test_a_repo_id_fetches_only_the_files_its_family_needs(monkeypatch, tmp_path
     assert "rl_agent_config.json" in calls[1] and "encoder/*" in calls[1]
 
 
+def test_a_repo_id_in_a_format_no_family_knows_fetches_no_weights(monkeypatch, tmp_path):
+    from mlx_decision.registry import UnknownFormat
+
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "decision_config.json").write_text('{"format_version": 2}')
+    (snapshot / "joint_config.json").write_text('{"template": "joint-question-inline-readout-v1"}')
+    calls = []
+
+    def snapshot_download(repo_id, allow_patterns=None):
+        calls.append(allow_patterns)
+        return str(snapshot)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    with pytest.raises(UnknownFormat, match="^org/decider: joint_config.json names the request"):
+        mlx_decision.load("org/decider")
+    assert calls == [["*.json"]]
+
+
 def test_only_a_marker_written_by_download_counts_as_a_stored_model(monkeypatch, tmp_path):
     from mlx_decision.hub import stored_snapshot
 

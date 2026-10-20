@@ -7,6 +7,7 @@ import pytest
 import mlx_decision
 from mlx_decision.errors import DecisionError
 from mlx_decision.models.pplx.prompt import render
+from mlx_decision.registry import UnknownFormat, detect_family
 from mlx_decision.types import parse_request
 from tiny_models import PPLX_CODES, write_pplx
 
@@ -204,3 +205,32 @@ def test_images_count_against_the_limit(folder):
 def test_a_prompt_no_family_knows_is_refused(folder, tmp_path):
     with pytest.raises(ValueError, match="names the prompt 'other', which no family here knows"):
         mlx_decision.load(edit_config(folder, tmp_path, prompt="other"))
+
+
+# pplx-decider v1.2's, as released (its decision config is format_version 2).
+JOINT_CONFIG = {
+    "version": 3,
+    "template": "joint-question-inline-readout-v1",
+    "marker": "<|fim_suffix|>",
+    "readout_offset": 0,
+    "max_questions": None,
+    "max_length": None,
+    "usage": "nonpadding_joint_sequence_including_template_and_image_positions",
+}
+
+
+def test_a_request_format_no_family_knows_is_refused(folder, tmp_path):
+    from mlx_decision.convert import convert
+
+    copy = edit_config(folder, tmp_path, format_version=2)
+    (copy / "joint_config.json").write_text(json.dumps(JOINT_CONFIG))
+    message = (
+        "names the request format 'joint-question-inline-readout-v1', which no family here knows"
+    )
+    with pytest.raises(UnknownFormat, match=message):
+        detect_family(copy)
+    with pytest.raises(UnknownFormat, match=message):
+        mlx_decision.load(copy)
+    with pytest.raises(UnknownFormat, match=message):
+        convert(copy, tmp_path / "converted")
+    assert not (tmp_path / "converted").exists()
