@@ -1,0 +1,390 @@
+"""Jobs: downloads, conversions, fits and evaluations, each the CLI in a process of its own.
+
+A job runs the environment's own command line (``python -m mlx_decision``)
+with ``--events``: progress comes as JSON lines on its stdout, which go to
+``jobs/<id>/events.jsonl`` and to ``on_change``; its stderr goes to
+``stderr.log``; ``job.json`` holds the command, the times and the outcome.
+
+The outcome is the job's last event: ``done``, ``error`` or ``cancelled``.
+A process that ends without one was ``cancelled`` when Stop was pressed,
+else it ``failed`` (with the end of its stderr). A Stop that comes after
+``done`` does not undo it.
+
+Stop sends SIGINT (the CLI stops at its next step and writes nothing), a
+second one after ``stop_grace`` seconds (it stops at once), then SIGKILL
+after ``kill_grace`` more, and removes what a killed write leaves beside
+the job's output. The process runs in its own session, so a Ctrl-C in the
+Studio's terminal reaches only the Studio, which stops its jobs before it
+exits. Its stdin is a pipe the Studio never writes to: if the Studio is
+killed, the pipe closes and the CLI stops by itself (``watchdog``).
+
+A job that loads a model (``holds_gpu``) first takes the GPU from the
+Studio's pool (``Gpu.acquire``: the request on the worker finishes, the
+pool unloads, model work answers busy naming the job) and gives it back
+when it ends. One such job runs at a time; downloads run alongside.
+
+Use it from the event loop. ``job.json`` and the event lines are small
+writes made on the loop.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import secrets
+import signal
+import sys
+from collections.abc import Callable, Sequence
+from contextlib import suppress
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from ..gpu import Gpu
+from ..watchdog import remove
+from .workspace import INTERRUPTED, JOB_FILE, Workspace, encode, now
+
+EVENTS_FILE = "events.jsonl"
+STDERR_FILE = "stderr.log"
+# The CLI as the Studio runs it: the same environment's package.
+COMMAND = (sys.executable, "-m", "mlx_decision")
+STOP_GRACE_S = 20.0
+KILL_GRACE_S = 5.0
+# Last events that decide the outcome.
+FINAL = ("done", "error", "cancelled")
+# What a killed write leaves beside an output folder NAME: the fitted or
+# converted folder before its rename, a fit's stored hidden states, the
+# full-size files of a quantized download.
+WORKING_SUFFIXES = (".partial", ".states", ".download")
+STDERR_TAIL = 20  # lines of stderr a failed job reports
+LINE_LIMIT = 2**24  # the longest event line read (an evaluation's results)
+
+logger = logging.getLogger(__name__)
+
+
+class JobConflict(Exception):
+    """A second job that needs the GPU while ``running`` has it."""
+
+    def __init__(self, running: "Job"):
+        super().__init__(
+            f"{running.title} is running; one job at a time can use the GPU. "
+            "Start this one when it has ended."
+        )
+        self.running = running
+
+
+@dataclass
+class Job:
+    id: str
+    kind: str
+    title: str
+    argv: list[str]
+    holds_gpu: bool
+    folder: Path
+    output: Path | None = None
+    state: str = "waiting"  # waiting (for the GPU), running, ended
+    outcome: str | None = None  # done, error, cancelled, failed, interrupted
+    message: str | None = None
+    created: str = ""
+    started: str | None = None
+    ended: str | None = None
+    stop_requested: bool = False
+    returncode: int | None = None
+    events: list[dict[str, Any]] = field(default_factory=list, repr=False)
+    process: asyncio.subprocess.Process | None = field(default=None, repr=False)
+    task: asyncio.Task | None = field(default=None, repr=False)
+
+    @property
+    def last(self) -> dict[str, Any] | None:
+        return self.events[-1] if self.events else None
+
+    def summary(self) -> dict[str, Any]:
+        """What ``job.json`` holds, and what a list of jobs shows."""
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "title": self.title,
+            "command": ["mlx-decision", *self.argv],
+            "holds_gpu": self.holds_gpu,
+            "output": str(self.output) if self.output is not None else None,
+            "state": self.state,
+            "outcome": self.outcome,
+            "message": self.message,
+            "created": self.created,
+            "started": self.started,
+            "ended": self.ended,
+            "stop_requested": self.stop_requested,
+            "returncode": self.returncode,
+            "last": self.last,
+        }
+
+
+class Jobs:
+    """The workspace's jobs: those of this process, and the ended ones on disk.
+
+    ``command`` is what runs (the CLI; tests put a stand-in there).
+    ``on_change(job, event)`` is called on the loop when a job changes
+    (``event`` None) or sends an event.
+    """
+
+    def __init__(
+        self,
+        gpu: Gpu,
+        workspace: Workspace,
+        *,
+        command: Sequence[str] = COMMAND,
+        stop_grace: float = STOP_GRACE_S,
+        kill_grace: float = KILL_GRACE_S,
+    ):
+        self.gpu = gpu
+        self.workspace = workspace
+        self.command = list(command)
+        self.stop_grace = stop_grace
+        self.kill_grace = kill_grace
+        self.on_change: Callable[[Job, dict[str, Any] | None], None] | None = None
+        self.jobs: dict[str, Job] = {}
+        self.gpu_job: Job | None = None
+        self.closing = False
+
+    # Starting and running
+
+    async def start(
+        self,
+        kind: str,
+        argv: Sequence[str],
+        *,
+        holds_gpu: bool,
+        output: Path | None = None,
+        title: str | None = None,
+    ) -> Job:
+        """Run ``mlx-decision ARGV --events`` as a job.
+
+        ``output`` is the folder the job writes (its working folders are
+        removed after a kill). A GPU job waits for the request on the worker
+        and the unload before its process starts. Raises ``JobConflict``
+        while another GPU job is waiting or running, and ``RuntimeError``
+        once the Studio is stopping.
+        """
+        if self.closing:
+            raise RuntimeError("the Studio is stopping")
+        if holds_gpu and self.gpu_job is not None:
+            raise JobConflict(self.gpu_job)
+        job = self._new(kind, list(argv), holds_gpu, output, title)
+        if holds_gpu:
+            self.gpu_job = job
+        self._changed(job)
+        try:
+            if holds_gpu:
+                await self.gpu.acquire(job.title)
+            if job.stop_requested:  # Stop pressed while it waited for the GPU
+                self._end(job, "cancelled", "stopped before it started")
+                return job
+            await self._spawn(job)
+        except BaseException as error:
+            if job.outcome is None:
+                self._end(job, "failed", f"could not start: {error}")
+            raise
+        job.task = asyncio.create_task(self._watch(job), name=f"job {job.id}")
+        return job
+
+    def _new(
+        self, kind: str, argv: list[str], holds_gpu: bool, output: Path | None, title: str | None
+    ) -> Job:
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        job_id = f"{stamp}-{kind}-{secrets.token_hex(3)}"
+        folder = self.workspace.path("jobs", job_id)
+        folder.mkdir()
+        output = Path(output) if output is not None else None
+        title = title or (f"{kind} {output.name}" if output is not None else kind)
+        job = Job(job_id, kind, title, argv, holds_gpu, folder, output, created=now())
+        self.jobs[job.id] = job
+        self._save(job)
+        return job
+
+    async def _spawn(self, job: Job) -> None:
+        with open(job.folder / STDERR_FILE, "wb") as stderr:
+            job.process = await asyncio.create_subprocess_exec(
+                *self.command,
+                *job.argv,
+                "--events",
+                stdin=asyncio.subprocess.PIPE,  # never written: closes when the Studio dies
+                stdout=asyncio.subprocess.PIPE,
+                stderr=stderr,
+                cwd=self.workspace.root,
+                start_new_session=True,  # the terminal's Ctrl-C reaches only the Studio
+                limit=LINE_LIMIT,
+            )
+        job.state = "running"
+        job.started = now()
+        self._save(job)
+        self._changed(job)
+
+    async def _watch(self, job: Job) -> None:
+        """Read the job's events until its process ends, then settle its outcome."""
+        process = job.process
+        assert process is not None and process.stdout is not None
+        try:
+            with open(job.folder / EVENTS_FILE, "ab") as log:
+                async for raw in process.stdout:
+                    event = _parse(raw)
+                    if event is None:  # not an event: keep it with the stderr
+                        with open(job.folder / STDERR_FILE, "ab") as stderr:
+                            stderr.write(b"stdout: " + raw)
+                        continue
+                    log.write(raw if raw.endswith(b"\n") else raw + b"\n")
+                    log.flush()
+                    job.events.append(event)
+                    self._changed(job, event)
+            job.returncode = await process.wait()
+            outcome, message = self._outcome(job)
+        except Exception as error:  # noqa: BLE001 - the job must still end
+            logger.exception("job %s", job.id)
+            outcome, message = "failed", f"the Studio lost the job: {error}"
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+        if outcome != "done":
+            self._remove_leftovers(job)
+        self._end(job, outcome, message)
+
+    def _outcome(self, job: Job) -> tuple[str, str | None]:
+        last = job.last
+        if last is not None and last.get("stage") in FINAL:
+            return last["stage"], last.get("message")
+        if job.stop_requested:
+            return "cancelled", "stopped"
+        return "failed", self._stderr_tail(job) or f"ended with exit code {job.returncode}"
+
+    def _end(self, job: Job, outcome: str, message: str | None) -> None:
+        job.state = "ended"
+        job.outcome = outcome
+        job.message = message
+        job.ended = now()
+        if job.holds_gpu:
+            self.gpu.release(job.title)
+            if self.gpu_job is job:
+                self.gpu_job = None
+        self._save(job)
+        self._changed(job)
+        logger.info("job %s: %s", job.title, outcome)
+
+    # Stopping
+
+    async def stop(self, job_id: str) -> Job:
+        """Ask a job to stop: SIGINT, a second one after ``stop_grace``, SIGKILL
+        after ``kill_grace`` more. Returns at once; the outcome follows. Raises
+        ``KeyError`` for an unknown job."""
+        job = self.jobs[job_id]
+        if job.state == "ended" or job.stop_requested:
+            return job
+        job.stop_requested = True
+        self._save(job)
+        self._changed(job)
+        if job.process is not None:
+            asyncio.create_task(self._escalate(job), name=f"stop {job.id}")
+        return job
+
+    async def _escalate(self, job: Job) -> None:
+        process = job.process
+        assert process is not None
+        steps = (
+            (signal.SIGINT, self.stop_grace),
+            (signal.SIGINT, self.kill_grace),
+            (signal.SIGKILL, None),
+        )
+        for sig, wait in steps:
+            if process.returncode is not None:
+                return
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, sig)  # its own session: the whole group
+            if wait is None:
+                return
+            with suppress(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(process.wait()), wait)
+                return
+            logger.warning("job %s did not stop after %s s", job.title, wait)
+
+    async def shutdown(self) -> None:
+        """Stop every job and wait for them (the Studio is stopping)."""
+        self.closing = True
+        open_jobs = [job for job in self.jobs.values() if job.state != "ended"]
+        for job in open_jobs:
+            await self.stop(job.id)
+        tasks = [job.task for job in open_jobs if job.task is not None]
+        if tasks:
+            await asyncio.wait(tasks, timeout=self.stop_grace + self.kill_grace + 5)
+
+    def _remove_leftovers(self, job: Job) -> None:
+        if job.output is None:
+            return
+        for suffix in WORKING_SUFFIXES:
+            remove(job.output.parent / f".{job.output.name}{suffix}")
+
+    # Reading
+
+    def get(self, job_id: str) -> dict[str, Any]:
+        """A job's summary, also of a job that ran before this process (from
+        its ``job.json``). Raises ``KeyError``."""
+        if job_id in self.jobs:
+            return self.jobs[job_id].summary()
+        try:
+            summary = json.loads((self.workspace.path("jobs", job_id) / JOB_FILE).read_bytes())
+        except (OSError, ValueError) as error:
+            raise KeyError(job_id) from error
+        if not isinstance(summary, dict):
+            raise KeyError(job_id)
+        return summary
+
+    def events(self, job_id: str) -> list[dict[str, Any]]:
+        """A job's events so far. Raises ``KeyError``."""
+        if job_id in self.jobs:
+            return list(self.jobs[job_id].events)
+        self.get(job_id)
+        path = self.workspace.path("jobs", job_id) / EVENTS_FILE
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            return []
+        return [event for line in raw.splitlines() if (event := _parse(line)) is not None]
+
+    def list(self) -> list[dict[str, Any]]:
+        """Every job's summary, newest first: this process's and those on disk."""
+        found = {job_id: job.summary() for job_id, job in self.jobs.items()}
+        for folder in sorted((self.workspace.root / "jobs").iterdir(), reverse=True):
+            if folder.name in found or folder.name.startswith(".") or not folder.is_dir():
+                continue
+            with suppress(KeyError):
+                found[folder.name] = self.get(folder.name)
+        return sorted(found.values(), key=lambda job: job.get("created") or "", reverse=True)
+
+    # Bookkeeping
+
+    def _save(self, job: Job) -> None:
+        self.workspace.write(job.folder / JOB_FILE, encode(job.summary()))
+
+    def _stderr_tail(self, job: Job) -> str:
+        try:
+            text = (job.folder / STDERR_FILE).read_text(errors="replace")
+        except OSError:
+            return ""
+        lines = [line for line in text.splitlines() if line.strip()]
+        return "\n".join(lines[-STDERR_TAIL:])
+
+    def _changed(self, job: Job, event: dict[str, Any] | None = None) -> None:
+        if self.on_change is not None:
+            try:
+                self.on_change(job, event)
+            except Exception:
+                logger.exception("the jobs' change callback failed")
+
+
+def _parse(raw: bytes) -> dict[str, Any] | None:
+    """An event line, or None for anything else."""
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return None
+    return event if isinstance(event, dict) and isinstance(event.get("stage"), str) else None
+
+
+__all__ = ["INTERRUPTED", "Job", "JobConflict", "Jobs"]

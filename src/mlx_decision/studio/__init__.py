@@ -22,6 +22,7 @@ from ..gpu import Gpu
 from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
+from .jobs import Jobs
 from .page import Page, watch
 from .routes.models import models_router
 from .routes.run import Models, Recorder, run_router
@@ -50,7 +51,8 @@ def create_studio(
     It owns ``gpu`` as ``server.create_app`` does. ``app.state.session``
     holds the session, whose token goes into the address ``web`` opens;
     ``app.state.workspace`` the workspace (``workspace``, else ``home()``),
-    created and cleaned up here; ``app.state.hub`` the stream's hub.
+    created and cleaned up here; ``app.state.hub`` the stream's hub;
+    ``app.state.jobs`` the jobs, stopped when the Studio stops.
     ``config`` is the config file the process read (read here when not
     given), shown by the status route. The pool's default model loads at
     startup unless ``load_default`` is False. With ``dev`` the page's files
@@ -67,9 +69,10 @@ def create_studio(
     page = Page(dev=dev)
     status = status_reader(gpu)
     hub = Hub(lambda: {"status": status()})
+    jobs = Jobs(gpu, files)
     app = FastAPI(
         title="mlx-decision Studio",
-        lifespan=studio_lifespan(gpu, files, hub, status, load_default, page),
+        lifespan=studio_lifespan(gpu, files, hub, status, load_default, page, jobs),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -78,6 +81,7 @@ def create_studio(
     app.state.session = session
     app.state.workspace = files
     app.state.hub = hub
+    app.state.jobs = jobs
     security.install(app, session, host, port, api_key)
     models = Models(gpu, files.root / "models")
     recorder = Recorder(files, models)
@@ -142,11 +146,12 @@ def studio_lifespan(
     status: Callable[[], dict[str, Any]],
     load_default: bool = True,
     page: Page | None = None,
+    jobs: Jobs | None = None,
 ):
     """Start the GPU (its default model loads, with ``load_default``) and close it
     at the end, as ``server.gpu_lifespan`` does, plus the stream: changes to the
     GPU's holder, the pool and the workspace become messages; the streams end
-    when the Studio stops."""
+    when the Studio stops. Running ``jobs`` are stopped first."""
 
     def publish_status() -> None:
         hub.publish_changed("status", status())
@@ -171,6 +176,8 @@ def studio_lifespan(
         finally:  # also when the default model fails to load
             if watcher is not None:
                 watcher.cancel()
+            if jobs is not None:
+                await jobs.shutdown()
             hub.close()
             gpu.close()
             gpu.on_change = gpu.pool.on_change = gpu.pool.on_use = files.on_change = None

@@ -237,6 +237,7 @@ def test_clean_up_marks_jobs_without_an_outcome_interrupted(space):
         "kind": "fit",
         "command": ["training", "fit"],
         "outcome": "interrupted",
+        "state": "ended",
         "ended": None,
     }
     assert read("done")["outcome"] == "done"

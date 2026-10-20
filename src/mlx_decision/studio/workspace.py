@@ -56,8 +56,10 @@ JOB_FILE = "job.json"
 # a tenth longer, so not every request rewrites it.
 SPEED_KEEP = 1000
 SPEED_SLACK = SPEED_KEEP // 10
-# Hidden leftovers of an interrupted write, download, convert or fit.
-STALE_SUFFIXES = (".tmp", ".partial")
+# Hidden leftovers of an interrupted write, download, convert or fit (a
+# fit's stored hidden states, a quantized download's full-size files, a
+# folder moved aside to be removed).
+STALE_SUFFIXES = (".tmp", ".partial", ".states", ".download", ".removing")
 INTERRUPTED = "interrupted"
 DATA_URL = re.compile(r"data:image/([A-Za-z0-9.+-]+)((?:;[^;,]*)*?);base64,(.*)", re.S | re.I)
 EXTENSIONS = {"jpeg": "jpg", "svg+xml": "svg"}
@@ -235,6 +237,7 @@ class Workspace:
                 continue
             if isinstance(job, dict) and not job.get("outcome"):
                 job["outcome"] = INTERRUPTED
+                job["state"] = "ended"
                 job.setdefault("ended", None)
                 self.write(job_file, encode(job))
                 changed.append(job_file)
