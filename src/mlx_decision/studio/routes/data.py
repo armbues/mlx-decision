@@ -7,7 +7,9 @@ bad file is refused with up to 20 of its errors, each naming its line. A
 good one is written under ``name`` (a workspace name; an existing file is
 not replaced). ``GET /studio/api/data`` lists the files; ``GET
 /studio/api/data/{name}`` describes one: its questions with their labels
-and counts, a few examples and its path. ``GET
+and counts, a few examples, its path and its record (where it came from,
+``NAME.source.json`` beside it, written by ``data --record``; deleted with
+the file). ``GET
 /studio/api/data/{name}/examples`` reads a page of its examples (``offset``,
 ``limit``, a label filter, a search in the states), each state cut to a
 line; ``GET /studio/api/data/{name}/examples/{index}`` one example whole.
@@ -27,6 +29,7 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 
 from ...data.format import DataError, Example, check_examples, read_examples
+from ...data.make import read_record
 from ...errors import DecisionError
 from ..jobs import Jobs
 from ..security import is_loopback
@@ -118,7 +121,8 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         it no longer reads (changed behind the Studio's back)."""
         path, found = await read(name)
         summary = await asyncio.to_thread(describe, found.examples)
-        return {"name": name, **where(path), **summary}
+        record = await asyncio.to_thread(read_record, path)
+        return {"name": name, **where(path), **summary, "record": record}
 
     @router.get("/{name}/examples")
     async def examples_page(
@@ -196,7 +200,7 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         if errors:
             raise BadData(errors)
         path = await asyncio.to_thread(files.save_data, name, text.encode("utf-8"))
-        return {"name": name, **where(path), **describe(examples)}
+        return {"name": name, **where(path), **describe(examples), "record": None}
 
     return router
 

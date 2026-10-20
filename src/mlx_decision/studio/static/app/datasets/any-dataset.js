@@ -1,16 +1,16 @@
-// Another dataset (TRS-6): any Hugging Face dataset, read as a preview, with the
-// column that becomes the state, the label column, a question set's question
-// the labels answer, and each class mapped to one of its options (or left
-// out). It runs `data` as a job with the question written for it.
+// Another dataset: any Hugging Face dataset, one split read as a preview, with
+// the column that becomes the state, the label column, a question set's
+// question the labels answer, and each class mapped to one of its options (or
+// left out); the columns and the map apply to every split in the table. It
+// runs `data` as a job with the question written for it.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { StatusIcon } from "../components/icons.js";
 import { plural } from "../format.js";
-import { freeName, nameTaken } from "../store/data.js";
 import { sets } from "../store/sets.js";
+import { NameAndSeed, SplitTable, chosen, freeBase, knowRows, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
 
-const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
 const LEAVE_OUT = "";
 
 export const source = signal("");
@@ -25,15 +25,10 @@ const setName = signal(null);
 const setQuestions = signal(null); // the set's questions
 const questionId = signal(null);
 const mapping = signal({}); // class -> option id or LEAVE_OUT
-const sampling = signal(false);
-const sample = signal("1000");
-const sampleTyped = signal(false);
+const table = splitState(); // every split's role and sample
 const seed = signal("0");
 const name = signal("");
 const named = signal(false);
-
-// A sample's default: 1,000 rows, or all of a smaller split's.
-export const defaultSample = (rows) => String(rows > 0 ? Math.min(1000, rows) : 1000);
 
 // Before another dataset is read; ``all`` also forgets the source, the question
 // set and the sample (after a Get, so the next one starts afresh).
@@ -43,13 +38,13 @@ export function resetAny(all = false) {
   config.value = null;
   split.value = null;
   named.value = false;
+  table.value = {};
+  rowsOf.value = {};
   if (!all) return;
   source.value = "";
   textColumn.value = labelColumn.value = null;
   setName.value = setQuestions.value = questionId.value = null;
   mapping.value = {};
-  sampling.value = sampleTyped.value = false;
-  sample.value = "1000";
   seed.value = "0";
   name.value = "";
 }
@@ -59,15 +54,21 @@ async function read(fields, what) {
   failed.value = null;
   try {
     const result = await api("/datasets/preview", { method: "POST", body: { source: source.value.trim(), ...fields } });
+    const before = previewed.value;
     previewed.value = result;
     config.value = result.config;
     split.value = result.split;
+    if (result.splits) {
+      // Another config: its own splits, from their defaults.
+      const fresh = before?.config !== result.config;
+      setSplits(table, result.splits.map((name) => ({ name })), result.split, fresh);
+    }
     if (result.rows != null) {
       textColumn.value = result.text;
       labelColumn.value = result.label;
       mapByName();
-      if (!named.value) name.value = freeName(`${result.source.split("/").pop()}-${result.split}`);
-      if (!sampleTyped.value) sample.value = defaultSample(result.rows);
+      rowsOf.value = { ...rowsOf.value, [result.split]: result.rows };
+      knowRows(table, result.split, result.rows);
     }
   } catch (error) {
     failed.value = error.message;
@@ -75,6 +76,16 @@ async function read(fields, what) {
     reading.value = null;
   }
 }
+
+// Rows by split, as far as the previews read them.
+const rowsOf = signal({});
+const splits = computed(() => (previewed.value?.splits ?? []).map((name) => ({ name, rows: rowsOf.value[name] ?? null })));
+const suggested = computed(() => {
+  const result = previewed.value;
+  if (!result) return "";
+  return freeBase(result.source.split("/").pop(), chosen(table, splits.value).map((split) => split.name));
+});
+const base = computed(() => (named.value ? name.value.trim() : suggested.value));
 
 export function check() {
   resetAny();
@@ -136,15 +147,7 @@ export const anyProblem = computed(() => {
   if (!question.value) return "Pick the question the labels answer";
   if (question.value.type !== "choice" && question.value.type !== "noul") return "A choice or a yes/no question";
   if (!Object.values(mapping.value).some((option) => option !== LEAVE_OUT)) return "Map at least one class to an option";
-  const value = name.value.trim();
-  if (!NAME.test(value)) return "Name the file: letters, digits, '.', '_' or '-'";
-  const taken = nameTaken(value);
-  if (taken) return taken;
-  if (sampling.value) {
-    const count = Number(sample.value);
-    if (!Number.isInteger(count) || count < 1 || count > result.rows) return `A sample is 1 to ${result.rows} rows`;
-  }
-  return null;
+  return splitsProblem(table, splits.value, base.value);
 });
 
 export function anyJob() {
@@ -152,20 +155,16 @@ export function anyJob() {
   const body = {
     kind: "data",
     source: result.source,
-    split: result.split,
+    splits: splitsBody(table, splits.value),
     text: textColumn.value,
     label: labelColumn.value,
     set: setName.value,
     question: questionId.value,
     label_map: Object.fromEntries(Object.entries(mapping.value).filter(([, option]) => option !== LEAVE_OUT)),
-    rows: result.rows,
-    name: name.value.trim(),
+    name: base.value,
   };
   if (result.config) body.config = result.config;
-  if (sampling.value) {
-    body.sample = Number(sample.value);
-    body.seed = Number(seed.value) || 0;
-  }
+  if (body.splits.some((entry) => entry.sample != null)) body.seed = Number(seed.value) || 0;
   return body;
 }
 
@@ -194,8 +193,8 @@ function Source() {
           ${result.configs.map((item) => html`<option value=${item}>${item}</option>`)}
         </select></label>`}
       ${result?.splits?.length > 0 &&
-      html`<label class="any-row"><span>Split</span>
-        <select aria-label="Split" value=${split.value ?? ""} onChange=${(event) => read({ config: config.value, split: event.target.value }, "Reading the split into the Hugging Face cache…")}>
+      html`<label class="any-row"><span>Preview</span>
+        <select aria-label="Split to preview" value=${split.value ?? ""} onChange=${(event) => read({ config: config.value, split: event.target.value }, "Reading the split into the Hugging Face cache…")}>
           ${!split.value && html`<option value="">Pick one</option>`}
           ${result.splits.map((item) => html`<option value=${item}>${item}</option>`)}
         </select></label>`}
@@ -278,28 +277,14 @@ function Mapping() {
 }
 
 function Output() {
-  const result = previewed.value;
   return html`
-    <label class="check ds-sample">
-      <input type="checkbox" checked=${sampling.value} onChange=${(event) => (sampling.value = event.target.checked)} />
-      A random sample of
-      <input class="setting-input mono" aria-label="Rows" type="number" min="1" max=${result.rows} value=${sample.value}
-             onFocus=${() => (sampling.value = true)} onInput=${(event) => {
-               sample.value = event.target.value;
-               sampleTyped.value = true;
-             }} />
-      rows, seed
-      <input class="setting-input mono" aria-label="Seed" type="number" min="0" value=${seed.value} onInput=${(event) => (seed.value = event.target.value)} />
-    </label>
-    <label class="name-field">
-      <span>Name</span>
-      <input class="sheet-input mono" aria-label="Name" spellcheck=${false} value=${name.value}
-             onInput=${(event) => {
-               name.value = event.target.value;
-               named.value = true;
-             }} />
-      <span class="suffix">.jsonl</span>
-    </label>
+    <div class="opts">
+      <h4>Splits</h4>
+      <${SplitTable} state=${table} splits=${splits.value} />
+      <small class="hint">The preview reads ${split.value}; the columns and the classes apply to every split got.</small>
+    </div>
+    <${NameAndSeed} name=${name} named=${named} suggested=${suggested.value} seed=${seed}
+      sampled=${chosen(table, splits.value).some((entry) => table.value[entry.name].sampling)} />
   `;
 }
 

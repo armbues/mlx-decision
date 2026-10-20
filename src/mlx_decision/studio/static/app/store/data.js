@@ -48,7 +48,12 @@ export const modifiedOf = (name) => (dataFiles.value ?? []).find((item) => item.
 // The names a new dataset cannot take: the files there, and the ones a Get
 // that has not ended is writing.
 export const writing = computed(
-  () => new Set(jobs.value.filter((job) => job.kind === "data" && job.state !== "ended" && job.details?.name).map((job) => job.details.name)),
+  () =>
+    new Set(
+      jobs.value
+        .filter((job) => job.kind === "data" && job.state !== "ended")
+        .flatMap((job) => job.details?.files ?? (job.details?.name ? [job.details.name] : [])),
+    ),
 );
 
 // Why a new dataset cannot be named ``name``, or null.

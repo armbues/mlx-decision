@@ -16,7 +16,9 @@ it does not know are ignored (the job's own arguments).
     --hold S       after the last event, wait S seconds before exiting
     --fake-model   write a fake model (``fake_backend``'s family) at -o
     (an -o ending in .jsonl is written as a file: a training example, as
-    ``data`` writes one)
+    ``data`` writes one; with {split} in it, one file per --split, and with
+    --record each with a record as ``data --record`` writes it, --roles
+    naming their roles)
 """
 
 import json
@@ -37,6 +39,43 @@ def option(name: str, default: str | None = None) -> str | None:
     return args[args.index(name) + 1] if name in args else default
 
 
+def options(name: str) -> list[str]:
+    args = sys.argv[1:]
+    return [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == name]
+
+
+def get_files(pattern: Path) -> list[tuple[Path, str | None]]:
+    """The files of a ``data`` run: one per --split with {split} in -o."""
+    if "{split}" not in pattern.name:
+        return [(pattern, option("--split"))]
+    return [(pattern.with_name(pattern.name.replace("{split}", s)), s) for s in options("--split")]
+
+
+def write_records(files: list[tuple[Path, str | None]]) -> None:
+    """Records beside the files, as ``data --record`` writes them."""
+    from mlx_decision.data.make import file_name, get_name, partial_path, record_path
+
+    roles = option("--roles").split(",") if option("--roles") else [None] * len(files)
+    listed = [{"name": file_name(path), "split": split, "role": role}
+              for (path, split), role in zip(files, roles, strict=True)]  # fmt: skip
+    samples = options("--sample") or [None] * len(files)
+    if len(samples) == 1:
+        samples *= len(files)
+    preset = option("--preset")
+    source = f"hf:fake/{preset}" if preset else sys.argv[sys.argv.index("data") + 1]
+    for (path, split), role, sample in zip(files, roles, samples, strict=True):
+        record = {
+            "source": source, "preset": preset, "config": option("--config"),
+            "revision": "0123456789abcdef", "split": split, "rows": 100,
+            "sample": int(sample) if sample and sample != "0" else None, "limit": None,
+            "seed": int(option("--seed", "0")) if sample and sample != "0" else None,
+            "examples": 1, "labels": {"q": {"true": 1}}, "question": None, "label_map": None,
+            "role": role, "get": {"name": get_name(option("-o")), "files": listed},
+            "created": "2026-10-20T12:00:00+00:00",
+        }  # fmt: skip
+        partial_path(record_path(path)).write_text(json.dumps(record))
+
+
 def emit(stage: str, **fields) -> None:
     print(json.dumps({"stage": stage, **fields}), flush=True)
 
@@ -47,7 +86,15 @@ def main() -> int:
     end = option("--end", "done")
     hold = float(option("--hold", "0"))
     output = Path(option("-o")) if option("-o") else None
+    files = get_files(output) if output and output.suffix == ".jsonl" else []
+    if files:
+        output = files[0][0]
     partial = output.parent / f".{output.name}.partial" if output else None
+    more = [path.parent / f".{path.name}.partial" for path, _ in files[1:]]
+    if files and "--record" in sys.argv:
+        from mlx_decision.data.make import partial_path, record_path
+
+        more += [partial_path(record_path(path)) for path, _ in files]
     cancel = threading.Event()
     interrupts = []
 
@@ -61,11 +108,14 @@ def main() -> int:
         cancel.set()
 
     signal.signal(signal.SIGINT, on_sigint)
-    with watch_stdin(cancel, [partial] if partial else []):
+    with watch_stdin(cancel, ([partial] if partial else []) + more):
         emit("check", message="starting")
         if partial and output.suffix == ".jsonl":
             example = {"state": "x", "questions": {"q": {"type": "noul"}}, "labels": {"q": True}}
-            partial.write_text(json.dumps(example) + "\n")
+            for path, _ in files:
+                (path.parent / f".{path.name}.partial").write_text(json.dumps(example) + "\n")
+            if "--record" in sys.argv:
+                write_records(files)
         elif partial:
             partial.mkdir(parents=True)
             (partial / "weights").write_text("half")
@@ -78,6 +128,8 @@ def main() -> int:
                     raise KeyboardInterrupt
                 emit("work", step=step, total=steps)
         except KeyboardInterrupt:
+            for leftover in more:
+                leftover.unlink(missing_ok=True)
             if partial and partial.is_file():
                 partial.unlink()
             elif partial:
@@ -96,6 +148,8 @@ def main() -> int:
             return 1
         if partial:
             partial.rename(output)
+        for leftover in more:  # the other files, then the records
+            leftover.rename(leftover.with_name(leftover.name[1:].removesuffix(".partial")))
         emit("done", metrics={"path": str(output) if output else None}, message="finished")
     if hold:
         signal.signal(signal.SIGINT, signal.SIG_DFL)  # as the real CLI after its run

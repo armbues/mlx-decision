@@ -1,6 +1,6 @@
 // Datasets as files: the sidebar's list with Get a Dataset… and Add… (upload a
 // JSON-lines file, checked as training fit checks it), Delete and Show in Finder.
-import { signal } from "@preact/signals";
+import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import * as icons from "../components/icons.js";
@@ -159,6 +159,47 @@ export async function revealData(name) {
 
 // ---------- the sidebar's list ----------
 
+// The list as rows: the files of one Get (several splits) under its name, in
+// the Get's order, the rest alone; both by name.
+const rows = computed(() => {
+  const list = dataFiles.value ?? [];
+  const groups = new Map();
+  const result = [];
+  for (const item of list) {
+    const get = item.record?.get;
+    const key = get && get.files.length > 1 ? JSON.stringify(get.files.map((file) => file.name)) : null;
+    if (!key) {
+      result.push({ name: item.name, file: item });
+      continue;
+    }
+    if (!groups.has(key)) {
+      const group = { name: get.name, key, order: get.files.map((file) => file.name), source: item.record.source, files: [] };
+      groups.set(key, group);
+      result.push({ name: get.name, group });
+    }
+    groups.get(key).files.push(item);
+  }
+  for (const group of groups.values()) group.files.sort((a, b) => group.order.indexOf(a.name) - group.order.indexOf(b.name));
+  // A Get with one file left is a file like the others.
+  const shown = result.map((row) => (row.group && row.group.files.length === 1 ? { name: row.group.files[0].name, file: row.group.files[0] } : row));
+  return shown.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || (a.group ? 1 : -1));
+});
+
+function FileRow({ item, picked, nested = false }) {
+  const role = item.record?.role;
+  return html`
+    <li key=${item.name} class=${[item.name === picked ? "open" : "", nested ? "nested" : ""].filter(Boolean).join(" ")}>
+      <a class="sb-item" href=${href("datasets", item.name)} aria-current=${item.name === picked ? "true" : undefined}>
+        <${icons.File} /><span class="label">${item.name}</span>
+        ${role && html`<span class="count role">${role}</span>`}
+      </a>
+      ${item.name === picked &&
+      html`<button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
+        onClick=${() => deleteData(item.name)}><${icons.Trash} /></button>`}
+    </li>
+  `;
+}
+
 export function DatasetList() {
   const list = dataFiles.value;
   const picked = pickedDataset();
@@ -177,17 +218,13 @@ export function DatasetList() {
       </h3>
       ${list && list.length === 0 && html`<p class="sb-empty">No datasets yet</p>`}
       <ul class="sb-list data-list">
-        ${(list ?? []).map(
-          (item) => html`
-            <li key=${item.name} class=${item.name === picked ? "open" : ""}>
-              <a class="sb-item" href=${href("datasets", item.name)} aria-current=${item.name === picked ? "true" : undefined}>
-                <${icons.File} /><span class="label">${item.name}</span>
-              </a>
-              ${item.name === picked &&
-              html`<button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
-                onClick=${() => deleteData(item.name)}><${icons.Trash} /></button>`}
-            </li>
-          `,
+        ${rows.value.map((row) =>
+          row.file
+            ? html`<${FileRow} key=${row.name} item=${row.file} picked=${picked} />`
+            : html`<li key=${row.group.key} class="sb-group" title=${`Got together from ${row.group.source}`}>
+                <span class="sb-group-name">${row.group.name}</span>
+                <ul class="sb-list">${row.group.files.map((item) => html`<${FileRow} key=${item.name} item=${item} picked=${picked} nested />`)}</ul>
+              </li>`,
         )}
       </ul>
     </div>

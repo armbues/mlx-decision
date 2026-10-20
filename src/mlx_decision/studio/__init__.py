@@ -242,9 +242,11 @@ def studio_lifespan(
                 ended = event is None and job.state == "ended" and job.outcome == "done"
                 if ended and job.kind in WRITES_MODELS and rescans is not None:
                     rescans.soon()
-                if ended and job.kind == "data" and job.output is not None:
-                    # A new training data file: every tab's list again.
-                    files.changed("data", job.output.name.removesuffix(".jsonl"), "saved")
+                if ended and job.kind == "data":
+                    # New datasets: every tab's list again.
+                    for output in job.outputs:
+                        if output.name.endswith(".jsonl"):
+                            files.changed("data", output.name.removesuffix(".jsonl"), "saved")
 
             jobs.on_change = job_changed
         watcher = None

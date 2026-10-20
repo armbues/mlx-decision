@@ -128,6 +128,25 @@ them. `--limit N` takes the first rows, `--sample N --seed S` draws rows
 at random (in the dataset's order). The same flags always write the same
 file.
 
+Several splits in one run: repeat `--split` and put `{split}` in `-o`,
+which stands for each split's name. `--sample` is then given once (for
+every split) or once per `--split`, in the same order; `0` takes a whole
+split. The files are written together: when one split fails, or the run
+is stopped, none of them is left.
+
+```bash
+mlx-decision data --preset sst5 --split train --split validation \
+  --sample 2000 --sample 0 -o sst5-{split}.jsonl
+```
+
+`--record` writes a small `NAME.source.json` beside each file, saying
+where it came from: the source, config, revision, split, the split's
+rows, the sample and seed, the question and label map when given, and
+the other files of the same run. `--roles train,report` (one per
+`--split`) adds what each file is for: `train`, `report` or `evaluate`.
+The Studio's Get a Dataset passes both, and its Datasets page reads the
+records.
+
 Each dataset row becomes one example with one question. The *shape*
 says how columns map onto it. It is guessed from the column names and
 types (a class-label column gives the label names); `--shape` and the

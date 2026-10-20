@@ -9,7 +9,9 @@ import { ExampleInspector, ExampleTable, filterLabel, query, showDataset } from 
 import { DatasetList, deleteData, pickedDataset, revealData, uploadData } from "../datasets/files.js";
 import { openGetDataset } from "../datasets/get.js";
 import { Labels, useSummary } from "../datasets/summary.js";
+import { ROLE_WORDS } from "../datasets/splits.js";
 import { fileSize, plural } from "../format.js";
+import { href } from "../router.js";
 import { dataFiles, described } from "../store/data.js";
 import { fitOn } from "../training/fit.js";
 
@@ -66,6 +68,43 @@ function Questions({ summary }) {
   `;
 }
 
+const day = (iso) => (iso ? new Date(iso).toLocaleDateString("en", { year: "numeric", month: "short", day: "numeric" }) : "");
+
+// Where the dataset came from: its record, written by the Get (data --record).
+function Source({ name, record }) {
+  const hub = record.source?.startsWith("hf:");
+  const repo = hub ? record.source.slice(3) : record.source;
+  const rows = record.rows?.toLocaleString("en");
+  let taken = `all ${rows} rows`;
+  if (record.sample) taken = `a random sample of ${record.sample.toLocaleString("en")} of ${rows} rows (seed ${record.seed ?? 0})`;
+  else if (record.limit) taken = `the first ${record.limit.toLocaleString("en")} of ${rows} rows`;
+  const others = (record.get?.files ?? []).filter((file) => file.name !== name);
+  const listed = new Set((dataFiles.value ?? []).map((item) => item.name));
+  const role = record.role ? ROLE_WORDS[record.role] : null;
+  return html`
+    <section class="gsec ds-source"><div class="gsec-head"><h2>Where it came from</h2>${record.created && html`<span class="tag">Got ${day(record.created)}</span>`}</div>
+      <div class="group"><dl>
+        <div class="kv"><dt>Dataset</dt><dd>
+          ${record.preset && html`The <b>${record.preset}</b> preset: `}<code>${repo}</code>${hub ? " on the Hugging Face Hub" : ""}${record.config ? html`, config <code>${record.config}</code>` : ""}
+          ${record.revision && html`<small>At commit <code>${record.revision.slice(0, 7)}</code></small>`}
+        </dd></div>
+        <div class="kv"><dt>Split</dt><dd><code>${record.split ?? "–"}</code>: ${taken}</dd></div>
+        ${role && html`<div class="kv"><dt>Role</dt><dd>${role.label}<small>${role.words}</small></dd></div>`}
+        ${others.length > 0 &&
+        html`<div class="kv"><dt>Got with it</dt><dd class="ds-siblings">
+          ${others.map(
+            (file) => html`<span>${listed.has(file.name) ? html`<a href=${href("datasets", file.name)}>${file.name}</a>` : html`<span class="gone" title="Deleted">${file.name}</span>`}${
+              file.role ? html` <small>${ROLE_WORDS[file.role]?.label.toLowerCase() ?? file.role}</small>` : ""
+            }</span>`,
+          )}
+        </dd></div>`}
+        ${record.label_map &&
+        html`<div class="kv"><dt>Classes</dt><dd>${Object.entries(record.label_map).map(([raw, option]) => html`<span class="ds-map"><code>${raw}</code> → <code>${option}</code></span>`)}</dd></div>`}
+      </dl></div>
+    </section>
+  `;
+}
+
 function Picked({ name }) {
   const summary = useSummary(name);
   if (!summary) return null;
@@ -83,6 +122,7 @@ function Picked({ name }) {
         <button class="btn" onClick=${() => deleteData(name)}>Delete…</button>
       </div>
     </div>
+    ${summary.record && html`<${Source} name=${name} record=${summary.record} />`}
     <${Questions} summary=${summary} />
     <${ExampleTable} summary=${summary} />
   `;

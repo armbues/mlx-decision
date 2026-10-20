@@ -33,6 +33,15 @@ change the interface).
 - `data --events`: the progress as JSON lines (`check`, `read` with the
   examples and label counts, `write`, then `done` with the file); asks
   nothing, writes the file whole, and a stop leaves nothing.
+- `data` takes `--split` more than once: one file per split, with
+  `{split}` in `-o` standing for its name (`-o data/trec-{split}.jsonl`).
+  `--sample` is given once for every split or once per `--split` (`0`
+  takes a whole split). The files are written together: a failure or a
+  stop leaves none of them.
+- `data --record` writes `NAME.source.json` beside each file: the
+  source, config, revision, split, its rows, the sample and seed, the
+  question and label map when given, and the files written with it;
+  `--roles train,report,evaluate` names what each split is for.
 - With `--events`, `MLX_DECISION_WATCH_STDIN=1` and a pipe on stdin,
   `training fit`, `training eval`, `download` and `convert` stop when
   the pipe closes (the program that started them is gone): at the next

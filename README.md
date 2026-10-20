@@ -545,8 +545,7 @@ from you. Five benchmark datasets come as presets:
 pip install "mlx-decision[training]"
 mlx-decision data hf:dair-ai/emotion --config split --split train -o emotion.jsonl \
   --question "Which emotion does the text express most?"
-mlx-decision data --preset trec --split train -o trec-train.jsonl
-mlx-decision data --preset trec --split test -o trec-test.jsonl
+mlx-decision data --preset trec --split train --split test -o trec-{split}.jsonl
 mlx-decision data --preset anli-r3 --split train_r3 --sample 2000 -o anli-train.jsonl
 ```
 

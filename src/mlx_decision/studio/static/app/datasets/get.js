@@ -1,68 +1,56 @@
 // Get a Dataset: the `data` command's presets, each with its question, options
-// and splits; the split picked (train by default), an optional random sample
-// (1,000 rows by default, or the split's rows when fewer) and the file's name
-// (the first one free: not a file there, not one a Get is writing). It runs
-// `data` as a job; the file joins the Datasets list when it is done. The
-// sheet opens again on the entry last used.
+// and splits, or any Hugging Face dataset ("Another dataset…"). The table of
+// splits gives each its role (train, report, evaluate or left out) and its own
+// random sample (1,000 rows by default, or the split's rows when fewer); the
+// Get's name (the first one whose files are free: not there, not written by a
+// Get that is running) names its files NAME-SPLIT. It runs `data` as one job;
+// the files join the Datasets list when it is done, each with a record of
+// where it came from. The sheet opens again on the entry last used.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
-import { freeName, nameTaken } from "../store/data.js";
 import { toast } from "../store/ui.js";
-import { AnyDataset, anyJob, anyProblem, defaultSample, resetAny } from "./any-dataset.js";
+import { AnyDataset, anyJob, anyProblem, resetAny } from "./any-dataset.js";
+import { NameAndSeed, SplitTable, chosen, freeBase, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
 
 const ANY = "\u0000any"; // the list's last entry: any Hugging Face dataset
 
-const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
-
 const presets = signal(null);
 const picked = signal(null); // preset name
-const split = signal(null);
-const sampling = signal(false);
-const sample = signal("1000");
-const sampleTyped = signal(false); // typed: another split keeps it
+const table = splitState();
+const tableOf = signal(null); // the preset the table is for
 const seed = signal("0");
 const name = signal("");
 const named = signal(false);
 const starting = signal(false);
 
 const preset = computed(() => presets.value?.find((item) => item.name === picked.value) ?? null);
-const splitRows = computed(() => preset.value?.splits.find((item) => item.name === split.value)?.rows ?? 0);
+const splits = computed(() =>
+  (preset.value?.splits ?? []).map((split) => ({
+    name: split.name,
+    rows: split.rows,
+    note: split.evaluation ? "the coverage suite evaluates on it" : null,
+  })),
+);
+const suggested = computed(() => (preset.value ? freeBase(preset.value.name, chosen(table, splits.value).map((split) => split.name)) : ""));
+const base = computed(() => (named.value ? name.value.trim() : suggested.value));
 
-// The name and the sample for the split picked, unless typed.
-function suggest() {
-  if (!preset.value) return;
-  if (!named.value) name.value = freeName(`${preset.value.name}-${split.value}`);
-  if (!sampleTyped.value) sample.value = defaultSample(splitRows.value);
-}
-
-function pickSplit(splitName) {
-  split.value = splitName;
-  suggest();
-}
-
-// A preset on its default split; ``keep`` keeps the split picked before, if it has it.
+// A preset, its table kept when it is the one shown before (``keep``).
 function pick(presetName, keep = false) {
   picked.value = presetName;
   if (presetName === ANY) return;
-  if (!(keep && preset.value.splits.some((item) => item.name === split.value))) split.value = preset.value.default_split;
-  suggest();
+  if (!(keep && tableOf.value === presetName)) {
+    setSplits(table, splits.value, preset.value.default_split, true);
+    tableOf.value = presetName;
+  }
 }
 
 const problem = computed(() => {
   if (picked.value === ANY) return anyProblem.value;
   if (!preset.value) return "Pick a dataset";
-  const value = name.value.trim();
-  if (!NAME.test(value)) return "Name the file: letters, digits, '.', '_' or '-'";
-  const taken = nameTaken(value);
-  if (taken) return taken;
-  if (sampling.value) {
-    const count = Number(sample.value);
-    if (!Number.isInteger(count) || count < 1 || count > splitRows.value) return `A sample is 1 to ${splitRows.value} rows`;
-  }
-  return null;
+  return splitsProblem(table, splits.value, base.value);
 });
 
 async function start() {
@@ -70,11 +58,8 @@ async function start() {
   let body;
   if (picked.value === ANY) body = anyJob();
   else {
-    body = { kind: "data", preset: preset.value.name, split: split.value, name: name.value.trim() };
-    if (sampling.value) {
-      body.sample = Number(sample.value);
-      body.seed = Number(seed.value) || 0;
-    }
+    body = { kind: "data", preset: preset.value.name, splits: splitsBody(table, splits.value), name: base.value };
+    if (body.splits.some((split) => split.sample != null)) body.seed = Number(seed.value) || 0;
   }
   starting.value = true;
   try {
@@ -83,7 +68,7 @@ async function start() {
     // The next Get starts afresh: "Another dataset…" empty, a preset's name free again.
     if (picked.value === ANY) resetAny(true);
     named.value = false;
-    toast(`${job.title}: it joins Datasets when it is done`);
+    toast(`${job.title}: ${body.splits.length > 1 ? "the files join" : "the file joins"} Datasets when the job is done`);
   } catch (error) {
     toast(`Could not get the dataset: ${error.message}`);
   } finally {
@@ -122,39 +107,11 @@ function Picked() {
       </ul>
     </div>
     <div class="opts">
-      <h4>Split</h4>
-      <div class="cat" role="radiogroup" aria-label="Split">
-        ${item.splits.map(
-          (entry) => html`<button class="crow" role="radio" aria-checked=${entry.name === split.value ? "true" : "false"}
-            data-split=${entry.name} onClick=${() => pickSplit(entry.name)}>
-            <span class="radio"></span>
-            <span><code>${entry.name}</code>${entry.evaluation && html`<small>The coverage suite evaluates on it: keep it for training eval</small>`}</span>
-            <span class="meta num">${entry.rows.toLocaleString("en")} rows</span>
-          </button>`,
-        )}
-      </div>
-      <label class="check ds-sample">
-        <input type="checkbox" checked=${sampling.value} onChange=${(event) => (sampling.value = event.target.checked)} />
-        A random sample of
-        <input class="setting-input mono" aria-label="Rows" type="number" min="1" max=${splitRows.value} value=${sample.value}
-               onFocus=${() => (sampling.value = true)} onInput=${(event) => {
-                 sample.value = event.target.value;
-                 sampleTyped.value = true;
-               }} />
-        rows, seed
-        <input class="setting-input mono" aria-label="Seed" type="number" min="0" value=${seed.value}
-               onInput=${(event) => (seed.value = event.target.value)} />
-      </label>
+      <h4>Splits</h4>
+      <${SplitTable} state=${table} splits=${splits.value} />
     </div>
-    <label class="name-field">
-      <span>Name</span>
-      <input class="sheet-input mono" aria-label="Name" spellcheck=${false} value=${name.value}
-             onInput=${(event) => {
-               name.value = event.target.value;
-               named.value = true;
-             }} />
-      <span class="suffix">.jsonl</span>
-    </label>
+    <${NameAndSeed} name=${name} named=${named} suggested=${suggested.value} seed=${seed}
+      sampled=${chosen(table, splits.value).some((split) => table.value[split.name].sampling)} />
     ${problem.value && html`<p class="warn-text">${problem.value}</p>`}
   `;
 }

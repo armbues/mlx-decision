@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ...config import Config
+from ...data.make import ROLES, SPLIT_FIELD, record_path
 from ...data.presets import PRESETS
 from ...data.presets import SPLITS as PRESETS_SPLITS
 from ...flags import join_pairs
@@ -38,6 +39,7 @@ DATA_SUFFIX = ".jsonl"
 PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 # The question a data job's labels answer, written into its folder for -q.
 QUESTION_FILE = "question.json"
+MAX_SPLITS = 10  # splits one Get takes
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
 BITS = (8, 4)
 # What fit and eval take from a model's load options (the others do not apply).
@@ -61,10 +63,12 @@ class Plan:
         details: dict[str, Any],
         output: Path | None = None,
         inputs: dict[str, bytes] | None = None,
+        also: list[Path] | None = None,
     ):
         self.argv, self.holds_gpu, self.title, self.output = argv, holds_gpu, title, output
         self.details = details
         self.inputs = inputs  # files for the job's folder (FOLDER in argv)
+        self.also = also or []  # more files it writes
 
 
 def jobs_router(
@@ -113,7 +117,7 @@ def jobs_router(
 
     def writing(path: Path, key: str) -> None:
         for job in jobs.jobs.values():
-            if job.state != "ended" and job.output is not None and job.output == path:
+            if job.state != "ended" and path in job.outputs:
                 raise ApiError(409, f"{job.title} is writing {path.name}", param=key)
 
     def bits(body: dict, default: int | None) -> int | None:
@@ -213,50 +217,97 @@ def jobs_router(
         details = {"model": name, "data": data_name, "compare": compare}
         return Plan(argv, holds_gpu=True, title=title, details=details)
 
+    def get_splits(body: dict, known: dict[str, int] | None) -> list[dict[str, Any]]:
+        """``splits``: each ``split`` once (one of ``known`` when given), its
+        ``role`` (one split per role) and an optional ``sample`` (up to the
+        split's rows: ``known``'s, or the entry's ``rows`` when it has them)."""
+        listed = body.get("splits")
+        if not isinstance(listed, list) or not listed:
+            raise ApiError(400, "pick at least one split", param="splits")
+        if len(listed) > MAX_SPLITS:
+            raise ApiError(400, f"at most {MAX_SPLITS} splits", param="splits")
+        result: list[dict[str, Any]] = []
+        for item in listed:
+            if not isinstance(item, dict):
+                raise ApiError(400, "each split is an object: {split, role, sample}", "splits")
+            split = field(item, "split", str)
+            if not PART.fullmatch(split) or (known is not None and split not in known):
+                have = f": {', '.join(known)}" if known else ""
+                raise ApiError(400, f"no split {split!r}{have}", param="splits")
+            if any(entry["split"] == split for entry in result):
+                raise ApiError(400, f"{split} is listed twice", param="splits")
+            role = field(item, "role", str)
+            if role not in ROLES:
+                raise ApiError(400, f"a role is one of {', '.join(ROLES)}", param="splits")
+            if any(entry["role"] == role for entry in result):
+                raise ApiError(400, f"one split per role: two are {role}", param="splits")
+            rows = known[split] if known is not None else field(item, "rows", int, False)
+            sample = field(item, "sample", int, required=False)
+            if sample is not None and (sample < 1 or (rows and sample > rows)):
+                most = f" to {rows}" if rows else " or more"
+                raise ApiError(400, f"{split}: a sample is 1{most} rows", param="splits")
+            result.append({"split": split, "role": role, "sample": sample})
+        return result
+
+    def get_files(body: dict, default: str, splits: list[dict]) -> tuple[str, list[Path]]:
+        """The Get's name (``name``, else ``default``) and its files, NAME-SPLIT in
+        ``data/``, each free: not there, not written by a job."""
+        base = (
+            named(body, "name", "a data file's name") if body.get("name") is not None else default
+        )
+        outputs = []
+        for entry in splits:
+            file_name = f"{base}-{entry['split']}"
+            try:
+                output = files.data_path(file_name)
+            except WorkspaceError as error:
+                raise ApiError(400, error.message, param="name") from None
+            if output.exists():
+                raise ApiError(409, f"a data file named {file_name} exists already", param="name")
+            writing(output, "name")
+            outputs.append(output)
+        return base, outputs
+
+    def get_plan(argv: list[str], body: dict, title: str, base: str, outputs: list[Path],
+                 splits: list[dict], details: dict, inputs=None) -> Plan:  # fmt: skip
+        """``data`` with each split, its sample and the seed, one file per split
+        with its record (and roles)."""
+        seed = field(body, "seed", int, required=False)
+        for entry in splits:
+            argv += ["--split", entry["split"]]
+        sampled = any(entry["sample"] is not None for entry in splits)
+        if sampled:
+            for entry in splits:
+                argv += ["--sample", str(entry["sample"] or 0)]
+            argv += ["--seed", str(seed or 0)]
+        pattern = outputs[0].parent / f"{base}-{SPLIT_FIELD}{DATA_SUFFIX}"
+        argv += ["-o", str(pattern), "--record", "--roles", ",".join(e["role"] for e in splits)]
+        names = [f"{base}-{entry['split']}" for entry in splits]
+        parts = [
+            entry["split"] + (f" ({entry['sample']} rows)" if entry["sample"] else "")
+            for entry in splits
+        ]
+        details = {**details, "splits": splits, "seed": seed if sampled else None,
+                   "name": base, "files": names}  # fmt: skip
+        also = outputs[1:] + [record_path(output) for output in outputs]
+        return Plan(argv, holds_gpu=False, title=f"Get {title} {', '.join(parts)}",
+                    details=details, output=outputs[0], inputs=inputs, also=also)  # fmt: skip
+
     def dataset(body: dict) -> Plan:
-        """A preset's split, or any Hugging Face dataset's with a question set's
-        question, as training data in ``data/`` (TRS-6)."""
+        """A preset's splits, or any Hugging Face dataset's with a question set's
+        question, as datasets in ``data/``, each with its role and record (DS-5)."""
         if body.get("source") is not None:
             return any_dataset(body)
         name = field(body, "preset", str)
         if name not in PRESETS:
             raise ApiError(400, f"preset must be one of {', '.join(PRESETS)}", param="preset")
-        splits = PRESETS_SPLITS[name]
-        split = field(body, "split", str, required=False) or next(iter(splits))
-        if split not in splits:
-            raise ApiError(400, f"{name} has the splits {', '.join(splits)}", param="split")
-        sample = field(body, "sample", int, required=False)
-        if sample is not None and not 1 <= sample <= splits[split]:
-            raise ApiError(400, f"sample must be from 1 to {splits[split]}", param="sample")
-        seed = field(body, "seed", int, required=False)
-        file_name = (
-            named(body, "name", "a data file's name")
-            if body.get("name") is not None
-            else f"{name}-{split}"
-        )
-        try:
-            output = files.data_path(file_name)
-        except WorkspaceError as error:
-            raise ApiError(400, error.message, param="name") from None
-        if output.exists():
-            raise ApiError(409, f"a data file named {file_name} exists already", param="name")
-        writing(output, "name")
-        argv = ["data", "--preset", name, "--split", split]
-        if sample is not None:
-            argv += ["--sample", str(sample), "--seed", str(seed or 0)]
-        argv += ["-o", str(output)]
-        details = {
-            "preset": name,
-            "split": split,
-            "sample": sample,
-            "seed": seed,
-            "name": file_name,
-        }
-        title = f"Get {name} {split}" + (f" ({sample} rows)" if sample else "")
-        return Plan(argv, holds_gpu=False, title=title, details=details, output=output)
+        splits = get_splits(body, PRESETS_SPLITS[name])
+        base, outputs = get_files(body, name, splits)
+        argv = ["data", "--preset", name]
+        return get_plan(argv, body, name, base, outputs, splits, {"preset": name})
 
     def any_dataset(body: dict) -> Plan:
-        """``hf:ORG/NAME``'s split with ``text`` as the state and ``label`` as
+        """``hf:ORG/NAME``'s splits with ``text`` as the state and ``label`` as
         the answer to a question set's question; the label's classes mapped to
         the question's options (``label_map``; classes left out are not used)."""
         source = field(body, "source", str).strip()
@@ -264,10 +315,9 @@ def jobs_router(
         if not source.startswith("hf:") or not REPO_ID.fullmatch(repo) or ".." in repo:
             raise ApiError(400, "give a Hugging Face dataset as hf:ORG/NAME", param="source")
         config = field(body, "config", str, required=False)
-        split = field(body, "split", str)
-        for key, value in (("config", config), ("split", split)):
-            if value is not None and not PART.fullmatch(value):
-                raise ApiError(400, f"not a dataset's {key}: {value!r}", param=key)
+        if config is not None and not PART.fullmatch(config):
+            raise ApiError(400, f"not a dataset's config: {config!r}", param="config")
+        splits = get_splits(body, None)
         text, label = field(body, "text", str), field(body, "label", str)
         for key, value in (("text", text), ("label", label)):
             if not value.strip() or len(value) > 200:
@@ -305,39 +355,18 @@ def jobs_router(
                 )
             if "=" in raw or raw != raw.strip() or not raw:
                 raise ApiError(400, f"a class the map cannot name: {raw!r}", param="label_map")
-        splits_rows = field(body, "rows", int, required=False)
-        sample = field(body, "sample", int, required=False)
-        if sample is not None and (sample < 1 or (splits_rows and sample > splits_rows)):
-            raise ApiError(400, "sample must be 1 or more, up to the split's rows", param="sample")
-        seed = field(body, "seed", int, required=False)
-        default = f"{repo.rsplit('/', 1)[-1]}-{split}"
-        file_name = (
-            named(body, "name", "a data file's name") if body.get("name") is not None else default
-        )
-        try:
-            output = files.data_path(file_name)
-        except WorkspaceError as error:
-            raise ApiError(400, error.message, param="name") from None
-        if output.exists():
-            raise ApiError(409, f"a data file named {file_name} exists already", param="name")
-        writing(output, "name")
+        base, outputs = get_files(body, repo.rsplit("/", 1)[-1], splits)
         argv = ["data", source]
         if config is not None:
             argv += ["--config", config]
-        argv += ["--split", split, "--shape", "text", "--text", text, "--label", label]
+        argv += ["--shape", "text", "--text", text, "--label", label]
         argv += ["-q", f"{FOLDER}/{QUESTION_FILE}", "--label-map", join_pairs(label_map)]
-        if sample is not None:
-            argv += ["--sample", str(sample), "--seed", str(seed or 0)]
-        argv += ["-o", str(output)]
         details = {
-            "source": source, "config": config, "split": split, "text": text, "label": label,
+            "source": source, "config": config, "text": text, "label": label,
             "set": set_name, "question": question_id, "label_map": label_map,
-            "sample": sample, "seed": seed, "name": file_name,
         }  # fmt: skip
-        title = f"Get {repo} {split}" + (f" ({sample} rows)" if sample else "")
         inputs = {QUESTION_FILE: json.dumps({question_id: question}, ensure_ascii=False).encode()}
-        return Plan(argv, holds_gpu=False, title=title, details=details, output=output,
-                    inputs=inputs)  # fmt: skip
+        return get_plan(argv, body, repo, base, outputs, splits, details, inputs)
 
     plans: dict[str, Callable[[dict], Plan]] = {
         "data": dataset,
@@ -361,9 +390,11 @@ def jobs_router(
         ``convert``: ``model``, ``bits`` (default 8), ``name``;
         ``fit``: ``model``, ``data``, ``name``, ``method``, ``epochs``,
         ``holdout``, ``seed``, ``early_stop``, ``head_only`` (finetune);
-        ``eval``: ``model``, ``data``, ``compare``; ``data``: ``preset``,
-        ``split``, ``sample``, ``seed``, ``name`` (the file's, in ``data/``;
-        default PRESET-SPLIT). ``name`` is the new
+        ``eval``: ``model``, ``data``, ``compare``; ``data``: ``preset`` (or
+        ``source`` with ``config``, ``text``, ``label``, ``set``, ``question``,
+        ``label_map``), ``splits`` (each ``split``, ``role``: train, report or
+        evaluate, one per role, ``sample``), ``seed``, ``name`` (the Get's: its
+        files are NAME-SPLIT in ``data/``; default the preset's or dataset's). ``name`` is the new
         model's in ``models/`` (default as the CLI names it); ``data`` a file
         in ``data/`` by its name."""
         body = await json_body(request, max_body_bytes)
@@ -380,6 +411,7 @@ def jobs_router(
                 title=plan.title,
                 details=plan.details,
                 inputs=plan.inputs,
+                also=plan.also,
             )
         except JobConflict as error:
             raise conflict(error) from None

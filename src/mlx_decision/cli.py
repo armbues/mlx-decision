@@ -1,7 +1,6 @@
 """The ``mlx-decision`` command."""
 
 import json
-import os
 import re
 import sys
 from contextlib import nullcontext
@@ -1925,12 +1924,13 @@ def watched(events: bool, cancel, leftovers=()):
     return watch_stdin(cancel, leftovers) if events else nullcontext()
 
 
-def data_events(plan) -> None:
-    """``data --events``: the plan made (nothing asked) and written whole, with
-    the progress as event lines. The file goes to ``.NAME.partial`` beside the
-    output and is renamed when complete; a stop (Ctrl-C, a closed stdin)
-    leaves nothing of it."""
-    from .data.format import write_examples
+def data_events(plans, with_records: bool = False, roles=None) -> None:
+    """``data --events``: the plans made (nothing asked) and written whole,
+    with the progress as event lines (``check``, ``read`` and ``write`` per
+    split, counted in ``step`` of ``total``). The files go to ``.NAME.partial``
+    beside their outputs and are renamed when all are complete; a stop
+    (Ctrl-C, a closed stdin) leaves nothing of them."""
+    from .data.make import leftovers, write_made
     from .events import Cancelled, Event
     from .training.console import interrupt_cancels
     from .watchdog import in_thread, quit_now
@@ -1939,39 +1939,72 @@ def data_events(plan) -> None:
         echo_event(stage_event("error", message))
         fail(message)
 
-    if plan.show is not None:
+    first = plans[0]
+    if first.show is not None:
         stop("--show and --events do not go together")
-    if plan.output is None:
+    if first.output is None:
         stop("pass -o FILE.jsonl")
-    output = Path(plan.output)
-    partial = output.with_name(f".{output.name}.partial")
-    what = f"the {plan.preset} preset" if plan.preset else plan.source or "no source"
-    split = f", split {plan.split}" if plan.split else ""
-    echo_event(Event("check", message=f"opening {what}{split}"))
-    with interrupt_cancels(sys.stderr) as cancel, watched(True, cancel, [partial]):
+    partials = leftovers(plans, with_records)
+    total = len(plans)
+    what = f"the {first.preset} preset" if first.preset else first.source or "no source"
+    made = []
+    with interrupt_cancels(sys.stderr) as cancel, watched(True, cancel, partials):
+
+        def cancelled() -> None:
+            echo_event(stage_event("cancelled", "nothing was written"))
+            quit_now(130, partials)
+
+        for step, plan in enumerate(plans, 1):
+            split = f", split {plan.split}" if plan.split else ""
+            counted = {"step": step, "total": total} if total > 1 else {}
+            echo_event(Event("check", message=f"opening {what}{split}", **counted))
+            try:
+                one = in_thread(plan.make, cancel)  # the Hub's threads cannot stop from inside
+            except Cancelled:
+                cancelled()
+            except (DecisionError, FileNotFoundError, ValueError) as error:
+                stop(f"{plan.split}: {error}" if total > 1 else str(error))
+            metrics = read_metrics(one)
+            if total > 1:
+                metrics["split"] = plan.split
+            echo_event(Event("read", metrics=metrics, message=summary_of_made(one), **counted))
+            made.append(one)
+            if cancel.is_set():
+                cancelled()
+        outputs = [plan.output for plan in plans]
+        echo_event(Event("write", message=f"writing {', '.join(outputs)}"))
+
+        def check_stop() -> None:
+            if cancel.is_set():
+                raise Cancelled()
+
         try:
-            made = in_thread(plan.make, cancel)  # the Hub's threads cannot stop from inside
+            write_made(
+                plans, made, with_records=with_records, roles=roles, before_rename=check_stop
+            )
         except Cancelled:
-            echo_event(stage_event("cancelled", "nothing was written"))
-            quit_now(130, [partial])
-        except (DecisionError, FileNotFoundError, ValueError) as error:
-            stop(str(error))
-        counts = made.label_counts()
-        metrics = {"examples": len(made.examples), "labels": counts}
-        if made.skipped:
-            metrics["skipped"] = dict(made.skipped)
-        echo_event(Event("read", metrics=metrics, message=summary_of_made(made)))
-        if cancel.is_set():
-            echo_event(stage_event("cancelled", "nothing was written"))
-            quit_now(130, [partial])
-        echo_event(Event("write", message=f"writing {output}"))
-        try:
-            write_examples(partial, made.examples)
-            os.replace(partial, output)
+            cancelled()
         except OSError as error:
-            partial.unlink(missing_ok=True)
-            stop(f"cannot write {output}: {error.strerror or error}")
-    echo_event(Event("done", metrics={"path": str(output), **metrics}, message=f"wrote {output}"))
+            stop(f"cannot write {error.filename or outputs[0]}: {error.strerror or error}")
+    if total == 1:
+        metrics = {"path": str(outputs[0]), **read_metrics(made[0])}
+    else:
+        metrics = {
+            "paths": [str(output) for output in outputs],
+            "files": [
+                {"path": str(plan.output), "split": plan.split, **read_metrics(one)}
+                for plan, one in zip(plans, made, strict=True)
+            ],
+        }
+    echo_event(Event("done", metrics=metrics, message=f"wrote {', '.join(outputs)}"))
+
+
+def read_metrics(made) -> dict:
+    """A split's examples and label counts (and rows skipped), as events carry them."""
+    metrics = {"examples": len(made.examples), "labels": made.label_counts()}
+    if made.skipped:
+        metrics["skipped"] = dict(made.skipped)
+    return metrics
 
 
 def stage_event(stage: str, message: str):
@@ -2148,11 +2181,22 @@ def data_command(
         ),
     ] = None,
     config: Annotated[str | None, typer.Option(help="The dataset's config.")] = None,
-    split: Annotated[str | None, typer.Option(help="The dataset's split.")] = None,
+    split: Annotated[
+        list[str] | None,
+        typer.Option(
+            help="The dataset's split. More than once: one file per split, with {split} in "
+            "-o standing for its name (one download, every file written whole)."
+        ),
+    ] = None,
     revision: Annotated[str | None, typer.Option(help="A commit, branch or tag.")] = None,
     limit: Annotated[int | None, typer.Option(min=1, help="Only the first N rows.")] = None,
     sample: Annotated[
-        int | None, typer.Option(min=1, help="N rows drawn at random (with --seed).")
+        list[int] | None,
+        typer.Option(
+            min=0,
+            help="N rows drawn at random (with --seed); 0 takes them all. With several "
+            "--split: once for every split, or once per --split, in their order.",
+        ),
     ] = None,
     seed: Annotated[int, typer.Option(help="Seed of --sample.")] = 0,
     show: Annotated[
@@ -2205,6 +2249,22 @@ def data_command(
             help="rating: level descriptions, lowest first: 'bad,ok,good' (\\, for a comma)."
         ),
     ] = None,
+    record: Annotated[
+        bool,
+        typer.Option(
+            "--record",
+            help="Write NAME.source.json beside each file: where it came from (source, "
+            "config, revision, split, rows, sample, seed, the question and label map when "
+            "given) and the files written with it.",
+        ),
+    ] = False,
+    roles: Annotated[
+        str | None,
+        typer.Option(
+            help="With --record: each split's role, in --split's order: train, report or "
+            "evaluate ('train,report').",
+        ),
+    ] = None,
     no_input: Annotated[
         bool,
         typer.Option(
@@ -2230,18 +2290,20 @@ def data_command(
     printing the command that does the same without them.
     """
     from .data.format import write_examples
-    from .data.make import DataPlan
+    from .data.make import ROLES, DataPlan, split_plans, write_made
+    from .data.sources import SourceError
     from .flags import split_list
 
+    splits = split or [None]
     plan = DataPlan(
         source=source,
         output=str(output) if output is not None else None,
         preset=preset,
         config=config,
-        split=split,
+        split=splits[0],
         revision=revision,
         limit=limit,
-        sample=sample,
+        sample=(sample[0] or None) if sample and len(splits) == 1 else None,
         seed=seed,
         show=show,
         shape=shape,
@@ -2268,9 +2330,41 @@ def data_command(
         file_id, plan.question = question_from_file(questions_file)
         plan.questions_file = str(questions_file)
         plan.question_id = question_id or file_id
+    try:
+        plans = split_plans(plan, splits, sample)
+    except SourceError as error:
+        if events:
+            echo_event(stage_event("error", str(error)))
+        fail(str(error))
+    role_list = split_list(roles) if roles else None
+    if role_list is not None:
+        problem = None
+        if not record:
+            problem = "--roles goes with --record"
+        elif len(role_list) != len(plans):
+            problem = "--roles: one role per --split"
+        elif any(role not in ROLES for role in role_list):
+            problem = f"--roles: each is one of {', '.join(ROLES)}"
+        if problem:
+            if events:
+                echo_event(stage_event("error", problem))
+            fail(problem)
     if events:
-        data_events(plan)
+        data_events(plans, record, role_list)
         return
+    if len(plans) > 1:
+        if plan.output is None:
+            fail("pass -o with {split} (one file per split)")
+        try:
+            made = [one.make() for one in plans]
+            write_made(plans, made, with_records=record, roles=role_list)
+        except (DecisionError, FileNotFoundError, ValueError, OSError) as error:
+            fail(str(error))
+        for one, made_one in zip(plans, made, strict=True):
+            typer.echo(f"{one.split}: {summary_of_made(made_one)}", err=True)
+            typer.echo(f"wrote {one.output}", err=True)
+        return
+    plan = plans[0]
     open_steps = (
         (plan.source is None and plan.preset is None)
         or (plan.output is None and plan.show is None)
@@ -2287,7 +2381,10 @@ def data_command(
             if plan.show is not None:
                 typer.echo(same_without_menus(plan), err=True)
                 return
-            write_examples(plan.output, made.examples)  # the summary was in the preview
+            if record:
+                write_made([plan], [made], with_records=True, roles=role_list)
+            else:
+                write_examples(plan.output, made.examples)  # the summary was in the preview
             typer.echo(f"wrote {plan.output}", err=True)
             typer.echo(same_without_menus(plan), err=True)
             return
@@ -2300,6 +2397,9 @@ def data_command(
                 return
     except (DecisionError, FileNotFoundError, ValueError) as error:
         fail(str(error))
-    write_examples(plan.output, made.examples)
+    if record:
+        write_made([plan], [made], with_records=True, roles=role_list)
+    else:
+        write_examples(plan.output, made.examples)
     typer.echo(summary_of_made(made), err=True)
     typer.echo(f"wrote {plan.output}", err=True)

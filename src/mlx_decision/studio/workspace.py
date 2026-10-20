@@ -250,7 +250,10 @@ class Workspace:
         return self.path("data", name, DATA_SUFFIX, "a data file's name")
 
     def list_data(self) -> list[dict[str, Any]]:
-        """The training data files, by name: ``name``, ``bytes``, ``modified``."""
+        """The datasets, by name: ``name``, ``bytes``, ``modified`` and ``record``
+        (where it came from, ``NAME.source.json``; None without one)."""
+        from ..data.make import read_record
+
         found = []
         for path in sorted((self.root / "data").glob(f"*{DATA_SUFFIX}")):
             name = path.name[: -len(DATA_SUFFIX)]
@@ -258,7 +261,14 @@ class Workspace:
                 continue
             stat = path.stat()
             modified = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds")
-            found.append({"name": name, "bytes": stat.st_size, "modified": modified})
+            found.append(
+                {
+                    "name": name,
+                    "bytes": stat.st_size,
+                    "modified": modified,
+                    "record": read_record(path),
+                }
+            )
         return sorted(found, key=lambda item: (item["name"].casefold(), item["name"]))
 
     def save_data(self, name: str, data: bytes) -> Path:
@@ -273,12 +283,15 @@ class Workspace:
         return path
 
     def delete_data(self, name: str) -> None:
-        """Delete a training data file; ``NotFound`` when there is none."""
+        """Delete a dataset and its record; ``NotFound`` when there is none."""
+        from ..data.make import record_path
+
         path = self.data_path(name)
         with self.lock:
             if not path.is_file():
                 raise NotFound(f"no data file named {name!r}")
             path.unlink()
+            record_path(path).unlink(missing_ok=True)
         self.changed("data", name, "deleted")
 
     # Sets

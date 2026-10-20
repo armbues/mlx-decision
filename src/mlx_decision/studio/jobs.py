@@ -87,6 +87,7 @@ class Job:
     folder: Path
     output: Path | None = None
     details: dict[str, Any] = field(default_factory=dict)  # what it was started with
+    also: list[Path] = field(default_factory=list)  # more files it writes (a Get's splits)
     state: str = "waiting"  # waiting (for the GPU), running, ended
     outcome: str | None = None  # done, error, cancelled, failed, interrupted
     message: str | None = None
@@ -104,6 +105,11 @@ class Job:
     def last(self) -> dict[str, Any] | None:
         return self.events[-1] if self.events else None
 
+    @property
+    def outputs(self) -> list[Path]:
+        """Every file or folder it writes: ``output``, then ``also``."""
+        return ([self.output] if self.output is not None else []) + self.also
+
     def summary(self) -> dict[str, Any]:
         """What ``job.json`` holds, and what a list of jobs shows."""
         return {
@@ -113,6 +119,7 @@ class Job:
             "command": ["mlx-decision", *self.argv],
             "holds_gpu": self.holds_gpu,
             "output": str(self.output) if self.output is not None else None,
+            "outputs": [str(path) for path in self.outputs],
             "details": self.details,
             "state": self.state,
             "outcome": self.outcome,
@@ -165,6 +172,7 @@ class Jobs:
         title: str | None = None,
         details: dict[str, Any] | None = None,
         inputs: dict[str, bytes] | None = None,
+        also: Sequence[Path] = (),
     ) -> Job:
         """Run ``mlx-decision ARGV --events`` as a job.
 
@@ -175,9 +183,10 @@ class Jobs:
         once the Studio is stopping. ``details`` are what the job was started
         with (the page's fields), kept in its summary. ``inputs`` are files
         written into the job's folder before it runs (``FOLDER`` in ``argv``
-        stands for that folder).
+        stands for that folder). ``also`` are more files it writes (cleaned up
+        as ``output`` is).
         """
-        job = self._create(kind, argv, holds_gpu, output, title, details, inputs)
+        job = self._create(kind, argv, holds_gpu, output, title, details, inputs, also)
         await self._launch(job)
         return job
 
@@ -191,12 +200,13 @@ class Jobs:
         title: str | None = None,
         details: dict[str, Any] | None = None,
         inputs: dict[str, bytes] | None = None,
+        also: Sequence[Path] = (),
     ) -> Job:
         """``start`` without waiting: the job is returned at once, waiting for
         the GPU or about to run; one that cannot start ends ``failed``. Raises
         ``JobConflict`` and ``RuntimeError`` as ``start`` does, before
         anything is created."""
-        job = self._create(kind, argv, holds_gpu, output, title, details, inputs)
+        job = self._create(kind, argv, holds_gpu, output, title, details, inputs, also)
 
         async def launch() -> None:
             with suppress(Exception):  # the job's outcome says what went wrong
@@ -214,12 +224,14 @@ class Jobs:
         title: str | None,
         details: dict[str, Any] | None = None,
         inputs: dict[str, bytes] | None = None,
+        also: Sequence[Path] = (),
     ) -> Job:
         if self.closing:
             raise RuntimeError("the Studio is stopping")
         if holds_gpu and self.gpu_job is not None:
             raise JobConflict(self.gpu_job)
         job = self._new(kind, list(argv), holds_gpu, output, title, details or {}, inputs or {})
+        job.also = [Path(path) for path in also]
         if holds_gpu:
             self.gpu_job = job
         self._changed(job)
@@ -385,10 +397,9 @@ class Jobs:
             await asyncio.wait(tasks, timeout=limit)
 
     def _remove_leftovers(self, job: Job) -> None:
-        if job.output is None:
-            return
-        for suffix in WORKING_SUFFIXES:
-            remove(job.output.parent / f".{job.output.name}{suffix}")
+        for output in job.outputs:
+            for suffix in WORKING_SUFFIXES:
+                remove(output.parent / f".{output.name}{suffix}")
 
     # Reading
 
