@@ -938,6 +938,7 @@ a.sb-item { color: var(--fg); }
 .sheet .opts h4 { margin: 0; font-weight: 600; color: var(--fg-3); font-variant: all-small-caps; letter-spacing: 0.04em; font-size: 12.5px; }
 .sheet .opts .note { margin: 0; }
 .sheet .qopts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sheet .qopts.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sheet .qopt { border: 1px solid var(--sep-strong); border-radius: 8px; padding: 8px 10px; background: transparent; text-align: left; display: grid; gap: 2px; color: var(--fg); }
 .sheet .qopt:hover { background: var(--fill); }
 .sheet .qopt[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--selection); }

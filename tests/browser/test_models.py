@@ -112,7 +112,7 @@ def test_load_and_unload_from_the_inspector(sized, page):
     open_studio(page, sized, "models")
     row(page, "fake-vision").locator(".nm").click()
     buttons = page.locator(".idet-actions button")
-    expect(buttons).to_have_text(["Open in Playground", "Load"])
+    expect(buttons).to_have_text(["Open in Playground", "Load", "Convert…"])
     inspector_button(page).click()
     expect(segments(page)).to_have_text(["fake-vision"])
     # The row moves to Loaded and says when it was used.
@@ -184,7 +184,8 @@ def test_unload_from_the_memory_card_and_the_sidebar(sized, page):
 def test_the_row_context_menu_loads_a_model(sized, page):
     open_studio(page, sized, "models")
     row(page, "fake-strict").locator(".nm").click(button="right")
-    expect(page.locator(".ctx-menu .mi")).to_have_text(["Open in Playground", "Load", "Copy Name"])
+    items = page.locator(".ctx-menu .mi")
+    expect(items).to_have_text(["Open in Playground", "Load", "Convert…", "Copy Name"])
     menu_item(page, "Load").click()
     expect(segments(page)).to_have_text(["fake-strict"])
     expect(page.locator(".ctx-menu")).to_have_count(0)

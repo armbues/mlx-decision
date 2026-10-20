@@ -8,13 +8,25 @@ models on it), as making room does. The status message that follows the
 pool's change keeps every open tab current.
 """
 
+import asyncio
 import logging
 import time
+from typing import Any
 
 from fastapi import APIRouter, Request
 
 from ...gpu import Busy, Gpu
-from ...memory import ModelTooLargeError
+from ...memory import (
+    MARGIN,
+    QUANTIZED_BITS,
+    ModelTooLargeError,
+    quantizable_bytes,
+    quantized_size,
+    weight_bytes,
+    working_set,
+)
+from ...pool import ModelSpec
+from ...registry import MARKER_FILE
 from ..rescan import Rescans
 from . import ApiError, field, json_body
 
@@ -69,6 +81,30 @@ def models_router(gpu: Gpu, max_body_bytes: int, rescans: Rescans | None = None)
         name = await named(request)
         return {"model": name, "unloaded": await gpu.run(pool.unload, name)}
 
+    @router.get("/convert")
+    async def convert_plan(model: str):
+        """``?model=NAME`` -> what Convert offers for it (``convert_options``);
+        404 for an unknown model."""
+        if model not in pool.specs:
+            raise ApiError(404, f"no model is named {model}", param="model")
+        spec = pool.specs[model]
+        reason = not_convertible(spec)
+        if reason is not None:
+            return {"model": model, "convertible": False, "reason": reason, "options": []}
+
+        def plan() -> dict[str, Any]:
+            return convert_options(spec, pool.limit(), working_set())
+
+        try:
+            return {
+                "model": model,
+                "convertible": True,
+                "reason": None,
+                **await asyncio.to_thread(plan),
+            }
+        except (OSError, ValueError, KeyError) as error:
+            raise ApiError(422, f"cannot read {model}'s weights: {error}", param="model") from None
+
     @router.post("/rescan")
     async def rescan():
         """``{added, removed}``: the models looked for again (the page asks when it
@@ -79,3 +115,31 @@ def models_router(gpu: Gpu, max_body_bytes: int, rescans: Rescans | None = None)
         return await rescans.run()
 
     return router
+
+
+def not_convertible(spec: ModelSpec) -> str | None:
+    """Why Convert does not offer ``spec``, or None when it does."""
+    if spec.fit is not None:
+        return "a fitted model is not converted: convert its base, then fit the copy"
+    if spec.family.converter is None:
+        title = spec.family.listing.title if spec.family.listing else spec.family.name
+        return f"{title} models are not stored quantized"
+    if (spec.path / MARKER_FILE).exists():
+        return "it is a converted copy already: convert the original"
+    return None
+
+
+def convert_options(spec: ModelSpec, budget: int, mac: int) -> dict[str, Any]:
+    """The sizes Convert shows (estimates, as ``convert``'s memory hint has them):
+    ``source_bytes`` (the weights now) and per ``bits`` the copy's ``bytes`` on
+    disk, ``memory_bytes`` to run (plus 10%) and ``fit`` ("ok", "over_budget",
+    "too_large", as Download Model has it)."""
+    weights = weight_bytes(spec.path, spec.options)
+    quantizable = quantizable_bytes(spec.path)
+    options = []
+    for bits in QUANTIZED_BITS:
+        size = weights - quantizable + quantized_size(quantizable, bits)
+        memory = round(size * MARGIN)
+        fit = "ok" if memory <= budget else "over_budget" if memory <= mac else "too_large"
+        options.append({"bits": bits, "bytes": size, "memory_bytes": memory, "fit": fit})
+    return {"source_bytes": weights, "options": options}

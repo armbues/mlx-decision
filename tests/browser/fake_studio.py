@@ -10,7 +10,9 @@ images), ``fake-strict`` (needs instructions; choice and noul only). With
 ``fake-fit`` and an over-budget ``fake-big`` are added (the Models page's
 memory card); with ``slow`` also ``fake-slow`` (1.5 s an answer, other
 probabilities; Compare's Stop and its notes where models differ). With
-``empty`` it serves no models at all (a first start).
+``empty`` it serves no models at all (a first start); with ``convertible``
+also ``tiny-clef``, the tiny Clef of ``tests/tiny_models.py``, which
+Convert offers.
 
 Jobs run ``tests/fake_job.py`` in the CLI's place (``fake_jobs`` sets how
 many steps and how fast); ``data/tickets.jsonl`` is there for a fit.
@@ -98,6 +100,7 @@ def write_studio(
     slow: bool = False,
     dev: bool = False,
     empty: bool = False,
+    convertible: bool = False,
 ) -> FastAPI:
     """Write the fake models under ``home/fake-models`` and the sample sets in
     ``home/ws/sets`` (kept when there), and build the Studio for ``port``."""
@@ -119,6 +122,11 @@ def write_studio(
     if not (sets / "ticket-triage.json").exists():
         (sets / "ticket-triage.json").write_text(json.dumps(TICKET_TRIAGE, indent=2))
         (sets / "order-json.json").write_text(json.dumps(ORDER_JSON, indent=2))
+    if convertible:  # a real model that Convert offers
+        from tiny_models import write_clef
+
+        if not (models / "tiny-clef").exists():
+            write_clef(models / "tiny-clef")
     if empty:  # a first start: no models, a budget like a 16 GB Mac's
         pool = ModelPool([], budget=int(12.7 * GB))
     elif sizes:

@@ -22,6 +22,7 @@ from ...gpu import Gpu
 from ..catalog import cli_arguments
 from ..security import WILDCARDS
 from ..workspace import Workspace
+from .models import not_convertible
 from .run import Models
 
 
@@ -125,6 +126,7 @@ def status_router(
                     "base": spec.fit.base_name if spec.fit is not None else None,
                     "default": name == pool.default,
                     "loaded": name in loaded,
+                    "convert_reason": not_convertible(spec),  # why Convert does not offer it
                 }
                 try:
                     entry["capabilities"] = capabilities_info(models.capabilities(name))
@@ -139,6 +141,7 @@ def status_router(
                 except (ValueError, OSError) as error:
                     entry["memory"] = None
                     entry["error"] = entry["error"] or str(error)
+                entry["convertible"] = entry["convert_reason"] is None
                 listed.append(entry)
             return listed
 

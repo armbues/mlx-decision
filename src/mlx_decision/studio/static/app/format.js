@@ -6,6 +6,12 @@ export function gigabytes(bytes) {
   return `${value === 0 ? "0" : value >= 100 ? value.toFixed(0) : value.toFixed(1)} GB`;
 }
 
+// A file size as the CLI writes it: "1.2 GB", or "84 MB" below 0.1 GB.
+export function size(bytes) {
+  if (bytes == null) return "";
+  return bytes >= 1e8 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+}
+
 // A parameter count: "421M", "0.6B", "3.1B", "27B".
 export function parameters(count) {
   if (!count) return "";

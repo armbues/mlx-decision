@@ -8,7 +8,7 @@ import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { StatusIcon } from "../components/icons.js";
 import { markOf } from "../families.js";
-import { gigabytes } from "../format.js";
+import { size } from "../format.js";
 import { jobs } from "../store/jobs.js";
 import { toast } from "../store/ui.js";
 
@@ -170,14 +170,14 @@ function Options({ result }) {
       <div class="qopts" role="radiogroup" aria-label="Precision">
         ${result.options.map((option) => {
           const [kind, words] = FITS[option.fit];
-          const size = `${option.estimate ? "about " : ""}${gigabytes(option.bytes)} on disk`;
+          const disk = `${option.estimate ? "about " : ""}${size(option.bytes)} on disk`;
           return html`
             <button class="qopt" role="radio" aria-checked=${option.bits === chosen ? "true" : "false"} data-bits=${option.bits}
                     onClick=${() => (bitsOf.value = { ...bitsOf.value, [repo]: option.bits })}>
               <b>${optionTitle(option.bits)}</b>
               <span>${optionLine(option.bits)}</span>
-              <span class="num">${size}</span>
-              <span class="num">about ${gigabytes(option.memory_bytes)} to run</span>
+              <span class="num">${disk}</span>
+              <span class="num">about ${size(option.memory_bytes)} to run</span>
               <span class=${`fit ${kind}`} title=${option.fit === "over_budget" ? "It fits this Mac's GPU, but not the Studio's memory budget (--memory-budget), so it cannot load here" : undefined}>${words}</span>
             </button>
           `;
@@ -206,7 +206,7 @@ function Checked() {
     return html`${heading}<${Notice}>${repo}: ${result.reason}. The Studio cannot load it, so it is not offered.<//>`;
   return html`
     ${heading ?? null}
-    ${!familyName.value && html`<p>${result.family_title} model · ${gigabytes(result.size_bytes)} to download in full</p>`}
+    ${!familyName.value && html`<p>${result.family_title} model · ${size(result.size_bytes)} to download in full</p>`}
     <${Options} result=${result} />
     ${result.licence && html`<${Notice} kind="info">${result.licence}<//>`}
   `;

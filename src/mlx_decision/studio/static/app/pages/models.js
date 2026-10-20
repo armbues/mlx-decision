@@ -10,10 +10,11 @@ import { MenuItem, MenuSeparator } from "../components/menu.js";
 import { gigabytes, parameters, plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { SHORTCUTS, onKey } from "../keys.js";
+import { openConvert } from "../models/convert.js";
 import { openDownload } from "../models/download.js";
 import { FirstStart } from "../models/first-start.js";
 import { href, route } from "../router.js";
-import { jobs, progress, stopJob } from "../store/jobs.js";
+import { gpuJob, jobs, progress, stopJob } from "../store/jobs.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
 import { busy, loadedNames, models, status } from "../store/status.js";
 import { openMenu, toast } from "../store/ui.js";
@@ -61,6 +62,15 @@ const selected = computed(() => {
 });
 const hovered = signal(null);
 const byName = computed(() => new Map((models.value ?? []).map((model) => [model.name, model])));
+
+// Why Convert is off for ``model``, or null.
+function convertWhyNot(model) {
+  if (!model) return "No model";
+  if (!model.convertible) return `${model.name} cannot be converted: ${model.convert_reason}`;
+  const job = gpuJob.value;
+  if (job) return `${job.title} is running; one job at a time can use the GPU`;
+  return null;
+}
 
 function openInPlayground(name) {
   chooseModel(name);
@@ -329,7 +339,7 @@ function ContextMenu() {
   const loaded = loadedNames.value.has(at.name);
   const blocked = Boolean(busy.value || pending.value[at.name]);
   const left = Math.min(at.x, innerWidth - 230);
-  const top = Math.min(at.y, innerHeight - 140);
+  const top = Math.min(at.y, innerHeight - 170);
   const copy = () =>
     navigator.clipboard.writeText(at.name).then(
       () => toast(`Copied ${at.name}`),
@@ -341,6 +351,7 @@ function ContextMenu() {
       <${MenuItem} disabled=${blocked} onSelect=${() => (loaded ? unloadModel(at.name) : loadModel(at.name))}>
         ${loaded ? "Unload" : "Load"}
       <//>
+      <${MenuItem} disabled=${Boolean(convertWhyNot(byName.value.get(at.name)))} onSelect=${() => openConvert(at.name)}>Convert…<//>
       <${MenuSeparator} />
       <${MenuItem} onSelect=${copy}>Copy Name<//>
     </div>
@@ -425,6 +436,8 @@ function Details() {
       <div class="idet-actions">
         <button class="btn primary" onClick=${() => openInPlayground(model.name)}>Open in Playground</button>
         <${LoadButton} name=${model.name} />
+        <button class="btn" disabled=${Boolean(convertWhyNot(model))} title=${convertWhyNot(model) ?? `Make an 8-bit or 4-bit copy of ${model.name}`}
+                onClick=${() => openConvert(model.name)}>Convert…</button>
       </div>
       ${model.error && html`<p class="warn-text">${model.error}</p>`}
 
