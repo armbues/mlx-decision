@@ -238,6 +238,43 @@ PRESETS: dict[str, Preset] = {
 }
 
 
+# The splits a preset can be read from, with their rows, at the pinned
+# commits (read with ``sources.open_source`` and the Hub's dataset cards,
+# 2026-10-20); the evaluation split is the coverage suite's.
+SPLITS: dict[str, dict[str, int]] = {
+    "trec": {"train": 5452, "test": 500},
+    "offensive": {"train": 11916, "validation": 1324, "test": 860},
+    "anli-r3": {"train_r3": 100459, "dev_r3": 1200, "test_r3": 1200},
+    "openbookqa": {"train": 4957, "validation": 500, "test": 500},
+    "sst5": {"train": 8544, "validation": 1101, "test": 2210},
+}
+
+# A row of each preset's shape, to describe its question without reading the
+# dataset (the Studio's list of datasets).
+EXAMPLE_ROWS: dict[str, dict] = {
+    "trec": {"text": "Who wrote Hamlet?", "coarse_label": 3},
+    "offensive": {"text": "Have a nice day", "label": 0},
+    "anli-r3": {"premise": "A man is eating.", "hypothesis": "Someone eats.", "label": 0},
+    "openbookqa": {
+        "question_stem": "The sun is",
+        "choices": {
+            "label": ["A", "B", "C", "D"],
+            "text": ["a star", "a moon", "a planet", "a comet"],
+        },
+        "answerKey": "A",
+    },
+    "sst5": {"text": "A fine film.", "label": 3},
+}
+
+
+def describe(preset: Preset) -> dict:
+    """The preset's question (its id and the question as the data has it),
+    built by the preset's own code from an example row."""
+    made = preset.make(EXAMPLE_ROWS[preset.name])
+    [(question_id, question)] = made["questions"].items()
+    return {"id": question_id, **question}
+
+
 def examples(
     preset: Preset, rows: list[dict], split: str | None = None, indices: list[int] | None = None
 ) -> list[dict]:

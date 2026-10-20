@@ -133,15 +133,9 @@ def _choices(prepared) -> list[tuple[tuple[str, bool], str]]:
 
     family = prepared.family
     main = kinds_plan.MAIN_KIND.get(family)
-    entries = []
-    if main is not None:
-        entries.append((main, False))
-        if main == "finetune":
-            entries.append((main, True))
-    entries.append(("calibrate", False))
     limit = working_set()
     options = []
-    for method, head_only in entries:
+    for method, head_only in kinds_plan.methods(family):
         kinds = kinds_plan.resolve(family, method)
         estimate = prepared.estimate(kinds, head_only)
         name = ", then ".join(kinds) + (" (head only)" if head_only else "")

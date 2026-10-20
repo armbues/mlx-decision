@@ -30,6 +30,9 @@ change the interface).
   lines, as `training fit` prints it (`download`: bytes as steps;
   `convert`: tensors as steps), ending with `done` and the folder.
   `download --events` asks nothing, as with `--yes`.
+- `data --events`: the progress as JSON lines (`check`, `read` with the
+  examples and label counts, `write`, then `done` with the file); asks
+  nothing, writes the file whole, and a stop leaves nothing.
 - With `--events`, `MLX_DECISION_WATCH_STDIN=1` and a pipe on stdin,
   `training fit`, `training eval`, `download` and `convert` stop when
   the pipe closes (the program that started them is gone): at the next

@@ -28,6 +28,7 @@ from .jobs import Jobs
 from .page import Page, watch
 from .rescan import Rescans
 from .routes.data import data_router
+from .routes.datasets import datasets_router
 from .routes.downloads import downloads_router
 from .routes.jobs import JobMessages, jobs_router
 from .routes.models import models_router
@@ -35,6 +36,7 @@ from .routes.run import Models, Recorder, run_router
 from .routes.sets import sets_router
 from .routes.settings import settings_router
 from .routes.status import status_router
+from .routes.training import training_router
 from .security import NO_STORE, Session
 from .settings import Settings
 from .stream import Hub, stream_router
@@ -133,6 +135,8 @@ def create_studio(
     app.include_router(status_router(gpu, files, models, current, host, port, api_key, status))
     app.include_router(sets_router(files, max_body_bytes))
     app.include_router(data_router(files, max_body_bytes))
+    app.include_router(training_router(gpu, files, max_body_bytes))
+    app.include_router(datasets_router())
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
     app.include_router(models_router(gpu, max_body_bytes, rescans))
     app.include_router(jobs_router(jobs, gpu, files, current, max_body_bytes))
@@ -238,6 +242,9 @@ def studio_lifespan(
                 ended = event is None and job.state == "ended" and job.outcome == "done"
                 if ended and job.kind in WRITES_MODELS and rescans is not None:
                     rescans.soon()
+                if ended and job.kind == "data" and job.output is not None:
+                    # A new training data file: every tab's list again.
+                    files.changed("data", job.output.name.removesuffix(".jsonl"), "saved")
 
             jobs.on_change = job_changed
         watcher = None

@@ -1,6 +1,7 @@
 """The ``mlx-decision`` command."""
 
 import json
+import os
 import re
 import sys
 from contextlib import nullcontext
@@ -1924,6 +1925,55 @@ def watched(events: bool, cancel, leftovers=()):
     return watch_stdin(cancel, leftovers) if events else nullcontext()
 
 
+def data_events(plan) -> None:
+    """``data --events``: the plan made (nothing asked) and written whole, with
+    the progress as event lines. The file goes to ``.NAME.partial`` beside the
+    output and is renamed when complete; a stop (Ctrl-C, a closed stdin)
+    leaves nothing of it."""
+    from .data.format import write_examples
+    from .events import Cancelled, Event
+    from .training.console import interrupt_cancels
+    from .watchdog import in_thread, quit_now
+
+    def stop(message: str) -> None:
+        echo_event(stage_event("error", message))
+        fail(message)
+
+    if plan.show is not None:
+        stop("--show and --events do not go together")
+    if plan.output is None:
+        stop("pass -o FILE.jsonl")
+    output = Path(plan.output)
+    partial = output.with_name(f".{output.name}.partial")
+    what = f"the {plan.preset} preset" if plan.preset else plan.source or "no source"
+    split = f", split {plan.split}" if plan.split else ""
+    echo_event(Event("check", message=f"opening {what}{split}"))
+    with interrupt_cancels(sys.stderr) as cancel, watched(True, cancel, [partial]):
+        try:
+            made = in_thread(plan.make, cancel)  # the Hub's threads cannot stop from inside
+        except Cancelled:
+            echo_event(stage_event("cancelled", "nothing was written"))
+            quit_now(130, [partial])
+        except (DecisionError, FileNotFoundError, ValueError) as error:
+            stop(str(error))
+        counts = made.label_counts()
+        metrics = {"examples": len(made.examples), "labels": counts}
+        if made.skipped:
+            metrics["skipped"] = dict(made.skipped)
+        echo_event(Event("read", metrics=metrics, message=summary_of_made(made)))
+        if cancel.is_set():
+            echo_event(stage_event("cancelled", "nothing was written"))
+            quit_now(130, [partial])
+        echo_event(Event("write", message=f"writing {output}"))
+        try:
+            write_examples(partial, made.examples)
+            os.replace(partial, output)
+        except OSError as error:
+            partial.unlink(missing_ok=True)
+            stop(f"cannot write {output}: {error.strerror or error}")
+    echo_event(Event("done", metrics={"path": str(output), **metrics}, message=f"wrote {output}"))
+
+
 def stage_event(stage: str, message: str):
     """How a run ended other than done: ``error`` or ``cancelled``."""
     from .training import Event
@@ -2162,6 +2212,17 @@ def data_command(
             help="Never ask (also without a terminal); anything left open is an error.",
         ),
     ] = False,
+    events: Annotated[
+        bool,
+        typer.Option(
+            "--events",
+            help='Print the progress as JSON lines on stdout: {"stage": "check"}, "read" '
+            '(the dataset fetched and turned into examples, with the counts), "write", then '
+            '"done" with the file and the label counts in "metrics", or "error" or '
+            '"cancelled". Asks nothing. With MLX_DECISION_WATCH_STDIN=1 it stops when a pipe '
+            "on stdin closes.",
+        ),
+    ] = False,
 ) -> None:
     """Turn a dataset into labelled examples for training fit (JSON lines).
 
@@ -2207,6 +2268,9 @@ def data_command(
         file_id, plan.question = question_from_file(questions_file)
         plan.questions_file = str(questions_file)
         plan.question_id = question_id or file_id
+    if events:
+        data_events(plan)
+        return
     open_steps = (
         (plan.source is None and plan.preset is None)
         or (plan.output is None and plan.show is None)

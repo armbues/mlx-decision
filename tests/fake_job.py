@@ -15,6 +15,8 @@ it does not know are ignored (the job's own arguments).
     --stubborn     ignore the first SIGINT, stop at the second
     --hold S       after the last event, wait S seconds before exiting
     --fake-model   write a fake model (``fake_backend``'s family) at -o
+    (an -o ending in .jsonl is written as a file: a training example, as
+    ``data`` writes one)
 """
 
 import json
@@ -61,7 +63,10 @@ def main() -> int:
     signal.signal(signal.SIGINT, on_sigint)
     with watch_stdin(cancel, [partial] if partial else []):
         emit("check", message="starting")
-        if partial:
+        if partial and output.suffix == ".jsonl":
+            example = {"state": "x", "questions": {"q": {"type": "noul"}}, "labels": {"q": True}}
+            partial.write_text(json.dumps(example) + "\n")
+        elif partial:
             partial.mkdir(parents=True)
             (partial / "weights").write_text("half")
             if "--fake-model" in sys.argv:
@@ -73,7 +78,9 @@ def main() -> int:
                     raise KeyboardInterrupt
                 emit("work", step=step, total=steps)
         except KeyboardInterrupt:
-            if partial:
+            if partial and partial.is_file():
+                partial.unlink()
+            elif partial:
                 import shutil
 
                 shutil.rmtree(partial, ignore_errors=True)

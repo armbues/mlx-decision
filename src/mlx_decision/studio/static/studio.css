@@ -1035,3 +1035,61 @@ a.sb-item { color: var(--fg); }
 .sheet .name-field .suffix { color: var(--fg-3); font: 13px var(--mono); }
 .page-training .empty .btn { margin-top: 10px; justify-self: start; }
 .data-inspector .idet-head { grid-template-columns: minmax(0, 1fr); }
+
+/* The fit form (Training) */
+.fit-form { display: grid; gap: 18px; }
+.fit-form .row { grid-template-columns: 132px minmax(0, 1fr); align-items: center; }
+.fit-form .row > label { color: var(--fg-2); }
+.fit-form .line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.fit-form .hint { color: var(--fg-2); font-size: 11.5px; }
+.fit-form code { font: 11.5px var(--mono); }
+.fit-form select, .fit-form input[type="number"], .fit-form input.mono {
+  font: inherit; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 3px 8px;
+}
+.fit-form input.mono { font: 12.5px var(--mono); width: 240px; }
+.fit-form input[type="number"] { width: 72px; }
+.fit-form .check { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-2); font-size: 12px; }
+.fit-form .warn-text { margin: 6px 12px; color: var(--orange); font-size: 12px; }
+.split-field { display: grid; gap: 6px; }
+.split { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; width: 100%; max-width: 380px; }
+.split i { display: block; height: 100%; }
+.split .fit, .split-legend s.fit { background: var(--accent); }
+.split .dev, .split-legend s.dev { background: color-mix(in srgb, var(--accent) 45%, var(--track)); }
+.split .held, .split-legend s.held { background: var(--fg-3); }
+.split-legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--fg-2); flex-wrap: wrap; }
+.split-legend s { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; text-decoration: none; }
+.fit-labels { display: grid; gap: 4px; }
+.fit-labels .line span b { font-weight: 600; }
+.methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; padding: 12px; }
+.method { border: 1px solid var(--sep-strong); border-radius: 9px; padding: 11px 12px; background: transparent; text-align: left; display: grid; gap: 6px; align-content: start; color: var(--fg); }
+.method:hover { background: var(--fill); }
+.method[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--selection); }
+.method .mt { display: flex; align-items: center; gap: 8px; }
+.method .mt b { font: 600 13.5px var(--font-display); }
+.method p { margin: 0; font-size: 12px; color: var(--fg-2); }
+.method .est { display: grid; gap: 2px; font-size: 11.5px; padding-top: 6px; border-top: 0.5px solid var(--sep); }
+.method .est > span { display: flex; justify-content: space-between; gap: 8px; }
+.method .est b { font-weight: 600; }
+.method .fit { font-size: 11px; font-weight: 600; }
+.method .fit.ok { color: var(--green); }
+.method .fit.no { color: var(--red); }
+.method .est-note { color: var(--fg-3); font-size: 10.5px; }
+.pill-tag { font-size: 10.5px; font-weight: 600; color: var(--accent); background: var(--selection); padding: 1px 6px; border-radius: 5px; }
+.method-foot { margin: 0; padding: 0 12px 12px; color: var(--fg-2); font-size: 11.5px; }
+.adv summary { padding: 9px 12px; color: var(--fg-2); cursor: default; }
+.start-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.start-bar .note { margin: 0; flex: 1 1 300px; }
+
+
+/* Get a Dataset */
+.sb-sec h3 .sb-actions { display: inline-flex; gap: 2px; margin-left: auto; }
+.sb-sec h3 .sb-actions svg { width: 13px; height: 13px; }
+.sheet .fam.ds { grid-template-columns: minmax(0, 1fr); }
+.sheet .ds-instructions { margin: 0; font-size: 12.5px; }
+.sheet .ds-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 12px; color: var(--fg-2); }
+.sheet .ds-options li { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; }
+.sheet .ds-options code { font: 11.5px var(--mono); color: var(--fg); }
+.sheet .opts h4 code { font: 600 11.5px var(--mono); font-variant: normal; color: var(--fg-2); }
+.sheet .ds-sample { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; color: var(--fg-2); }
+.sheet .ds-sample .setting-input { width: 90px; padding: 3px 6px; }
+.page-training .empty-actions { display: flex; gap: 8px; margin-top: 10px; }

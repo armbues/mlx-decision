@@ -21,6 +21,8 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ...config import Config
+from ...data.presets import PRESETS
+from ...data.presets import SPLITS as PRESETS_SPLITS
 from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
 from ..catalog import option_arguments
@@ -28,13 +30,16 @@ from ..jobs import Job, JobConflict, Jobs
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
 
-KINDS = ("download", "convert", "fit", "eval")
+KINDS = ("download", "convert", "fit", "eval", "data")
 DATA_SUFFIX = ".jsonl"
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
 BITS = (8, 4)
 # What fit and eval take from a model's load options (the others do not apply).
 TRAINING_OPTIONS = ("max_input_tokens",)
 METHODS = ("auto", *FIT_KINDS)
+# The share kept aside for the report, as the fit wizard asks it (a fit with
+# none has nothing to report on).
+HOLDOUT_MIN, HOLDOUT_MAX = 0.05, 0.9
 
 
 class Plan:
@@ -161,8 +166,8 @@ def jobs_router(
             argv += ["--epochs", str(epochs)]
         holdout = field(body, "holdout", (int, float), required=False)
         if holdout is not None:
-            if not 0 <= holdout <= 0.9:
-                raise ApiError(400, "holdout must be from 0 to 0.9", param="holdout")
+            if not HOLDOUT_MIN <= holdout <= HOLDOUT_MAX:
+                raise ApiError(400, "holdout must be from 0.05 to 0.9", param="holdout")
             argv += ["--holdout", f"{holdout:g}"]
         seed = field(body, "seed", int, required=False)
         if seed is not None:
@@ -170,6 +175,11 @@ def jobs_router(
         early_stop = field(body, "early_stop", bool, required=False)
         if early_stop is False:
             argv.append("--no-early-stop")
+        head_only = field(body, "head_only", bool, required=False)
+        if head_only:
+            if method != "finetune":
+                raise ApiError(400, "head_only goes with the finetune method", param="head_only")
+            argv.append("--head-only")
         details = {
             "model": base,
             "data": data_name,
@@ -179,6 +189,7 @@ def jobs_router(
             "holdout": holdout,
             "seed": seed,
             "early_stop": early_stop,
+            "head_only": head_only,
         }
         return Plan(argv, holds_gpu=True, title=f"Fit {name}", details=details, output=output)
 
@@ -194,7 +205,47 @@ def jobs_router(
         details = {"model": name, "data": data_name, "compare": compare}
         return Plan(argv, holds_gpu=True, title=title, details=details)
 
+    def dataset(body: dict) -> Plan:
+        """A preset's split as training data in ``data/`` (TRS-6)."""
+        name = field(body, "preset", str)
+        if name not in PRESETS:
+            raise ApiError(400, f"preset must be one of {', '.join(PRESETS)}", param="preset")
+        splits = PRESETS_SPLITS[name]
+        split = field(body, "split", str, required=False) or next(iter(splits))
+        if split not in splits:
+            raise ApiError(400, f"{name} has the splits {', '.join(splits)}", param="split")
+        sample = field(body, "sample", int, required=False)
+        if sample is not None and not 1 <= sample <= splits[split]:
+            raise ApiError(400, f"sample must be from 1 to {splits[split]}", param="sample")
+        seed = field(body, "seed", int, required=False)
+        file_name = (
+            named(body, "name", "a data file's name")
+            if body.get("name") is not None
+            else f"{name}-{split}"
+        )
+        try:
+            output = files.data_path(file_name)
+        except WorkspaceError as error:
+            raise ApiError(400, error.message, param="name") from None
+        if output.exists():
+            raise ApiError(409, f"a data file named {file_name} exists already", param="name")
+        writing(output, "name")
+        argv = ["data", "--preset", name, "--split", split]
+        if sample is not None:
+            argv += ["--sample", str(sample), "--seed", str(seed or 0)]
+        argv += ["-o", str(output)]
+        details = {
+            "preset": name,
+            "split": split,
+            "sample": sample,
+            "seed": seed,
+            "name": file_name,
+        }
+        title = f"Get {name} {split}" + (f" ({sample} rows)" if sample else "")
+        return Plan(argv, holds_gpu=False, title=title, details=details, output=output)
+
     plans: dict[str, Callable[[dict], Plan]] = {
+        "data": dataset,
         "download": download,
         "convert": convert,
         "fit": fit,
@@ -214,9 +265,12 @@ def jobs_router(
         ``download``: ``repo``, ``bits`` (8 or 4; default full size);
         ``convert``: ``model``, ``bits`` (default 8), ``name``;
         ``fit``: ``model``, ``data``, ``name``, ``method``, ``epochs``,
-        ``holdout``, ``seed``, ``early_stop``; ``eval``: ``model``, ``data``,
-        ``compare``. ``name`` is the new model's in ``models/`` (default as
-        the CLI names it); ``data`` a file in ``data/`` by its name."""
+        ``holdout``, ``seed``, ``early_stop``, ``head_only`` (finetune);
+        ``eval``: ``model``, ``data``, ``compare``; ``data``: ``preset``,
+        ``split``, ``sample``, ``seed``, ``name`` (the file's, in ``data/``;
+        default PRESET-SPLIT). ``name`` is the new
+        model's in ``models/`` (default as the CLI names it); ``data`` a file
+        in ``data/`` by its name."""
         body = await json_body(request, max_body_bytes)
         kind = field(body, "kind", str)
         if kind not in plans:

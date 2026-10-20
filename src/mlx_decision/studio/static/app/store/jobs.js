@@ -59,6 +59,7 @@ export function dismissJob(id) {
 // How a stage reads in the list.
 const STAGES = {
   check: "Checking",
+  read: "Reading the dataset",
   load: "Loading",
   download: "Downloading",
   convert: "Converting",

@@ -10,6 +10,7 @@ import { plural } from "../format.js";
 import { href, navigate, route } from "../router.js";
 import { dataFiles } from "../store/data.js";
 import { toast } from "../store/ui.js";
+import { openDatasets } from "./datasets.js";
 
 const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
 
@@ -103,9 +104,14 @@ export function DataList() {
     <div class="sb-sec">
       <h3>
         Training Data
-        <button aria-label="Add training data" title="Add Training Data (a JSON-lines file of labelled examples)" onClick=${uploadData}>
-          <${icons.Plus} />
-        </button>
+        <span class="sb-actions">
+          <button aria-label="Get a dataset" title="Get a Dataset… (a public dataset, as training data)" onClick=${openDatasets}>
+            <${icons.Download} />
+          </button>
+          <button aria-label="Add training data" title="Add Training Data (a JSON-lines file of labelled examples)" onClick=${uploadData}>
+            <${icons.Plus} />
+          </button>
+        </span>
       </h3>
       ${list && list.length === 0 && html`<p class="sb-empty">No data yet</p>`}
       <ul class="sb-list data-list">

@@ -35,6 +35,20 @@ def kinds(family: str) -> list[str]:
     return [main, "calibrate"] if main else ["calibrate"]
 
 
+def methods(family: str) -> list[tuple[str, bool]]:
+    """What a fit of the family can be asked to do, as ``(method, head_only)``,
+    in the order a menu offers them: the family's main kind (``auto``'s pick;
+    finetune also with the head alone), then ``calibrate``."""
+    main = MAIN_KIND.get(family)
+    entries = []
+    if main is not None:
+        entries.append((main, False))
+        if main == "finetune":
+            entries.append((main, True))
+    entries.append(("calibrate", False))
+    return entries
+
+
 def resolve(family: str, method: str) -> list[str]:
     """The kinds a run goes through, in order, for ``method`` (a kind or ``auto``).
 
