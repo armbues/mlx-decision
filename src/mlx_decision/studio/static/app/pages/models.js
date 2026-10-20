@@ -3,7 +3,7 @@
 // they are also in the inspector, the memory card and a row's context menu.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
-import { Picture } from "../components/icons.js";
+import { Download, Picture } from "../components/icons.js";
 import { LoadButton } from "../components/load-button.js";
 import { groupColour, groupLabel, markOf } from "../families.js";
 import { MenuItem, MenuSeparator } from "../components/menu.js";
@@ -11,6 +11,7 @@ import { gigabytes, parameters, plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { SHORTCUTS } from "../keys.js";
 import { href, route } from "../router.js";
+import { jobs, progress, stopJob } from "../store/jobs.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
 import { busy, loadedNames, models, status } from "../store/status.js";
 import { openMenu, toast } from "../store/ui.js";
@@ -163,13 +164,73 @@ function Row({ model, nested }) {
   `;
 }
 
+// Downloads and conversions under way: a download in its own section, a
+// conversion under the model it copies. They leave when the job ends; what
+// they wrote comes with the next catalog message.
+const working = computed(() =>
+  jobs.value.filter((job) => job.state !== "ended" && (job.kind === "download" || job.kind === "convert")),
+);
+const downloads = computed(() => working.value.filter((job) => job.kind === "download"));
+const conversionsOf = (name) => working.value.filter((job) => job.kind === "convert" && job.details?.model === name);
+
+function JobPill({ job }) {
+  const { fraction } = progress(job);
+  const verb = job.kind === "download" ? "Downloading" : "Converting";
+  let text = fraction == null ? verb : `${verb} ${Math.floor(fraction * 100)}%`;
+  if (job.stop_requested) text = "Stopping…";
+  else if (job.state === "waiting") text = progress(job).text;
+  const stop = (event) => {
+    event.stopPropagation();
+    if (!job.stop_requested) stopJob(job.id);
+  };
+  return html`
+    <button class=${`pill-act busy jp${job.stop_requested ? "" : " can"}`} title=${job.stop_requested ? text : `Stop ${job.title}`}
+            aria-label=${`${job.title}: ${text}${job.stop_requested ? "" : ". Stop"}`} onClick=${stop}>
+      <span class="as-state"><i></i>${text}</span>
+      <span class="as-action" aria-hidden="true">Stop</span>
+    </button>
+  `;
+}
+
+function JobRow({ job, family = null, nested = false }) {
+  const details = job.details ?? {};
+  const download = job.kind === "download";
+  const name = download ? details.repo?.split("/").pop() : details.name;
+  const bits = details.bits ? `${details.bits}-bit` : null;
+  const sub = download ? [details.repo, bits].filter(Boolean).join(" · ") : `${bits} copy of ${details.model}`;
+  return html`
+    <div class=${`mrow mjob${nested ? " fitted" : ""}`} data-job=${job.id} role="option" aria-selected="false">
+      <span class="nm">
+        ${download ? html`<span class="ficon dl" aria-hidden="true"><${Download} /></span>` : html`<${Mark} family=${family} />`}
+        <span class="nm-txt"><b class="mono">${name}</b><span>${sub}</span></span>
+      </span>
+      <span class="cell r num c-size"></span>
+      <span class="cell r num"></span>
+      <span class="cell r c-reads"></span>
+      <span class="st"><${JobPill} job=${job} /></span>
+    </div>
+  `;
+}
+
 function Section({ title, detail, list }) {
   if (list.length === 0) return null;
   return html`
     <div class="msec">${title}${detail && html`<span>${detail}</span>`}</div>
-    ${list.map((unit) =>
-      unit.models.map((model, index) => html`<${Row} key=${model.name} model=${model} nested=${index > 0} />`),
-    )}
+    ${list.map((unit) => [
+      ...unit.models.map((model, index) => html`<${Row} key=${model.name} model=${model} nested=${index > 0} />`),
+      ...unit.models.flatMap((model) =>
+        conversionsOf(model.name).map((job) => html`<${JobRow} key=${job.id} job=${job} family=${model.family} nested />`),
+      ),
+    ])}
+  `;
+}
+
+function Downloading() {
+  const list = downloads.value;
+  if (list.length === 0) return null;
+  return html`
+    <div class="msec">Downloading</div>
+    ${list.map((job) => html`<${JobRow} key=${job.id} job=${job} />`)}
   `;
 }
 
@@ -313,7 +374,7 @@ function Centre() {
           <p>${plural(list.length - fitted, "model")}${fitted ? ` and ${plural(fitted, "fitted model")}` : ""}, ${loadedNames.value.size} loaded</p>
         </div>
       </div>
-      ${list.length === 0
+      ${list.length === 0 && downloads.value.length === 0
         ? html`<div class="empty">
             <b>No models yet</b>
             <span>Download one with <code>mlx-decision download</code>; it appears here.</span>
@@ -325,6 +386,7 @@ function Centre() {
               <div role="listbox" aria-label="Models">
                 <${Section} title="Loaded" detail=${gigabytes(status.value?.memory?.used ?? 0)} list=${units.value.loaded} />
                 <${Section} title="On this Mac" list=${units.value.rest} />
+                <${Downloading} />
               </div>
             </section>
             <${ContextMenu} />

@@ -49,6 +49,11 @@ class Models:
         self._fingerprints: dict[str, str] = {}
         self._facts: dict[str, dict] = {}
 
+    def forget(self, name: str) -> None:
+        """Drop what was read for ``name`` (the model came or went in a rescan)."""
+        for table in (self._capabilities, self._fingerprints, self._facts):
+            table.pop(name, None)
+
     def facts(self, name: str) -> dict:
         """``catalog.model_facts`` for the model (blocks: call it off the loop)."""
         if name not in self._facts:

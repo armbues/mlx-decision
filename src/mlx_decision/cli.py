@@ -1170,7 +1170,7 @@ def web(
 
         from .studio import create_studio
         from .studio import server as studio_server
-        from .studio.catalog import studio_models
+        from .studio.catalog import Catalog, studio_models
         from .studio.routes.status import address
         from .studio.security import Session, check_bind, is_loopback
     except ImportError:
@@ -1193,11 +1193,12 @@ def web(
     options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
     memory_budget = config.resolve(memory_budget, "memory_budget_gb")
     budget = round(memory_budget * 1e9) if memory_budget is not None else None
+    catalog = Catalog(references, folder / "models", options)
     try:
         specs = studio_models(
-            references,
-            folder / "models",
-            options,
+            catalog.references,
+            catalog.workspace_models,
+            catalog.options,
             on_skip=lambda path, reason: typer.echo(f"skipped {reason}", err=True),
         )
         if default_model is None:
@@ -1222,6 +1223,7 @@ def web(
             config=config,
             load_default=default_model is not None,
             dev=dev,
+            catalog=catalog,
         )
     except (OSError, ValueError) as error:
         sock.close()

@@ -22,8 +22,10 @@ from ..gpu import Gpu
 from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
+from .catalog import Catalog
 from .jobs import Jobs
 from .page import Page, watch
+from .rescan import Rescans
 from .routes.jobs import JobMessages, jobs_router
 from .routes.models import models_router
 from .routes.run import Models, Recorder, run_router
@@ -46,6 +48,7 @@ def create_studio(
     load_default: bool = True,
     max_body_bytes: int = MAX_BODY_BYTES,
     dev: bool = False,
+    catalog: Catalog | None = None,
 ) -> FastAPI:
     """The Studio's app for a process serving ``host:port``.
 
@@ -56,6 +59,9 @@ def create_studio(
     ``app.state.jobs`` the jobs, stopped when the Studio stops; a fresh
     stream's snapshot carries this process's jobs. ``app.state.config``
     is the config file as read; downloads go where its ``models_dir`` says.
+    ``catalog`` is where the pool's models came from (``web``'s); the Studio
+    looks there again after a job wrote a model (by default only the
+    workspace's ``models/``), as ``app.state.rescans``.
     ``config`` is the config file the process read (read here when not
     given), shown by the status route. The pool's default model loads at
     startup unless ``load_default`` is False. With ``dev`` the page's files
@@ -73,9 +79,18 @@ def create_studio(
     status = status_reader(gpu)
     jobs = Jobs(gpu, files)
     hub = Hub(lambda: {"status": status(), "jobs": jobs.current()})
+    models = Models(gpu, files.root / "models")
+    catalog = catalog or Catalog(workspace_models=files.root / "models", include_cache=False)
+
+    def catalog_changed(added: list[str], removed: list[str]) -> None:
+        for name in added + removed:
+            models.forget(name)
+        hub.publish("catalog", {"added": added, "removed": removed})
+
+    rescans = Rescans(gpu, catalog, catalog_changed)
     app = FastAPI(
         title="mlx-decision Studio",
-        lifespan=studio_lifespan(gpu, files, hub, status, load_default, page, jobs),
+        lifespan=studio_lifespan(gpu, files, hub, status, load_default, page, jobs, rescans),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -86,8 +101,8 @@ def create_studio(
     app.state.hub = hub
     app.state.jobs = jobs
     app.state.config = config
+    app.state.rescans = rescans
     security.install(app, session, host, port, api_key)
-    models = Models(gpu, files.root / "models")
     recorder = Recorder(files, models)
     routes.install_errors(app)
     add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
@@ -96,7 +111,7 @@ def create_studio(
     app.include_router(status_router(gpu, files, models, config, host, port, api_key, status))
     app.include_router(sets_router(files, max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
-    app.include_router(models_router(gpu, max_body_bytes))
+    app.include_router(models_router(gpu, max_body_bytes, rescans))
     app.include_router(jobs_router(jobs, gpu, files, lambda: app.state.config, max_body_bytes))
     app.include_router(stream_router(hub))
     return app
@@ -144,6 +159,10 @@ def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
     return status
 
 
+# Jobs whose output is a model.
+WRITES_MODELS = ("download", "convert", "fit")
+
+
 def studio_lifespan(
     gpu: Gpu,
     files: Workspace,
@@ -152,11 +171,13 @@ def studio_lifespan(
     load_default: bool = True,
     page: Page | None = None,
     jobs: Jobs | None = None,
+    rescans: Rescans | None = None,
 ):
     """Start the GPU (its default model loads, with ``load_default``) and close it
     at the end, as ``server.gpu_lifespan`` does, plus the stream: changes to the
     GPU's holder, the pool, the workspace and the ``jobs`` become messages; the
-    streams end when the Studio stops. Running jobs are stopped first."""
+    streams end when the Studio stops. Running jobs are stopped first. A job
+    that wrote a model and ended ``done`` starts a rescan."""
 
     def publish_status() -> None:
         hub.publish_changed("status", status())
@@ -172,7 +193,15 @@ def studio_lifespan(
         gpu.pool.on_use = lambda: hub.soon(publish_status)  # last used
         files.on_change = lambda change: hub.soon(hub.publish, "workspace", change)
         if jobs is not None:  # they change on the loop
-            jobs.on_change = JobMessages(hub.publish)
+            messages = JobMessages(hub.publish)
+
+            def job_changed(job, event) -> None:
+                messages(job, event)
+                ended = event is None and job.state == "ended" and job.outcome == "done"
+                if ended and job.kind in WRITES_MODELS and rescans is not None:
+                    rescans.soon()
+
+            jobs.on_change = job_changed
         watcher = None
         if page is not None and page.dev:  # open tabs reload when a page file changes
             watcher = asyncio.create_task(watch(page, lambda: hub.publish("reload", {})))

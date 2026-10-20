@@ -38,10 +38,20 @@ METHODS = ("auto", *FIT_KINDS)
 
 
 class Plan:
-    """A job to start: the command's arguments, what it writes, its title."""
+    """A job to start: the command's arguments, what it writes, its title and
+    ``details``, the fields it was started with (names, not paths)."""
 
-    def __init__(self, argv: list[str], *, holds_gpu: bool, title: str, output: Path | None = None):
+    def __init__(
+        self,
+        argv: list[str],
+        *,
+        holds_gpu: bool,
+        title: str,
+        details: dict[str, Any],
+        output: Path | None = None,
+    ):
         self.argv, self.holds_gpu, self.title, self.output = argv, holds_gpu, title, output
+        self.details = details
 
 
 def jobs_router(
@@ -122,7 +132,8 @@ def jobs_router(
         if quantized is not None:
             argv += ["--bits", str(quantized)]
         title = f"Download {repo}" + (f" ({quantized}-bit)" if quantized else "")
-        return Plan(argv, holds_gpu=False, title=title, output=output)
+        details = {"repo": repo, "bits": quantized}
+        return Plan(argv, holds_gpu=False, title=title, details=details, output=output)
 
     def convert(body: dict) -> Plan:
         source = model(body)
@@ -130,7 +141,8 @@ def jobs_router(
         name, output = new_model(body, f"{short(source)}-q{quantized}")
         argv = ["convert", "-m", str(pool.specs[source].path), "-o", str(output)]
         argv += ["--bits", str(quantized)]
-        return Plan(argv, holds_gpu=True, title=f"Convert {name}", output=output)
+        details = {"model": source, "bits": quantized, "name": name}
+        return Plan(argv, holds_gpu=True, title=f"Convert {name}", details=details, output=output)
 
     def fit(body: dict) -> Plan:
         base = model(body)
@@ -155,20 +167,32 @@ def jobs_router(
         seed = field(body, "seed", int, required=False)
         if seed is not None:
             argv += ["--seed", str(seed)]
-        if field(body, "early_stop", bool, required=False) is False:
+        early_stop = field(body, "early_stop", bool, required=False)
+        if early_stop is False:
             argv.append("--no-early-stop")
-        return Plan(argv, holds_gpu=True, title=f"Fit {name}", output=output)
+        details = {
+            "model": base,
+            "data": data_name,
+            "name": name,
+            "method": method,
+            "epochs": epochs,
+            "holdout": holdout,
+            "seed": seed,
+            "early_stop": early_stop,
+        }
+        return Plan(argv, holds_gpu=True, title=f"Fit {name}", details=details, output=output)
 
     def evaluate(body: dict) -> Plan:
         name = model(body)
-        _, data = data_file(body)
+        data_name, data = data_file(body)
         compare = model(body, "compare", required=False)
         argv = ["training", "eval", *model_arguments(name), "--data", str(data)]
         title = f"Evaluate {name}"
         if compare is not None:
             argv += ["--compare", str(pool.specs[compare].path)]
             title += f" against {compare}"
-        return Plan(argv, holds_gpu=True, title=title)
+        details = {"model": name, "data": data_name, "compare": compare}
+        return Plan(argv, holds_gpu=True, title=title, details=details)
 
     plans: dict[str, Callable[[dict], Plan]] = {
         "download": download,
@@ -200,7 +224,12 @@ def jobs_router(
         plan = plans[kind](body)
         try:
             job = jobs.submit(
-                kind, plan.argv, holds_gpu=plan.holds_gpu, output=plan.output, title=plan.title
+                kind,
+                plan.argv,
+                holds_gpu=plan.holds_gpu,
+                output=plan.output,
+                title=plan.title,
+                details=plan.details,
             )
         except JobConflict as error:
             raise conflict(error) from None

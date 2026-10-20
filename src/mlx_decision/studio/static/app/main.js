@@ -4,7 +4,7 @@ import { html } from "htm/preact";
 import { App } from "./components/app.js";
 import "./keys.js";
 import { reloadSets } from "./store/sets.js";
-import { loadModels, loadStatus } from "./store/status.js";
+import { loadModels, loadStatus, rescanModels } from "./store/status.js";
 import { openMenu } from "./store/ui.js";
 import { connect } from "./stream.js";
 
@@ -15,7 +15,7 @@ reloadSets();
 
 // The CLI may have changed files behind the Studio's back.
 addEventListener("focus", () => {
-  loadModels();
+  rescanModels();
   reloadSets();
 });
 document.addEventListener("click", () => {

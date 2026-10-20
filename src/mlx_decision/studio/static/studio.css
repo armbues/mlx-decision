@@ -718,6 +718,11 @@ a.sb-item { color: var(--fg); }
 .pill-act.over i { width: 0; height: 0; border-radius: 0; background: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 7px solid currentColor; }
 .pill-act.busy { color: var(--accent); background: var(--selection); }
 .pill-act.busy i { animation: pulse 1s ease-in-out infinite; }
+.ficon.dl { background: var(--fill-2); color: var(--accent); }
+.ficon.dl svg { width: 14px; height: 14px; }
+.mrow.mjob .nm-txt b { color: var(--fg-2); }
+.pill-act.jp { width: 136px; padding: 0 7px; }
+.pill-act.busy.can:hover, .pill-act.busy.can:focus-visible { color: var(--red); }
 .pill-act .as-action { visibility: hidden; }
 .pill-act.can:hover, .pill-act.can:focus-visible {
   cursor: pointer; border-radius: 6px; background: var(--group); box-shadow: var(--shadow); color: var(--fg); font-weight: 500;

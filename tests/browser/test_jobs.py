@@ -152,3 +152,34 @@ def test_progress_lines(studio, page):
         "Failed · ValueError: no",
         "Interrupted",
     ]
+
+
+def test_downloading_and_converting_rows_on_the_models_page(studio, page):
+    open_studio(page, studio, "models")
+    download = start_job(page, studio, kind="download", repo="Org/model-x", bits=4)
+    row = page.locator(f".mrow.mjob[data-job='{download['id']}']")
+    expect(page.locator(".msec", has_text="Downloading")).to_be_visible()
+    expect(row).to_contain_text("model-x")
+    expect(row).to_contain_text("Org/model-x · 4-bit")
+    expect(row.locator(".pill-act")).to_contain_text(re.compile(r"Downloading \d+%"))
+
+    # A conversion: under the model it copies, until it ends; then the model.
+    fake_jobs(studio.app, steps=30, every=0.1)
+    studio.app.state.jobs.command.append("--fake-model")
+    convert = start_job(page, studio, kind="convert", model="fake")
+    converting = page.locator(f".mrow.mjob[data-job='{convert['id']}']")
+    expect(converting).to_contain_text("8-bit copy of fake")
+    expect(converting.locator(".pill-act")).to_contain_text(re.compile(r"Converting \d+%"))
+    following = page.locator(".mrow[data-name='fake'] + .mrow")
+    expect(following).to_have_attribute("data-job", convert["id"])
+    expect(page.locator(".mrow[data-name='fake-q8']")).to_be_visible(timeout=15_000)
+    expect(converting).to_have_count(0)
+
+    # The pill stops the download; a stopped download leaves no row.
+    pill = row.locator(".pill-act")
+    pill.hover()
+    expect(pill.locator(".as-action")).to_be_visible()
+    pill.click()
+    expect(row).to_have_count(0)
+    expect(page.locator(".msec", has_text="Downloading")).to_have_count(0)
+    expect(page.locator(".mrow[data-name='model-x']")).to_have_count(0)

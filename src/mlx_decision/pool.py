@@ -292,6 +292,24 @@ class ModelPool:
         self.specs = {**self.specs, spec.name: spec}
         self._changed()
 
+    def remove(self, name: str) -> None:
+        """Take a model out of the pool (its folder is gone). Raises ``KeyError``
+        for a name the pool does not have and ``ValueError`` for the default
+        model or one that is loaded (in use: it stays until unloaded)."""
+        if name not in self.specs:
+            raise KeyError(name)
+        if name == self.default:
+            raise ValueError(f"{name} is the default model")
+        in_memory = any(
+            name in group.members or group.root.name == name for group in self._groups.values()
+        )
+        if name in self._loaded or in_memory:
+            raise ValueError(f"{name} is loaded")
+        self.specs = {key: spec for key, spec in self.specs.items() if key != name}
+        for table in (self._roots, self._keys, self._sizes, self._used_at):
+            table.pop(name, None)
+        self._changed()
+
     def unload_all(self) -> list[str]:
         """Unload every model and free their memory; returns the names unloaded."""
         names = list(self._loaded)

@@ -3,7 +3,7 @@
 // replays what was missed.
 import { batch, signal } from "@preact/signals";
 import { applyEvent, applyJob, applySnapshot } from "./store/jobs.js";
-import { applyStatus, connection } from "./store/status.js";
+import { applyStatus, connection, loadModels } from "./store/status.js";
 import { setsChanged } from "./store/sets.js";
 
 // The latest change to the workspace ({folder, name, action, ...}), for pages
@@ -19,6 +19,10 @@ function apply(message) {
       applyStatus(message.status);
       applySnapshot(message.jobs);
       setsChanged();
+      loadModels(); // catalog messages may have been missed
+      break;
+    case "catalog": // models came or went
+      loadModels();
       break;
     case "job":
       applyJob(message.job);
@@ -39,7 +43,7 @@ function apply(message) {
       location.reload();
       break;
     default:
-      break; // the models catalog arrives with its page
+      break;
   }
 }
 

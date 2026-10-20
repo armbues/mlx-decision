@@ -68,6 +68,30 @@ def studio_models(
     return specs
 
 
+@dataclasses.dataclass
+class Catalog:
+    """Where the Studio's models come from (``studio_models``' arguments), kept
+    so it can look again after a download, convert or fit (D135)."""
+
+    references: list[str] = dataclasses.field(default_factory=list)
+    workspace_models: Path | None = None
+    options: dict = dataclasses.field(default_factory=dict)
+    include_cache: bool = True
+
+    def scan(self, on_skip: Callable[[Path, str], None] = lambda path, reason: None):
+        """The models there are now. A named model that cannot be read any more
+        does not stop the others from being listed."""
+        try:
+            return studio_models(
+                self.references, self.workspace_models, self.options, self.include_cache, on_skip
+            )
+        except (ValueError, OSError) as error:
+            on_skip(Path("."), f"the named models: {error}")
+            return studio_models(
+                [], self.workspace_models, self.options, self.include_cache, on_skip
+            )
+
+
 def model_facts(spec: ModelSpec, workspace_models: Path | None) -> dict:
     """What the Models page says about a model, read from its files (nothing loaded).
 

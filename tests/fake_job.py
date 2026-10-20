@@ -14,6 +14,7 @@ it does not know are ignored (the job's own arguments).
     --deaf         ignore SIGINT (only SIGKILL ends it early)
     --stubborn     ignore the first SIGINT, stop at the second
     --hold S       after the last event, wait S seconds before exiting
+    --fake-model   write a fake model (``fake_backend``'s family) at -o
 """
 
 import json
@@ -25,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from mlx_decision.registry import MARKER_FILE  # noqa: E402
 from mlx_decision.watchdog import watch_stdin  # noqa: E402
 
 
@@ -62,6 +64,8 @@ def main() -> int:
         if partial:
             partial.mkdir(parents=True)
             (partial / "weights").write_text("half")
+            if "--fake-model" in sys.argv:
+                (partial / MARKER_FILE).write_text(json.dumps({"family": "fake"}))
         try:
             for step in range(1, steps + 1):
                 time.sleep(every)

@@ -31,3 +31,14 @@ export async function loadModels() {
     loadError.value = error.message;
   }
 }
+
+// Look for models that came or went (the CLI may have downloaded or deleted
+// one); the catalog message that follows a change reloads the list in every tab.
+export async function rescanModels() {
+  try {
+    await api("/models/rescan", { method: "POST" });
+  } catch {
+    // The list below is still worth reloading.
+  }
+  await loadModels();
+}

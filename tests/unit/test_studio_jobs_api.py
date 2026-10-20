@@ -470,6 +470,32 @@ def test_job_messages_thin_pure_progress():
     assert [event.get("step") for _, event in events[4:6]] == [1, 3]  # score: first, last
 
 
+def test_a_model_written_by_a_job_reaches_every_tab(live):
+    jobs = live.app.state.jobs
+    jobs.command = [
+        sys.executable,
+        str(FAKE_JOB),
+        "--steps",
+        "3",
+        "--every",
+        "0.02",
+        "--fake-model",
+    ]
+    with live.stream() as response:
+        lines = response.iter_lines()
+        list(messages(lines, lambda message: True))  # the snapshot
+        started = live.client.post("/studio/api/jobs", json={"kind": "convert", "model": "fake"})
+        assert started.status_code == 202, started.text
+        seen = [m for _, m in messages(lines, lambda message: message["type"] == "catalog")]
+    assert seen[-1] == {"type": "catalog", "added": ["fake-q8"], "removed": []}
+    # After the job's end: the page drops its row, then the model comes.
+    ended_at = next(
+        i for i, m in enumerate(seen) if m["type"] == "job" and m["job"]["state"] == "ended"
+    )
+    assert ended_at < len(seen) - 1
+    assert "fake-q8" in live.app.state.gpu.pool.specs
+
+
 # The real command line
 
 

@@ -84,6 +84,7 @@ class Job:
     holds_gpu: bool
     folder: Path
     output: Path | None = None
+    details: dict[str, Any] = field(default_factory=dict)  # what it was started with
     state: str = "waiting"  # waiting (for the GPU), running, ended
     outcome: str | None = None  # done, error, cancelled, failed, interrupted
     message: str | None = None
@@ -110,6 +111,7 @@ class Job:
             "command": ["mlx-decision", *self.argv],
             "holds_gpu": self.holds_gpu,
             "output": str(self.output) if self.output is not None else None,
+            "details": self.details,
             "state": self.state,
             "outcome": self.outcome,
             "message": self.message,
@@ -159,6 +161,7 @@ class Jobs:
         holds_gpu: bool,
         output: Path | None = None,
         title: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> Job:
         """Run ``mlx-decision ARGV --events`` as a job.
 
@@ -166,9 +169,10 @@ class Jobs:
         removed after a kill). A GPU job waits for the request on the worker
         and the unload before its process starts. Raises ``JobConflict``
         while another GPU job is waiting or running, and ``RuntimeError``
-        once the Studio is stopping.
+        once the Studio is stopping. ``details`` are what the job was started
+        with (the page's fields), kept in its summary.
         """
-        job = self._create(kind, argv, holds_gpu, output, title)
+        job = self._create(kind, argv, holds_gpu, output, title, details)
         await self._launch(job)
         return job
 
@@ -180,12 +184,13 @@ class Jobs:
         holds_gpu: bool,
         output: Path | None = None,
         title: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> Job:
         """``start`` without waiting: the job is returned at once, waiting for
         the GPU or about to run; one that cannot start ends ``failed``. Raises
         ``JobConflict`` and ``RuntimeError`` as ``start`` does, before
         anything is created."""
-        job = self._create(kind, argv, holds_gpu, output, title)
+        job = self._create(kind, argv, holds_gpu, output, title, details)
 
         async def launch() -> None:
             with suppress(Exception):  # the job's outcome says what went wrong
@@ -201,12 +206,13 @@ class Jobs:
         holds_gpu: bool,
         output: Path | None,
         title: str | None,
+        details: dict[str, Any] | None = None,
     ) -> Job:
         if self.closing:
             raise RuntimeError("the Studio is stopping")
         if holds_gpu and self.gpu_job is not None:
             raise JobConflict(self.gpu_job)
-        job = self._new(kind, list(argv), holds_gpu, output, title)
+        job = self._new(kind, list(argv), holds_gpu, output, title, details or {})
         if holds_gpu:
             self.gpu_job = job
         self._changed(job)
@@ -229,7 +235,13 @@ class Jobs:
             asyncio.create_task(self._escalate(job), name=f"stop {job.id}")
 
     def _new(
-        self, kind: str, argv: list[str], holds_gpu: bool, output: Path | None, title: str | None
+        self,
+        kind: str,
+        argv: list[str],
+        holds_gpu: bool,
+        output: Path | None,
+        title: str | None,
+        details: dict[str, Any],
     ) -> Job:
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         job_id = f"{stamp}-{kind}-{secrets.token_hex(3)}"
@@ -237,7 +249,9 @@ class Jobs:
         folder.mkdir()
         output = Path(output) if output is not None else None
         title = title or (f"{kind} {output.name}" if output is not None else kind)
-        job = Job(job_id, kind, title, argv, holds_gpu, folder, output, created=now())
+        job = Job(
+            job_id, kind, title, argv, holds_gpu, folder, output, dict(details), created=now()
+        )
         self.jobs[job.id] = job
         self._save(job)
         return job

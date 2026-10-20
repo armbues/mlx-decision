@@ -1,7 +1,8 @@
 """Load and Unload: a model put into memory or taken out of it by hand.
 
 Both run on the GPU worker like the answers, so they wait for the request
-in progress and are refused (503) while a job holds the GPU. Unloading a
+in progress and are refused (503) while a job holds the GPU. ``rescan``
+looks for models that came or went (``rescan.Rescans``). Unloading a
 model frees everything that shares its weights (a base and the fitted
 models on it), as making room does. The status message that follows the
 pool's change keeps every open tab current.
@@ -14,12 +15,13 @@ from fastapi import APIRouter, Request
 
 from ...gpu import Busy, Gpu
 from ...memory import ModelTooLargeError
+from ..rescan import Rescans
 from . import ApiError, field, json_body
 
 logger = logging.getLogger(__name__)
 
 
-def models_router(gpu: Gpu, max_body_bytes: int) -> APIRouter:
+def models_router(gpu: Gpu, max_body_bytes: int, rescans: Rescans | None = None) -> APIRouter:
     router = APIRouter(prefix="/studio/api/models")
     pool = gpu.pool
 
@@ -66,5 +68,14 @@ def models_router(gpu: Gpu, max_body_bytes: int) -> APIRouter:
         (none when it was not loaded)."""
         name = await named(request)
         return {"model": name, "unloaded": await gpu.run(pool.unload, name)}
+
+    @router.post("/rescan")
+    async def rescan():
+        """``{added, removed}``: the models looked for again (the page asks when it
+        regains focus: the CLI may have downloaded or deleted one). Also while
+        a job holds the GPU: nothing is loaded."""
+        if rescans is None:
+            return {"added": [], "removed": []}
+        return await rescans.run()
 
     return router
