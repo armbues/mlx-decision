@@ -609,7 +609,7 @@ hosted model, for comparison):
 | laya-typed-decisions | 78.8 | 68.4 | 38.5 | 41.4 | 44.3 / 0.68 |
 | laya-multilingual | 89.8 | 71.9 | 35.5 | 29.2 | 27.7 / 1.40 |
 | Julia-1 | 16.0 | 37.9 | 33.2 | 33.2 | 36.7 / 0.82 |
-| Jev | 92.8 | 77.7 | **69.2** | 96.0 | 57.7 / 0.49 |
+| Jev | 92.8 | 77.3 | **70.2** | 96.0 | 57.2 / 0.50 |
 
 Accuracy in percent for `choice`, macro-F1 in percent for `noul` (yes at
 a probability of 0.5 or more), and for `score` the accuracy of the most
@@ -738,7 +738,7 @@ On the benchmarks in [Models](#models) the 8-bit copy is the most
 accurate local model overall: as good as Clef 27B (8-bit) on answer type,
 offensive language and sentiment, a little better on science questions,
 and well ahead on entailment (ANLI round 3: 66.8% against 55.2%; Jev
-69.2%). Perplexity reports a Decision Index of 61.6
+70.2%). Perplexity reports a Decision Index of 61.6
 for the release (Jev: 57.9). Its prompt and token ids match the
 release's code exactly; its probabilities were compared with that code on
 a small random model in the same layout, since the release's code needs
