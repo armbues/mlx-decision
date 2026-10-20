@@ -9,6 +9,10 @@ had half written and exits at once with 130.
 Only a pipe (or socket) on stdin is watched. A terminal, ``/dev/null`` or a
 file is left alone, so a run started by hand or from a script behaves as
 before.
+
+A run that cannot stop from inside (a download: the Hub's threads write
+until their files are done) does its work with ``in_thread`` and, once
+cancelled, ends with ``quit_now``.
 """
 
 import os
@@ -16,10 +20,12 @@ import shutil
 import stat
 import sys
 import threading
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import IO
+from typing import IO, NoReturn
+
+from .events import Cancelled
 
 GRACE_S = 4.0
 
@@ -59,7 +65,7 @@ def watch_stdin(
         if ended.wait(grace):
             return
         for path in paths:
-            _remove(path)
+            remove(path)
         _say("stdin closed and the run did not stop: quitting")
         os._exit(130)
 
@@ -80,7 +86,48 @@ def _pipe(stream: IO) -> int | None:
     return fd if stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode) else None
 
 
-def _remove(path: Path) -> None:
+def in_thread[T](work: Callable[[], T], cancel: threading.Event) -> T:
+    """``work()`` on a thread of its own: its result or its exception, or
+    ``Cancelled`` as soon as ``cancel`` is set or Ctrl-C interrupts the wait.
+    A cancelled ``work`` keeps running: end the process with ``quit_now``."""
+    outcome: dict[str, object] = {}
+    finished = threading.Event()
+
+    def run() -> None:
+        try:
+            outcome["result"] = work()
+        except BaseException as error:  # noqa: BLE001 - handed to the caller
+            outcome["error"] = error
+        finally:
+            finished.set()
+
+    threading.Thread(target=run, name="work", daemon=True).start()
+    try:
+        while not finished.wait(0.05):
+            if cancel.is_set():
+                raise Cancelled()
+    except KeyboardInterrupt:
+        raise Cancelled() from None
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    return outcome["result"]  # type: ignore[return-value]
+
+
+def quit_now(code: int, leftovers: Iterable[str | Path] = ()) -> NoReturn:
+    """Remove ``leftovers`` and end the process at once, threads and all (they
+    would keep it alive until their work is done)."""
+    paths = [Path(path) for path in leftovers]
+    for path in paths:
+        remove(path)
+    for stream in (sys.stdout, sys.stderr):
+        with suppress(OSError, ValueError):
+            stream.flush()
+    for path in paths:  # a thread may have started a new file meanwhile
+        remove(path)
+    os._exit(code)
+
+
+def remove(path: Path) -> None:
     """Remove ``path``, first moving it aside, so that the run cannot rename it
     into place half removed (if the run renamed it first, it is complete and
     stays)."""

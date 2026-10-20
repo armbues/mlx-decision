@@ -93,6 +93,11 @@ def invoke(*args):
     return CliRunner().invoke(app, ["download", *args])
 
 
+def partial(folder):
+    """Where a download into a new ``folder`` goes until it is complete."""
+    return folder.parent / f".{folder.name}.partial"
+
+
 def test_a_supported_model_is_downloaded(hub):
     result = invoke("Cloudflare/clef-flash")
     assert result.exit_code == 0, result.output
@@ -117,7 +122,9 @@ def test_clef_skips_the_reference_code(hub):
 def test_into_a_local_folder(hub, tmp_path):
     result = invoke("Cloudflare/clef-flash", "--local-dir", str(tmp_path / "here"))
     assert result.exit_code == 0, result.output
-    assert hub[-1][2] == tmp_path / "here"
+    assert hub[-1][2] == tmp_path / ".here.partial"  # renamed when complete
+    assert (tmp_path / "here" / "joint_head_config.json").exists()
+    assert not (tmp_path / ".here.partial").exists()
     assert f"chat -m {tmp_path / 'here'}" in result.stderr
 
 
@@ -303,7 +310,7 @@ def test_a_terminal_asks_for_the_folder_before_the_model(hub, terminal, tmp_path
     assert result.exit_code == 0, result.output
     assert terminal.asked == ["folder", "model", "size"]
     target = tmp_path / "models" / "clef-flash"
-    assert hub[-1][2] == target
+    assert hub[-1][2] == partial(target)
     assert f"(19.1 GB) to {target} ..." in result.stderr
     assert "chat -m clef-flash" in result.stderr  # saved as models_dir, which -m reads
 
@@ -322,7 +329,7 @@ def test_local_dir_skips_the_question(hub, terminal, tmp_path):
     result = invoke("Cloudflare/clef-flash", "--local-dir", str(tmp_path / "here"))
     assert result.exit_code == 0, result.output
     assert terminal.asked == ["size"]
-    assert hub[-1][2] == tmp_path / "here"
+    assert hub[-1][2] == partial(tmp_path / "here")
 
 
 def test_an_invalid_repo_id(hub, monkeypatch):
@@ -888,7 +895,7 @@ def test_the_first_download_saves_the_folder_and_the_next_one_follows_it(
     result = invoke("Cloudflare/clef-flash")
     assert result.exit_code == 0, result.output
     assert terminal.asked == ["folder", "size", "size"]  # asked once
-    assert hub[-1][2] == tmp_path / "Decision" / "clef-flash"
+    assert hub[-1][2] == tmp_path / "Decision" / "clef-flash"  # there: updated in place
 
 
 def test_choosing_the_cache_is_saved_too(hub, terminal, mlx_decision_home):
@@ -906,10 +913,10 @@ def test_a_set_models_dir_is_followed_without_asking(hub, terminal, tmp_path, ml
     result = invoke("Cloudflare/clef-flash")
     assert result.exit_code == 0, result.output
     assert terminal.asked == ["size"]
-    assert hub[-1][2] == tmp_path / "m" / "clef-flash"
+    assert hub[-1][2] == partial(tmp_path / "m" / "clef-flash")
     assert "chat -m clef-flash" in result.stderr
     result = invoke("Cloudflare/clef-flash", "--local-dir", str(tmp_path / "here"))
-    assert hub[-1][2] == tmp_path / "here"
+    assert hub[-1][2] == partial(tmp_path / "here")
 
 
 def test_without_a_terminal_nothing_is_asked_or_saved(hub, mlx_decision_home):
@@ -926,7 +933,7 @@ import mlx_decision.download as download
 download.check_repo = lambda repo_id: download.RepoCheck(repo_id, 843_000_000, "laya")
 
 
-def fetch(repo_id, local_dir, files, revision):
+def fetch(repo_id, local_dir, files, revision, *progress, **options):
     folder = Path(local_dir) if local_dir else Path({cache!r}) / repo_id
     folder.mkdir(parents=True)
     (folder / "rl_agent_config.json").write_text("{{}}")

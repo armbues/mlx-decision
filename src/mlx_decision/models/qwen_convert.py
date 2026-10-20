@@ -58,6 +58,8 @@ def convert_qwen(
     shards: Iterable[Path] | None = None,
     revision: str | None = None,
     lm_head: bool = True,
+    on_step: Callable[[int, int], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> None:
     """Convert; ``target_bits`` switches to mixed precision (``bits`` is then ignored).
 
@@ -72,7 +74,10 @@ def convert_qwen(
     choosing the bits runs it. ``shards`` are the weight files in the order
     of the index (default: those in ``path``); a generator may fetch each one
     just before it is read and delete it after. ``revision`` is the Hub
-    commit the weights came from, recorded in the marker.
+    commit the weights came from, recorded in the marker. ``on_step(done,
+    total)`` hears each tensor written and ``cancelled()`` stops the
+    conversion between tensors (``Cancelled``); mixed precision reports and
+    stops through ``progress`` instead.
     """
     if target_bits is not None and load_for_sweep is None:
         raise ValueError(f"{family} models have no mixed precision; use --bits")
@@ -101,6 +106,8 @@ def convert_qwen(
             group_size,
             output_embeddings=quantize_output_embeddings,
             lm_head=lm_head,
+            on_step=on_step,
+            cancelled=cancelled,
         )
         if quantization is not None:
             config["quantization"] = quantization

@@ -31,7 +31,11 @@ from .registry import detect_family, get_family, resolve
 
 
 @contextmanager
-def progress(label: str | None = None) -> Iterator[type]:
+def progress(
+    label: str | None = None,
+    on_bytes: Callable[[int], None] | None = None,
+    draw: bool = True,
+) -> Iterator[type]:
     """A ``tqdm_class`` for the Hub's download functions whose bars all close on exit.
 
     The Hub leaves some of its bars open after a download; they close when
@@ -46,6 +50,9 @@ def progress(label: str | None = None) -> Iterator[type]:
     received: a Xet download writes a large file in a few big pieces (one
     update in 15 s, measured) while it reports the bytes received ten times
     a second. Written bytes reach the total at the end either way.
+
+    ``on_bytes(n)`` hears each advance of the shown bar (from the Hub's
+    threads); ``draw=False`` counts without drawing it.
     """
     bars: list[hf_tqdm] = []
     shown: list[hf_tqdm] = []  # the last is on screen
@@ -56,10 +63,10 @@ def progress(label: str | None = None) -> Iterator[type]:
             name = kwargs.get("name") or ""
             self.transfer = name.endswith(".transfer")
             self.label = label if kwargs.get("unit") == "B" and not self.transfer else None
-            self.written = self.received = 0
-            if self.label is None:
+            self.written = self.received = self.counted = 0
+            if self.label is None or not draw:
                 kwargs["disable"] = True
-            else:
+            if self.label is not None:
                 # One line: the Hub's hidden bars must not push it down a line.
                 kwargs.update(desc=self.label, position=0)
             super().__init__(*args, **kwargs)
@@ -80,9 +87,12 @@ def progress(label: str | None = None) -> Iterator[type]:
             with lock:
                 self.written += written
                 self.received += received
-                ahead = max(self.written, self.received) - self.n
+                ahead = max(self.written, self.received) - self.counted
                 if ahead > 0:
+                    self.counted += ahead
                     super().update(ahead)
+                    if on_bytes is not None:
+                        on_bytes(ahead)
 
         # The Hub renames its bars as it goes ("Reconstructing ..."); a shown
         # bar keeps the label.
@@ -95,7 +105,7 @@ def progress(label: str | None = None) -> Iterator[type]:
                 super().set_description_str(desc, refresh)
 
         def close(self):
-            if self.label is not None and not self.n:
+            if self.label is not None and not self.counted:
                 self.leave = False  # nothing fetched (all there already): no empty bar left
             super().close()
 
@@ -223,22 +233,80 @@ def download(
     local_dir: Path | None = None,
     files: tuple[str, ...] | None = None,
     revision: str | None = None,
+    on_bytes: Callable[[int], None] | None = None,
+    draw: bool = True,
 ) -> Path:
     """Download ``files`` (Hub patterns; None: the whole repository) into the
-    Hub cache, or into ``local_dir``."""
+    Hub cache, or into ``local_dir``.
+
+    A new (or empty) ``local_dir`` is written as ``.NAME.partial`` beside it
+    and renamed when complete, so a stopped download leaves no half model
+    there; an existing one is updated in place. ``on_bytes`` and ``draw`` as
+    for ``progress``.
+    """
     if local_dir is None and (stored := stored_snapshot(repo_id)) is not None:
         # The full-size files would be written into the quantized folder.
         raise FileExistsError(f"already stored quantized in the Hugging Face cache: {stored}")
     patterns = list(files) if files is not None else None
-    with progress("downloading") as bars:
-        path = snapshot_download(
-            repo_id,
-            local_dir=local_dir,
-            allow_patterns=patterns,
-            revision=revision,
-            tqdm_class=bars,
-        )
-    return Path(path)
+    target = Path(local_dir).expanduser() if local_dir is not None else None
+    into = _partial_target(target)
+    if into is not None:
+        shutil.rmtree(into, ignore_errors=True)
+    try:
+        with progress("downloading", on_bytes, draw) as bars:
+            path = snapshot_download(
+                repo_id,
+                local_dir=into or target,
+                allow_patterns=patterns,
+                revision=revision,
+                tqdm_class=bars,
+            )
+    except BaseException:
+        if into is not None:
+            shutil.rmtree(into, ignore_errors=True)
+        raise
+    if into is None:
+        return Path(path)
+    if target.exists():
+        target.rmdir()  # empty, checked before
+    target.parent.mkdir(parents=True, exist_ok=True)
+    into.rename(target)
+    return target
+
+
+def _partial_target(target: Path | None) -> Path | None:
+    """Where a download into ``target`` goes first: ``.NAME.partial`` beside a
+    new or empty folder; None for the cache or a folder with files (updated
+    in place)."""
+    if target is None or (target.exists() and any(target.iterdir())):
+        return None
+    return target.parent / f".{target.name}.partial"
+
+
+def leftovers(
+    repo_id: str,
+    local_dir: Path | None = None,
+    bits: int | None = None,
+    revision: str | None = None,
+) -> list[Path]:
+    """What a download stopped mid-way leaves behind that has to go: its
+    working folders, and its folder in the Hub cache when this download
+    creates it, so no half model is listed. The Hub's unfinished files in
+    a folder that was there before, and in the cache's shared blob store
+    (which other downloads may be writing to at the same time), stay for
+    the Hub to resume. Taken before the download starts."""
+    if local_dir is None:
+        cache = Path(constants.HF_HUB_CACHE)
+        repo = cache / repo_folder_name(repo_id=repo_id, repo_type="model")
+        found = [] if repo.exists() else [repo, cache / ".locks" / repo.name]
+        if bits is not None and revision is not None:
+            found += [repo / f".{revision}.download", repo / f".{revision}.partial"]
+        return found
+    target = Path(local_dir).expanduser()
+    if bits is not None:
+        return [target.parent / f".{target.name}.{end}" for end in ("download", "partial")]
+    partial = _partial_target(target)
+    return [partial] if partial is not None else []
 
 
 def download_quantized(
@@ -246,6 +314,8 @@ def download_quantized(
     bits: int,
     local_dir: Path | None = None,
     on_file: Callable[[int, int, str], None] | None = None,
+    on_bytes: Callable[[int], None] | None = None,
+    draw: bool = True,
 ) -> Path:
     """Store the model quantized with ``bits``, fetching one weight file at a time.
 
@@ -254,7 +324,8 @@ def download_quantized(
     model lands in ``local_dir``, or in the Hub cache as the snapshot of
     the checked revision (plain files, no blobs), where
     ``resolve_model_path`` finds it by its marker. ``on_file(i, n, name)``
-    is called before each weight file is fetched.
+    is called before each weight file is fetched; ``on_bytes`` and ``draw``
+    as for ``progress``.
     """
     if not check.convertible:
         raise ValueError(f"{check.family} models cannot be stored quantized; they load as they are")
@@ -288,7 +359,7 @@ def download_quantized(
                 tqdm_class=quiet,
             )
         names = _weight_files(source, check.model_files)
-        with progress("other files") as bars:
+        with progress("other files", on_bytes, draw) as bars:
             snapshot_download(
                 repo_id,
                 revision=revision,
@@ -302,7 +373,7 @@ def download_quantized(
             for number, name in enumerate(names, 1):
                 if on_file is not None:
                     on_file(number, len(names), name)
-                with progress("downloading") as bars:
+                with progress("downloading", on_bytes, draw) as bars:
                     file = hf_hub_download(
                         repo_id, name, revision=revision, local_dir=source, tqdm_class=bars
                     )

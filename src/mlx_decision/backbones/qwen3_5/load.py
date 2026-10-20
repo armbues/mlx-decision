@@ -3,13 +3,14 @@
 import copy
 import json
 import struct
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 
 import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten
 
+from ...events import Cancelled
 from .qwen3_5 import Model, ModelArgs
 
 SHARD_BYTES = 5 * 2**30
@@ -254,6 +255,8 @@ def convert_text_weights(
     mode: str = "affine",
     output_embeddings: bool = True,
     lm_head: bool = True,
+    on_step: Callable[[int, int], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> dict | None:
     """Write the text model of ``shards`` to ``output``, quantized when ``bits`` is set.
 
@@ -263,6 +266,8 @@ def convert_text_weights(
     ``save_text_model``. ``shards`` may be a generator (a shard fetched just
     before it is read). ``lm_head=False`` for models saved without output
     embeddings. Returns the config's ``quantization`` entry, or None.
+    ``on_step(done, total)`` hears each output tensor; once ``cancelled()``
+    is true, the next source tensor raises ``Cancelled``.
     """
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -298,6 +303,8 @@ def convert_text_weights(
             release = _safetensors_format(shard) != "mlx"
         weights = model.sanitize(mx.load(str(shard)), release=release)
         for name, value in weights.items():
+            if cancelled is not None and cancelled():
+                raise Cancelled()
             layer = name.removesuffix(".weight")
             if layer in quantized and name != layer:
                 parts = mx.quantize(value, group_size, bits, mode=mode)
@@ -318,6 +325,8 @@ def convert_text_weights(
                 pending[key] = array
                 pending_bytes += array.nbytes
                 total += array.nbytes
+                if on_step is not None:
+                    on_step(len(written) + len(pending), len(expected))
         del weights
     missing = sorted(set(expected) - set(written) - set(pending))
     if missing:

@@ -79,7 +79,12 @@ cache); `--local-dir` names the folder directly. It warns before
 downloading a repository no supported model family can load, and shows a
 model's own terms of use where it has them (d1-3B: commercial use only
 below $10 million annual revenue), asking before it downloads; `--yes`
-skips both questions. Private or gated repos need `HF_TOKEN`.
+skips both questions. Private or gated repos need `HF_TOKEN`. Ctrl-C
+stops the download and removes the model's new folder, so no half model
+is left (in the Hugging Face cache, the Hub keeps its unfinished files
+and the next download of the model resumes them). `--events` prints the
+progress as JSON lines for other programs, as [`training fit`](docs/TRAINING.md#progress-events-cancel)
+does, and asks nothing.
 
 Clef, pplx, d3 and H2O-Lightning models can also be stored quantized. After the model, the menu asks
 for full size, 8-bit or 4-bit, with the size of each and which of them fit
@@ -983,6 +988,10 @@ such a copy needs the full-size model to fit (for Clef 27B, a 96 GB
 Mac); the copy then runs on smaller Macs.
 [`download --bits`](#getting-a-model) stores a uniform copy without the
 full-size download.
+
+Ctrl-C stops `convert` at the next tensor; nothing is written. `--events`
+prints the progress as JSON lines (stages `load`, `convert` with tensors
+as steps, `write` and `done`).
 
 ## Speed
 

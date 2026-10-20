@@ -837,44 +837,74 @@ def download(
             "the terms of use some models note.",
         ),
     ] = False,
+    events: Annotated[
+        bool,
+        typer.Option(
+            "--events",
+            help='Print the progress as JSON lines on stdout: {"stage": "check"}, '
+            '"download" (bytes as steps), then "done" with the folder in "metrics", or '
+            '"error" or "cancelled". Asks nothing (as --yes); stops when a pipe on stdin '
+            "closes.",
+        ),
+    ] = False,
 ) -> None:
-    """Download a model from the Hugging Face Hub (HF_TOKEN for private or gated ones)."""
+    """Download a model from the Hugging Face Hub (HF_TOKEN for private or gated ones).
+
+    Ctrl-C stops the download and removes what it fetched into a new folder.
+    """
     from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
-    from .download import QUANTIZED_BITS, check_repo, download_quantized, format_size
+    from .download import QUANTIZED_BITS, check_repo, download_quantized, format_size, leftovers
     from .download import download as fetch
+    from .events import Cancelled, Event, Steps
     from .hub import http_errors
     from .registry import get_family
+    from .training.console import interrupt_cancels
+    from .watchdog import in_thread, quit_now
+
+    def say(text: str) -> None:
+        """A note or warning: an event with --events, else a line on stderr."""
+        if events:
+            echo_event(Event("check", message=text))
+        else:
+            typer.echo(text, err=True)
+
+    def stop(message: str) -> None:
+        if events:
+            echo_event(stage_event("error", message))
+        fail(message)
 
     if bits is not None and bits not in QUANTIZED_BITS:
         raise typer.BadParameter("must be 8 or 4", param_hint="--bits")
-
-    terminal = stdin_is_terminal()
+    yes = yes or events
+    terminal = stdin_is_terminal() and not events
     parent, by_name = models_parent(read_config(), terminal) if local_dir is None else (None, False)
     if repo_id is None:
         if not terminal:
-            fail("give a repo id, e.g. mlx-decision download Cloudflare/clef-flash")
+            stop("give a repo id, e.g. mlx-decision download Cloudflare/clef-flash")
         repo_id = pick_repo()
         if repo_id is None:
             raise typer.Exit(1)
+    if events:
+        echo_event(Event("check", message=f"checking {repo_id}"))
     try:
         check = check_repo(repo_id)
         if check.family is None:
-            typer.echo(f"warning: {repo_id}: {check.reason}", err=True)
+            say(f"warning: {repo_id}: {check.reason}")
             if not yes:
                 from prompt_toolkit.shortcuts import confirm
 
                 if not terminal or not confirm("Download it anyway?"):
-                    fail("not downloaded (use --yes to download anyway)")
+                    stop("not downloaded (use --yes to download anyway)")
         if check.family is not None and (licence := get_family(check.family).licence):
-            typer.echo(f"note: {licence}", err=True)
+            say(f"note: {licence}")
             if terminal and not yes:
                 from prompt_toolkit.shortcuts import confirm
 
                 if not confirm("Download it under these terms?"):
-                    fail("not downloaded")
+                    stop("not downloaded")
         if bits is not None and not check.convertible:
-            fail(f"{repo_id}: {check.family or 'these'} models cannot be stored quantized")
+            stop(f"{repo_id}: {check.family or 'these'} models cannot be stored quantized")
         if bits is None and check.convertible:
             if terminal:
                 bits = pick_bits(check) or None
@@ -885,34 +915,66 @@ def download(
                     if best
                     else f"not even at {QUANTIZED_BITS[-1]} bits"
                 )
-                typer.echo(
+                say(
                     f"warning: {repo_id} does not fit in this Mac's GPU working set at full "
-                    f"size; {hint}",
-                    err=True,
+                    f"size; {hint}"
                 )
-        if parent is not None:
-            local_dir = parent / repo_id.rsplit("/", 1)[-1]
-        target = f" to {local_dir}" if local_dir else ""
-        if bits is None:
-            size = format_size(check.size_bytes)
-            typer.echo(f"downloading {repo_id} ({size}){target} ...", err=True)
-            path = fetch(repo_id, local_dir, check.files, check.revision)
-        else:
-            size = format_size(check.quantized_bytes(bits))
-            typer.echo(
-                f"downloading {repo_id} as {bits}-bit (about {size}){target}; "
-                "fetching one weight file at a time ...",
-                err=True,
-            )
-
-            def on_file(number: int, total: int, name: str) -> None:
-                typer.echo(f"{number}/{total} {name}", err=True)
-
-            path = download_quantized(check, bits, local_dir, on_file)
     except RepositoryNotFoundError:
-        fail(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
+        stop(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
     except (HfHubHTTPError, *http_errors(), OSError, ValueError) as error:
-        fail(f"{repo_id}: {str(error).splitlines()[0]}")
+        stop(f"{repo_id}: {str(error).splitlines()[0]}")
+    if parent is not None:
+        local_dir = parent / repo_id.rsplit("/", 1)[-1]
+    target = f" to {local_dir}" if local_dir else ""
+    total = check.size_bytes  # every file is fetched at full size, also to quantize
+    if bits is None:
+        size = format_size(check.size_bytes)
+        line = f"downloading {repo_id} ({size}){target} ..."
+    else:
+        size = format_size(check.quantized_bytes(bits))
+        line = (
+            f"downloading {repo_id} as {bits}-bit (about {size}){target}; "
+            "fetching one weight file at a time ..."
+        )
+    steps = Steps("download", total, echo_event)
+    if events:
+        metrics = {"family": check.family, "bytes": total} | ({"bits": bits} if bits else {})
+        echo_event(Event("check", metrics=metrics, message=line))
+    else:
+        typer.echo(line, err=True)
+
+    def on_file(number: int, count: int, name: str) -> None:
+        if events:
+            echo_event(Event("download", message=f"{number}/{count} {name}"))
+        else:
+            typer.echo(f"{number}/{count} {name}", err=True)
+
+    on_bytes = steps.add if events else None
+
+    def work() -> Path:
+        if bits is None:
+            return fetch(repo_id, local_dir, check.files, check.revision, on_bytes, draw=not events)
+        return download_quantized(check, bits, local_dir, on_file, on_bytes, draw=not events)
+
+    left = leftovers(repo_id, local_dir, bits, check.revision)
+    with interrupt_cancels(sys.stderr) as cancel, watched(events, cancel, left):
+        try:
+            path = in_thread(work, cancel)
+        except Cancelled:
+            if events:
+                echo_event(stage_event("cancelled", "nothing was kept"))
+            typer.echo("cancelled; nothing was kept", err=True)
+            quit_now(130, left)
+        except RepositoryNotFoundError:
+            stop(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
+        except (HfHubHTTPError, *http_errors(), OSError, ValueError) as error:
+            stop(f"{repo_id}: {str(error).splitlines()[0]}")
+    if events:
+        if steps.done < total:  # files that were there already
+            steps.at(total)
+        metrics = {"path": str(path), "family": check.family}
+        echo_event(Event("done", metrics=metrics, message=f"downloaded {repo_id} to {path}"))
+        return
     typer.echo(f"downloaded {repo_id} to {path}", err=True)
     if check.family is not None:  # none could load it, as the warning said
         model = str(local_dir) if local_dir else repo_id
@@ -1383,10 +1445,24 @@ def convert(
             "sensitivity (Clef, d3, H2O-Lightning; implies --quantize; takes a few minutes).",
         ),
     ] = None,
+    events: Annotated[
+        bool,
+        typer.Option(
+            "--events",
+            help='Print the progress as JSON lines on stdout: {"stage": "load"}, "convert" '
+            '(tensors as steps), "write", then "done" with the folder in "metrics", or '
+            '"error" or "cancelled". Stops when a pipe on stdin closes.',
+        ),
+    ] = False,
 ) -> None:
-    """Write an MLX copy of a model, optionally quantized."""
+    """Write an MLX copy of a model, optionally quantized.
+
+    Ctrl-C stops at the next tensor and writes nothing.
+    """
     from .convert import convert as convert_model
-    from .convert import default_output
+    from .convert import default_output, partial_folder
+    from .events import Cancelled, Event
+    from .training.console import interrupt_cancels
 
     if bits is not None and target_bits is not None:
         raise typer.BadParameter("give either --bits or --target-bits", param_hint="--bits")
@@ -1407,24 +1483,43 @@ def convert(
     if target_bits is not None:
 
         def progress(done, total, unit, value):
-            typer.echo(f"  sensitivity {done}/{total} {unit.name}: {value:.2e}", err=True)
+            if events:
+                message = f"sensitivity {unit.name}: {value:.2e}"
+                echo_event(Event("convert", done, total, message=message))
+            else:
+                typer.echo(f"  sensitivity {done}/{total} {unit.name}: {value:.2e}", err=True)
 
         options = {"target_bits": target_bits, "progress": progress}
     if output is None:
         output = default_output(model, bits if quantize else None, target_bits)
-    typer.echo(f"converting {model} to {output} ...", err=True)
-    try:
-        convert_model(
-            model,
-            output,
-            bits=bits if quantize else None,
-            group_size=group_size,
-            quantize_output_embeddings=not keep_output_embeddings,
-            **options,
-        )
-    except (FileExistsError, FileNotFoundError, ValueError, PlatformError) as error:
-        fail(str(error))
-    typer.echo(f"wrote {output}")
+    if not events:
+        typer.echo(f"converting {model} to {output} ...", err=True)
+    with (
+        interrupt_cancels(sys.stderr) as cancel,
+        watched(events, cancel, [partial_folder(output)]),
+    ):
+        try:
+            convert_model(
+                model,
+                output,
+                on_event=echo_event if events else None,
+                cancel=cancel,
+                bits=bits if quantize else None,
+                group_size=group_size,
+                quantize_output_embeddings=not keep_output_embeddings,
+                **options,
+            )
+        except Cancelled:
+            if events:
+                echo_event(stage_event("cancelled", "nothing was written"))
+            typer.echo("cancelled; nothing was written", err=True)
+            raise typer.Exit(130) from None
+        except (FileExistsError, FileNotFoundError, ValueError, PlatformError) as error:
+            if events:
+                echo_event(stage_event("error", str(error)))
+            fail(str(error))
+    if not events:
+        typer.echo(f"wrote {output}")
 
 
 def int_list(value: str, flag: str) -> tuple[int, ...]:

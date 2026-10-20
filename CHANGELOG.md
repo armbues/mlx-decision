@@ -26,10 +26,15 @@ change the interface).
   stopped download is left out), with family and size on disk.
 - `training eval --events`: the progress as JSON lines, as `training fit`
   has it, ending with the results.
-- With `--events` and a pipe on stdin, `training fit` and `training eval`
-  stop when the pipe closes (the program that started them is gone): at
-  the next step, or after 4 seconds at once, leaving no half-written
-  folder. A terminal, `/dev/null` or a file on stdin changes nothing.
+- `download --events` and `convert --events`: the progress as JSON
+  lines, as `training fit` prints it (`download`: bytes as steps;
+  `convert`: tensors as steps), ending with `done` and the folder.
+  `download --events` asks nothing, as with `--yes`.
+- With `--events` and a pipe on stdin, `training fit`, `training eval`,
+  `download` and `convert` stop when the pipe closes (the program that
+  started them is gone): at the next step, or after 4 seconds at once,
+  leaving no half-written folder. A terminal, `/dev/null` or a file on
+  stdin changes nothing.
 
 ### Changed
 
@@ -38,6 +43,10 @@ change the interface).
   Jev-compatible value, which counts from 0.
 - `download` in a terminal no longer asks for a folder on every run: it
   follows `models_dir`.
+- `download` into a new folder writes `.NAME.partial` beside it and
+  renames it when complete; Ctrl-C (or a failed download) removes it, and
+  removes a model's new folder in the Hugging Face cache too. `convert`
+  stops at the next tensor on Ctrl-C. Neither leaves a half model behind.
 
 ### Fixed
 

@@ -36,6 +36,8 @@ def convert(
     progress: Callable[[int, int, object, float], None] | None = None,
     shards: Iterable[Path] | None = None,
     revision: str | None = None,
+    on_step: Callable[[int, int], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> None:
     """Convert (see ``convert_qwen``); ``target_bits`` switches to mixed precision."""
     convert_qwen(
@@ -52,4 +54,6 @@ def convert(
         progress,
         shards,
         revision,
+        on_step=on_step,
+        cancelled=cancelled,
     )
