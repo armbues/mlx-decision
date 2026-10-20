@@ -250,7 +250,8 @@ function purpose(destination) {
   return `${where}. It shows up in Models and the Playground when it is done; Stop is in the Jobs list.`;
 }
 
-export async function openDownload() {
+// ``preselect``: {family, repo} to open on (the first start's picks).
+export async function openDownload(preselect = null) {
   try {
     offered.value = await api("/downloads");
   } catch (error) {
@@ -259,7 +260,10 @@ export async function openDownload() {
   }
   typed.value = "";
   checks.value = {}; // what is on this Mac may have changed since
-  if (!family.value) pickFamily(offered.value.families[0].name);
+  if (preselect) {
+    familyName.value = preselect.family;
+    pick(preselect.repo);
+  } else if (!family.value) pickFamily(offered.value.families[0].name);
   else pickFamily(familyName.value); // the list may have changed (a model is here now)
   openSheet({
     title: "Download a Model",

@@ -4,13 +4,17 @@ import { html } from "htm/preact";
 import { App } from "./components/app.js";
 import "./keys.js";
 import { reloadSets } from "./store/sets.js";
-import { loadModels, loadStatus, rescanModels } from "./store/status.js";
+import { navigate } from "./router.js";
+import { loadModels, loadStatus, models, rescanModels } from "./store/status.js";
 import { openMenu } from "./store/ui.js";
 import { connect } from "./stream.js";
 
 connect();
 loadStatus();
-loadModels();
+// First start: with no models, the Studio opens on Models (its first-start panel).
+loadModels().then(() => {
+  if (!location.hash && models.value?.length === 0) navigate("models");
+});
 reloadSets();
 
 // The CLI may have changed files behind the Studio's back.

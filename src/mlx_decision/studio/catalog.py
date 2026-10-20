@@ -71,25 +71,55 @@ def studio_models(
 @dataclasses.dataclass
 class Catalog:
     """Where the Studio's models come from (``studio_models``' arguments), kept
-    so it can look again after a download, convert or fit (D135)."""
+    so it can look again after a download, convert or fit (D135).
+
+    ``models_dir`` is the config's folder of models when it serves them (no
+    ``-m``): scanned once it holds a model, so the first download into an
+    empty folder is found too.
+    """
 
     references: list[str] = dataclasses.field(default_factory=list)
     workspace_models: Path | None = None
     options: dict = dataclasses.field(default_factory=dict)
     include_cache: bool = True
+    models_dir: Path | None = None
 
     def scan(self, on_skip: Callable[[Path, str], None] = lambda path, reason: None):
         """The models there are now. A named model that cannot be read any more
         does not stop the others from being listed."""
+        references = self._references()
         try:
             return studio_models(
-                self.references, self.workspace_models, self.options, self.include_cache, on_skip
+                references, self.workspace_models, self.options, self.include_cache, on_skip
             )
         except (ValueError, OSError) as error:
             on_skip(Path("."), f"the named models: {error}")
-            return studio_models(
-                [], self.workspace_models, self.options, self.include_cache, on_skip
-            )
+            folder = [str(self.models_dir)] if references[-1:] == [str(self.models_dir)] else []
+            try:
+                return studio_models(
+                    folder, self.workspace_models, self.options, self.include_cache, on_skip
+                )
+            except (ValueError, OSError):
+                return studio_models(
+                    [], self.workspace_models, self.options, self.include_cache, on_skip
+                )
+
+    def _references(self) -> list[str]:
+        """``references``, and ``models_dir`` last when it has models and is not
+        among them."""
+        references = list(self.references)
+        folder = self.models_dir
+        if folder is None or not folder_models(folder):
+            return references
+        listed = set()
+        for reference in references:
+            try:
+                listed.add(Path(reference).expanduser().resolve())
+            except OSError:
+                continue
+        if folder.resolve() not in listed:
+            references.append(str(folder))
+        return references
 
 
 def model_facts(spec: ModelSpec, workspace_models: Path | None) -> dict:

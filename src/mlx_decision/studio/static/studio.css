@@ -957,3 +957,28 @@ a.sb-item { color: var(--fg); }
 .sheet .repo-field label { color: var(--fg-2); font-size: 12px; white-space: nowrap; }
 .sheet .repo-field input { flex: none; width: 220px; padding: 4px 8px; border: 0.5px solid var(--sep-strong); border-radius: 6px; background: var(--group); font: 12px var(--mono); color: var(--fg); }
 .sheet .repo-field input:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
+
+/* First start (the Models page without models) */
+.first-start { display: grid; gap: 16px; }
+.first-card { background: var(--group); border-radius: 12px; box-shadow: var(--shadow); padding: 18px 20px; display: grid; gap: 12px; }
+.first-card h2 { margin: 0; font: 600 17px/1.2 var(--font-display); }
+.first-card > p { margin: 0; color: var(--fg-2); font-size: 12.5px; }
+.first-card .saved { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 7px; align-items: start; color: var(--fg); }
+.first-card .saved .ic { width: 14px; height: 14px; color: var(--green); margin-top: 2px; }
+.first-card .saved code { overflow-wrap: anywhere; }
+.first-card .choices { display: grid; gap: 8px; }
+.first-card .choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; padding: 10px 12px; border: 1px solid var(--sep-strong); border-radius: 9px; cursor: pointer; }
+.first-card .choice:has(input[type="radio"]:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--selection); }
+.first-card .choice input[type="radio"] { margin: 2px 0 0; accent-color: var(--accent); }
+.first-card .choice b { display: block; font-weight: 600; }
+.first-card .choice small { display: block; color: var(--fg-2); font-size: 12px; margin-top: 2px; }
+.first-card .folder-path { margin-top: 8px; width: min(360px, 100%); padding: 5px 8px; border: 0.5px solid var(--sep-strong); border-radius: 6px; background: var(--bg, var(--group)); font: 12px var(--mono); color: var(--fg); }
+.first-card .first-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.first-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.first-pick { display: grid; gap: 4px; align-content: start; justify-items: start; text-align: left; padding: 12px; border: 1px solid var(--sep-strong); border-radius: 10px; background: transparent; color: var(--fg); cursor: pointer; }
+.first-pick:hover, .first-pick:focus-visible { background: var(--fill); border-color: var(--accent); }
+.first-pick .tier { font-size: 11px; font-weight: 600; color: var(--fg-3); font-variant: all-small-caps; letter-spacing: 0.04em; }
+.first-pick .ficon { margin: 2px 0; }
+.first-pick b { font-size: 13px; }
+.first-pick .desc { font-size: 12px; color: var(--fg-2); }
+.first-pick .num { font-size: 11.5px; color: var(--fg-2); margin-top: 2px; }

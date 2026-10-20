@@ -114,7 +114,15 @@ def create_studio(
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
     app.include_router(models_router(gpu, max_body_bytes, rescans))
     app.include_router(jobs_router(jobs, gpu, files, lambda: app.state.config, max_body_bytes))
-    app.include_router(downloads_router(gpu, lambda: app.state.config, max_body_bytes))
+    app.include_router(
+        downloads_router(
+            gpu,
+            lambda: app.state.config,
+            max_body_bytes,
+            set_config=lambda updated: setattr(app.state, "config", updated),
+            catalog=catalog,
+        )
+    )
     app.include_router(stream_router(hub))
     return app
 

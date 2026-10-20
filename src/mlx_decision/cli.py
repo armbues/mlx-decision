@@ -1193,7 +1193,11 @@ def web(
     options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
     memory_budget = config.resolve(memory_budget, "memory_budget_gb")
     budget = round(memory_budget * 1e9) if memory_budget is not None else None
-    catalog = Catalog(references, folder / "models", options)
+    # Without -m the config's models_dir is served: scanned again once it has
+    # models (the Studio's first download into an empty folder).
+    given = config.models_dir if isinstance(config.models_dir, Path) else None
+    models_dir = given.expanduser() if given is not None and not model else None
+    catalog = Catalog(references, folder / "models", options, models_dir=models_dir)
     try:
         specs = studio_models(
             catalog.references,

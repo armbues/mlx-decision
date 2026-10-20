@@ -1,6 +1,7 @@
 """Download Model: the families offered, the check on a fake Hub, the sizes and
 the fit check per way of storing a model."""
 
+import random
 import sys
 from pathlib import Path
 
@@ -180,3 +181,119 @@ def test_the_licence_comes_with_the_check(make_studio, monkeypatch):
 
 def test_download_module_is_the_one_the_route_checks_with():
     assert downloads_route.check_repo is download.check_repo
+
+
+# First start
+
+
+def test_first_picks_one_small_one_medium_one_large_that_fit():
+    budget = int(12.7 * GB)  # this travel Mac's working set
+    seen = {"small": set(), "medium": set(), "large": set()}
+    for seed in range(200):
+        picks = downloads_route.first_picks(budget, random.Random(seed))
+        assert [pick["tier"] for pick in picks] == ["small", "medium", "large"]
+        sizes = [pick["bytes"] for pick in picks]
+        assert sizes == sorted(sizes)
+        assert all(pick["memory_bytes"] <= budget for pick in picks)
+        assert all(pick["memory_bytes"] == round(pick["bytes"] * 1.1) for pick in picks)
+        assert len({pick["family"] for pick in picks}) == 3  # three families here
+        for pick in picks:
+            seen[pick["tier"]].add(pick["repo"])
+    # A random choice in each size class: below 2 GB, 2 to 8 GB, above.
+    assert seen["small"] == {
+        "SupersonicLabs/Julia-1", "convaiinnovations/laya", "convaiinnovations/laya-multilingual",
+        "convaiinnovations/laya-typed-decisions", "vllm-sr/d3-edge", "vllm-sr/d3-lite",
+    }  # fmt: skip
+    assert seen["medium"] == {"vllm-sr/d3-nano", "LiquidAI/d1-3B"}
+    assert seen["large"] == {"vllm-sr/d3-mini", "h2oai/h2o-lightning-4b"}
+    assert "Cloudflare/clef-flash" not in set().union(*seen.values())  # 19 GB does not fit
+    # A big Mac sees the big models; a small one gets thirds of what fits; a
+    # tiny budget fewer than three.
+    big = {pick["repo"] for seed in range(100) for pick in
+           downloads_route.first_picks(64 * GB, random.Random(seed))[2:]}  # fmt: skip
+    assert "Cloudflare/clef-flash" in big and "perplexity-ai/pplx-decider-v1.1-27b" in big
+    small_mac = downloads_route.first_picks(int(5.4 * GB), random.Random(1))
+    assert [pick["tier"] for pick in small_mac] == ["small", "medium", "large"]
+    assert small_mac[-1]["memory_bytes"] <= 5.4 * GB
+    tiny = downloads_route.first_picks(int(0.8 * GB), random.Random(1))
+    assert [pick["repo"] for pick in tiny] == [
+        "SupersonicLabs/Julia-1", "convaiinnovations/laya-multilingual"
+    ]  # fmt: skip
+    assert [pick["tier"] for pick in tiny] == ["small", "medium"]
+    assert downloads_route.first_picks(GB // 10, random.Random(1)) == []
+
+
+def test_first_start_asks_where_models_go(make_studio, tmp_path):
+    studio = make_studio(budget=int(12.7 * GB))
+    first = studio.get("/studio/api/downloads/first").json()
+    assert first["models_dir_set"] is False
+    assert first["config_path"] == str(tmp_path / "config.toml")
+    assert first["suggestion"] == "~/Models"
+    assert [pick["tier"] for pick in first["picks"]] == ["small", "medium", "large"]
+
+
+def test_the_hugging_face_cache_answer_is_added_to_the_config(make_studio, tmp_path):
+    config = tmp_path / "config.toml"
+    original = "# my settings\nmemory_budget_gb = 8\n\n[server]\n  port = 9000 # kept\n"
+    config.write_text(original)
+    studio = make_studio()
+    answer = studio.post("/studio/api/downloads/destination", json={"place": "hf-cache"})
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["line"] == 'models_dir = "hf-cache"'
+    assert answer.json()["destination"]["kind"] == "cache"
+    assert answer.json()["destination"]["setting"] == "models_dir"
+    # Before the first table; every other byte kept.
+    assert config.read_text() == (
+        '# my settings\nmemory_budget_gb = 8\n\nmodels_dir = "hf-cache"\n\n[server]\n'
+        "  port = 9000 # kept\n"
+    )
+    assert studio.get("/studio/api/downloads/first").json()["models_dir_set"] is True
+    again = studio.post("/studio/api/downloads/destination", json={"place": "hf-cache"})
+    assert again.status_code == 409 and "sets models_dir already" in again.text
+
+
+def test_a_folder_answer_is_created_and_downloads_go_there(make_studio, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    studio = make_studio()
+    answer = studio.post(
+        "/studio/api/downloads/destination", json={"place": "folder", "path": "~/Models"}
+    )
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["line"] == 'models_dir = "~/Models"'
+    assert (home / "Models").is_dir()
+    assert (tmp_path / "config.toml").read_text() == 'models_dir = "~/Models"\n'
+    assert answer.json()["destination"] == {
+        "kind": "folder", "path": str(home / "Models"), "setting": "models_dir"
+    }  # fmt: skip
+    # A download now goes there, and what lands there joins the list.
+    fake_job = Path(__file__).resolve().parents[1] / "fake_job.py"
+    studio.app.state.jobs.command = [sys.executable, str(fake_job), "--steps", "500"]
+    job = studio.post("/studio/api/jobs", json={"kind": "download", "repo": "org/fake"})
+    assert job.json()["job"]["command"][-2:] == ["--local-dir", str(home / "Models" / "fake")]
+    studio.post(f"/studio/api/jobs/{job.json()['job']['id']}/stop", json={})
+    write_model(home / "Models" / "laya")
+    added = studio.post("/studio/api/models/rescan", json={}).json()
+    assert added == {"added": ["laya"], "removed": []}
+
+
+def test_the_folder_must_be_under_the_home_folder(make_studio, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / "notes.txt").parent.mkdir()
+    (home / "notes.txt").write_text("x")
+    monkeypatch.setenv("HOME", str(home))
+    studio = make_studio()
+
+    def refused(**body):
+        response = studio.post("/studio/api/downloads/destination", json=body)
+        assert response.status_code == 400, (body, response.text)
+        return response.json()["error"]["message"]
+
+    assert "not a folder under your home folder" in refused(place="folder", path=str(tmp_path))
+    assert "not a folder under your home folder" in refused(place="folder", path="~")
+    assert "not a folder under your home folder" in refused(place="folder", path="~/../x")
+    assert "e.g. ~/Models" in refused(place="folder", path="Models")
+    assert "a file is there" in refused(place="folder", path="~/notes.txt")
+    assert "place must be" in refused(place="elsewhere")
+    assert not (tmp_path / "config.toml").exists()  # nothing written

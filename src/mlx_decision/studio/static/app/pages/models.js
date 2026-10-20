@@ -11,6 +11,7 @@ import { gigabytes, parameters, plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { openDownload } from "../models/download.js";
+import { FirstStart } from "../models/first-start.js";
 import { href, route } from "../router.js";
 import { jobs, progress, stopJob } from "../store/jobs.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
@@ -350,7 +351,7 @@ const status_ = computed(() => {
   const list = models.value;
   if (!list) return null;
   if (list.length === 0)
-    return { text: html`No models yet · <code>mlx-decision download</code>` };
+    return { text: html`No models yet · Download Model… (${SHORTCUTS.download})` };
   return {
     text: html`<b>${plural(list.length, "model")}</b> · ${loadedNames.value.size} loaded`,
   };
@@ -379,10 +380,7 @@ function Centre() {
         </div>
       </div>
       ${list.length === 0 && downloads.value.length === 0
-        ? html`<div class="empty">
-            <b>No models yet</b>
-            <span>Download one with <code>mlx-decision download</code>; it appears here.</span>
-          </div>`
+        ? html`<${FirstStart} />`
         : html`
             <${MemoryCard} />
             <section class="group mlist" aria-label="Models">

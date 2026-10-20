@@ -118,7 +118,7 @@ function Target() {
             sub=${item.fitted ? `fitted on ${item.base}` : null}
             onSelect=${() => chooseModel(item.name)}><span class="mono">${item.name}</span><//>`,
         )}
-        ${list.length === 0 && html`<${MenuNote}>No models yet. Download one: <code>mlx-decision download</code><//>`}
+        ${list.length === 0 && html`<${MenuNote}>No models yet. Download one in Models (${SHORTCUTS.download}).<//>`}
         ${list.length > 1 &&
         html`<${MenuSeparator} />
           <${MenuHeader}>Compare With<//>
@@ -148,7 +148,7 @@ function exampleProblem(problem) {
 
 const status = computed(() => {
   if (models.value && models.value.length === 0)
-    return { text: html`No models yet · <code>mlx-decision download</code>` };
+    return { text: html`No models yet · Download one in Models (${SHORTCUTS.download})` };
   if (sets.value && setName.value === null) return { text: "No question set yet" };
   if (entry.value?.error) return { icon: "warn", text: entry.value.error };
   if (!built.value || !modelName.value) return null;

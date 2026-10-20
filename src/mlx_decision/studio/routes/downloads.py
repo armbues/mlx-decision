@@ -17,26 +17,40 @@ estimates and say so.
 
 import asyncio
 import logging
+import random
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
 
-from ...config import HF_CACHE, Config
+from ...config import HF_CACHE, Config, ConfigError, set_models_dir
+from ...config import load as load_config
 from ...download import RepoCheck, check_repo
 from ...gpu import Gpu
 from ...hub import http_errors, snapshot_revision
 from ...memory import MARGIN, QUANTIZED_BITS, working_set
 from ...registry import families, get_family
+from ..catalog import Catalog
 from . import ApiError, field, json_body
 from .jobs import REPO_ID
 
 logger = logging.getLogger(__name__)
 
 
-def downloads_router(gpu: Gpu, config: Callable[[], Config], max_body_bytes: int) -> APIRouter:
+def downloads_router(
+    gpu: Gpu,
+    config: Callable[[], Config],
+    max_body_bytes: int,
+    set_config: Callable[[Config], None] = lambda config: None,
+    catalog: Catalog | None = None,
+    choose: random.Random | None = None,
+) -> APIRouter:
+    """``config`` returns the config file as it is now; ``set_config`` takes
+    it after the first start wrote ``models_dir``, and ``catalog`` gets the
+    folder chosen. ``choose`` picks the first start's models (random)."""
     router = APIRouter(prefix="/studio/api/downloads")
+    choose = choose or random.Random()
     pool = gpu.pool
 
     def destination() -> dict[str, Any]:
@@ -96,6 +110,54 @@ def downloads_router(gpu: Gpu, config: Callable[[], Config], max_body_bytes: int
                 }
             )
         return {"families": listed, "destination": destination()}
+
+    @router.get("/first")
+    async def first():
+        """``{picks, models_dir_set, config_path, suggestion}`` for the first
+        start: one small, one medium and one large model that fit the Studio's
+        memory budget at full size (``first_picks``), whether the config file
+        says where models go, and the folder offered when it does not."""
+        budget = await asyncio.to_thread(pool.limit)
+        current = config()
+        return {
+            "picks": first_picks(budget, choose),
+            "models_dir_set": current.models_dir is not None,
+            "config_path": str(current.path),
+            "suggestion": "~/Models",
+        }
+
+    @router.post("/destination")
+    async def set_destination(request: Request):
+        """``{place: "hf-cache"}`` or ``{place: "folder", path}`` -> ``{line,
+        config_path, destination}``: where models go, added to the config file
+        as ``models_dir`` (the first start's question, asked once). The folder
+        must be under the home folder; it is created. 409 when the file says
+        already."""
+        body = await json_body(request, max_body_bytes)
+        place = field(body, "place", str)
+        current = config()
+        if current.models_dir is not None:
+            raise ApiError(409, f"{current.path} sets models_dir already", param="place")
+        if place == "hf-cache":
+            folder = None
+        elif place == "folder":
+            folder = models_folder(field(body, "path", str))
+        else:
+            raise ApiError(400, 'place must be "hf-cache" or "folder"', param="place")
+        try:
+            if folder is not None:
+                await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)
+            line = await asyncio.to_thread(set_models_dir, folder, current.path)
+            updated = await asyncio.to_thread(load_config, current.path)
+        except ConfigError as error:
+            raise ApiError(409, str(error), param="place") from None
+        except OSError as error:
+            raise ApiError(400, f"{folder}: {error.strerror or error}", param="path") from None
+        set_config(updated)
+        if folder is not None and catalog is not None:
+            catalog.models_dir = folder
+        logger.info("added %s to %s", line, current.path)
+        return {"line": line, "config_path": str(current.path), "destination": destination()}
 
     @router.post("/check")
     async def check(request: Request):
@@ -164,3 +226,92 @@ def describe(check: RepoCheck, budget: int, mac: int) -> dict[str, Any]:
         "default_bits": default["bits"] if default else None,
         "budget": budget,
     }
+
+
+def models_folder(text: str) -> Path:
+    """The folder the first start names for models: a path under the home folder
+    (``~`` allowed), not the home folder itself and not a file (SEC-4: the one
+    path the page sends, MOD-7). Raises ``ApiError`` 400."""
+    text = text.strip()
+    home = Path.home().resolve()
+    path = Path(text).expanduser()
+    if not text or not path.is_absolute():
+        raise ApiError(400, "give a folder under your home folder, e.g. ~/Models", param="path")
+    folder = path.resolve()
+    if folder == home or not folder.is_relative_to(home):
+        raise ApiError(400, f"{text}: not a folder under your home folder ({home})", param="path")
+    if folder.exists() and not folder.is_dir():
+        raise ApiError(400, f"{text}: a file is there", param="path")
+    return folder
+
+
+# Listed sizes ("843 MB", "4.4 GB") in bytes.
+UNITS = {"MB": 10**6, "GB": 10**9}
+
+
+def listed_bytes(size: str) -> int:
+    number, unit = size.split()
+    return round(float(number) * UNITS[unit])
+
+
+# The first start's size classes, by download size: small below the first,
+# large above the second.
+SMALL_BELOW = 2 * 10**9
+LARGE_ABOVE = 8 * 10**9
+
+
+def first_picks(budget: int, choose: random.Random) -> list[dict[str, Any]]:
+    """Three models for a first download, from the known models that fit
+    ``budget`` at full size (their listed size plus 10%): one chosen at random
+    among the small ones (below 2 GB), one among the medium ones and one among
+    the large ones (above 8 GB), the large first, then the others preferring
+    families not chosen yet. When a class has none that fits (a small Mac),
+    what fits is cut in thirds by size instead; with fewer than four that fit,
+    each is a pick."""
+    fitting = []
+    for family in families():
+        if not family.listing:
+            continue
+        for model in family.known_models:
+            size = listed_bytes(model.size)
+            if size * MARGIN <= budget:
+                fitting.append((size, family, model))
+    fitting.sort(key=lambda item: item[0])
+    names = ("small", "medium", "large")
+    classes = [
+        [item for item in fitting if item[0] < SMALL_BELOW],
+        [item for item in fitting if SMALL_BELOW <= item[0] <= LARGE_ABOVE],
+        [item for item in fitting if item[0] > LARGE_ABOVE],
+    ]
+    if all(classes):
+        tiers = list(zip(names, classes, strict=True))
+    elif len(fitting) <= 3:
+        tiers = [(names[i], [item]) for i, item in enumerate(fitting)]
+    else:
+        count = len(fitting)
+        cut = [0, count // 3, 2 * count // 3, count]
+        tiers = [(name, fitting[cut[i] : cut[i + 1]]) for i, name in enumerate(names)]
+    chosen: dict[str, tuple] = {}
+    taken: set[str] = set()
+    for name, items in reversed(tiers):
+        fresh = [item for item in items if item[1].name not in taken]
+        item = choose.choice(fresh or items)
+        chosen[name] = item
+        taken.add(item[1].name)
+    picks = []
+    for name, _ in tiers:
+        size, family, model = chosen[name]
+        picks.append(
+            {
+                "tier": name,
+                "repo": model.repo_id,
+                "family": family.name,
+                "family_title": family.listing.title,
+                "maker": family.listing.maker,
+                "description": model.description,
+                "size": model.size,
+                "bytes": size,
+                "memory_bytes": round(size * MARGIN),
+            }
+        )
+    return picks
