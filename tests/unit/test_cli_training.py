@@ -136,6 +136,23 @@ def test_eval_scores_a_fitted_model_beside_its_base(tmp_path, base, data, cli):
     assert body["data"]["examples"] == 100
 
 
+def test_eval_events_are_json_lines_ending_with_the_results(tmp_path, base, data, cli):
+    result = cli("eval", "-m", str(base), "--data", str(data), "--events")
+    assert result.exit_code == 0, result.output
+    events = [json.loads(line) for line in result.stdout.splitlines()]
+    assert events[0]["stage"] == "load"
+    first_step = {key: value for key, value in events[1].items() if key != "eta_s"}
+    assert first_step == {"stage": "score", "step": 1, "total": 100}
+    last = events[-1]
+    assert last["stage"] == "done"
+    assert last["metrics"]["models"][0]["questions"]["team"]["n"] == 100
+    failed = cli("eval", "-m", str(tmp_path / "missing"), "--data", str(data), "--events")
+    assert failed.exit_code == 1
+    assert json.loads(failed.stdout.splitlines()[-1])["stage"] == "error"
+    both = cli("eval", "-m", str(base), "--data", str(data), "--events", "--json")
+    assert both.exit_code == 1 and "pass --events or --json, not both" in both.stderr
+
+
 def test_eval_without_labels_says_so(tmp_path, base, cli):
     path = tmp_path / "plain.jsonl"
     write_examples(path, [Example("a", {"state": "x", "questions": {"team": TEAM}}, {})])

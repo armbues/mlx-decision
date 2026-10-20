@@ -346,6 +346,13 @@ next step: the next example scored, the next training batch, or the next
 20 steps of a search. A second Ctrl-C stops it at once. A stopped run
 writes nothing: there is no half-written folder.
 
+A program that runs `training fit --events` can give it a pipe as stdin
+and never write to it. When the program ends, even when it is killed,
+the pipe closes and the run stops as after Ctrl-C; a run still going 4
+seconds later (in the middle of a long step) removes what it had
+written so far and exits at once (code 130). A terminal, `/dev/null` or
+a file on stdin is not watched.
+
 ### Menus
 
 Run in a terminal without `--method` (or without the data, base or
@@ -434,7 +441,10 @@ For each labelled question, `training eval` shows accuracy, macro-F1
 and ECE (`score` questions also mean absolute error), refused and cut
 examples when there are any, and a confusion matrix. `--compare` scores
 a second model after the first; only one is loaded at a time. `--json`
-prints the results as JSON. Evaluation needs no extra.
+prints the results as JSON. `--events` prints the progress as JSON
+lines instead (stages `load`, `score` and `done`, whose `metrics` hold
+the results as `--json` prints them), and stops when a pipe on stdin
+closes, as `training fit` does. Evaluation needs no extra.
 
 Scores from `training eval` are measured on data the fit has not seen
 only if you give it such data: use a test split or your own held-back

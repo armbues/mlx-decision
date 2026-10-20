@@ -32,6 +32,7 @@ from ..fitted import (
     fingerprint,
     open_folder,
     option_ids,
+    partial_folder,
 )
 from ..fitted import write as write_fitted
 from ..hub import resolve_model_path
@@ -327,6 +328,18 @@ def _size(count: int) -> str:
     return f"{count / 1e9:.1f} GB" if count >= 1e9 else f"{max(count / 1e6, 0.1):.1f} MB"
 
 
+def states_folder(output: Path) -> Path:
+    """Where a fit to ``output`` keeps the hidden states while it trains."""
+    return output.parent / f".{output.name}.states"
+
+
+def leftovers(output: str | Path) -> tuple[Path, Path]:
+    """What a fit to ``output`` writes on the way and removes (or renames into
+    place) at its end: a process stopped mid-run leaves these behind."""
+    output = Path(output)
+    return partial_folder(output), states_folder(output)
+
+
 def _store(model, output: Path, examples: list[Example], emit):
     """A store for the hidden states of ``examples`` beside ``output``, once their
     size is known (and shown) and the disk has room for it."""
@@ -338,7 +351,7 @@ def _store(model, output: Path, examples: list[Example], emit):
             size += model.backend.head_size(model.check(example.request))
         except DecisionError:
             continue  # refused: nothing stored
-    folder = output.parent / f".{output.name}.states"
+    folder = states_folder(output)
     folder.parent.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(folder.parent).free
     if size + DISK_MARGIN > free:

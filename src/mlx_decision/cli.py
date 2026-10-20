@@ -1702,7 +1702,7 @@ def training_fit(
             "--events",
             help="Print the progress as JSON lines on stdout instead of a progress bar and "
             'the report; a failed run ends with {"stage": "error"}, a cancelled one with '
-            '{"stage": "cancelled"}. Asks nothing.',
+            '{"stage": "cancelled"}. Asks nothing; stops when a pipe on stdin closes.',
         ),
     ] = False,
     yes: YesOption = False,
@@ -1716,6 +1716,7 @@ def training_fit(
     """
     from .training import Cancelled, fit
     from .training.console import Progress, format_fit, interrupt_cancels
+    from .training.fitting import leftovers
     from .training.wizard import Cancelled as MenusLeft
     from .training.wizard import FitPlan, ask_fit
 
@@ -1751,7 +1752,10 @@ def training_fit(
         plan.with_defaults(default_output)
     progress = Progress(sys.stderr, sys.stderr.isatty(), plan=not asked)
     on_event = echo_event if events else progress
-    with interrupt_cancels(sys.stderr) as stop:
+    with (
+        interrupt_cancels(sys.stderr) as stop,
+        watched(events, stop, leftovers(plan.output)),
+    ):
         try:
             result = fit(
                 plan.model,
@@ -1794,6 +1798,14 @@ def training_fit(
         typer.echo(format_fit(result.report, str(result.path)))
 
 
+def watched(events: bool, cancel, leftovers=()):
+    """With ``--events``, the stdin watchdog: a run whose parent (the Studio)
+    is gone stops and leaves nothing behind."""
+    from .watchdog import watch_stdin
+
+    return watch_stdin(cancel, leftovers) if events else nullcontext()
+
+
 def stage_event(stage: str, message: str):
     """How a run ended other than done: ``error`` or ``cancelled``."""
     from .training import Event
@@ -1824,6 +1836,16 @@ def training_eval(
     max_input_tokens: MaxInputOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     as_json: Annotated[bool, typer.Option("--json", help="Print the results as JSON.")] = False,
+    events: Annotated[
+        bool,
+        typer.Option(
+            "--events",
+            help="Print the progress as JSON lines on stdout instead of a progress bar and "
+            'the results; the last is {"stage": "done"} with the results as --json has them '
+            'in "metrics", or {"stage": "error"} or {"stage": "cancelled"}. Asks nothing; '
+            "stops when a pipe on stdin closes.",
+        ),
+    ] = False,
 ) -> None:
     """Score models on labelled examples: accuracy, macro-F1, ECE (and MAE for
     scores), refusals and a confusion matrix per question."""
@@ -1834,7 +1856,9 @@ def training_eval(
     model = config_default(config) if model is None else model_reference(model, config)
     if compare is not None:
         compare = model_reference(compare, config)
-    if (model is None or data is None) and terminal():
+    if events and as_json:
+        fail("pass --events or --json, not both")
+    if (model is None or data is None) and not events and terminal():
         from .training.wizard import Cancelled as MenusLeft
         from .training.wizard import ask_eval
 
@@ -1847,25 +1871,31 @@ def training_eval(
     if data is None:
         fail("pass --data FILE.jsonl (labelled examples)")
     progress = Progress(sys.stderr, sys.stderr.isatty())
-    with interrupt_cancels(sys.stderr) as stop:
+    with interrupt_cancels(sys.stderr) as stop, watched(events, stop):
         try:
             result = evaluate(
                 model,
                 data,
                 compare=compare,
-                on_event=progress,
+                on_event=echo_event if events else progress,
                 cancel=stop,
                 check_memory=not no_memory_check,
                 **load_options(None, max_input_tokens),
             )
         except Cancelled:
             progress.close()
+            if events:
+                echo_event(stage_event("cancelled", "stopped before the end"))
             typer.echo("cancelled", err=True)
             raise typer.Exit(130) from None
         except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
             progress.close()
+            if events:
+                echo_event(stage_event("error", str(error)))
             fail(str(error))
     progress.close()
+    if events:
+        return
     if as_json:
         typer.echo(json.dumps(result.as_json(), indent=2, ensure_ascii=False))
     else:

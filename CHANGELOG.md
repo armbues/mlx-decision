@@ -24,6 +24,12 @@ change the interface).
 - A model menu for `run` and `chat` without `-m` or a default model: the
   models in `models_dir`, in `models` and in the Hugging Face cache (a
   stopped download is left out), with family and size on disk.
+- `training eval --events`: the progress as JSON lines, as `training fit`
+  has it, ending with the results.
+- With `--events` and a pipe on stdin, `training fit` and `training eval`
+  stop when the pipe closes (the program that started them is gone): at
+  the next step, or after 4 seconds at once, leaving no half-written
+  folder. A terminal, `/dev/null` or a file on stdin changes nothing.
 
 ### Changed
 

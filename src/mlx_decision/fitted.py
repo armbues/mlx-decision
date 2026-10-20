@@ -432,6 +432,12 @@ def load(path: Path, **options) -> FittedBackend:
     return attach(folder, load_backend(folder.base, **options))
 
 
+def partial_folder(folder: str | Path) -> Path:
+    """Where ``write`` puts ``folder`` before renaming it into place."""
+    folder = Path(folder)
+    return folder.parent / f".{folder.name}.partial"
+
+
 def write(
     folder: Path,
     *,
@@ -452,7 +458,7 @@ def write(
     if folder.exists() and not overwrite:
         raise FileExistsError(f"{folder} exists (pass overwrite to replace it)")
     folder.parent.mkdir(parents=True, exist_ok=True)
-    partial = folder.parent / f".{folder.name}.partial"
+    partial = partial_folder(folder)
     shutil.rmtree(partial, ignore_errors=True)
     partial.mkdir()
     try:
