@@ -26,6 +26,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from fake_backend import write_fitted, write_model
+from mlx_decision.config import Config
 from mlx_decision.memory import ModelTooLargeError
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, server
@@ -122,7 +123,11 @@ def write_studio(
     data.mkdir(parents=True, exist_ok=True)
     line = {**TICKET_TRIAGE, "labels": {"department": "technical", "is_urgent": "true"}}
     (data / "tickets.jsonl").write_text(json.dumps(line) + "\n")
-    app = create_studio(pool, port=port, workspace=home / "ws", load_default=False, dev=dev)
+    # Its own config file (none), never the one in the user's home.
+    config = Config(home / "config.toml")
+    app = create_studio(
+        pool, port=port, workspace=home / "ws", config=config, load_default=False, dev=dev
+    )
     fake_jobs(app)
     return app
 

@@ -9,7 +9,8 @@ import { groupColour, groupLabel, markOf } from "../families.js";
 import { MenuItem, MenuSeparator } from "../components/menu.js";
 import { gigabytes, parameters, plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
-import { SHORTCUTS } from "../keys.js";
+import { SHORTCUTS, onKey } from "../keys.js";
+import { openDownload } from "../models/download.js";
 import { href, route } from "../router.js";
 import { jobs, progress, stopJob } from "../store/jobs.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
@@ -359,8 +360,11 @@ const action = computed(() => ({
   label: "Download Model…",
   title: `Download Model… (${SHORTCUTS.download})`,
   icon: false,
-  disabled: true,
+  run: openDownload,
 }));
+
+// ⌘D opens Download Model from any page.
+onKey("download", () => openDownload());
 
 function Centre() {
   const list = models.value;

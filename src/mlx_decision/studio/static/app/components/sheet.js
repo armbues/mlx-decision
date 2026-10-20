@@ -4,8 +4,10 @@ import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect, useRef } from "preact/hooks";
 
-// {title, purpose, Body, actions: [{label, primary, danger, disabled, onSelect}],
-// note, done: a label for a sheet that only shows something (its one button,
+// {title, purpose, Body, actions: [{label, primary, danger, disabled, onSelect}]
+// (or a function returning them, read as the sheet renders, so they follow
+// signals), note, Foot (a component at the footer's start, in place of the
+// note), done: a label for a sheet that only shows something (its one button,
 // in place of Cancel), wide}
 export const sheet = signal(null);
 
@@ -24,7 +26,8 @@ export function Sheet() {
     if (current) panel.current?.querySelector("input, button.primary, button")?.focus();
   }, [current?.title]);
   if (!current) return null;
-  const { title, purpose, Body, actions = [], note, done, wide } = current;
+  const { title, purpose, Body, note, Foot, done, wide } = current;
+  const actions = (typeof current.actions === "function" ? current.actions() : current.actions) ?? [];
   const primary = actions.find((action) => action.primary && !action.disabled);
   const onKeyDown = (event) => {
     if (event.key === "Enter" && event.target.tagName === "INPUT" && primary) {
@@ -41,7 +44,7 @@ export function Sheet() {
       </div>
       <div class="sheet-body">${Body && html`<${Body} />`}</div>
       <div class="sheet-foot">
-        ${note && html`<span class="note">${note}</span>`}
+        ${Foot ? html`<${Foot} />` : note && html`<span class="note">${note}</span>`}
         ${done
           ? html`<button class="btn primary" onClick=${closeSheet}>${done}</button>`
           : html`<button class="btn" onClick=${closeSheet}>Cancel</button>`}

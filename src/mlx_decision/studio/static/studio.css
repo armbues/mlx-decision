@@ -318,6 +318,8 @@ ul.jobs .job { min-width: 0; grid-template-columns: minmax(0, 1fr); }
 .btn svg { width: 13px; height: 13px; }
 .btn.primary { background: var(--accent); color: var(--accent-fg); box-shadow: none; font-weight: 500; }
 .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, black); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary:disabled:hover { background: var(--accent); }
 .btn.plain { background: transparent; box-shadow: none; color: var(--accent); padding: 0 6px; }
 .btn.plain:hover { background: var(--fill); }
 .btn.tool { background: transparent; box-shadow: none; color: var(--fg); padding: 0 8px; }
@@ -906,3 +908,52 @@ a.sb-item { color: var(--fg); }
 .btn.primary.danger:hover { background: color-mix(in srgb, var(--red) 88%, black); }
 .inspector .diff-head h4 { flex: 1; }
 .inspector .moves h4 + .stack-rows { margin-top: -4px; }
+
+/* Download Model (the Models page's sheet) */
+.sheet .dl-panes { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 14px; min-height: 0; }
+.sheet .fam-list { background: var(--group); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; display: grid; gap: 1px; align-content: start; }
+.sheet .fam { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 9px; align-items: center; padding: 6px 7px; border-radius: 7px; border: 0; background: transparent; text-align: left; width: 100%; color: var(--fg); }
+.sheet .fam:hover { background: var(--fill); }
+.sheet .fam[aria-selected="true"] { background: var(--accent); color: var(--accent-fg); }
+.sheet .fam[aria-selected="true"] span span { color: inherit; opacity: 0.85; }
+.sheet .fam b { font-weight: 600; display: block; }
+.sheet .fam span span { display: block; font-size: 11px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .fam > span:last-child { min-width: 0; }
+.sheet .fam-pane { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.sheet .fam-pane > p { margin: 0; color: var(--fg-2); font-size: 12px; }
+.sheet .cat { background: var(--group); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+.sheet .crow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 12px; width: 100%; border: 0; background: transparent; text-align: left; position: relative; color: var(--fg); }
+.sheet .crow + .crow::before { content: ""; position: absolute; top: 0; left: 40px; right: 0; border-top: 0.5px solid var(--sep); }
+.sheet .crow:hover { background: var(--fill); }
+.sheet .crow[aria-checked="true"] { background: var(--selection); }
+.sheet .crow .radio { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--sep-strong); display: grid; place-items: center; }
+.sheet .crow[aria-checked="true"] .radio { border-color: var(--accent); background: var(--accent); }
+.sheet .crow[aria-checked="true"] .radio::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.sheet .crow code { font: 600 12px var(--mono); }
+.sheet .crow small { display: block; color: var(--fg-2); font-size: 11.5px; }
+.sheet .crow .meta { font-size: 11.5px; color: var(--fg-2); text-align: right; white-space: nowrap; }
+.sheet .crow .meta .have { color: var(--green); font-weight: 600; }
+.sheet .crow .meta .getting { color: var(--accent); font-weight: 600; }
+.sheet .opts { background: var(--group); border-radius: 10px; box-shadow: var(--shadow); padding: 11px 12px; display: grid; gap: 9px; }
+.sheet .opts h4 { margin: 0; font-weight: 600; color: var(--fg-3); font-variant: all-small-caps; letter-spacing: 0.04em; font-size: 12.5px; }
+.sheet .opts .note { margin: 0; }
+.sheet .qopts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sheet .qopt { border: 1px solid var(--sep-strong); border-radius: 8px; padding: 8px 10px; background: transparent; text-align: left; display: grid; gap: 2px; color: var(--fg); }
+.sheet .qopt:hover { background: var(--fill); }
+.sheet .qopt[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--selection); }
+.sheet .qopt b { font-weight: 600; }
+.sheet .qopt span { font-size: 11.5px; color: var(--fg-2); }
+.sheet .qopt .fit { font-weight: 600; font-size: 11px; }
+.sheet .fit.ok { color: var(--green); }
+.sheet .fit.mid { color: var(--orange); }
+.sheet .fit.no { color: var(--red); }
+.sheet .notice { display: flex; gap: 8px; padding: 9px 11px; border-radius: 8px; background: var(--orange-fill); font-size: 12px; }
+.sheet .notice.info { background: var(--fill); }
+.sheet .notice .ic { width: 14px; height: 14px; color: var(--orange); flex: none; margin-top: 1px; }
+.sheet .notice.info .ic { color: var(--fg-2); }
+.sheet .checking { display: flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: 12px; }
+.sheet .checking .ic { width: 14px; height: 14px; color: var(--accent); animation: spin 0.9s linear infinite; }
+.sheet .repo-field { display: flex; align-items: center; gap: 8px; margin-right: auto; min-width: 0; }
+.sheet .repo-field label { color: var(--fg-2); font-size: 12px; white-space: nowrap; }
+.sheet .repo-field input { flex: none; width: 220px; padding: 4px 8px; border: 0.5px solid var(--sep-strong); border-radius: 6px; background: var(--group); font: 12px var(--mono); color: var(--fg); }
+.sheet .repo-field input:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; }
