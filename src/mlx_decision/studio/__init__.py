@@ -24,6 +24,7 @@ from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
 from .jobs import Jobs
 from .page import Page, watch
+from .routes.jobs import JobMessages, jobs_router
 from .routes.models import models_router
 from .routes.run import Models, Recorder, run_router
 from .routes.sets import sets_router
@@ -52,7 +53,9 @@ def create_studio(
     holds the session, whose token goes into the address ``web`` opens;
     ``app.state.workspace`` the workspace (``workspace``, else ``home()``),
     created and cleaned up here; ``app.state.hub`` the stream's hub;
-    ``app.state.jobs`` the jobs, stopped when the Studio stops.
+    ``app.state.jobs`` the jobs, stopped when the Studio stops; a fresh
+    stream's snapshot carries this process's jobs. ``app.state.config``
+    is the config file as read; downloads go where its ``models_dir`` says.
     ``config`` is the config file the process read (read here when not
     given), shown by the status route. The pool's default model loads at
     startup unless ``load_default`` is False. With ``dev`` the page's files
@@ -68,8 +71,8 @@ def create_studio(
     files.open()
     page = Page(dev=dev)
     status = status_reader(gpu)
-    hub = Hub(lambda: {"status": status()})
     jobs = Jobs(gpu, files)
+    hub = Hub(lambda: {"status": status(), "jobs": jobs.current()})
     app = FastAPI(
         title="mlx-decision Studio",
         lifespan=studio_lifespan(gpu, files, hub, status, load_default, page, jobs),
@@ -82,6 +85,7 @@ def create_studio(
     app.state.workspace = files
     app.state.hub = hub
     app.state.jobs = jobs
+    app.state.config = config
     security.install(app, session, host, port, api_key)
     models = Models(gpu, files.root / "models")
     recorder = Recorder(files, models)
@@ -93,6 +97,7 @@ def create_studio(
     app.include_router(sets_router(files, max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
     app.include_router(models_router(gpu, max_body_bytes))
+    app.include_router(jobs_router(jobs, gpu, files, lambda: app.state.config, max_body_bytes))
     app.include_router(stream_router(hub))
     return app
 
@@ -150,8 +155,8 @@ def studio_lifespan(
 ):
     """Start the GPU (its default model loads, with ``load_default``) and close it
     at the end, as ``server.gpu_lifespan`` does, plus the stream: changes to the
-    GPU's holder, the pool and the workspace become messages; the streams end
-    when the Studio stops. Running ``jobs`` are stopped first."""
+    GPU's holder, the pool, the workspace and the ``jobs`` become messages; the
+    streams end when the Studio stops. Running jobs are stopped first."""
 
     def publish_status() -> None:
         hub.publish_changed("status", status())
@@ -166,6 +171,8 @@ def studio_lifespan(
         gpu.pool.on_change = lambda: hub.soon(publish_status)
         gpu.pool.on_use = lambda: hub.soon(publish_status)  # last used
         files.on_change = lambda change: hub.soon(hub.publish, "workspace", change)
+        if jobs is not None:  # they change on the loop
+            jobs.on_change = JobMessages(hub.publish)
         watcher = None
         if page is not None and page.dev:  # open tabs reload when a page file changes
             watcher = asyncio.create_task(watch(page, lambda: hub.publish("reload", {})))
@@ -181,6 +188,8 @@ def studio_lifespan(
             hub.close()
             gpu.close()
             gpu.on_change = gpu.pool.on_change = gpu.pool.on_use = files.on_change = None
+            if jobs is not None:
+                jobs.on_change = None
 
     return lifespan
 

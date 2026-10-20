@@ -1,0 +1,313 @@
+"""Jobs: start a download, conversion, fit or evaluation, follow it, stop it.
+
+The page names what a job works on, never a path: a model by its name in
+the Studio's list, a data file by its name in the workspace's ``data/``,
+a new model by the name it gets in ``models/``, a download by its repo id.
+The command line is built here from those. A job that needs the GPU while
+another one has it is refused (409, naming the running one).
+
+``POST /studio/api/jobs`` answers at once (202): a GPU job may still wait
+for the request on the worker. Its progress comes over the stream (``job``
+and ``event`` messages); ``GET /studio/api/jobs/{id}`` gives a job with its
+events so far, for a tab that opens one later.
+"""
+
+import asyncio
+import re
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Request
+
+from ...config import Config
+from ...gpu import Gpu
+from ...training.plan import KINDS as FIT_KINDS
+from ..catalog import option_arguments
+from ..jobs import Job, JobConflict, Jobs
+from ..workspace import Workspace, WorkspaceError, check_name
+from . import ApiError, field, json_body
+
+KINDS = ("download", "convert", "fit", "eval")
+DATA_SUFFIX = ".jsonl"
+REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
+BITS = (8, 4)
+# What fit and eval take from a model's load options (the others do not apply).
+TRAINING_OPTIONS = ("max_input_tokens",)
+METHODS = ("auto", *FIT_KINDS)
+
+
+class Plan:
+    """A job to start: the command's arguments, what it writes, its title."""
+
+    def __init__(self, argv: list[str], *, holds_gpu: bool, title: str, output: Path | None = None):
+        self.argv, self.holds_gpu, self.title, self.output = argv, holds_gpu, title, output
+
+
+def jobs_router(
+    jobs: Jobs, gpu: Gpu, files: Workspace, config: Callable[[], Config], max_body_bytes: int
+) -> APIRouter:
+    """``config`` returns the config file as it is now (where downloads go)."""
+    router = APIRouter(prefix="/studio/api/jobs")
+    pool = gpu.pool
+
+    def model(body: dict, key: str = "model", required: bool = True) -> str | None:
+        name = field(body, key, str, required)
+        if name is not None and name not in pool.specs:
+            raise ApiError(404, f"no model is named {name}", param=key)
+        return name
+
+    def model_arguments(name: str) -> list[str]:
+        spec = pool.specs[name]
+        options = {key: spec.options[key] for key in TRAINING_OPTIONS if key in spec.options}
+        return ["-m", str(spec.path), *option_arguments(options)]
+
+    def data_file(body: dict, key: str = "data") -> tuple[str, Path]:
+        name = named(body, key, "a data file's name")
+        path = files.path("data", name, DATA_SUFFIX, "a data file's name")
+        if not path.is_file():
+            raise ApiError(404, f"no data file is named {name}", param=key)
+        return name, path
+
+    def named(body: dict, key: str, what: str) -> str:
+        try:
+            return check_name(field(body, key, str), what)
+        except WorkspaceError as error:
+            raise ApiError(400, error.message, param=key) from None
+
+    def new_model(body: dict, default: str) -> tuple[str, Path]:
+        """The name of a model a job writes into ``models/``: free on disk, in the
+        list and among the jobs writing."""
+        name = named(body, "name", "the model's name") if body.get("name") is not None else default
+        try:
+            path = files.path("models", name, what="the model's name")
+        except WorkspaceError as error:
+            raise ApiError(400, error.message, param="name") from None
+        if path.exists() or name in pool.specs:
+            raise ApiError(409, f"a model named {name} exists already", param="name")
+        writing(path, "name")
+        return name, path
+
+    def writing(path: Path, key: str) -> None:
+        for job in jobs.jobs.values():
+            if job.state != "ended" and job.output is not None and job.output == path:
+                raise ApiError(409, f"{job.title} is writing {path.name}", param=key)
+
+    def bits(body: dict, default: int | None) -> int | None:
+        value = field(body, "bits", int, required=False)
+        if value is None:
+            return default
+        if value not in BITS:
+            raise ApiError(400, "bits must be 8 or 4", param="bits")
+        return value
+
+    # One plan per kind
+
+    def download(body: dict) -> Plan:
+        repo = field(body, "repo", str)
+        if not REPO_ID.fullmatch(repo) or ".." in repo:
+            raise ApiError(400, f"not a Hugging Face repo id: {repo!r}", param="repo")
+        quantized = bits(body, None)
+        argv = ["download", repo]
+        output = None
+        models_dir = config().models_dir
+        if isinstance(models_dir, Path):  # else the CLI puts it into the Hub's cache
+            output = models_dir.expanduser() / repo.rsplit("/", 1)[-1]
+            argv += ["--local-dir", str(output)]
+        for job in jobs.jobs.values():
+            if job.state != "ended" and job.kind == "download" and job.argv[1] == repo:
+                raise ApiError(409, f"{repo} is being downloaded already", param="repo")
+        if output is not None:
+            writing(output, "repo")
+        if quantized is not None:
+            argv += ["--bits", str(quantized)]
+        title = f"Download {repo}" + (f" ({quantized}-bit)" if quantized else "")
+        return Plan(argv, holds_gpu=False, title=title, output=output)
+
+    def convert(body: dict) -> Plan:
+        source = model(body)
+        quantized = bits(body, 8)
+        name, output = new_model(body, f"{short(source)}-q{quantized}")
+        argv = ["convert", "-m", str(pool.specs[source].path), "-o", str(output)]
+        argv += ["--bits", str(quantized)]
+        return Plan(argv, holds_gpu=True, title=f"Convert {name}", output=output)
+
+    def fit(body: dict) -> Plan:
+        base = model(body)
+        data_name, data = data_file(body)
+        name, output = new_model(body, f"{short(base)}-{data_name}")
+        argv = ["training", "fit", *model_arguments(base), "--data", str(data), "-o", str(output)]
+        method = field(body, "method", str, required=False)
+        if method is not None:
+            if method not in METHODS:
+                raise ApiError(400, f"method must be one of {', '.join(METHODS)}", param="method")
+            argv += ["--method", method]
+        epochs = field(body, "epochs", int, required=False)
+        if epochs is not None:
+            if epochs < 1:
+                raise ApiError(400, "epochs must be 1 or more", param="epochs")
+            argv += ["--epochs", str(epochs)]
+        holdout = field(body, "holdout", (int, float), required=False)
+        if holdout is not None:
+            if not 0 <= holdout <= 0.9:
+                raise ApiError(400, "holdout must be from 0 to 0.9", param="holdout")
+            argv += ["--holdout", f"{holdout:g}"]
+        seed = field(body, "seed", int, required=False)
+        if seed is not None:
+            argv += ["--seed", str(seed)]
+        if field(body, "early_stop", bool, required=False) is False:
+            argv.append("--no-early-stop")
+        return Plan(argv, holds_gpu=True, title=f"Fit {name}", output=output)
+
+    def evaluate(body: dict) -> Plan:
+        name = model(body)
+        _, data = data_file(body)
+        compare = model(body, "compare", required=False)
+        argv = ["training", "eval", *model_arguments(name), "--data", str(data)]
+        title = f"Evaluate {name}"
+        if compare is not None:
+            argv += ["--compare", str(pool.specs[compare].path)]
+            title += f" against {compare}"
+        return Plan(argv, holds_gpu=True, title=title)
+
+    plans: dict[str, Callable[[dict], Plan]] = {
+        "download": download,
+        "convert": convert,
+        "fit": fit,
+        "eval": evaluate,
+    }
+
+    # Routes
+
+    @router.get("")
+    async def list_jobs():
+        """``{jobs}``: every job's summary, newest first (also those of earlier runs)."""
+        return {"jobs": jobs.list()}
+
+    @router.post("", status_code=202)
+    async def start(request: Request):
+        """``{kind, ...}`` -> ``{job}``. Kinds and their fields:
+        ``download``: ``repo``, ``bits`` (8 or 4; default full size);
+        ``convert``: ``model``, ``bits`` (default 8), ``name``;
+        ``fit``: ``model``, ``data``, ``name``, ``method``, ``epochs``,
+        ``holdout``, ``seed``, ``early_stop``; ``eval``: ``model``, ``data``,
+        ``compare``. ``name`` is the new model's in ``models/`` (default as
+        the CLI names it); ``data`` a file in ``data/`` by its name."""
+        body = await json_body(request, max_body_bytes)
+        kind = field(body, "kind", str)
+        if kind not in plans:
+            raise ApiError(400, f"kind must be one of {', '.join(KINDS)}", param="kind")
+        plan = plans[kind](body)
+        try:
+            job = jobs.submit(
+                kind, plan.argv, holds_gpu=plan.holds_gpu, output=plan.output, title=plan.title
+            )
+        except JobConflict as error:
+            raise conflict(error) from None
+        except RuntimeError as error:
+            raise ApiError(503, str(error), kind="api_error") from None
+        return {"job": job.summary()}
+
+    @router.get("/{job_id}")
+    async def one(job_id: str):
+        """``{job, events}``: the summary and the events so far."""
+        try:
+            return {"job": jobs.get(job_id), "events": jobs.events(job_id)}
+        except (KeyError, WorkspaceError):
+            raise ApiError(404, f"no job {job_id}") from None
+
+    @router.post("/{job_id}/stop")
+    async def stop(job_id: str):
+        """``{job}``: Stop pressed. It answers at once; the outcome follows on
+        the stream. A job that has ended stays as it is."""
+        if job_id in jobs.jobs:
+            return {"job": (await jobs.stop(job_id)).summary()}
+        try:
+            return {"job": jobs.get(job_id)}  # one from an earlier run: it has ended
+        except (KeyError, WorkspaceError):
+            raise ApiError(404, f"no job {job_id}") from None
+
+    return router
+
+
+def short(name: str) -> str:
+    """A model's name without the owner of a repo id (as the CLI names outputs)."""
+    return name.rsplit("/", 1)[-1]
+
+
+def conflict(error: JobConflict) -> ApiError:
+    return ApiError(409, str(error), code="gpu_job_running")
+
+
+class JobMessages:
+    """A job's changes as stream messages, for ``Jobs.on_change``.
+
+    ``job`` carries the job's summary on each change; ``event`` the job's
+    id, the event's place among its events (``index``) and the event. Pure
+    progress (a step without metrics or a message: a fit scores one example
+    per event) is thinned to one per ``interval`` per job, plus the last of
+    each stage; a held one goes out when ``interval`` has passed, unless a
+    later one went out first. Every event stays in the job's file and in
+    ``GET /studio/api/jobs/{id}``, so a tab that loads them and takes the
+    stream's from there (by ``index``) misses none. Called on the loop.
+    """
+
+    def __init__(self, publish: Callable[[str, dict[str, Any]], Any], interval: float = 0.25):
+        self.publish = publish
+        self.interval = interval
+        self.jobs: dict[str, _Sent] = {}
+
+    def __call__(self, job: Job, event: dict[str, Any] | None) -> None:
+        sent = self.jobs.setdefault(job.id, _Sent())
+        if event is None:
+            if job.state == "ended":
+                sent.cancel()
+                self.jobs.pop(job.id, None)
+            self.publish("job", {"job": job.summary()})
+            return
+        message = {"job": job.id, "index": len(job.events) - 1, "event": event}
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        if (
+            _progress(event)
+            and event.get("stage") == sent.stage
+            and now - sent.time < self.interval
+            and not _last_step(event)
+        ):
+            sent.cancel()  # a newer step replaces the one held
+            wait = sent.time + self.interval - now
+            sent.timer = loop.call_later(wait, self._flush, sent, message)
+            return
+        self._send(sent, message, now)
+
+    def _flush(self, sent: "_Sent", message: dict[str, Any]) -> None:
+        sent.timer = None
+        self._send(sent, message, asyncio.get_running_loop().time())
+
+    def _send(self, sent: "_Sent", message: dict[str, Any], now: float) -> None:
+        sent.cancel()
+        sent.time, sent.stage = now, message["event"].get("stage")
+        self.publish("event", message)
+
+
+class _Sent:
+    """What went out last for a job, and the step held back."""
+
+    def __init__(self):
+        self.time = float("-inf")
+        self.stage: str | None = None
+        self.timer: asyncio.TimerHandle | None = None
+
+    def cancel(self) -> None:
+        if self.timer is not None:
+            self.timer.cancel()
+            self.timer = None
+
+
+def _progress(event: dict[str, Any]) -> bool:
+    return "step" in event and not event.get("metrics") and not event.get("message")
+
+
+def _last_step(event: dict[str, Any]) -> bool:
+    total = event.get("total")
+    return isinstance(total, int) and isinstance(event.get("step"), int) and event["step"] >= total

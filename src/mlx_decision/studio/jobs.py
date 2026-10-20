@@ -93,7 +93,8 @@ class Job:
     returncode: int | None = None
     events: list[dict[str, Any]] = field(default_factory=list, repr=False)
     process: asyncio.subprocess.Process | None = field(default=None, repr=False)
-    task: asyncio.Task | None = field(default=None, repr=False)
+    starting: asyncio.Task | None = field(default=None, repr=False)  # submit's start
+    task: asyncio.Task | None = field(default=None, repr=False)  # reads its events
 
     @property
     def last(self) -> dict[str, Any] | None:
@@ -166,6 +167,40 @@ class Jobs:
         while another GPU job is waiting or running, and ``RuntimeError``
         once the Studio is stopping.
         """
+        job = self._create(kind, argv, holds_gpu, output, title)
+        await self._launch(job)
+        return job
+
+    def submit(
+        self,
+        kind: str,
+        argv: Sequence[str],
+        *,
+        holds_gpu: bool,
+        output: Path | None = None,
+        title: str | None = None,
+    ) -> Job:
+        """``start`` without waiting: the job is returned at once, waiting for
+        the GPU or about to run; one that cannot start ends ``failed``. Raises
+        ``JobConflict`` and ``RuntimeError`` as ``start`` does, before
+        anything is created."""
+        job = self._create(kind, argv, holds_gpu, output, title)
+
+        async def launch() -> None:
+            with suppress(Exception):  # the job's outcome says what went wrong
+                await self._launch(job)
+
+        job.starting = asyncio.create_task(launch(), name=f"start {job.id}")
+        return job
+
+    def _create(
+        self,
+        kind: str,
+        argv: Sequence[str],
+        holds_gpu: bool,
+        output: Path | None,
+        title: str | None,
+    ) -> Job:
         if self.closing:
             raise RuntimeError("the Studio is stopping")
         if holds_gpu and self.gpu_job is not None:
@@ -174,19 +209,23 @@ class Jobs:
         if holds_gpu:
             self.gpu_job = job
         self._changed(job)
+        return job
+
+    async def _launch(self, job: Job) -> None:
         try:
-            if holds_gpu:
+            if job.holds_gpu:
                 await self.gpu.acquire(job.title)
             if job.stop_requested:  # Stop pressed while it waited for the GPU
                 self._end(job, "cancelled", "stopped before it started")
-                return job
+                return
             await self._spawn(job)
         except BaseException as error:
             if job.outcome is None:
                 self._end(job, "failed", f"could not start: {error}")
             raise
         job.task = asyncio.create_task(self._watch(job), name=f"job {job.id}")
-        return job
+        if job.stop_requested:  # Stop pressed while the process was being started
+            asyncio.create_task(self._escalate(job), name=f"stop {job.id}")
 
     def _new(
         self, kind: str, argv: list[str], holds_gpu: bool, output: Path | None, title: str | None
@@ -310,9 +349,13 @@ class Jobs:
         open_jobs = [job for job in self.jobs.values() if job.state != "ended"]
         for job in open_jobs:
             await self.stop(job.id)
+        limit = self.stop_grace + self.kill_grace + 5
+        starting = [job.starting for job in open_jobs if job.starting is not None]
+        if starting:  # those waiting for the GPU end once they have it
+            await asyncio.wait(starting, timeout=limit)
         tasks = [job.task for job in open_jobs if job.task is not None]
         if tasks:
-            await asyncio.wait(tasks, timeout=self.stop_grace + self.kill_grace + 5)
+            await asyncio.wait(tasks, timeout=limit)
 
     def _remove_leftovers(self, job: Job) -> None:
         if job.output is None:
@@ -346,6 +389,10 @@ class Jobs:
         except FileNotFoundError:
             return []
         return [event for line in raw.splitlines() if (event := _parse(line)) is not None]
+
+    def current(self) -> list[dict[str, Any]]:
+        """This process's jobs, newest first (what a tab opened now shows)."""
+        return [job.summary() for job in reversed(self.jobs.values())]
 
     def list(self) -> list[dict[str, Any]]:
         """Every job's summary, newest first: this process's and those on disk."""
