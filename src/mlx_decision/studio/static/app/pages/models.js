@@ -8,7 +8,7 @@ import { Download, Picture } from "../components/icons.js";
 import { LoadButton } from "../components/load-button.js";
 import { groupColour, groupLabel, markOf } from "../families.js";
 import { MenuItem, MenuSeparator } from "../components/menu.js";
-import { gigabytes, parameters, plural, shellWord } from "../format.js";
+import { duration, gigabytes, parameters, plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { openConvert } from "../models/convert.js";
@@ -19,7 +19,8 @@ import { settingsChange } from "../stream.js";
 import { href, route } from "../router.js";
 import { gpuJob, jobs, progress, stopJob } from "../store/jobs.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
-import { busy, loadedNames, models, status } from "../store/status.js";
+import { remembered } from "../store/prefs.js";
+import { busy, loadedNames, loadModels, models, status } from "../store/status.js";
 import { openMenu, toast } from "../store/ui.js";
 
 function Mark({ family, big = false }) {
@@ -57,6 +58,47 @@ function usedWords(seconds) {
   if (ago < 3600) return `used ${Math.round(ago / 60)} min ago`;
   return `used ${Math.round(ago / 3600)} h ago`;
 }
+
+let refreshed = false; // the list was loaded since the page opened
+
+// What the list shows: every model, the loaded ones, or the fitted ones
+// (remembered per browser).
+const filter = remembered("models.filter", "all");
+const FILTERS = [
+  ["all", "All"],
+  ["loaded", "Loaded"],
+  ["fitted", "Fitted"],
+];
+
+function Filters() {
+  const list = models.value ?? [];
+  const counts = {
+    all: list.length,
+    loaded: list.filter((model) => loadedNames.value.has(model.name)).length,
+    fitted: list.filter((model) => model.fitted).length,
+  };
+  return html`
+    <div class="seg" role="group" aria-label="Show">
+      ${FILTERS.map(
+        ([id, label]) => html`<button aria-pressed=${filter.value === id} data-filter=${id}
+          onClick=${() => (filter.value = id)}>${label} <span class="count num">${counts[id]}</span></button>`,
+      )}
+    </div>
+  `;
+}
+
+// Speed here (PG-9): the median of the answers measured on this Mac, else a dash.
+function speedCell(model) {
+  const speed = model.speed;
+  if (!speed) return html`<span title="Not measured yet: every answer here is timed">–</span>`;
+  const tokens = speed.tokens_min == null ? "" : `, ${tokensText(speed)}`;
+  return html`<span title=${`Median of ${plural(speed.count, "answer")} here${tokens}`}>${duration(speed.median_ms)}</span>`;
+}
+
+const tokens_range = (speed) =>
+  speed.tokens_min === speed.tokens_max ? `${speed.tokens_min}` : `${speed.tokens_min}–${speed.tokens_max}`;
+// "1 input token", "3–40 input tokens".
+const tokensText = (speed) => `${tokens_range(speed)} input token${speed.tokens_max === 1 ? "" : "s"}`;
 
 // The selected model, and the one the pointer is over (for the memory preview).
 const selected = computed(() => {
@@ -174,6 +216,7 @@ function Row({ model, nested }) {
       <span class="cell r num c-size">${parameters(model.parameters)}</span>
       <span class="cell r num"><b>${memoryCell(model)}</b></span>
       <span class="cell r c-reads">${reads(model)}</span>
+      <span class="cell r num c-speed">${speedCell(model)}</span>
       <span class="st"><${StatePill} model=${model} /></span>
     </div>
   `;
@@ -222,6 +265,7 @@ function JobRow({ job, family = null, nested = false }) {
       <span class="cell r num c-size"></span>
       <span class="cell r num"></span>
       <span class="cell r c-reads"></span>
+      <span class="cell r c-speed"></span>
       <span class="st"><${JobPill} job=${job} /></span>
     </div>
   `;
@@ -237,6 +281,30 @@ function Section({ title, detail, list }) {
         conversionsOf(model.name).map((job) => html`<${JobRow} key=${job.id} job=${job} family=${model.family} nested />`),
       ),
     ])}
+  `;
+}
+
+// The sections the filter shows.
+function Listed() {
+  if (filter.value === "fitted") {
+    const fits = (models.value ?? []).filter((model) => model.fitted);
+    if (fits.length === 0)
+      return html`<div class="mempty">No fitted models yet. Training fits one on labelled data.</div>`;
+    return html`
+      <div class="msec">Fitted models<span>fitted on top of a base model</span></div>
+      ${fits.map((model) => html`<${Row} key=${model.name} model=${model} nested=${false} />`)}
+    `;
+  }
+  if (filter.value === "loaded") {
+    const loaded = loadedNames.value;
+    const list = units.value.loaded.map((unit) => ({ ...unit, models: unit.models.filter((m) => loaded.has(m.name)) }));
+    if (list.length === 0) return html`<div class="mempty">Nothing loaded. Models load on their first request, or with Load.</div>`;
+    return html`<${Section} title="Loaded" detail=${gigabytes(status.value?.memory?.used ?? 0)} list=${list} />`;
+  }
+  return html`
+    <${Section} title="Loaded" detail=${gigabytes(status.value?.memory?.used ?? 0)} list=${units.value.loaded} />
+    <${Section} title="On this Mac" list=${units.value.rest} />
+    <${Downloading} />
   `;
 }
 
@@ -283,9 +351,9 @@ function MemoryCard() {
   const share = (bytes) => `${Math.min(100, (bytes / scale) * 100).toFixed(2)}%`;
   let note;
   if (plan?.over)
-    note = html`<b>${plan.model.name}</b> needs <b>${gigabytes(plan.needs)}</b>, more than the budget: it cannot load. <code>--memory-budget</code> or <code>memory_budget_gb</code> sets the budget.`;
+    note = html`<b>${plan.model.name}</b> needs about <b>${gigabytes(plan.needs)}</b>, more than the budget: it cannot load. Change the budget in Settings (<code>memory_budget_gb</code>) or with <code>--memory-budget</code>.`;
   else if (plan)
-    note = html`Loading <b>${plan.model.name}</b> (${gigabytes(plan.needs)})${
+    note = html`Loading <b>${plan.model.name}</b> (about ${gigabytes(plan.needs)})${
       plan.leaving.length
         ? html` unloads <span class="warn">${plan.leaving.map(groupLabel).join("; ")}</span> to stay within the budget.`
         : " fits beside what is loaded."
@@ -297,6 +365,9 @@ function MemoryCard() {
       <div class="memcard-head">
         <h2>Memory</h2>
         <span class="figure num">${gigabytes(memory.used)}<small>in use of ${gigabytes(memory.budget)} budget</small></span>
+        <a class="memcard-link" href=${href("settings")} title="memory_budget_gb in the config file, or --memory-budget">Change the budget</a>
+        ${memory.working_set &&
+        html`<span class="memcard-sub">This Mac's GPU working set is ${gigabytes(memory.working_set)}: the most a budget can use.</span>`}
       </div>
       <div class="membig">
         <div class="segs">
@@ -386,6 +457,20 @@ function Centre() {
   useEffect(() => {
     loadPlaces();
   }, [models.value, settingsChange.value]);
+  // Speed: the list again when the page opens and, while it is open, after
+  // models answered (at most every 2 s).
+  const used = JSON.stringify(status.value?.used ?? {});
+  useEffect(() => {
+    const timer = setTimeout(loadModels, refreshed ? 2000 : 0);
+    refreshed = true;
+    return () => clearTimeout(timer);
+  }, [used]);
+  useEffect(
+    () => () => {
+      refreshed = false;
+    },
+    [],
+  );
   const list = models.value;
   if (!list) return html`<div class="centre-inner"></div>`;
   const fitted = list.filter((model) => model.fitted).length;
@@ -396,18 +481,15 @@ function Centre() {
           <h1>Models</h1>
           <p>${plural(list.length - fitted, "model")}${fitted ? ` and ${plural(fitted, "fitted model")}` : ""}, ${loadedNames.value.size} loaded</p>
         </div>
+        ${list.length > 0 && html`<div class="actions"><${Filters} /></div>`}
       </div>
       ${list.length === 0 && downloads.value.length === 0
         ? html`<${FirstStart} />`
         : html`
             <${MemoryCard} />
             <section class="group mlist" aria-label="Models">
-              <div class="mhead"><span>Model</span><span class="r c-size">Size</span><span class="r">Memory</span><span class="r c-reads">Reads</span><span class="r">Status</span></div>
-              <div role="listbox" aria-label="Models">
-                <${Section} title="Loaded" detail=${gigabytes(status.value?.memory?.used ?? 0)} list=${units.value.loaded} />
-                <${Section} title="On this Mac" list=${units.value.rest} />
-                <${Downloading} />
-              </div>
+              <div class="mhead"><span>Model</span><span class="r c-size">Size</span><span class="r" title="Estimates: the weights plus 10%, as the memory check counts them">Memory, est.</span><span class="r c-reads">Reads</span><span class="r c-speed" title="The median time of an answer here, measured">Speed</span><span class="r">Status</span></div>
+              <div role="listbox" aria-label="Models"><${Listed} /></div>
             </section>
             <${Places} />
             <${ContextMenu} />
@@ -452,14 +534,24 @@ function Details() {
       ${memory &&
       html`<section class="igroup"><h4>Memory</h4><dl>
         <${Kv} label="Needs">
-          <b class="num">${gigabytes(memory.bytes)}</b>${budget ? ` · ${Math.round((memory.bytes / budget) * 100)}% of the ${gigabytes(budget)} budget` : ""}
+          about <b class="num">${gigabytes(memory.bytes)}</b>${budget ? ` · ${Math.round((memory.bytes / budget) * 100)}% of the ${gigabytes(budget)} budget` : ""}
           <div class="minibar"><i style=${`width:${budget ? Math.min(100, (memory.bytes / budget) * 100) : 0}%`} class=${memory.over_budget ? "over" : ""}></i></div>
           ${model.fitted && memory.added < memory.bytes &&
           html`<small>With its base; ${gigabytes(memory.added)} more when ${memory.group} is loaded.</small>`}
           ${memory.over_budget && html`<small class="warn-text">More than the budget: it cannot load.</small>`}
+          <small>An estimate: the weights plus 10%, as the memory check counts them.</small>
         <//>
         <${Kv} label="Now">${loaded ? `In memory · ${usedWords(status.value?.used?.[model.name])}` : "Not loaded"}<//>
       </dl></section>`}
+
+      <section class="igroup speed-group"><h4>Speed here</h4><dl>
+        ${model.speed
+          ? html`<${Kv} label="Median">
+              <b class="num">${duration(model.speed.median_ms)}</b> an answer
+              <small>${plural(model.speed.count, "answer")}${model.speed.tokens_min == null ? "" : `, ${tokensText(model.speed)}`}${model.speed.chip ? `, on ${model.speed.chip}` : ""}</small>
+            <//>`
+          : html`<${Kv} label="Median">Not measured yet<small>Run it in the Playground or call the API: every answer here is timed.</small><//>`}
+      </dl></section>
 
       ${caps &&
       html`<section class="igroup"><h4>Reads</h4><dl>

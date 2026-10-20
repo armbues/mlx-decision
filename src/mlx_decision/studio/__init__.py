@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from .. import memory
 from ..config import Config
 from ..config import load as load_config
 from ..gpu import Gpu
@@ -86,7 +87,7 @@ def create_studio(
     status = status_reader(gpu)
     jobs = Jobs(gpu, files)
     hub = Hub(lambda: {"status": status(), "jobs": jobs.current()})
-    models = Models(gpu, files.root / "models")
+    models = Models(gpu, files.root / "models", files)
     catalog = catalog or Catalog(workspace_models=files.root / "models", include_cache=False)
 
     def catalog_changed(added: list[str], removed: list[str]) -> None:
@@ -172,6 +173,7 @@ def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
     from any thread."""
     pool = gpu.pool
     limits: dict[int | None, int] = {}
+    working: list[int] = []  # the GPU's working set, read once
 
     def status() -> dict[str, Any]:
         # The working set does not change: read once per budget (Settings
@@ -179,13 +181,15 @@ def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
         if pool.budget not in limits:
             limits[pool.budget] = pool.limit()
         budget = limits[pool.budget]
+        if not working:
+            working.append(memory.working_set())
         return {
             "busy": gpu.holder,
             "loaded": pool.loaded(),
             "groups": pool.groups(),
             # Whole seconds: a model used twice in a second sends one message.
             "used": {name: int(when) for name, when in pool.last_used().items()},
-            "memory": {"used": pool.used_bytes(), "budget": budget},
+            "memory": {"used": pool.used_bytes(), "budget": budget, "working_set": working[0]},
         }
 
     return status

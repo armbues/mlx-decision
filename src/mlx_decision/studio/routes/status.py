@@ -142,6 +142,10 @@ def status_router(
                 except (ValueError, OSError) as error:
                     entry["memory"] = None
                     entry["error"] = entry["error"] or str(error)
+                try:  # measured here (PG-9); None before the first answer
+                    entry["speed"] = models.speed(name)
+                except (ValueError, OSError):
+                    entry["speed"] = None
                 entry["convertible"] = entry["convert_reason"] is None
                 listed.append(entry)
             return listed

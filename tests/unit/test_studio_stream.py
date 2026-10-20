@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from fake_backend import write_model, write_sized_model
+from mlx_decision.memory import working_set
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, server
 from mlx_decision.studio.stream import Hub, Subscriber, encode
@@ -253,7 +254,7 @@ def test_the_stream_starts_with_a_snapshot_and_sends_changes(studio):
                 "loaded": [],
                 "groups": [],
                 "used": {},
-                "memory": {"used": 0, "budget": 10**9},
+                "memory": {"used": 0, "budget": 10**9, "working_set": working_set()},
             },
             "jobs": [],
         }

@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 import mlx_decision
 from fake_backend import write_fitted, write_model
 from mlx_decision.cli import app as cli_app
+from mlx_decision.memory import working_set
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, templates
 from mlx_decision.studio.routes import sets as sets_routes
@@ -81,7 +82,7 @@ def test_status(studio, tmp_path):
     assert status["workspace"] == str((tmp_path / "ws").resolve())
     assert status["sets_folder"] == str((tmp_path / "ws" / "sets").resolve())
     assert status["busy"] is None and status["loaded"] == []
-    assert status["memory"] == {"used": 0, "budget": 10**9}
+    assert status["memory"] == {"used": 0, "budget": 10**9, "working_set": working_set()}
     assert status["models"] == ["fake", "fake-fit", "seeing"]
     assert status["default_model"] is None
     assert status["config"]["exists"] is False
@@ -619,3 +620,47 @@ def test_the_api_needs_the_session(tmp_path, models_folder):
     ]:
         response = client.request(method, path, json={})
         assert response.status_code == 401, path
+
+
+# Speed (PG-9): measured only
+
+
+def test_speed_comes_from_the_records_on_this_chip(studio):
+    def speed(name):
+        listed = studio.get("/studio/api/models").json()["models"]
+        return next(model["speed"] for model in listed if model["name"] == name)
+
+    assert speed("fake") is None  # no number before a run
+    assert run(studio).status_code == 200
+    assert studio.post("/v1/systemone", json={**BODY, "model": "fake"}).status_code == 200
+    deadline = time.monotonic() + 5  # the Jev API records its speed in the background
+    while (speed("fake") or {}).get("count") != 2:
+        assert time.monotonic() < deadline, speed("fake")
+        time.sleep(0.02)
+    measured = speed("fake")
+    assert measured["count"] == 2 and measured["median_ms"] > 0
+    assert measured["tokens_min"] <= measured["tokens_max"]
+    from mlx_decision.machine import sysctl
+
+    assert measured["chip"] == sysctl("machdep.cpu.brand_string")
+    # A record from another Mac (a synced workspace) does not count here.
+    models = studio.app_state.workspace
+    fingerprint = next(iter((models.root / "speed").glob("*.jsonl"))).stem
+    models.record_speed(fingerprint, {"chip": "Apple M1", "latency_ms": 1.0, "input_tokens": 3})
+    assert speed("fake")["count"] == 2
+    assert speed("seeing") is None
+
+
+def test_speed_summary():
+    from mlx_decision.studio.routes.run import speed_summary
+
+    assert speed_summary([]) is None
+    records = [
+        {"latency_ms": 30.0, "input_tokens": 10, "chip": "M2"},
+        {"latency_ms": 10.0, "input_tokens": 50, "chip": "M2"},
+        {"latency_ms": 20.0, "input_tokens": 20, "chip": "M2"},
+    ]
+    assert speed_summary(records) == {
+        "median_ms": 20.0, "count": 3, "tokens_min": 10, "tokens_max": 50, "chip": "M2",
+    }  # fmt: skip
+    assert speed_summary(records + [{"latency_ms": 40.0}])["median_ms"] == 25.0

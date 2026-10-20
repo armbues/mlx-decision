@@ -42,12 +42,26 @@ class Models:
     capabilities, fingerprints and the Models page's facts, each read once
     per model."""
 
-    def __init__(self, gpu: Gpu, workspace_models: Path | None = None):
+    def __init__(
+        self, gpu: Gpu, workspace_models: Path | None = None, files: Workspace | None = None
+    ):
         self.gpu = gpu
         self.workspace_models = workspace_models
+        self.files = files  # where the speed records are
+        self._chip: str | None = None
         self._capabilities: dict[str, Capabilities] = {}
         self._fingerprints: dict[str, str] = {}
         self._facts: dict[str, dict] = {}
+
+    def speed(self, name: str) -> dict[str, Any] | None:
+        """The model's measured speed on this Mac's chip (``speed_summary``),
+        None before its first answer here (blocks: call it off the loop)."""
+        if self.files is None:
+            return None
+        if self._chip is None:
+            self._chip = sysctl("machdep.cpu.brand_string") or ""
+        records = self.files.read_speed(self.fingerprint(name), self._chip or None)
+        return speed_summary(records)
 
     def forget(self, name: str) -> None:
         """Drop what was read for ``name`` (the model came or went in a rescan)."""
@@ -265,3 +279,28 @@ def group_id(body: dict, key: str) -> str | None:
 
 def describe(error: DecisionError) -> dict[str, Any]:
     return {"message": error.message, "param": error.param, "code": error.code}
+
+
+def speed_summary(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """What the Models page says about a model's speed (PG-9): the median
+    latency of its answers, how many there were and their input tokens' range
+    (with the chip they ran on); None before the first. Measured only."""
+    latencies = sorted(
+        float(record["latency_ms"])
+        for record in records
+        if isinstance(record.get("latency_ms"), int | float)
+    )
+    if not latencies:
+        return None
+    middle = len(latencies) // 2
+    median = (
+        latencies[middle] if len(latencies) % 2 else (latencies[middle - 1] + latencies[middle]) / 2
+    )
+    tokens = [r["input_tokens"] for r in records if isinstance(r.get("input_tokens"), int)]
+    return {
+        "median_ms": round(median, 1),
+        "count": len(latencies),
+        "tokens_min": min(tokens) if tokens else None,
+        "tokens_max": max(tokens) if tokens else None,
+        "chip": next((r.get("chip") for r in reversed(records) if r.get("chip")), None),
+    }
