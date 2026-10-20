@@ -1,9 +1,11 @@
-// A fit in the centre of the Training page: while it runs, the stage stepper,
+// A fit or an evaluation in the centre of the Training page. A fit: while it runs, the stage stepper,
 // the step line with the time left (measured: the events' own estimate), the
 // loss chart for the kinds that train in epochs and the log in the CLI's
 // words; once done, its report (before and after on the kept-aside examples,
 // the kept epoch, where it was saved, the command that does the same, Open in
-// Playground). Stopped or failed: what happened, and the log.
+// Playground). An evaluation: each model's load and scoring, then a table of
+// both models per question with the differences. Stopped or failed: what
+// happened, and the log.
 import { html } from "htm/preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api.js";
@@ -23,7 +25,7 @@ const STEPS = [
   ["after", "Score after"],
   ["write", "Write"],
 ];
-const LABELS = Object.fromEntries(STEPS);
+const LABELS = { ...Object.fromEntries(STEPS), load: "Load", score: "Score" };
 const METRICS = [
   ["accuracy", "Accuracy", true],
   ["macro_f1", "Macro-F1", true],
@@ -91,6 +93,30 @@ function StepLine({ events }) {
       <span><b>${label}</b> · ${parts.join(" · ")}</span>
       <div class="bar"><i style=${`width:${(fraction * 100).toFixed(1)}%`}></i></div>
     </div>
+  `;
+}
+
+// An evaluation's steps: each model's load and scoring, in turn.
+function EvalStepper({ events, job }) {
+  const names = [job.details?.model, job.details?.compare].filter(Boolean);
+  const steps = names.flatMap((name) => [`Load ${name}`, `Score ${name}`]);
+  const done = job.state === "ended" && job.outcome === "done";
+  let at = 0;
+  let loads = 0;
+  for (const event of events) {
+    if (event?.stage === "load") loads += 1;
+    if (event?.stage === "load" || event?.stage === "score") at = Math.max(0, (loads - 1) * 2 + (event.stage === "score" ? 1 : 0));
+  }
+  if (done) at = steps.length;
+  const failed = job.state === "ended" && !done;
+  return html`
+    <ol class="stepper" aria-label="Stages">
+      ${steps.map((label, index) => {
+        const state = index < at ? "done" : index === at ? (failed ? "stopped" : "now") : "next";
+        return html`<li key=${label} class=${state} aria-current=${state === "now" ? "step" : undefined}>
+          <span class="dot" aria-hidden="true"></span><span>${label}</span></li>`;
+      })}
+    </ol>
   `;
 }
 
@@ -224,7 +250,7 @@ function Log({ events, job }) {
   }, [lines.length]);
   return html`
     <details class="gsec log-sec" open=${job.state !== "ended" || job.outcome !== "done"}>
-      <summary class="gsec-head"><h2>Log</h2><span class="tag">as training fit prints it</span></summary>
+      <summary class="gsec-head"><h2>Log</h2><span class="tag">as ${job.kind === "eval" ? "training eval" : "training fit"} prints it</span></summary>
       <div class="group"><pre class="fit-log" ref=${box}>${lines.join("\n") || "Starting…"}</pre></div>
     </details>
   `;
@@ -317,6 +343,88 @@ function Report({ job }) {
   `;
 }
 
+// ---------- an evaluation's report ----------
+
+const value = (key, entry) => (entry?.[key] == null ? "–" : key === "mae" ? entry[key].toFixed(3) : percent(entry[key]));
+
+function Confusion({ question, name }) {
+  const labels = question.labels ?? Object.keys(question.confusion ?? {});
+  return html`
+    <div class="confusion">
+      <h4>${name}</h4>
+      <table class="confusion-table" aria-label=${`${name}: gold label by row, predicted by column`}>
+        <thead><tr><th>gold ↓ predicted →</th>${labels.map((label) => html`<th class="r"><code>${label}</code></th>`)}</tr></thead>
+        <tbody>${labels.map(
+          (gold) => html`<tr key=${gold}><th><code>${gold}</code></th>${labels.map(
+            (predicted) => html`<td class=${`r num${gold === predicted ? " hit" : ""}`}>${question.confusion?.[gold]?.[predicted] ?? 0}</td>`,
+          )}</tr>`,
+        )}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function EvalReport({ job }) {
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    let live = true;
+    api(`/jobs/${encodeURIComponent(job.id)}/report`).then(
+      (answer) => live && setState(answer),
+      (error) => live && setState({ error: error.message }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [job.id]);
+  if (!state) return null;
+  if (state.error) return html`<p class="warn-text">${state.error}</p>`;
+  const { data, models: scored } = state.result;
+  const [first, second] = scored;
+  const ids = [...new Set(scored.flatMap((model) => Object.keys(model.questions)))];
+  const command = (job.command ?? []).map(shellWord).join(" ");
+  return html`
+    <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">${plural(data.examples, "example")} in ${job.details?.data}</span></div>
+      <div class="group report-group">
+        ${ids.map((id) => {
+          const a = first.questions[id];
+          const b = second?.questions[id];
+          const keys = METRICS.filter(([key]) => a?.[key] != null || b?.[key] != null);
+          return html`<div class="q-report" key=${id}>
+            <h3><code>${id}</code> · ${plural((a ?? b).n, "example")} labelled</h3>
+            <table class="report-table eval-table">
+              <thead><tr><th></th><th class="r"><code>${first.name}</code></th>${second && html`<th class="r"><code>${second.name}</code></th><th class="r">Difference</th>`}</tr></thead>
+              <tbody>
+                ${keys.map(
+                  ([key, label, up]) => html`<tr key=${key}><th>${label}</th>
+                    <td class="r num"><b>${value(key, a)}</b></td>
+                    ${second && html`<td class="r num">${value(key, b)}</td>
+                      <td class="r num">${key === "mae" ? "" : html`<${Change} before=${b?.[key]} after=${a?.[key]} up=${up} />`}</td>`}
+                  </tr>`,
+                )}
+                ${Boolean(a?.refused || b?.refused) &&
+                html`<tr><th>Refused</th><td class="r num">${a?.refused ?? 0}</td>${second && html`<td class="r num">${b?.refused ?? 0}</td><td></td>`}</tr>`}
+              </tbody>
+            </table>
+            <details class="confusions"><summary>Confusion matrices</summary>
+              <div class="confusion-pair">
+                ${a && html`<${Confusion} question=${a} name=${first.name} />`}
+                ${b && html`<${Confusion} question=${b} name=${second.name} />`}
+              </div>
+            </details>
+          </div>`;
+        })}
+        ${second && html`<p class="report-note">Difference: ${first.name} against ${second.name}, in points; green where ${first.name} does better.</p>`}
+      </div>
+    </section>
+    <section class="gsec"><div class="gsec-head"><h2>Same in a terminal</h2></div>
+      <div class="group"><dl>
+        <div class="kv"><dt>Command</dt><dd><code class="command">${command}</code></dd></div>
+        <div class="kv"><dt>Took</dt><dd>${scored.map((model) => `${model.name} ${seconds(model.seconds)}`).join(" · ")}</dd></div>
+      </dl></div>
+    </section>
+  `;
+}
+
 // ---------- the view ----------
 
 const OUTCOMES = {
@@ -331,15 +439,18 @@ export function FitView({ id }) {
     openFit(id);
   }, [id]);
   const job = fitById(id);
-  if (!job) return html`<div class="empty"><b>No fit ${id}</b><span>It may be from another workspace. Pick one on the left.</span></div>`;
+  if (!job) return html`<div class="empty"><b>Nothing named ${id}</b><span>It may be from another workspace. Pick a fit or an evaluation on the left.</span></div>`;
+  const evaluation = job.kind === "eval";
   const current = opened.value.id === id ? opened.value : { events: [] };
   const events = current.events.filter(Boolean);
   const details = job.details ?? {};
   const running = job.state !== "ended";
   const done = job.outcome === "done";
-  const sub = [details.model, details.data && `on ${details.data}`, details.report && `reported on ${details.report}`, details.method]
-    .filter(Boolean)
-    .join(" · ");
+  const sub = evaluation
+    ? [details.compare ? `${details.model} against ${details.compare}` : details.model, details.data && `on ${details.data}`].filter(Boolean).join(" · ")
+    : [details.model, details.data && `on ${details.data}`, details.report && `reported on ${details.report}`, details.method]
+        .filter(Boolean)
+        .join(" · ");
   return html`
     <div class="pane-head">
       <div><h1>${job.title}</h1><p>${sub}</p></div>
@@ -347,12 +458,13 @@ export function FitView({ id }) {
       html`<div class="actions"><button class="btn" disabled=${job.stop_requested} onClick=${() => stopJob(job.id)}>${job.stop_requested ? "Stopping…" : "Stop"}</button></div>`}
     </div>
     <div class="group run-group">
-      <${Stepper} events=${events} job=${job} />
+      ${evaluation ? html`<${EvalStepper} events=${events} job=${job} />` : html`<${Stepper} events=${events} job=${job} />`}
       ${running && html`<${StepLine} events=${events} />`}
       ${!running && !done && html`<p class="run-outcome warn-text">${OUTCOMES[job.outcome] ?? job.outcome}${job.message && job.outcome !== "cancelled" ? `: ${job.message.trim().split("\n").pop()}` : ""}</p>`}
     </div>
-    ${done && html`<${Report} job=${job} />`}
-    <${LossChart} events=${events} done=${done} />
+    ${(details.warnings ?? []).map((warning) => html`<p class="warn-text run-warning">${warning}</p>`)}
+    ${done && (evaluation ? html`<${EvalReport} job=${job} />` : html`<${Report} job=${job} />`)}
+    ${!evaluation && html`<${LossChart} events=${events} done=${done} />`}
     <${Log} events=${events} job=${job} />
   `;
 }

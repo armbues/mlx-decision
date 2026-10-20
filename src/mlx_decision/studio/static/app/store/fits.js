@@ -1,11 +1,11 @@
-// The fits in the workspace's jobs/ folder (those of this run and earlier
-// ones), for the Training sidebar; and the events of the fit open in the
-// centre, loaded once and then taken from the stream.
+// The fits and evaluations in the workspace's jobs/ folder (those of this run
+// and earlier ones), for the Training sidebar's History; and the events of the
+// one open in the centre, loaded once and then taken from the stream.
 import { computed, effect, signal } from "@preact/signals";
 import { api } from "../api.js";
 import { jobs, onJobEvent } from "./jobs.js";
 
-const KINDS = new Set(["fit"]);
+const KINDS = new Set(["fit", "eval"]);
 const listed = signal([]); // GET /jobs, filtered
 
 export async function loadFits() {

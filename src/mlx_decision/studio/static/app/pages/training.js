@@ -1,7 +1,8 @@
-// Training: fit a model on a dataset. The sidebar lists New Fit and the fits
-// (the running one on top); the centre is the fit form (#/training) or a fit's
-// progress and report (#/training/JOB); the inspector shows the dataset of the
-// form or of the fit.
+// Training: fit a model on a dataset, and evaluate models on one. The sidebar
+// has New Fit and New Evaluation, then the History of fits and evaluations
+// (the running one on top); the centre is the fit form (#/training), the
+// Evaluate form (#/training/evaluate) or a run's progress and report
+// (#/training/JOB); the inspector shows the dataset of the form or the run.
 import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
@@ -15,17 +16,27 @@ import { href, navigate, route } from "../router.js";
 import { dataFiles } from "../store/data.js";
 import { fitById, fits } from "../store/fits.js";
 import { progress } from "../store/jobs.js";
+import { EvalForm, evalData, evalModel, evalNotReady, startEval } from "../training/evaluate.js";
 import { FitForm, fitData, notReady, planned, startFit } from "../training/fit.js";
 import { FitView } from "../training/run.js";
 
-// The fit shown (#/training/JOB), or null for the form.
-const shown = () => (route.value.page === "training" ? route.value.item : null);
+const EVALUATE = "evaluate";
+// The run shown (#/training/JOB), or null for a form.
+const shown = () => {
+  const item = route.value.page === "training" ? route.value.item : null;
+  return item === EVALUATE ? null : item;
+};
+const evaluating = () => route.value.page === "training" && route.value.item === EVALUATE;
 
 const status = computed(() => {
   const id = shown();
   if (id) {
     const job = fitById(id);
     return job ? { text: html`<b>${job.title}</b> · ${progress(job).text}` } : null;
+  }
+  if (evaluating()) {
+    const data = evalData.value;
+    return evalModel.value && data ? { text: html`Evaluate <b>${evalModel.value}</b> on <b>${data}</b>` } : null;
   }
   const data = fitData.value;
   if (!data) return dataFiles.value ? { text: "No datasets yet · get or add one on the Datasets page" } : null;
@@ -37,7 +48,15 @@ const status = computed(() => {
 const action = computed(() =>
   shown()
     ? { label: "New Fit", icon: false, title: "A new fit: the form", run: () => navigate("training") }
-    : {
+    : evaluating()
+      ? {
+          label: "Start Evaluation",
+          icon: false,
+          disabled: Boolean(evalNotReady.value),
+          title: evalNotReady.value ?? `Start Evaluation (${SHORTCUTS.run})`,
+          run: startEval,
+        }
+      : {
         label: "Start Fit",
         icon: false,
         disabled: Boolean(notReady.value),
@@ -65,9 +84,23 @@ function Form() {
   `;
 }
 
+function Evaluate() {
+  useEffect(() => onKey("run", () => startEval()), []);
+  return html`
+    <div class="pane-head"><div><h1>New Evaluation</h1><p>Score a model on labelled examples, and another beside it: a fitted model against its base, or two bases.</p></div></div>
+    ${dataFiles.value?.length
+      ? html`<${EvalForm} />`
+      : dataFiles.value &&
+        html`<div class="empty"><b>No datasets yet</b><span>An evaluation scores models on a dataset; get one or add a file of your own on the <a href=${href("datasets")}>Datasets</a> page.</span></div>`}
+  `;
+}
+
 function Centre() {
   const id = shown();
-  return html`<div class="centre-inner">${id ? html`<${FitView} key=${id} id=${id} />` : html`<${Form} />`}</div>`;
+  let body = html`<${Form} />`;
+  if (id) body = html`<${FitView} key=${id} id=${id} />`;
+  else if (evaluating()) body = html`<${Evaluate} />`;
+  return html`<div class="centre-inner">${body}</div>`;
 }
 
 // A fit's few words in the list: how far it is, or how it ended (none when done).
@@ -81,35 +114,42 @@ function rowText(job) {
 
 const STATE_ICON = { done: "ok", cancelled: null, error: "warn", failed: "warn", interrupted: "warn" };
 
-// New Fit, then the fits: the running one on top, then newest first.
+// New Fit and New Evaluation, then the History: the running one on top, then newest first.
 function FitList() {
   const id = shown();
   const list = fits.value;
+  const form = evaluating() ? EVALUATE : id ? null : "fit";
   return html`
     <div class="sb-sec">
-      <h3>Fits</h3>
+      <ul class="sb-list new-list">
+        <li><a class="sb-item" href=${href("training")} aria-current=${form === "fit" ? "true" : undefined}><${icons.Plus} /><span class="label">New Fit</span></a></li>
+        <li><a class="sb-item" href=${href("training", EVALUATE)} aria-current=${form === EVALUATE ? "true" : undefined}><${icons.Plus} /><span class="label">New Evaluation</span></a></li>
+      </ul>
+    </div>
+    <div class="sb-sec">
+      <h3>History</h3>
       <ul class="sb-list fit-list">
-        <li><a class="sb-item" href=${href("training")} aria-current=${id ? undefined : "true"}><${icons.Plus} /><span class="label">New Fit</span></a></li>
         ${list.map((job) => {
           const running = job.state !== "ended";
           const kind = running ? "spin" : STATE_ICON[job.outcome];
           return html`<li key=${job.id} class=${`fit-row${running ? " running" : ""}`}>
             <a class="sb-item" href=${href("training", job.id)} aria-current=${job.id === id ? "true" : undefined} title=${job.title}>
               ${kind ? html`<${icons.StatusIcon} kind=${kind} />` : html`<${icons.Training} />`}
-              <span class="label">${job.details?.name ?? job.title}</span>
+              ${job.kind === "eval" && html`<span class="run-kind" title="An evaluation">eval</span>`}
+              <span class="label">${job.kind === "eval" ? job.title.replace(/^Evaluate /, "") : (job.details?.name ?? job.title)}</span>
               <span class="count">${rowText(job)}</span>
             </a>
           </li>`;
         })}
       </ul>
-      ${list.length === 0 && html`<p class="sb-empty">No fits yet</p>`}
+      ${list.length === 0 && html`<p class="sb-empty">No fits or evaluations yet</p>`}
     </div>
   `;
 }
 
 const Dataset = () => {
   const id = shown();
-  const name = id ? fitById(id)?.details?.data : fitData.value;
+  const name = id ? fitById(id)?.details?.data : evaluating() ? evalData.value : fitData.value;
   if (!name) return html`<div class="empty"><b>No dataset</b><span>The form's dataset shows here.</span></div>`;
   return html`<${DatasetSummary} name=${name} />`;
 };

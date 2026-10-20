@@ -546,6 +546,24 @@ def test_a_real_fit_through_the_cli(tmp_path, models_folder, monkeypatch):
         assert client.post(f"/studio/api/jobs/{job['id']}/reveal", json={}).status_code == 204
         assert shown == [fitted.resolve()]
         assert client.get("/studio/api/jobs/nope/report").status_code == 404
+        # Evaluate the fit against its base, on the file it was fitted on: the
+        # warning, then both models' results as the report.
+        deadline = time.monotonic() + 30
+        while "fake-tickets" not in client.get("/studio/api/models").text:  # the rescan
+            assert time.monotonic() < deadline
+            time.sleep(0.1)
+        body = {"kind": "eval", "model": "fake-tickets", "compare": "fake", "data": "tickets"}
+        planned = client.post("/studio/api/eval/plan", json=body).json()
+        assert "fake-tickets was fitted on this very file" in planned["warnings"][0]
+        response = client.post("/studio/api/jobs", json=body)
+        assert response.status_code == 202, response.text
+        found = wait_for(client, response.json()["job"]["id"], timeout=60)
+        assert found["job"]["outcome"] == "done", found["job"]
+        result = client.get(f"/studio/api/jobs/{found['job']['id']}/report").json()["result"]
+        assert [model["name"] for model in result["models"]] == ["fake-tickets", "fake"]
+        assert result["data"]["examples"] == 100
+        assert set(result["models"][0]["questions"]["team"]) >= {"accuracy", "macro_f1", "ece",
+                                                                 "confusion", "labels"}  # fmt: skip
 
 
 def test_a_report_only_for_a_fit_that_ended_done(tmp_path, models_folder):

@@ -18,7 +18,9 @@ it does not know are ignored (the job's own arguments).
     --fit-events   with ``training fit`` (and -m, -o) in the arguments, act
                    as it does: a fit's events, the train stage's steps
                    with a loss for the epoch kinds, then a fitted model
-                   over -m at -o with its ``training.json``
+                   over -m at -o with its ``training.json``; with
+                   ``training eval``, each model's load and scoring, then
+                   both models' results
     (an -o ending in .jsonl is written as a file: a training example, as
     ``data`` writes one; with {split} in it, one file per --split, and with
     --record each with a record as ``data --record`` writes it, --roles
@@ -113,6 +115,36 @@ def fit_script(steps: int, output: Path) -> list[dict]:
     questions = {"team": {"before": BEFORE, "after": AFTER}}
     events.append({"stage": "after", "metrics": questions})
     events.append({"stage": "write", "message": f"writing {output}"})
+    return events
+
+
+def eval_script(steps: int) -> list[dict]:
+    """The events of a ``training eval --events`` run: each model (-m, then
+    --compare) loaded and scored on ``steps`` examples, then the results."""
+    names = [Path(option("-m")).name] + (
+        [Path(option("--compare")).name] if option("--compare") else []
+    )
+    events = []
+    results = []
+    for index, name in enumerate(names):
+        events.append({"stage": "load", "message": f"loading {name}"})
+        events += [{"stage": "score", "step": i, "total": steps, "eta_s": (steps - i) * 0.1}
+                   for i in range(1, steps + 1)]  # fmt: skip
+        right = 18 - 4 * index  # the first model does better
+        results.append({
+            "name": name, "model": name, "seconds": 2.5,
+            "questions": {"team": {
+                "type": "choice", "n": 20, "refused": 0, "truncated": 0,
+                "accuracy": right / 20, "macro_f1": round(right / 20 - 0.05, 4),
+                "ece": round(0.04 + 0.05 * index, 4),
+                "labels": ["billing", "tech", "sales"],
+                "confusion": {"billing": {"billing": 5, "tech": 1, "sales": 0},
+                              "tech": {"billing": 1, "tech": right - 8, "sales": 1},
+                              "sales": {"billing": 0, "tech": 0, "sales": 3}},
+            }},
+        })  # fmt: skip
+    data = {"file": option("--data"), "sha256": "0" * 64, "examples": 20}
+    events.append({"stage": "done", "metrics": {"data": data, "models": results}})
     return events
 
 
@@ -211,16 +243,18 @@ def main() -> int:
             (partial / "weights").write_text("half")
             if "--fake-model" in sys.argv:
                 (partial / MARKER_FILE).write_text(json.dumps({"family": "fake"}))
-        fitting = "--fit-events" in sys.argv and "training" in sys.argv and "fit" in sys.argv
-        fitting = fitting and output is not None and option("-m") is not None
-        script = (
-            fit_script(steps, output)
-            if fitting
-            else [{"stage": "work", "step": i, "total": steps} for i in range(1, steps + 1)]
-        )
+        acting = "--fit-events" in sys.argv and "training" in sys.argv and option("-m") is not None
+        fitting = acting and "fit" in sys.argv and output is not None
+        evaluating = acting and "eval" in sys.argv
+        if fitting:
+            script = fit_script(steps, output)
+        elif evaluating:
+            script = eval_script(steps)
+        else:
+            script = [{"stage": "work", "step": i, "total": steps} for i in range(1, steps + 1)]
         try:
             for event in script:
-                if "step" in event or not fitting:
+                if "step" in event or not (fitting or evaluating):
                     time.sleep(every)
                 if cancel.is_set():
                     raise KeyboardInterrupt
@@ -253,7 +287,8 @@ def main() -> int:
             partial.rename(output)
         for leftover in more:  # the other files, then the records
             leftover.rename(leftover.with_name(leftover.name[1:].removesuffix(".partial")))
-        emit("done", metrics={"path": str(output) if output else None}, message="finished")
+        if not evaluating:  # its done event, with the results, was the script's last
+            emit("done", metrics={"path": str(output) if output else None}, message="finished")
     if hold:
         signal.signal(signal.SIGINT, signal.SIG_DFL)  # as the real CLI after its run
         time.sleep(hold)

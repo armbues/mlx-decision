@@ -31,6 +31,7 @@ from ...flags import join_pairs
 from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
 from ..catalog import option_arguments
+from ..checks import training_data_warnings
 from ..jobs import FOLDER, Job, JobConflict, Jobs
 from ..security import is_loopback
 from ..workspace import Workspace, WorkspaceError, check_name
@@ -222,12 +223,16 @@ def jobs_router(
         name = model(body)
         data_name, data = data_file(body)
         compare = model(body, "compare", required=False)
+        if compare == name:
+            raise ApiError(400, "compare with another model", param="compare")
         argv = ["training", "eval", *model_arguments(name), "--data", str(data)]
         title = f"Evaluate {name}"
         if compare is not None:
             argv += ["--compare", str(pool.specs[compare].path)]
             title += f" against {compare}"
-        details = {"model": name, "data": data_name, "compare": compare}
+        # Kept with the job, so its report says them too.
+        warnings = training_data_warnings(pool, [name, compare], data, data_name)
+        details = {"model": name, "data": data_name, "compare": compare, "warnings": warnings}
         return Plan(argv, holds_gpu=True, title=title, details=details)
 
     def get_splits(body: dict, known: dict[str, int] | None) -> list[dict[str, Any]]:
@@ -450,9 +455,16 @@ def jobs_router(
     @router.get("/{job_id}/report")
     async def report(job_id: str):
         """``{path, report}``: what a fit that ended done wrote, its folder and
-        the report in it (``training.json``); 404 for another job, one that
-        did not end done, or a folder that is gone."""
+        the report in it (``training.json``); for an evaluation that ended
+        done ``{result}``, its last event's results (both models'). 404 for
+        another job, one that did not end done, or a folder that is gone."""
         job = summary_of(job_id)
+        if job["kind"] == "eval" and job.get("outcome") == "done":
+            events = await asyncio.to_thread(jobs.events, job_id)
+            done = next((e for e in reversed(events) if e.get("stage") == "done"), None)
+            if done is None or not isinstance(done.get("metrics"), dict):
+                raise ApiError(404, f"{job['title']} has no report")
+            return {"path": None, "result": done["metrics"]}
         if job["kind"] != "fit" or job.get("outcome") != "done" or not job.get("output"):
             raise ApiError(404, f"{job['title']} has no report")
         folder = Path(job["output"])

@@ -234,7 +234,9 @@ def test_delete_the_picked_file(studio, page):
     # Training says where datasets come from.
     page.goto(f"{studio.base}/#/training")
     expect(page.locator(".centre .empty")).to_contain_text("No datasets yet")
-    expect(page.locator(".sidebar .sb-empty", has_text="fits")).to_have_text("No fits yet")
+    expect(page.locator(".sidebar .sb-empty", has_text="fits")).to_have_text(
+        "No fits or evaluations yet"
+    )
 
 
 def test_delete_from_the_centre(studio, page):

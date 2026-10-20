@@ -32,8 +32,10 @@ def test_the_form_and_start_fit(studio, page):
     data = form.locator("#fit-data")
     expect(data.locator("option")).to_have_text(["support", "tickets"])
     expect(data).to_have_value("support")  # the first, until one is picked
-    expect(page.locator(".sidebar .fit-list .sb-item")).to_have_text("New Fit")
-    expect(page.locator(".sidebar .sb-empty", has_text="fits")).to_have_text("No fits yet")
+    expect(page.locator(".sidebar .new-list .sb-item")).to_have_text(["New Fit", "New Evaluation"])
+    expect(page.locator(".sidebar .sb-empty", has_text="fits")).to_have_text(
+        "No fits or evaluations yet"
+    )
     expect(page.locator(".inspector .data-inspector h2")).to_have_text("support")
     form.locator("#fit-base").select_option("tiny-clef")
 

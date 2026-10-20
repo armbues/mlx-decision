@@ -21,12 +21,14 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from ...data.format import read_examples
 from ...errors import DecisionError
 from ...gpu import Gpu
 from ...memory import working_set
 from ...training import plan as kinds_plan
 from ...training.fitting import label_counts, prepare, report_mismatch, shared_states
 from ...training.wizard import DEFAULT_HOLDOUT, EPOCH_KINDS
+from ..checks import training_data_warnings
 from ..workspace import Workspace, WorkspaceError
 from . import ApiError, field, json_body
 from .jobs import HOLDOUT_MAX, HOLDOUT_MIN, TRAINING_OPTIONS, short
@@ -42,10 +44,46 @@ DESCRIPTIONS = {
 
 
 def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRouter:
-    router = APIRouter(prefix="/studio/api/fit")
+    router = APIRouter(prefix="/studio/api")
     pool = gpu.pool
 
-    @router.post("/plan")
+    @router.post("/eval/plan")
+    async def eval_plan(request: Request):
+        """``{model, data, compare}`` -> ``{model, compare, data, examples,
+        questions, warnings}``: the data read (its labelled questions, each
+        with its type) and a warning for a fitted model that was fitted on
+        this very file (TRS-4). 404 for an unknown model or file, 422 for data
+        an evaluation cannot take."""
+        body = await json_body(request, max_body_bytes)
+        names = []
+        for key in ("model", "compare"):
+            name = field(body, key, str, required=key == "model")
+            if name is not None and name not in pool.specs:
+                raise ApiError(404, f"no model is named {name}", param=key)
+            names.append(name)
+        model_name, compare = names
+        if compare == model_name:
+            raise ApiError(400, "compare with another model", param="compare")
+        data_name, data = data_file(files, body, "data")
+
+        def plan() -> dict[str, Any]:
+            examples = read_examples(data)
+            questions = {}
+            for example in examples:
+                for question_id in example.labels:
+                    questions.setdefault(
+                        question_id, example.request["questions"][question_id].get("type")
+                    )
+            warnings = training_data_warnings(pool, names, data, data_name)
+            return {"examples": len(examples), "questions": questions, "warnings": warnings}
+
+        try:
+            planned = await asyncio.to_thread(plan)
+        except (DecisionError, ValueError, OSError) as error:
+            raise ApiError(422, str(error), param="data") from None
+        return {"model": model_name, "compare": compare, "data": data_name, **planned}
+
+    @router.post("/fit/plan")
     async def fit_plan(request: Request):
         """``{model, data, holdout, seed, report}`` -> what the form shows (see
         the module). 404 for an unknown model or data file, 422 for data or a

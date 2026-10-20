@@ -13,6 +13,7 @@ import { ROLE_WORDS } from "../datasets/splits.js";
 import { fileSize, plural } from "../format.js";
 import { href } from "../router.js";
 import { dataFiles, described } from "../store/data.js";
+import { evalOn } from "../training/evaluate.js";
 import { fitOn } from "../training/fit.js";
 
 const status = computed(() => {
@@ -118,6 +119,7 @@ function Picked({ name }) {
       </div>
       <div class="actions">
         <button class="btn primary" onClick=${() => fitOn(name)} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
+        <button class="btn" onClick=${() => evalOn(name)} title=${`Score a model on ${name}, on the Training page`}>Evaluate a Model on It…</button>
         <button class="btn" onClick=${() => revealData(name)}>Show in Finder</button>
         <button class="btn" onClick=${() => deleteData(name)}>Delete…</button>
       </div>
