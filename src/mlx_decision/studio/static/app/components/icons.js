@@ -43,6 +43,16 @@ export const Training = () => html`
   </svg>
 `;
 
+export const Download = () => html`
+  <svg viewBox="0 0 16 16" ...${stroke(1.4)} aria-hidden="true">
+    <circle cx="8" cy="8" r="6.5" /><path d="M8 4.5v6M5.5 8.2 8 10.7l2.5-2.5" />
+  </svg>
+`;
+
+export const Close = () => html`
+  <svg viewBox="0 0 10 10" ...${stroke(1.4)} aria-hidden="true"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" /></svg>
+`;
+
 export const File = ({ className = "file" }) => html`
   <svg class=${className} viewBox="0 0 14 16" ...${stroke(1.2)} aria-hidden="true">
     <path d="M2.5 1.5h6l3 3v10h-9z" /><path d="M8.5 1.5v3h3" />

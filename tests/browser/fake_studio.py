@@ -10,10 +10,14 @@ images), ``fake-strict`` (needs instructions; choice and noul only). With
 ``fake-fit`` and an over-budget ``fake-big`` are added (the Models page's
 memory card); with ``slow`` also ``fake-slow`` (1.5 s an answer, other
 probabilities; Compare's Stop and its notes where models differ).
+
+Jobs run ``tests/fake_job.py`` in the CLI's place (``fake_jobs`` sets how
+many steps and how fast); ``data/tickets.jsonl`` is there for a fit.
 """
 
 import json
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -27,6 +31,7 @@ from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, server
 
 GB = 10**9
+FAKE_JOB = Path(__file__).resolve().parents[1] / "fake_job.py"
 SIZES = {
     "fake": 1.8 * GB,
     "fake-fit": 1.85 * GB,
@@ -113,7 +118,21 @@ def write_studio(
         pool = SizedPool(discover([models]), budget=8 * GB)
     else:
         pool = ModelPool(discover([models]), budget=GB)
-    return create_studio(pool, port=port, workspace=home / "ws", load_default=False, dev=dev)
+    data = home / "ws" / "data"
+    data.mkdir(parents=True, exist_ok=True)
+    line = {**TICKET_TRIAGE, "labels": {"department": "technical", "is_urgent": "true"}}
+    (data / "tickets.jsonl").write_text(json.dumps(line) + "\n")
+    app = create_studio(pool, port=port, workspace=home / "ws", load_default=False, dev=dev)
+    fake_jobs(app)
+    return app
+
+
+def fake_jobs(app: FastAPI, steps: int = 200, every: float = 0.1) -> None:
+    """Run ``tests/fake_job.py`` for the Studio's jobs: ``steps`` work events
+    ``every`` seconds apart (20 s by default); Stop takes effect at the next."""
+    jobs = app.state.jobs
+    jobs.command = [sys.executable, str(FAKE_JOB), "--steps", str(steps), "--every", str(every)]
+    jobs.stop_grace = jobs.kill_grace = 2.0
 
 
 @dataclass

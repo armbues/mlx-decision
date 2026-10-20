@@ -26,6 +26,14 @@ def put_set(page, studio: Served, name: str, body: dict) -> None:
     assert response.ok, response.text()
 
 
+def start_job(page, studio: Served, **body) -> dict:
+    """Start a job through the Studio's API, as a sheet does; returns its summary.
+    The tab must be logged in first."""
+    response = page.request.post(f"{studio.base}/studio/api/jobs", data=body)
+    assert response.status == 202, response.text()
+    return response.json()["job"]
+
+
 def on_server_loop(studio: Served, function) -> None:
     studio.app.state.hub.loop.call_soon_threadsafe(function)
 

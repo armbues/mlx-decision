@@ -2,6 +2,7 @@
 // status field, then the page's tools, the theme and the inspector toggle.
 import { html } from "htm/preact";
 import { SHORTCUTS } from "../keys.js";
+import { gpuJob, progress } from "../store/jobs.js";
 import { busy, connection } from "../store/status.js";
 import { inspectorShown, sidebarShown, theme, toggleInspector } from "../store/ui.js";
 import * as icons from "./icons.js";
@@ -13,8 +14,15 @@ import { MenuButton, MenuItem } from "./menu.js";
 function fieldContent(page) {
   if (connection.value === "lost")
     return { icon: "warn", text: html`Not connected to the Studio · reload the page` };
-  if (busy.value)
-    return { icon: "warn", text: html`<b>${busy.value}</b> has the GPU · nothing else runs until it is done` };
+  if (busy.value) {
+    const job = gpuJob.value?.title === busy.value ? gpuJob.value : null;
+    const fraction = job ? progress(job).fraction : null;
+    return {
+      icon: "warn",
+      text: html`<b>${busy.value}</b> has the GPU · nothing else runs until it is done`,
+      progress: fraction,
+    };
+  }
   return page.status?.value ?? null;
 }
 

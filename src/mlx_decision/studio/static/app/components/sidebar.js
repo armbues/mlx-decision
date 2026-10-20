@@ -2,7 +2,7 @@
 import { html } from "htm/preact";
 import { gigabytes, hostPort } from "../format.js";
 import { href } from "../router.js";
-import { jobs } from "../store/jobs.js";
+import { dismissJob, listed, progress, stopJob } from "../store/jobs.js";
 import { groupColour, groupLabel } from "../families.js";
 import { busy, connection, models, status } from "../store/status.js";
 import * as icons from "./icons.js";
@@ -34,11 +34,38 @@ function Pages({ current }) {
   `;
 }
 
+const JOB_ICONS = { download: icons.Download, convert: icons.Models, fit: icons.Training, eval: icons.Training };
+
+function Job({ job }) {
+  const Icon = JOB_ICONS[job.kind] ?? icons.Training;
+  const { fraction, text } = progress(job);
+  const ended = job.state === "ended";
+  const action = ended ? `Close ${job.title}` : `Stop ${job.title}`;
+  const failed = ended && job.outcome !== "done" && job.outcome !== "cancelled";
+  return html`
+    <li class=${`job ${ended ? `ended ${job.outcome}` : job.state}`} data-job=${job.id}>
+      <div class="job-top">
+        <${Icon} /><span class="job-title" title=${job.title}>${job.title}</span>
+        <button aria-label=${action} title=${ended ? "Close" : "Stop"}
+                disabled=${!ended && job.stop_requested}
+                onClick=${() => (ended ? dismissJob(job.id) : stopJob(job.id))}>
+          <${icons.Close} />
+        </button>
+      </div>
+      ${!ended && html`<div class="bar"><i style=${`width:${((fraction ?? 0) * 100).toFixed(1)}%`}></i></div>`}
+      <small class="num" title=${failed && job.message ? job.message : undefined}>${text}</small>
+    </li>
+  `;
+}
+
 function Jobs() {
+  const shown = listed.value;
   return html`
     <div class="sb-sec">
       <h3>Jobs</h3>
-      ${jobs.value.length === 0 && html`<p class="sb-empty">Nothing running</p>`}
+      ${shown.length === 0
+        ? html`<p class="sb-empty">Nothing running</p>`
+        : html`<ul class="jobs">${shown.map((job) => html`<${Job} key=${job.id} job=${job} />`)}</ul>`}
     </div>
   `;
 }

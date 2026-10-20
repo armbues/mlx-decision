@@ -2,6 +2,7 @@
 // EventSource reconnects by itself and sends the last id, so the Studio
 // replays what was missed.
 import { batch, signal } from "@preact/signals";
+import { applyEvent, applyJob, applySnapshot } from "./store/jobs.js";
 import { applyStatus, connection } from "./store/status.js";
 import { setsChanged } from "./store/sets.js";
 
@@ -16,7 +17,14 @@ function apply(message) {
   switch (message.type) {
     case "snapshot":
       applyStatus(message.status);
+      applySnapshot(message.jobs);
       setsChanged();
+      break;
+    case "job":
+      applyJob(message.job);
+      break;
+    case "event":
+      applyEvent(message);
       break;
     case "status": {
       const { type, ...fields } = message;
@@ -31,7 +39,7 @@ function apply(message) {
       location.reload();
       break;
     default:
-      break; // jobs and the models catalog arrive with their pages
+      break; // the models catalog arrives with its page
   }
 }
 

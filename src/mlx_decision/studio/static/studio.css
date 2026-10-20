@@ -206,11 +206,22 @@ button { cursor: default; }
 }
 .job-top { display: flex; align-items: center; gap: 7px; font-weight: 500; }
 .job-top svg { width: 14px; height: 14px; color: var(--accent); flex: none; }
-.job-top button { margin-left: auto; border: 0; background: none; color: var(--fg-3); padding: 0 2px; }
-.job-top button:hover { color: var(--fg); }
+.job-top button {
+  margin-left: auto; border: 0; background: none; color: var(--fg-3); padding: 0; flex: none;
+  width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center;
+}
+.job-top button svg { width: 10px; height: 10px; color: currentColor; }
+.job-top button:hover { color: var(--fg); background: var(--fill-2); }
+.job-top button:disabled { opacity: 0.4; background: none; }
+.job-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
-.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
-.job small { color: var(--fg-2); font-size: 11px; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s ease; }
+.job small { color: var(--fg-2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.jobs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+ul.jobs .job { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.job.ended .job-top svg:first-child { color: var(--fg-3); }
+.job.ended.done small { color: var(--green); }
+.job.ended.error small, .job.ended.failed small { color: var(--red); }
 .sb-foot { padding: 10px 16px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; border-top: 0.5px solid var(--sep); }
 .mem { display: grid; gap: 6px; }
 .mem-head { display: flex; justify-content: space-between; gap: 8px; color: var(--fg-2); font-size: 11px; white-space: nowrap; }
