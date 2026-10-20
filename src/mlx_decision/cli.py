@@ -843,8 +843,8 @@ def download(
             "--events",
             help='Print the progress as JSON lines on stdout: {"stage": "check"}, '
             '"download" (bytes as steps), then "done" with the folder in "metrics", or '
-            '"error" or "cancelled". Asks nothing (as --yes); stops when a pipe on stdin '
-            "closes.",
+            '"error" or "cancelled". Asks nothing (as --yes). With MLX_DECISION_WATCH_STDIN=1 '
+            "it stops when a pipe on stdin closes.",
         ),
     ] = False,
 ) -> None:
@@ -1451,7 +1451,8 @@ def convert(
             "--events",
             help='Print the progress as JSON lines on stdout: {"stage": "load"}, "convert" '
             '(tensors as steps), "write", then "done" with the folder in "metrics", or '
-            '"error" or "cancelled". Stops when a pipe on stdin closes.',
+            '"error" or "cancelled". With MLX_DECISION_WATCH_STDIN=1 it stops when a pipe '
+            "on stdin closes.",
         ),
     ] = False,
 ) -> None:
@@ -1797,7 +1798,8 @@ def training_fit(
             "--events",
             help="Print the progress as JSON lines on stdout instead of a progress bar and "
             'the report; a failed run ends with {"stage": "error"}, a cancelled one with '
-            '{"stage": "cancelled"}. Asks nothing; stops when a pipe on stdin closes.',
+            '{"stage": "cancelled"}. Asks nothing. With MLX_DECISION_WATCH_STDIN=1 it stops '
+            "when a pipe on stdin closes.",
         ),
     ] = False,
     yes: YesOption = False,
@@ -1895,7 +1897,8 @@ def training_fit(
 
 def watched(events: bool, cancel, leftovers=()):
     """With ``--events``, the stdin watchdog: a run whose parent (the Studio)
-    is gone stops and leaves nothing behind."""
+    is gone stops and leaves nothing behind (when the Studio asked for it,
+    ``MLX_DECISION_WATCH_STDIN=1``)."""
     from .watchdog import watch_stdin
 
     return watch_stdin(cancel, leftovers) if events else nullcontext()
@@ -1937,8 +1940,8 @@ def training_eval(
             "--events",
             help="Print the progress as JSON lines on stdout instead of a progress bar and "
             'the results; the last is {"stage": "done"} with the results as --json has them '
-            'in "metrics", or {"stage": "error"} or {"stage": "cancelled"}. Asks nothing; '
-            "stops when a pipe on stdin closes.",
+            'in "metrics", or {"stage": "error"} or {"stage": "cancelled"}. Asks nothing. '
+            "With MLX_DECISION_WATCH_STDIN=1 it stops when a pipe on stdin closes.",
         ),
     ] = False,
 ) -> None:

@@ -16,7 +16,8 @@ after ``kill_grace`` more, and removes what a killed write leaves beside
 the job's output. The process runs in its own session, so a Ctrl-C in the
 Studio's terminal reaches only the Studio, which stops its jobs before it
 exits. Its stdin is a pipe the Studio never writes to: if the Studio is
-killed, the pipe closes and the CLI stops by itself (``watchdog``).
+killed, the pipe closes and the CLI stops by itself (``watchdog``; the job
+gets ``MLX_DECISION_WATCH_STDIN=1``, which turns that on).
 
 A job that loads a model (``holds_gpu``) first takes the GPU from the
 Studio's pool (``Gpu.acquire``: the request on the worker finishes, the
@@ -42,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from ..gpu import Gpu
-from ..watchdog import remove
+from ..watchdog import WATCH_VARIABLE, remove
 from .workspace import INTERRUPTED, JOB_FILE, Workspace, encode, now
 
 EVENTS_FILE = "events.jsonl"
@@ -248,6 +249,7 @@ class Jobs:
                 *job.argv,
                 "--events",
                 stdin=asyncio.subprocess.PIPE,  # never written: closes when the Studio dies
+                env={**os.environ, WATCH_VARIABLE: "1"},  # so the CLI watches it
                 stdout=asyncio.subprocess.PIPE,
                 stderr=stderr,
                 cwd=self.workspace.root,

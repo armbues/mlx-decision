@@ -18,6 +18,7 @@ import mlx_decision.download as download
 from mlx_decision.cli import app
 from mlx_decision.convert import convert
 from mlx_decision.events import Cancelled
+from mlx_decision.watchdog import WATCH_VARIABLE
 from tiny_models import write_clef
 
 TESTS = Path(__file__).resolve().parents[1]
@@ -67,7 +68,7 @@ def process(*args, env=None) -> subprocess.Popen:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env={**os.environ, **(env or {})},
+        env={**os.environ, WATCH_VARIABLE: "1", **(env or {})},  # as the Studio runs it
     )
 
 

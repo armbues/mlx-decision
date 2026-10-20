@@ -6,9 +6,11 @@ run's cancel flag is set, so it stops at its next step as after Ctrl-C. A
 run still going ``GRACE_S`` later (stuck in a long step) removes what it
 had half written and exits at once with 130.
 
-Only a pipe (or socket) on stdin is watched. A terminal, ``/dev/null`` or a
-file is left alone, so a run started by hand or from a script behaves as
-before.
+The Studio asks for this by setting ``MLX_DECISION_WATCH_STDIN=1`` on its
+jobs; without it nothing is watched, so a run started by hand, from a
+script or through a wrapper that closes stdin at once (``conda run``) is
+not taken for an orphan. Even then only a pipe (or socket) on stdin is
+watched: a terminal, ``/dev/null`` or a file is left alone.
 
 A run that cannot stop from inside (a download: the Hub's threads write
 until their files are done) does its work with ``in_thread`` and, once
@@ -28,6 +30,13 @@ from typing import IO, NoReturn
 from .events import Cancelled
 
 GRACE_S = 4.0
+# Set to "1" by the Studio on its jobs: only then does a closed stdin stop a run.
+WATCH_VARIABLE = "MLX_DECISION_WATCH_STDIN"
+
+
+def requested() -> bool:
+    """Whether this process was asked to watch its stdin."""
+    return os.environ.get(WATCH_VARIABLE) == "1"
 
 
 @contextmanager
@@ -37,15 +46,20 @@ def watch_stdin(
     *,
     grace: float = GRACE_S,
     stdin: IO | None = None,
+    enabled: bool | None = None,
 ) -> Iterator[bool]:
     """Watch stdin while the block runs: when it closes, set ``cancel``; if the
     block has not ended ``grace`` seconds later, remove ``leftovers`` (folders or
     files the run writes before renaming them into place) and exit with 130.
 
-    Yields whether stdin is watched (only a pipe or a socket is). Leaving the
-    block ends the watch: from then on a closed stdin changes nothing.
+    Yields whether stdin is watched: only when ``enabled`` (by default, when
+    ``MLX_DECISION_WATCH_STDIN`` is "1") and stdin is a pipe or a socket.
+    Leaving the block ends the watch: from then on a closed stdin changes
+    nothing.
     """
-    fd = _pipe(sys.stdin if stdin is None else stdin)
+    if enabled is None:
+        enabled = requested()
+    fd = _pipe(sys.stdin if stdin is None else stdin) if enabled else None
     if fd is None:
         yield False
         return

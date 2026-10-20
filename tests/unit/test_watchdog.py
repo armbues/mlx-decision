@@ -13,7 +13,7 @@ import pytest
 
 from fake_backend import TEAM, write_model
 from mlx_decision.data.format import Example, write_examples
-from mlx_decision.watchdog import GRACE_S, watch_stdin
+from mlx_decision.watchdog import GRACE_S, WATCH_VARIABLE, watch_stdin
 
 TESTS = Path(__file__).resolve().parents[1]
 
@@ -24,9 +24,14 @@ LAUNCHER = (
 )
 
 
-def cli(*args: str, stdin=subprocess.PIPE) -> subprocess.Popen:
+# What the Studio sets on its jobs: watch stdin.
+WATCHED = {**os.environ, WATCH_VARIABLE: "1"}
+
+
+def cli(*args: str, stdin=subprocess.PIPE, env=WATCHED) -> subprocess.Popen:
     return subprocess.Popen(
         [sys.executable, "-c", LAUNCHER, str(TESTS), *args],
+        env=env,
         stdin=stdin,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -71,17 +76,38 @@ def ended_within(process: subprocess.Popen, seconds: float) -> tuple[int, list[d
 
 def test_only_a_pipe_is_watched():
     flag = threading.Event()
-    with open(os.devnull) as null, watch_stdin(flag, stdin=null) as watched:
+    with open(os.devnull) as null, watch_stdin(flag, stdin=null, enabled=True) as watched:
         assert not watched  # EOF at once, but /dev/null is not a parent
-    with watch_stdin(flag, stdin=io.StringIO("")) as watched:
+    with watch_stdin(flag, stdin=io.StringIO(""), enabled=True) as watched:
         assert not watched  # no file behind it
     assert not flag.is_set()
+
+
+def test_nothing_is_watched_unless_asked(monkeypatch):
+    """A pipe closed at once (``conda run``, ``input=""``) is no orphan unless
+    the variable the Studio sets says so."""
+    flag = threading.Event()
+    read, write = os.pipe()
+    os.close(write)
+    monkeypatch.delenv(WATCH_VARIABLE, raising=False)
+    with os.fdopen(read) as stdin, watch_stdin(flag, stdin=stdin) as watched:
+        assert not watched
+        assert not flag.wait(0.3)
+    monkeypatch.setenv(WATCH_VARIABLE, "1")
+    read, write = os.pipe()
+    with os.fdopen(read) as stdin, watch_stdin(flag, stdin=stdin, grace=60) as watched:
+        assert watched
+        os.close(write)
+        assert flag.wait(2)
 
 
 def test_a_closed_pipe_sets_the_cancel_flag_and_an_ended_block_ignores_it():
     flag = threading.Event()
     read, write = os.pipe()
-    with os.fdopen(read) as stdin, watch_stdin(flag, stdin=stdin, grace=60) as watched:
+    with (
+        os.fdopen(read) as stdin,
+        watch_stdin(flag, stdin=stdin, grace=60, enabled=True) as watched,
+    ):
         assert watched
         os.write(write, b"dropped\n")
         assert not flag.wait(0.2)
@@ -92,7 +118,7 @@ def test_a_closed_pipe_sets_the_cancel_flag_and_an_ended_block_ignores_it():
     flag = threading.Event()
     read, write = os.pipe()
     with os.fdopen(read) as stdin:
-        with watch_stdin(flag, stdin=stdin, grace=0.1):
+        with watch_stdin(flag, stdin=stdin, grace=0.1, enabled=True):
             pass
         os.close(write)
         assert not flag.wait(0.5)
@@ -111,6 +137,7 @@ def test_a_stuck_run_removes_its_leftovers_and_exits_130(tmp_path):
     )
     process = subprocess.Popen(
         [sys.executable, "-c", script, str(folder), str(file)],
+        env=WATCHED,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -167,6 +194,19 @@ def test_a_fit_that_ends_first_is_unaffected(tmp_path, data):
     code, rest, _ = ended_within(process, 5)
     assert code == 0 and rest == []
     assert (tmp_path / "fitted" / "mlx_decision.json").exists()
+
+
+def test_a_pipe_closed_at_once_without_the_variable_changes_nothing(tmp_path, data):
+    """As under ``conda run``: a pipe on stdin that is closed from the start."""
+    base = write_model(tmp_path / "base")
+    process = cli("training", "fit", "-m", str(base), "--data", str(data),
+                  "-o", str(tmp_path / "fitted"), "--events",
+                  env={k: v for k, v in os.environ.items() if k != WATCH_VARIABLE})  # fmt: skip
+    process.stdin.close()
+    code, events, errors = ended_within(process, 30)
+    assert code == 0, errors
+    assert events[-1]["stage"] == "done"
+    assert "stdin closed" not in errors
 
 
 def test_without_a_pipe_on_stdin_nothing_changes(tmp_path, data):

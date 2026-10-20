@@ -30,11 +30,12 @@ change the interface).
   lines, as `training fit` prints it (`download`: bytes as steps;
   `convert`: tensors as steps), ending with `done` and the folder.
   `download --events` asks nothing, as with `--yes`.
-- With `--events` and a pipe on stdin, `training fit`, `training eval`,
-  `download` and `convert` stop when the pipe closes (the program that
-  started them is gone): at the next step, or after 4 seconds at once,
-  leaving no half-written folder. A terminal, `/dev/null` or a file on
-  stdin changes nothing.
+- With `--events`, `MLX_DECISION_WATCH_STDIN=1` and a pipe on stdin,
+  `training fit`, `training eval`, `download` and `convert` stop when
+  the pipe closes (the program that started them is gone): at the next
+  step, or after 4 seconds at once, leaving no half-written folder.
+  Without the variable, or with a terminal, `/dev/null` or a file on
+  stdin, nothing changes.
 
 ### Changed
 

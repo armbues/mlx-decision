@@ -346,12 +346,15 @@ next step: the next example scored, the next training batch, or the next
 20 steps of a search. A second Ctrl-C stops it at once. A stopped run
 writes nothing: there is no half-written folder.
 
-A program that runs `training fit --events` can give it a pipe as stdin
-and never write to it. When the program ends, even when it is killed,
-the pipe closes and the run stops as after Ctrl-C; a run still going 4
-seconds later (in the middle of a long step) removes what it had
-written so far and exits at once (code 130). A terminal, `/dev/null` or
-a file on stdin is not watched.
+A program that runs `training fit --events` can have the run stop when
+the program ends: it sets `MLX_DECISION_WATCH_STDIN=1` in the run's
+environment, gives it a pipe as stdin and never writes to it. When the
+program ends, even when it is killed, the pipe closes and the run stops
+as after Ctrl-C; a run still going 4 seconds later (in the middle of a
+long step) removes what it had written so far and exits at once (code
+130). The Studio does this for its jobs. Without the variable, or with
+a terminal, `/dev/null` or a file on stdin, nothing is watched, so a
+wrapper that closes stdin at once (`conda run`) does not stop the run.
 
 ### Menus
 
@@ -443,8 +446,9 @@ examples when there are any, and a confusion matrix. `--compare` scores
 a second model after the first; only one is loaded at a time. `--json`
 prints the results as JSON. `--events` prints the progress as JSON
 lines instead (stages `load`, `score` and `done`, whose `metrics` hold
-the results as `--json` prints them), and stops when a pipe on stdin
-closes, as `training fit` does. Evaluation needs no extra.
+the results as `--json` prints them), and, with
+`MLX_DECISION_WATCH_STDIN=1`, stops when a pipe on stdin closes, as
+`training fit` does. Evaluation needs no extra.
 
 Scores from `training eval` are measured on data the fit has not seen
 only if you give it such data: use a test split or your own held-back
