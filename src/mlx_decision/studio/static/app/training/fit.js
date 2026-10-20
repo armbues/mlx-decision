@@ -150,8 +150,8 @@ export async function startFit() {
   starting.value = true;
   try {
     const { job } = await api("/jobs", { method: "POST", body });
-    toast(`${job.title} started: the fitted model shows up in Models when it is done`);
     named.value = false;
+    navigate("training", job.id); // its progress, then its report
   } catch (error) {
     toast(`Could not start the fit: ${error.message}`);
   } finally {

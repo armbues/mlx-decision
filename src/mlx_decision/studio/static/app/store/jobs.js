@@ -39,8 +39,16 @@ export function applyJob(summary) {
   if (before && before.state !== "ended" && summary.state === "ended") toast(endedText(summary));
 }
 
-export function applyEvent({ job: id, event }) {
+// Who wants each event of a job as it comes (the Training page's open fit).
+const listeners = new Set();
+export function onJobEvent(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function applyEvent({ job: id, index, event }) {
   jobs.value = jobs.value.map((job) => (job.id === id ? { ...job, last: event } : job));
+  for (const listener of listeners) listener(id, index, event);
 }
 
 export async function stopJob(id) {

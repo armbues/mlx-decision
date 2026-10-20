@@ -15,23 +15,27 @@ events so far, for a tab that opens one later.
 import asyncio
 import json
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
 from ...config import Config
 from ...data.make import ROLES, SPLIT_FIELD, record_path
 from ...data.presets import PRESETS
 from ...data.presets import SPLITS as PRESETS_SPLITS
+from ...fitted import REPORT_FILE
 from ...flags import join_pairs
 from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
 from ..catalog import option_arguments
 from ..jobs import FOLDER, Job, JobConflict, Jobs
+from ..security import is_loopback
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
+from .sets import reveal
 
 KINDS = ("download", "convert", "fit", "eval", "data")
 DATA_SUFFIX = ".jsonl"
@@ -436,6 +440,44 @@ def jobs_router(
             return {"job": jobs.get(job_id), "events": jobs.events(job_id)}
         except (KeyError, WorkspaceError):
             raise ApiError(404, f"no job {job_id}") from None
+
+    def summary_of(job_id: str) -> dict[str, Any]:
+        try:
+            return jobs.get(job_id)
+        except (KeyError, WorkspaceError):
+            raise ApiError(404, f"no job {job_id}") from None
+
+    @router.get("/{job_id}/report")
+    async def report(job_id: str):
+        """``{path, report}``: what a fit that ended done wrote, its folder and
+        the report in it (``training.json``); 404 for another job, one that
+        did not end done, or a folder that is gone."""
+        job = summary_of(job_id)
+        if job["kind"] != "fit" or job.get("outcome") != "done" or not job.get("output"):
+            raise ApiError(404, f"{job['title']} has no report")
+        folder = Path(job["output"])
+        try:
+            text = await asyncio.to_thread((folder / REPORT_FILE).read_text)
+            written = json.loads(text)
+        except (OSError, ValueError):
+            raise ApiError(404, f"{folder} is gone or has no report") from None
+        return {"path": str(folder), "report": written}
+
+    @router.post("/{job_id}/reveal", status_code=204)
+    async def reveal_output(job_id: str, request: Request):
+        """Show what the job wrote in Finder (only for a browser on this Mac)."""
+        client = request.client.host if request.client else None
+        if not is_loopback(client):
+            raise ApiError(
+                403, "Finder opens only for a browser on this Mac", kind="permission_error"
+            )
+        job = summary_of(job_id)
+        output = Path(job["output"]) if job.get("output") else None
+        if output is None or not output.exists():
+            raise ApiError(404, f"{job['title']} left nothing to show")
+        if sys.platform == "darwin":
+            await asyncio.to_thread(reveal, output)
+        return Response(status_code=204)
 
     @router.post("/{job_id}/stop")
     async def stop(job_id: str):

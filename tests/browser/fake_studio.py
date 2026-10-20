@@ -159,11 +159,15 @@ def write_studio(
     return app
 
 
-def fake_jobs(app: FastAPI, steps: int = 200, every: float = 0.1) -> None:
+def fake_jobs(app: FastAPI, steps: int = 200, every: float = 0.1, fits: bool = False) -> None:
     """Run ``tests/fake_job.py`` for the Studio's jobs: ``steps`` work events
-    ``every`` seconds apart (20 s by default); Stop takes effect at the next."""
+    ``every`` seconds apart (20 s by default); Stop takes effect at the next.
+    With ``fits``, a fit job acts as ``training fit`` does (its events, then a
+    fitted model with its report)."""
     jobs = app.state.jobs
     jobs.command = [sys.executable, str(FAKE_JOB), "--steps", str(steps), "--every", str(every)]
+    if fits:
+        jobs.command.append("--fit-events")
     jobs.stop_grace = jobs.kill_grace = 2.0
 
 

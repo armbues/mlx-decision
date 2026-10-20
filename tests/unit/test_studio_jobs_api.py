@@ -21,6 +21,7 @@ from mlx_decision.config import Config
 from mlx_decision.data.format import Example, write_examples
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, server
+from mlx_decision.studio.routes import jobs as jobs_routes
 
 TESTS = Path(__file__).resolve().parents[1]
 FAKE_JOB = TESTS / "fake_job.py"
@@ -533,3 +534,33 @@ def test_a_real_fit_through_the_cli(tmp_path, models_folder, monkeypatch):
         assert json.loads((folder / "job.json").read_text())["outcome"] == "done"
         assert len((folder / "events.jsonl").read_text().splitlines()) == len(events)
         assert (folder / "stderr.log").exists()
+        # The page's report: the fitted folder's own, as training fit wrote it.
+        report = client.get(f"/studio/api/jobs/{job['id']}/report").json()
+        assert report["path"] == str(fitted.resolve())
+        assert report["report"]["questions"] == events[-1]["metrics"]
+        assert report["report"]["options"]["seed"] == 3
+        # Show in Finder for what it wrote; nothing for a job that wrote nothing.
+        shown = []
+        monkeypatch.setattr(jobs_routes, "reveal", shown.append)
+        monkeypatch.setattr(jobs_routes.sys, "platform", "darwin")
+        assert client.post(f"/studio/api/jobs/{job['id']}/reveal", json={}).status_code == 204
+        assert shown == [fitted.resolve()]
+        assert client.get("/studio/api/jobs/nope/report").status_code == 404
+
+
+def test_a_report_only_for_a_fit_that_ended_done(tmp_path, models_folder):
+    pool = ModelPool(discover([models_folder]), budget=10**9)
+    app = create_studio(pool, workspace=tmp_path / "ws", config=Config(tmp_path / "config.toml"))
+    app.state.jobs.command = [sys.executable, str(FAKE_JOB), "--steps", "1", "--every", "0.01",
+                              "--end", "error"]  # fmt: skip
+    write_data(tmp_path / "ws" / "data" / "tickets.jsonl")
+    with TestClient(app, base_url=HERE, client=("127.0.0.1", 50000)) as client:
+        client.get(f"/?token={app.state.session.token}")
+        started = client.post("/studio/api/jobs", json={"kind": "fit", "model": "fake",
+                                                        "data": "tickets"})  # fmt: skip
+        job = wait_for(client, started.json()["job"]["id"])["job"]
+        assert job["outcome"] == "error"
+        missing = client.get(f"/studio/api/jobs/{job['id']}/report")
+        assert missing.status_code == 404 and "has no report" in missing.text
+        gone = client.post(f"/studio/api/jobs/{job['id']}/reveal", json={})
+        assert gone.status_code == 404 and "left nothing to show" in gone.text

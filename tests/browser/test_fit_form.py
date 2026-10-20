@@ -69,11 +69,13 @@ def test_the_form_and_start_fit(studio, page):
     name.fill("support-calibrated")
     expect(run).to_be_enabled()
     page.keyboard.press("Meta+Enter")
-    expect(page.locator(".toast")).to_contain_text("Fit support-calibrated started")
+    # Started: the page shows the fit's progress.
+    expect(page.locator(".centre h1")).to_have_text("Fit support-calibrated")
     job = next(iter(studio.app.state.jobs.jobs.values()))
     assert job.details["method"] == "calibrate" and job.details["holdout"] == 0.25
     assert job.argv[job.argv.index("--method") + 1] == "calibrate"
     # One GPU job at a time.
+    page.locator(".run-btn", has_text="New Fit").click()
     expect(run).to_have_attribute("title", re.compile("Fit support-calibrated is running"))
     page.locator(".sidebar .job").get_by_role("button", name=re.compile("^Stop ")).click()
     expect(page.locator(".sidebar .job small")).to_have_text("Stopped")
@@ -141,11 +143,13 @@ def test_report_on_the_same_gets_report_file(studio, page):
     report.select_option("help-test")
     expect(page.locator(".run-btn")).to_be_enabled()
     page.keyboard.press("Meta+Enter")
-    expect(page.locator(".toast")).to_contain_text("started")
+    expect(page.locator(".centre h1")).to_have_text("Fit fake-help-train")
     job = next(iter(studio.app.state.jobs.jobs.values()))
     assert job.details["report"] == "help-test" and job.details["holdout"] is None
     assert job.argv[job.argv.index("--validation") + 1].endswith("help-test.jsonl")
+    expect(page.locator(".centre .pane-head p")).to_contain_text("reported on help-test")
     page.locator(".sidebar .job").get_by_role("button", name=re.compile("^Stop ")).click()
+    page.locator(".run-btn", has_text="New Fit").click()
     report.select_option("")
     expect(form.locator("#fit-holdout")).to_have_value("20")
     expect(legend).to_contain_text("12 kept aside for the report")

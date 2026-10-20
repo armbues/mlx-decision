@@ -15,6 +15,10 @@ it does not know are ignored (the job's own arguments).
     --stubborn     ignore the first SIGINT, stop at the second
     --hold S       after the last event, wait S seconds before exiting
     --fake-model   write a fake model (``fake_backend``'s family) at -o
+    --fit-events   with ``training fit`` (and -m, -o) in the arguments, act
+                   as it does: a fit's events, the train stage's steps
+                   with a loss for the epoch kinds, then a fitted model
+                   over -m at -o with its ``training.json``
     (an -o ending in .jsonl is written as a file: a training example, as
     ``data`` writes one; with {split} in it, one file per --split, and with
     --record each with a record as ``data --record`` writes it, --roles
@@ -49,6 +53,92 @@ def get_files(pattern: Path) -> list[tuple[Path, str | None]]:
     if "{split}" not in pattern.name:
         return [(pattern, option("--split"))]
     return [(pattern.with_name(pattern.name.replace("{split}", s)), s) for s in options("--split")]
+
+
+KINDS = {"head": ["head", "calibrate"], "readout": ["readout", "calibrate"],
+         "finetune": ["finetune", "calibrate"], "calibrate": ["calibrate"]}  # fmt: skip
+TEAM_LABELS = {"billing": 12, "tech": 30, "sales": 18}
+BEFORE = {"n": 12, "refused": 0, "truncated": 0, "accuracy": 0.5, "macro_f1": 0.4167,
+          "ece": 0.21}  # fmt: skip
+AFTER = {"n": 12, "refused": 0, "truncated": 0, "accuracy": 0.8333, "macro_f1": 0.8,
+         "ece": 0.0612}  # fmt: skip
+
+
+def fit_script(steps: int, output: Path) -> list[dict]:
+    """The events of a ``training fit --events`` run, in order: ``steps`` train
+    steps (split over the epochs, a loss each, for the epoch kinds)."""
+    kinds = KINDS[option("--method", "calibrate")]
+    trainer = kinds[0] if kinds[0] != "calibrate" else None
+    base = Path(option("-m", "base")).name
+    epochs = int(option("--epochs", "3"))
+    events = [
+        {"stage": "check", "message": "reading the data"},
+        {"stage": "check", "message": f"loading {base}", "metrics": {
+            "examples": 60, "holdout": 12, "fit": 43, "dev": 5, "labels": {"team": TEAM_LABELS},
+            "kinds": kinds, "estimate": {"peak_gb": 0.1, "disk_gb": 0.0}}},
+    ]  # fmt: skip
+    events += [{"stage": "before", "step": i, "total": 12, "eta_s": 12 - i} for i in range(1, 13)]
+    events.append({"stage": "before", "metrics": {"team": BEFORE}})
+    if trainer != "finetune":
+        events += [{"stage": "features", "step": i, "total": 48, "eta_s": (48 - i) / 4}
+                   for i in range(1, 49)]  # fmt: skip
+    if trainer in ("head", "finetune"):
+        if trainer == "finetune":
+            events.append({"stage": "train", "message": "preparing the training examples"})
+        per = max(1, steps // epochs)
+        step = 0
+        for epoch in range(1, epochs + 1):
+            for _ in range(per):
+                step += 1
+                loss = round(1.2 / (1 + step / per) + 0.02 * (step % 3), 4)
+                left = per * epochs - step
+                events.append(
+                    {"stage": "train", "step": step, "total": per * epochs,
+                     "metrics": {"loss": loss}, "eta_s": left}
+                )  # fmt: skip
+            dev = [0.9, 0.62, 0.7][min(epoch, 3) - 1]
+            row = {"epoch": epoch, "loss": round(1.0 / epoch, 4), "dev_loss": dev, "seconds": 1.0}
+            message = f"epoch {epoch}: loss {row['loss']}, dev loss {dev}"
+            events.append({"stage": "train", "metrics": row, "message": message})
+    elif trainer == "readout":
+        events += [{"stage": "train", "step": i, "total": steps, "eta_s": steps - i}
+                   for i in range(1, steps + 1)]  # fmt: skip
+        events.append({"stage": "train", "message": "readout for 'team'",
+                       "metrics": {"question": "team", "steps": 40}})  # fmt: skip
+    if trainer == "finetune":
+        events += [{"stage": "calibrate", "step": i, "total": 5} for i in range(1, 6)]
+    events.append({"stage": "calibrate", "message": "fitting the calibration"})
+    if trainer == "finetune":
+        events += [{"stage": "after", "step": i, "total": 12} for i in range(1, 13)]
+    questions = {"team": {"before": BEFORE, "after": AFTER}}
+    events.append({"stage": "after", "metrics": questions})
+    events.append({"stage": "write", "message": f"writing {output}"})
+    return events
+
+
+def write_fit(output: Path) -> None:
+    """A fitted model over -m at ``output``, with a report as a fit writes it."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from fake_backend import write_fitted
+
+    kinds = KINDS[option("--method", "calibrate")]
+    write_fitted(output, Path(option("-m")), tuple(kinds))
+    training = None
+    if kinds[0] in ("head", "finetune"):
+        epochs = int(option("--epochs", "3"))
+        rows = [{"epoch": e, "loss": round(1.0 / e, 4)} for e in range(1, epochs + 1)]
+        training = {"epochs": rows, "best_epoch": min(2, epochs), "stopped_early": False}
+    report = {
+        "base": {"name": Path(option("-m")).name},
+        "options": {"method": option("--method"), "kinds": kinds,
+                    "seed": int(option("--seed", "0"))},
+        "data": {"file": option("--data"), "examples": 60, "holdout": 12, "fit": 43, "dev": 5},
+        "questions": {"team": {"before": BEFORE, "after": AFTER}},
+        "training": training,
+        "warnings": [],
+        "seconds": {"total": 4.2},
+    }  # fmt: skip
+    (output / "training.json").write_text(json.dumps(report, indent=2))
 
 
 def write_records(files: list[tuple[Path, str | None]]) -> None:
@@ -121,12 +211,20 @@ def main() -> int:
             (partial / "weights").write_text("half")
             if "--fake-model" in sys.argv:
                 (partial / MARKER_FILE).write_text(json.dumps({"family": "fake"}))
+        fitting = "--fit-events" in sys.argv and "training" in sys.argv and "fit" in sys.argv
+        fitting = fitting and output is not None and option("-m") is not None
+        script = (
+            fit_script(steps, output)
+            if fitting
+            else [{"stage": "work", "step": i, "total": steps} for i in range(1, steps + 1)]
+        )
         try:
-            for step in range(1, steps + 1):
-                time.sleep(every)
+            for event in script:
+                if "step" in event or not fitting:
+                    time.sleep(every)
                 if cancel.is_set():
                     raise KeyboardInterrupt
-                emit("work", step=step, total=steps)
+                emit(**event)
         except KeyboardInterrupt:
             for leftover in more:
                 leftover.unlink(missing_ok=True)
@@ -146,7 +244,12 @@ def main() -> int:
         if end == "error":
             emit("error", message="the data has no labels")
             return 1
-        if partial:
+        if partial and fitting:
+            import shutil
+
+            shutil.rmtree(partial, ignore_errors=True)
+            write_fit(output)
+        elif partial:
             partial.rename(output)
         for leftover in more:  # the other files, then the records
             leftover.rename(leftover.with_name(leftover.name[1:].removesuffix(".partial")))
