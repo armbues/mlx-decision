@@ -1,5 +1,5 @@
 """Get a Dataset: the presets with their question and splits, a sample and a
-name, and the job whose file joins Training Data. The job is
+name, and the job whose file joins the Datasets list. The job is
 ``tests/fake_job.py`` (no network)."""
 
 import re
@@ -14,7 +14,7 @@ pytestmark = pytest.mark.browser
 
 def test_get_a_dataset(studio, page):
     fake_jobs(studio.app, steps=5, every=0.05)
-    open_studio(page, studio, "training")
+    open_studio(page, studio, "datasets")
     page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator(".fam b")).to_have_text(
@@ -50,7 +50,7 @@ def test_get_a_dataset(studio, page):
 
 
 def test_a_name_taken_is_said(studio, page):
-    open_studio(page, studio, "training")
+    open_studio(page, studio, "datasets")
     page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
     sheet = page.locator(".sheet")
     sheet.get_by_label("Name").fill("tickets")
@@ -87,7 +87,7 @@ def hub(monkeypatch):
 
 
 def test_another_dataset_with_a_question_set(studio, page, hub):
-    open_studio(page, studio, "training")
+    open_studio(page, studio, "datasets")
     page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
     sheet = page.locator(".sheet")
     sheet.locator(".fam[data-preset='any']").click()
@@ -128,7 +128,7 @@ def test_another_dataset_with_a_question_set(studio, page, hub):
 
 
 def test_a_yes_no_question_maps_by_name(studio, page, hub):
-    open_studio(page, studio, "training")
+    open_studio(page, studio, "datasets")
     page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
     sheet = page.locator(".sheet")
     sheet.locator(".fam[data-preset='any']").click()

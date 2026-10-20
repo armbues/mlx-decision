@@ -1,5 +1,5 @@
-"""The fit form: data, split and labels, the base, the method cards with their
-estimates, the result's name and options, and Start Fit (⌘↩) as a job."""
+"""The fit form: its dataset, split and labels, the base, the method cards with
+their estimates, the result's name and options, and Start Fit (⌘↩) as a job."""
 
 import json
 import re
@@ -28,10 +28,13 @@ def studio(make_studio):
 
 def test_the_form_and_start_fit(studio, page):
     open_studio(page, studio, "training")
-    expect(page.locator(".centre .empty")).to_contain_text("Pick training data")
-    expect(page.locator(".run-btn")).to_be_disabled()
-    page.locator(".sidebar .data-list .sb-item", has_text="support").click()
     form = page.locator(".fit-form")
+    data = form.locator("#fit-data")
+    expect(data.locator("option")).to_have_text(["support", "tickets"])
+    expect(data).to_have_value("support")  # the first, until one is picked
+    expect(page.locator(".sidebar .fit-list .sb-item")).to_have_text("New Fit")
+    expect(page.locator(".sidebar .sb-empty", has_text="fits")).to_have_text("No fits yet")
+    expect(page.locator(".inspector .data-inspector h2")).to_have_text("support")
     form.locator("#fit-base").select_option("tiny-clef")
 
     cards = form.locator(".method")
@@ -76,8 +79,9 @@ def test_the_form_and_start_fit(studio, page):
 
 
 def test_a_family_without_a_main_kind_offers_calibrate(studio, page):
-    open_studio(page, studio, "training/support")
+    open_studio(page, studio, "training")
     form = page.locator(".fit-form")
+    form.locator("#fit-data").select_option("support")
     form.locator("#fit-base").select_option("fake")
     expect(form.locator(".method .mt b")).to_have_text(["Calibrate"])
     expect(form.locator(".method").first).to_have_attribute("aria-checked", "true")

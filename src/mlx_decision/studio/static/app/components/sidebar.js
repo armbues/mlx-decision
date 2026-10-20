@@ -4,6 +4,7 @@ import { gigabytes, hostPort } from "../format.js";
 import { href } from "../router.js";
 import { dismissJob, listed, progress, stopJob } from "../store/jobs.js";
 import { groupColour, groupLabel } from "../families.js";
+import { dataFiles } from "../store/data.js";
 import { busy, connection, models, status } from "../store/status.js";
 import * as icons from "./icons.js";
 import { UnloadMark } from "./load-button.js";
@@ -11,12 +12,13 @@ import { UnloadMark } from "./load-button.js";
 const PAGE_LINKS = [
   { id: "playground", label: "Playground", Icon: icons.Playground },
   { id: "models", label: "Models", Icon: icons.Models },
+  { id: "datasets", label: "Datasets", Icon: icons.Datasets },
   { id: "training", label: "Training", Icon: icons.Training },
   { id: "settings", label: "Settings", Icon: icons.Settings },
 ];
 
 function Pages({ current }) {
-  const count = { models: models.value?.length };
+  const count = { models: models.value?.length, datasets: dataFiles.value?.length };
   return html`
     <div class="sb-sec">
       <ul class="sb-list">
@@ -35,7 +37,7 @@ function Pages({ current }) {
   `;
 }
 
-const JOB_ICONS = { download: icons.Download, convert: icons.Models, fit: icons.Training, eval: icons.Training };
+const JOB_ICONS = { download: icons.Download, convert: icons.Models, data: icons.Datasets, fit: icons.Training, eval: icons.Training };
 
 function Job({ job }) {
   const Icon = JOB_ICONS[job.kind] ?? icons.Training;

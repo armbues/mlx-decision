@@ -12,6 +12,14 @@ export function size(bytes) {
   return bytes >= 1e8 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 }
 
+// A small file's size: "312 bytes", "84 kB", "1.2 MB".
+export function fileSize(bytes) {
+  if (bytes == null) return "";
+  if (bytes < 1000) return plural(bytes, "byte");
+  if (bytes < 1e6) return `${Math.round(bytes / 1e3)} kB`;
+  return bytes < 1e9 ? `${(bytes / 1e6).toFixed(1)} MB` : `${(bytes / 1e9).toFixed(1)} GB`;
+}
+
 // A parameter count: "421M", "0.6B", "3.1B", "27B".
 export function parameters(count) {
   if (!count) return "";

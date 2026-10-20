@@ -1,7 +1,7 @@
-// The fit form (TRS-1): the data picked in the sidebar, its split and labels,
-// the base model, the method cards the base's family offers (each with its
-// memory estimate and the fit check, as `training fit`'s menu has them), the
-// result's name and the options. Start Fit (⌘↩) starts `training fit` as a job;
+// The fit form: the dataset picked in its own field (or by the Datasets page's
+// Fit on It…), its split and labels, the base model, the method cards the
+// base's family offers (each with its memory estimate and the fit check, as
+// `training fit`'s menu has them), the result's name and the options. Start Fit (⌘↩) starts `training fit` as a job;
 // the Studio builds its command line.
 import { computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
@@ -9,13 +9,15 @@ import { api } from "../api.js";
 import { plural, size } from "../format.js";
 import { gpuJob } from "../store/jobs.js";
 import { remembered } from "../store/prefs.js";
+import { href, navigate } from "../router.js";
+import { dataFiles } from "../store/data.js";
 import { loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
-import { pickedData } from "./data.js";
 
 const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
 
 export const base = remembered("training.base", null);
+const chosenData = remembered("training.data", null);
 const holdout = signal(20); // percent kept aside for the report
 const seed = signal(0);
 const choice = signal(null); // "method" or "method+head" (the card picked)
@@ -38,12 +40,24 @@ const baseName = computed(() => {
   return status.value?.default_model && list.includes(status.value.default_model) ? status.value.default_model : (list[0] ?? null);
 });
 
+// The dataset: the one chosen while it is listed, else the first.
+export const fitData = computed(() => {
+  const list = (dataFiles.value ?? []).map((item) => item.name);
+  return chosenData.value && list.includes(chosenData.value) ? chosenData.value : (list[0] ?? null);
+});
+
+// Fit on It… (the Datasets page): the form, with the dataset picked.
+export function fitOn(name) {
+  chosenData.value = name;
+  navigate("training");
+}
+
 let timer = null;
 let asked = 0;
 
 // The plan again whenever the data, the base, the share kept aside or the seed change.
 effect(() => {
-  const data = pickedData();
+  const data = fitData.value;
   const model = baseName.value;
   const share = holdout.value;
   const order = seed.value;
@@ -75,9 +89,9 @@ async function plan(model, data, share, order) {
 export const notReady = computed(() => {
   const job = gpuJob.value;
   if (job) return `${job.title} is running; one job at a time can use the GPU`;
-  if (!pickedData()) return "Pick training data on the left";
+  if (!fitData.value) return "Get or add a dataset first, on the Datasets page";
   if (planError.value) return planError.value;
-  if (!planned.value || !picked.value) return "Reading the data…";
+  if (!planned.value || !picked.value || planned.value.data !== fitData.value) return "Reading the data…";
   if (!picked.value.fits) return "The method needs more memory than this Mac's GPU working set";
   const value = name.value.trim();
   if (!NAME.test(value)) return "Give the fitted model a name: letters, digits, '.', '_' or '-'";
@@ -172,7 +186,8 @@ function gpuNote() {
 }
 
 export function FitForm() {
-  const data = pickedData();
+  const data = fitData.value;
+  const files = dataFiles.value ?? [];
   const result = planned.value;
   const list = models.value ?? [];
   const method = picked.value;
@@ -180,8 +195,13 @@ export function FitForm() {
     <div class="fit-form">
       <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled examples, as JSON lines</span></div>
         <div class="group form">
-          <div class="row"><label>File</label><div class="line"><code>data/${data}.jsonl</code>
-            ${result && html`<span class="hint num">${plural(result.splits.examples, "example")}</span>`}</div></div>
+          <div class="row"><label for="fit-data">Dataset</label><div class="line">
+            <select id="fit-data" value=${data ?? ""} onChange=${(event) => (chosenData.value = event.target.value)}>
+              ${files.map((item) => html`<option value=${item.name}>${item.name}</option>`)}
+            </select>
+            ${result && result.data === data && html`<span class="hint num">${plural(result.splits.examples, "example")}</span>`}
+            ${data && html`<a class="hint-link" href=${href("datasets", data)}>Show in Datasets</a>`}
+          </div></div>
           ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits} /></div>`}
           ${result && html`<div class="row"><label>Labels</label><div><${Labels} labels=${result.labels} /><span class="hint">to train on and to tune</span></div></div>`}
           ${result?.warnings.map((warning) => html`<p class="warn-text">${warning}</p>`)}

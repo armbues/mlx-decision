@@ -61,6 +61,7 @@ def test_a_good_file_is_saved_and_described(studio):
     body = response.json()
     path = studio.workspace / "data" / "tickets.jsonl"
     assert path.read_text() == GOOD and body["path"] == str(path.resolve())
+    assert body["display"] == body["path"]  # outside the home folder: as it is
     assert body["examples"] == 8
     team, urgent = body["questions"]
     assert team == {
@@ -169,3 +170,130 @@ def test_delete(studio):
     assert remove(studio, "tickets").status_code == 404
     assert remove(studio, "..%2Fother").status_code in (400, 404)
     assert (studio.workspace / "data" / "other.jsonl").exists()
+
+
+def examples(studio, name, **query):
+    return studio.get(f"/studio/api/data/{name}/examples", params=query)
+
+
+def indexes(response):
+    return [example["index"] for example in response.json()["examples"]]
+
+
+def test_a_page_of_examples(studio):
+    upload(studio, "tickets", GOOD)
+    body = examples(studio, "tickets", offset=0, limit=3).json()
+    assert (body["total"], body["matched"], body["offset"], body["limit"]) == (8, 8, 0, 3)
+    assert body["examples"][0] == {
+        "index": 0, "id": "1", "state": "ticket 0", "labels": {"team": "tech"},
+    }  # fmt: skip
+    assert [e["index"] for e in body["examples"]] == [0, 1, 2]
+    # The next pages, and one past the end.
+    assert indexes(examples(studio, "tickets", offset=6, limit=3)) == [6, 7]
+    assert examples(studio, "tickets", offset=8).json()["examples"] == []
+    assert examples(studio, "tickets").json()["limit"] == 50  # the default
+    for query, param in (({"offset": -1}, "offset"), ({"limit": 0}, "limit"),
+                         ({"limit": 201}, "limit"), ({"question": "team"}, "label"),
+                         ({"label": "tech"}, "label")):  # fmt: skip
+        response = examples(studio, "tickets", **query)
+        assert response.status_code == 400, query
+        assert response.json()["error"]["param"] == param
+    assert examples(studio, "missing").status_code == 404
+    assert examples(studio, "tickets", offset="x").status_code in (400, 422)
+
+
+def test_the_label_filter_and_the_search(studio):
+    upload(studio, "tickets", GOOD)
+    body = examples(studio, "tickets", question="team", label="tech").json()
+    assert body["matched"] == 6 and body["total"] == 8
+    assert all(e["labels"]["team"] == "tech" for e in body["examples"])
+    page = examples(studio, "tickets", question="team", label="tech", offset=4, limit=10).json()
+    assert [e["index"] for e in page["examples"]] == [4, 5]
+    urgent = examples(studio, "tickets", question="urgent", label="true").json()
+    assert [e["index"] for e in urgent["examples"]] == [6]  # a noul label as "true"
+    assert examples(studio, "tickets", question="team", label="nobody").json()["matched"] == 0
+    assert examples(studio, "tickets", question="other", label="x").json()["matched"] == 0
+    # The search: in the states, any case, with the filter.
+    assert indexes(examples(studio, "tickets", search="TICKET 7")) == [7]
+    both = examples(studio, "tickets", search="ticket", question="team", label="billing").json()
+    assert [e["index"] for e in both["examples"]] == [6]
+    assert examples(studio, "tickets", search="  ").json()["matched"] == 8  # blank: everything
+
+
+def test_states_cut_to_a_line_and_a_whole_example(studio):
+    long = "First line\n\n  second   line " + "x" * 400
+    json_state = {"order": 1234, "items": ["mug", "plate"], "note": "Grüße"}
+    text = "\n".join([
+        json.dumps({"state": long, "questions": {"team": TEAM}, "labels": {"team": "tech"}}),
+        json.dumps({"id": "order", "state": json_state, "questions": {"team": TEAM},
+                    "labels": {"team": "sales"}}),
+    ])  # fmt: skip
+    upload(studio, "mixed", text)
+    first, second = examples(studio, "mixed").json()["examples"]
+    assert first["state"].startswith("First line second line xxx") and len(first["state"]) == 200
+    assert first["state"].endswith("…") and "\n" not in first["state"]
+    assert second["state"] == '{"order": 1234, "items": ["mug", "plate"], "note": "Grüße"}'
+    # A JSON state is searched as its JSON.
+    assert examples(studio, "mixed", search='"items": ["mug"').json()["matched"] == 1
+    for search in ("GRÜSSE", "grüSSe", "grüße"):  # any case, ß as ss
+        assert examples(studio, "mixed", search=search).json()["matched"] == 1, search
+    assert examples(studio, "mixed", search="plates").json()["matched"] == 0
+
+    whole = studio.get("/studio/api/data/mixed/examples/0").json()
+    assert whole == {"index": 0, "id": "1", "state": long, "questions": {"team": TEAM},
+                     "labels": {"team": "tech"}}  # fmt: skip
+    assert studio.get("/studio/api/data/mixed/examples/1").json()["state"] == json_state
+    assert studio.get("/studio/api/data/mixed/examples/2").status_code == 404
+    assert studio.get("/studio/api/data/missing/examples/0").status_code == 404
+
+
+def test_a_page_follows_the_file_on_disk(studio):
+    upload(studio, "tickets", GOOD)
+    assert examples(studio, "tickets").json()["total"] == 8
+    path = studio.workspace / "data" / "tickets.jsonl"
+    path.write_text(GOOD + line(8, "sales") + "\n")  # longer: read again
+    assert examples(studio, "tickets").json()["total"] == 9
+    path.write_text("{broken\n")
+    response = examples(studio, "tickets")
+    assert response.status_code == 422 and "line 1" in response.text
+
+
+def test_show_in_finder(studio, monkeypatch):
+    import mlx_decision.studio.routes.data as data_routes
+
+    shown = []
+    monkeypatch.setattr(data_routes, "reveal", shown.append)
+    monkeypatch.setattr(data_routes.sys, "platform", "darwin")
+    upload(studio, "tickets", GOOD)
+    assert studio.post("/studio/api/data/tickets/reveal", json={}).status_code == 204
+    assert shown == [(studio.workspace / "data" / "tickets.jsonl").resolve()]
+    assert studio.post("/studio/api/data/missing/reveal", json={}).status_code == 404
+    assert studio.post("/studio/api/data/..%2Fsets/reveal", json={}).status_code in (400, 404)
+    assert len(shown) == 1
+
+
+def test_show_in_finder_only_on_this_mac(tmp_path, monkeypatch):
+    """A browser on another machine, logged in with the API key, reads the
+    datasets but cannot open Finder on this Mac."""
+    import mlx_decision.studio.routes.data as data_routes
+
+    monkeypatch.setattr(data_routes, "reveal", lambda path: pytest.fail("revealed"))
+    write_model(tmp_path / "models" / "fake")
+    pool = ModelPool(discover([tmp_path / "models"]), budget=10**9)
+    app = create_studio(pool, host="0.0.0.0", api_key="k", workspace=tmp_path / "ws",
+                        config=Config(tmp_path / "config.toml"))  # fmt: skip
+    (tmp_path / "ws" / "data" / "tickets.jsonl").write_text(GOOD)
+    other = TestClient(app, base_url=HERE, client=("192.168.1.20", 5000))
+    assert other.post("/login", json={"api_key": "k"}).status_code == 204
+    assert other.get("/studio/api/data/tickets/examples").status_code == 200
+    refused = other.post("/studio/api/data/tickets/reveal", json={})
+    assert refused.status_code == 403 and "on this Mac" in refused.text
+
+
+def test_a_path_under_the_home_folder_is_shown_with_a_tilde(studio, monkeypatch):
+    from pathlib import Path
+
+    upload(studio, "tickets", GOOD)
+    monkeypatch.setattr(Path, "home", lambda: (studio.workspace / "..").resolve())
+    body = studio.get("/studio/api/data/tickets").json()
+    assert body["display"] == "~/ws/data/tickets.jsonl"

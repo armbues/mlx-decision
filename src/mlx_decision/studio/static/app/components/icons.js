@@ -37,6 +37,13 @@ export const Models = () => html`
   </svg>
 `;
 
+// A table of rows: the Datasets page.
+export const Datasets = () => html`
+  <svg viewBox="0 0 16 16" ...${stroke()} aria-hidden="true">
+    <rect x="2.5" y="2.5" width="11" height="11" rx="2" /><path d="M2.5 6.2h11M2.5 9.8h11M6.2 6.2v7.3" />
+  </svg>
+`;
+
 export const Training = () => html`
   <svg viewBox="0 0 16 16" ...${stroke()} aria-hidden="true">
     <path d="M2 13.5h12" /><path d="M3 10.5 6.5 7l2.5 2.5L13.5 4" /><path d="M10.5 4h3v3" />

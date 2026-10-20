@@ -1019,7 +1019,7 @@ a.sb-item { color: var(--fg); }
 .memcard-sub { flex-basis: 100%; color: var(--fg-2); font-size: 11.5px; }
 
 
-/* Training data: the inspector's Data and the upload's sheets */
+/* Datasets: label counts (the Datasets page, the Training inspector) and the upload's sheets */
 .label-counts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .label-counts li { display: grid; grid-template-columns: minmax(60px, auto) minmax(0, 1fr) 36px; gap: 8px; align-items: center; }
 .label-counts li code { font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1033,7 +1033,6 @@ a.sb-item { color: var(--fg); }
 .sheet .data-errors li .num { color: var(--fg-2); }
 .sheet .data-errors code { font: 11.5px var(--mono); }
 .sheet .name-field .suffix { color: var(--fg-3); font: 13px var(--mono); }
-.page-training .empty .btn { margin-top: 10px; justify-self: start; }
 .data-inspector .idet-head { grid-template-columns: minmax(0, 1fr); }
 
 /* The fit form (Training) */
@@ -1092,7 +1091,6 @@ a.sb-item { color: var(--fg); }
 .sheet .opts h4 code { font: 600 11.5px var(--mono); font-variant: normal; color: var(--fg-2); }
 .sheet .ds-sample { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; color: var(--fg-2); }
 .sheet .ds-sample .setting-input { width: 90px; padding: 3px 6px; }
-.page-training .empty-actions { display: flex; gap: 8px; margin-top: 10px; }
 .sheet .any-source { display: flex; gap: 8px; }
 .sheet .any-source .setting-input { flex: 1; }
 .sheet .any-row { display: grid; grid-template-columns: 110px minmax(0, 220px) minmax(0, 1fr); gap: 10px; align-items: center; font-size: 12.5px; }
@@ -1106,3 +1104,78 @@ a.sb-item { color: var(--fg); }
 .sheet .any-table th, .sheet .any-table td { padding: 4px 8px; text-align: left; vertical-align: top; border-bottom: 0.5px solid var(--sep); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .any-table th small { display: block; font-weight: 400; color: var(--fg-3); }
 .sheet .fam-pane > .warn-text { margin: 0; color: var(--orange); font-size: 12px; }
+
+/* The Datasets page: the picked dataset's questions and its examples */
+.page-datasets .centre-inner { max-width: 980px; width: 100%; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+.page-datasets .pane-head h1.mono { font: 700 20px/1.15 var(--mono); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.page-datasets .pane-head > div:first-child { min-width: 0; }
+.page-datasets .centre .warn-text { color: var(--orange); font-size: 12px; margin: 8px 12px; }
+.empty-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.empty-actions .btn:not(.primary) { color: var(--fg); }
+.empty a { color: var(--accent); text-decoration: none; }
+.empty a:hover { text-decoration: underline; }
+.ds-empty { padding: 22px; }
+.ds-empty span { max-width: 600px; }
+
+.ds-questions { display: grid; container-type: inline-size; }
+.ds-question { display: grid; grid-template-columns: minmax(160px, 260px) minmax(0, 1fr); gap: 18px; padding: 12px 14px; position: relative; }
+.ds-question + .ds-question::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; border-top: 0.5px solid var(--sep); }
+.ds-q-text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; align-content: start; min-width: 0; }
+.ds-q-text b.mono { font: 600 12.5px var(--mono); overflow-wrap: anywhere; }
+.ds-q-type { font-size: 11px; color: var(--fg-2); background: var(--fill); padding: 0 6px; border-radius: 4px; }
+.ds-q-text p { margin: 0; flex-basis: 100%; color: var(--fg-2); font-size: 12px; line-height: 1.45; }
+.ds-q-labels { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.ds-q-labels small { color: var(--fg-2); font-size: 11.5px; }
+.label-counts.can-pick { gap: 1px; }
+.label-counts.can-pick li { display: block; }
+.label-counts.can-pick button {
+  display: grid; grid-template-columns: minmax(80px, 180px) minmax(0, 1fr) 52px; gap: 10px; align-items: center;
+  border: 0; background: transparent; color: inherit; padding: 3px 6px; margin: 0 -6px; width: calc(100% + 12px); border-radius: 5px; text-align: left; font: inherit;
+}
+.label-counts.can-pick button:not(:disabled):hover { background: var(--fill); }
+.label-counts.can-pick button[aria-pressed="true"] { background: var(--selection); }
+.label-counts.can-pick button[aria-pressed="true"] code { color: var(--accent); font-weight: 600; }
+.label-counts.can-pick button:disabled { cursor: default; }
+
+.ex-group { display: grid; container-type: inline-size; }
+.ex-tools { display: flex; align-items: center; gap: 8px; padding: 10px 12px; flex-wrap: wrap; border-bottom: 0.5px solid var(--sep); }
+.ex-search, .ex-filter {
+  font: inherit; border: 0.5px solid var(--sep-strong); background: var(--field); color: var(--fg); border-radius: 6px; padding: 3px 8px; height: 26px;
+}
+.ex-search { flex: 1 1 200px; min-width: 140px; max-width: 320px; }
+.ex-search::placeholder { color: var(--fg-3); }
+.ex-filter { max-width: 240px; }
+.ex-pager { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.ex-pager > span { color: var(--fg-2); font-size: 11.5px; margin-right: 4px; white-space: nowrap; }
+.ex-head, .ex-row { display: grid; grid-template-columns: minmax(48px, 120px) minmax(0, 1fr) minmax(90px, 220px); gap: 12px; align-items: center; padding: 0 14px; }
+.ex-head { height: 28px; font-size: 11px; color: var(--fg-2); font-weight: 500; border-bottom: 0.5px solid var(--sep); }
+.ex-head span:last-child { font-family: var(--mono); }
+.ex-row { min-height: 32px; position: relative; cursor: default; font-size: 12.5px; }
+.ex-row + .ex-row::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; border-top: 0.5px solid var(--sep); }
+.ex-row:hover { background: var(--fill); }
+.ex-row[aria-selected="true"] { background: var(--selection); }
+.ex-row:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -3px; }
+.ex-id { color: var(--fg-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-labels { display: flex; gap: 4px; overflow: hidden; white-space: nowrap; }
+.ex-labels .lab { font: 11.5px var(--mono); background: var(--fill); border-radius: 4px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.ex-labels .lab i { font-style: normal; color: var(--fg-2); margin-right: 4px; }
+.no-label { color: var(--fg-3); font-size: 11.5px; }
+.ex-none { padding: 18px 14px; color: var(--fg-2); }
+.ex-none code { font: 11.5px var(--mono); }
+
+/* The inspector's example and file */
+.ex-whole { margin: 0; padding: 6px 12px 12px; font: 12.5px/1.55 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
+.ex-whole.json { font: 11.5px/1.5 var(--mono); }
+.data-inspector .empty { box-shadow: none; background: transparent; padding: 4px 2px; }
+.file-group dd code { display: block; overflow-wrap: anywhere; }
+.file-group dd code + code { margin-top: 6px; }
+.file-group dd .btn.sm { margin-top: 6px; }
+.fit-form .hint-link { color: var(--accent); text-decoration: none; font-size: 11.5px; }
+.fit-form .hint-link:hover { text-decoration: underline; }
+.fit-form #fit-data { max-width: 280px; }
+
+@container (max-width: 640px) {
+  .ex-head, .ex-row { grid-template-columns: minmax(40px, 70px) minmax(0, 1fr) minmax(70px, 140px); }
+  .ds-question { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}

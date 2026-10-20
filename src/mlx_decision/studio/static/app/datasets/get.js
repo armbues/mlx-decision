@@ -1,7 +1,7 @@
-// Get a Dataset (TRS-6): the `data` command's presets, each with its question,
-// options and splits; the split picked (train by default), an optional random
-// sample and the file's name. It runs `data` as a job; the file joins Training
-// Data when it is done.
+// Get a Dataset: the `data` command's presets, each with its question, options
+// and splits; the split picked (train by default), an optional random sample
+// and the file's name. It runs `data` as a job; the file joins the Datasets
+// list when it is done.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
@@ -75,7 +75,7 @@ async function start() {
   try {
     const { job } = await api("/jobs", { method: "POST", body });
     closeSheet();
-    toast(`${job.title}: it joins Training Data when it is done`);
+    toast(`${job.title}: it joins Datasets when it is done`);
   } catch (error) {
     toast(`Could not get the dataset: ${error.message}`);
   } finally {
@@ -156,7 +156,7 @@ function Body() {
   return html`<div class="dl-panes"><${Presets} /><div class="fam-pane"><${Picked} /></div></div>`;
 }
 
-export async function openDatasets() {
+export async function openGetDataset() {
   try {
     presets.value = (await api("/datasets")).presets;
   } catch (error) {
@@ -167,7 +167,7 @@ export async function openDatasets() {
   pick(picked.value && presets.value.some((item) => item.name === picked.value) ? picked.value : presets.value[0].name);
   openSheet({
     title: "Get a Dataset",
-    purpose: "A public dataset turned into training data in the workspace's data/ folder, with the question and wording of the data command's presets. It downloads from the Hugging Face Hub as a job.",
+    purpose: "A public dataset turned into a dataset of labelled examples in the workspace's data/ folder, with the question and wording of the data command's presets. It downloads from the Hugging Face Hub as a job.",
     Body,
     wide: true,
     note: "In a terminal, mlx-decision data does the same.",
