@@ -7,7 +7,7 @@ import { html } from "htm/preact";
 import { api } from "../api.js";
 import { StatusIcon } from "../components/icons.js";
 import { plural } from "../format.js";
-import { dataFiles } from "../store/data.js";
+import { freeName, nameTaken } from "../store/data.js";
 import { sets } from "../store/sets.js";
 
 const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
@@ -27,16 +27,31 @@ const questionId = signal(null);
 const mapping = signal({}); // class -> option id or LEAVE_OUT
 const sampling = signal(false);
 const sample = signal("1000");
+const sampleTyped = signal(false);
 const seed = signal("0");
 const name = signal("");
 const named = signal(false);
 
-export function resetAny() {
+// A sample's default: 1,000 rows, or all of a smaller split's.
+export const defaultSample = (rows) => String(rows > 0 ? Math.min(1000, rows) : 1000);
+
+// Before another dataset is read; ``all`` also forgets the source, the question
+// set and the sample (after a Get, so the next one starts afresh).
+export function resetAny(all = false) {
   previewed.value = null;
   failed.value = null;
   config.value = null;
   split.value = null;
   named.value = false;
+  if (!all) return;
+  source.value = "";
+  textColumn.value = labelColumn.value = null;
+  setName.value = setQuestions.value = questionId.value = null;
+  mapping.value = {};
+  sampling.value = sampleTyped.value = false;
+  sample.value = "1000";
+  seed.value = "0";
+  name.value = "";
 }
 
 async function read(fields, what) {
@@ -52,6 +67,7 @@ async function read(fields, what) {
       labelColumn.value = result.label;
       mapByName();
       if (!named.value) name.value = freeName(`${result.source.split("/").pop()}-${result.split}`);
+      if (!sampleTyped.value) sample.value = defaultSample(result.rows);
     }
   } catch (error) {
     failed.value = error.message;
@@ -65,13 +81,6 @@ export function check() {
   const value = source.value.trim();
   if (!value.startsWith("hf:")) source.value = `hf:${value}`;
   read({}, "Asking the Hub for its configs and splits…");
-}
-
-function freeName(base) {
-  const taken = new Set((dataFiles.value ?? []).map((item) => item.name));
-  let candidate = base;
-  for (let n = 2; taken.has(candidate); n += 1) candidate = `${base}-${n}`;
-  return candidate;
 }
 
 const labelInfo = computed(() => previewed.value?.label_columns?.find((column) => column.name === labelColumn.value) ?? null);
@@ -129,7 +138,8 @@ export const anyProblem = computed(() => {
   if (!Object.values(mapping.value).some((option) => option !== LEAVE_OUT)) return "Map at least one class to an option";
   const value = name.value.trim();
   if (!NAME.test(value)) return "Name the file: letters, digits, '.', '_' or '-'";
-  if ((dataFiles.value ?? []).some((item) => item.name === value)) return `A data file named ${value} exists already`;
+  const taken = nameTaken(value);
+  if (taken) return taken;
   if (sampling.value) {
     const count = Number(sample.value);
     if (!Number.isInteger(count) || count < 1 || count > result.rows) return `A sample is 1 to ${result.rows} rows`;
@@ -274,7 +284,10 @@ function Output() {
       <input type="checkbox" checked=${sampling.value} onChange=${(event) => (sampling.value = event.target.checked)} />
       A random sample of
       <input class="setting-input mono" aria-label="Rows" type="number" min="1" max=${result.rows} value=${sample.value}
-             onFocus=${() => (sampling.value = true)} onInput=${(event) => (sample.value = event.target.value)} />
+             onFocus=${() => (sampling.value = true)} onInput=${(event) => {
+               sample.value = event.target.value;
+               sampleTyped.value = true;
+             }} />
       rows, seed
       <input class="setting-input mono" aria-label="Seed" type="number" min="0" value=${seed.value} onInput=${(event) => (seed.value = event.target.value)} />
     </label>

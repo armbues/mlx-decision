@@ -260,3 +260,28 @@ def test_the_page_light_and_dark(support, page, theme, width):
     tools = page.locator(".ex-tools").bounding_box()
     assert pager["x"] + pager["width"] <= tools["x"] + tools["width"] + 1
     shot(page, f"datasets-{theme}-{width}")
+
+
+def test_a_file_over_the_upload_limit_is_copied_in_instead(make_studio, page, tmp_path):
+    studio = make_studio(max_body_bytes=4_000)
+    open_studio(page, studio, "datasets")
+    big = tmp_path / "big tickets.jsonl"
+    big.write_text("\n".join(line(i, "tech") for i in range(100)) + "\n")  # about 11 kB
+    add(page, big)
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text("big tickets.jsonl is too large to add here")
+    expect(sheet).to_contain_text("the Studio takes files up to 4 kB this way")
+    expect(sheet).to_contain_text("as big-tickets.jsonl")
+    expect(sheet.locator(".too-large code")).to_have_text(
+        str((studio.workspace / "data").resolve())
+    )
+    expect(sheet.get_by_role("button", name="Show in Finder")).to_be_visible()
+    shot(page, "datasets-too-large")
+    sheet.get_by_role("button", name="OK").click()
+    assert not (studio.workspace / "data" / "big-tickets.jsonl").exists()
+    # Under the limit on disk, over it as JSON (quotes escaped): the Studio's 413, the same sheet.
+    edge = tmp_path / "edge.jsonl"
+    edge.write_text("\n".join(line(i, "tech") for i in range(20)) + "\n")
+    assert edge.stat().st_size <= 4_000
+    add(page, edge)
+    expect(sheet.locator("h2")).to_have_text("edge.jsonl is too large to add here")

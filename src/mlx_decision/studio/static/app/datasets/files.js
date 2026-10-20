@@ -5,9 +5,10 @@ import { html } from "htm/preact";
 import { api } from "../api.js";
 import * as icons from "../components/icons.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
-import { plural } from "../format.js";
+import { fileSize, plural } from "../format.js";
 import { href, navigate, route } from "../router.js";
-import { dataFiles, described, forget } from "../store/data.js";
+import { reveal } from "../settings/places.js";
+import { dataFiles, dataFolder, described, forget, nameTaken } from "../store/data.js";
 import { toast } from "../store/ui.js";
 import { openGetDataset } from "./get.js";
 
@@ -34,7 +35,10 @@ export function uploadData() {
   picker.accept = ".jsonl,.ndjson,.json,.txt,application/jsonl,application/json";
   picker.addEventListener("change", async () => {
     const file = picker.files?.[0];
-    if (file) await send(file, dataName(file.name), await file.text());
+    if (!file) return;
+    const limit = dataFolder.value?.upload_limit;
+    if (limit && file.size > limit) tooLarge(file);
+    else await send(file, dataName(file.name), await file.text());
   });
   picker.click();
 }
@@ -47,6 +51,7 @@ async function send(file, name, text) {
     toast(`Added ${file.name} as data/${result.name}.jsonl · ${plural(result.examples, "example")}`);
   } catch (error) {
     if (error.status === 409) askName(file, name, text, error.message);
+    else if (error.status === 413) tooLarge(file);
     else if (error.status === 400 && error.body?.error?.errors) showErrors(file, error.body.error.errors);
     else toast(`Not added: ${error.message}`);
   }
@@ -56,11 +61,10 @@ const newName = signal("");
 
 // A name is taken: ask for another one.
 function askName(file, name, text, message) {
-  const taken = new Set((dataFiles.value ?? []).map((item) => item.name));
-  let free = `${name}-2`;
-  for (let n = 3; taken.has(free); n += 1) free = `${name}-${n}`;
-  newName.value = free;
-  const ok = () => NAME.test(newName.value.trim()) && !taken.has(newName.value.trim());
+  let n = 2;
+  while (nameTaken(`${name}-${n}`)) n += 1;
+  newName.value = `${name}-${n}`;
+  const ok = () => NAME.test(newName.value.trim()) && !nameTaken(newName.value.trim());
   openSheet({
     title: "Add a Dataset",
     purpose: `${message}. Add ${file.name} under another name:`,
@@ -91,6 +95,23 @@ function showErrors(file, errors) {
       ${errors.length >= 20 && html`<p class="note">The first 20 problems; there may be more.</p>`}`,
     done: "OK",
     wide: true,
+  });
+}
+
+// Too large for an upload: copy it into data/ instead, where the list finds it.
+function tooLarge(file) {
+  const folder = dataFolder.value;
+  const limit = folder?.upload_limit;
+  openSheet({
+    title: `${file.name} is too large to add here`,
+    purpose: `It is ${fileSize(file.size)}; the Studio takes files up to ${limit ? fileSize(limit) : "its upload limit"} this way. Copy it into the workspace's data folder instead, as ${dataName(file.name)}.jsonl: it joins Datasets under that name, and it is checked when it is read.`,
+    Body: () => html`
+      <div class="name-field too-large">
+        <span>Folder</span>
+        <code class="mono" title=${folder?.folder ?? ""}>${folder?.display ?? "data/"}</code>
+        <button class="btn sm" onClick=${() => reveal("data")}>Show in Finder</button>
+      </div>`,
+    done: "OK",
   });
 }
 

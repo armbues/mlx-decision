@@ -12,7 +12,7 @@ memory card); with ``slow`` also ``fake-slow`` (1.5 s an answer, other
 probabilities; Compare's Stop and its notes where models differ). With
 ``empty`` it serves no models at all (a first start); with ``convertible``
 also ``tiny-clef``, the tiny Clef of ``tests/tiny_models.py``, which
-Convert offers.
+Convert offers; ``max_body_bytes`` sets the most a request (an upload) holds.
 
 Jobs run ``tests/fake_job.py`` in the CLI's place (``fake_jobs`` sets how
 many steps and how fast); ``data/tickets.jsonl`` is there for a fit.
@@ -102,6 +102,7 @@ def write_studio(
     dev: bool = False,
     empty: bool = False,
     convertible: bool = False,
+    max_body_bytes: int | None = None,
 ) -> FastAPI:
     """Write the fake models under ``home/fake-models`` and the sample sets in
     ``home/ws/sets`` (kept when there), and build the Studio for ``port``."""
@@ -152,6 +153,7 @@ def write_studio(
         load_default=False,
         dev=dev,
         catalog=catalog,
+        **({"max_body_bytes": max_body_bytes} if max_body_bytes else {}),
     )
     fake_jobs(app)
     return app

@@ -101,6 +101,9 @@ def test_show_in_finder_takes_a_place_id_only(studio, layout, monkeypatch):
     (layout / "config.toml").write_text("")
     studio.post("/studio/api/places/reveal", json={"place": "config"})
     assert shown[-1] == layout / "config.toml"
+    # The workspace's datasets folder (where a file too large to upload goes).
+    assert studio.post("/studio/api/places/reveal", json={"place": "data"}).status_code == 204
+    assert shown[-1] == (layout / "ws" / "data").resolve()
     count = len(shown)
     # Anything else is refused: paths, unknown ids, other types.
     for place in (str(layout / "kept"), "/", "../etc", "named-99", "", 3):

@@ -84,6 +84,8 @@ def settings_router(
             return path if path.exists() else path.parent
         if place_id == "workspace":
             return files.root
+        if place_id == "data":  # the datasets' folder
+            return files.root / "data"
         for place in places():
             if place["id"] == place_id:
                 return Path(place["path"])
@@ -123,7 +125,8 @@ def settings_router(
     @router.post("/places/reveal", status_code=204)
     async def reveal_place(request: Request):
         """``{place}``: show it in Finder (a place's id from the list, "config"
-        for the config file or, before it exists, its folder, or "workspace")."""
+        for the config file or, before it exists, its folder, "workspace" or
+        "data", the workspace's datasets)."""
         only_on_this_mac(request, "Finder opens")
         place_id = field(await json_body(request, max_body_bytes), "place", str)
         path = await asyncio.to_thread(find, place_id)

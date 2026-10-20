@@ -1033,6 +1033,8 @@ a.sb-item { color: var(--fg); }
 .sheet .data-errors li .num { color: var(--fg-2); }
 .sheet .data-errors code { font: 11.5px var(--mono); }
 .sheet .name-field .suffix { color: var(--fg-3); font: 13px var(--mono); }
+.sheet .too-large code { flex: 1; min-width: 0; font: 12px var(--mono); overflow-wrap: anywhere; }
+.fit-labels .line span.none { color: var(--fg-3); }
 .data-inspector .idet-head { grid-template-columns: minmax(0, 1fr); }
 
 /* The fit form (Training) */

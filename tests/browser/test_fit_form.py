@@ -48,7 +48,8 @@ def test_the_form_and_start_fit(studio, page):
     expect(head).to_contain_text("Estimated from the model and the data")
     legend = form.locator(".split-legend")
     expect(legend).to_contain_text("12 kept aside for the report")
-    expect(form.locator(".fit-labels")).to_contain_text("tech")
+    # The labels in the question's own order (billing, tech, sales), not by name.
+    expect(form.locator(".fit-labels .line span b")).to_have_text(["billing", "tech", "sales"])
     name = form.locator("#fit-name")
     expect(name).to_have_value("tiny-clef-support")
 

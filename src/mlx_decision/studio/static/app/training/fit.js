@@ -6,6 +6,7 @@
 import { computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
+import { useSummary } from "../datasets/summary.js";
 import { plural, size } from "../format.js";
 import { gpuJob } from "../store/jobs.js";
 import { remembered } from "../store/prefs.js";
@@ -148,15 +149,20 @@ function Split({ splits }) {
   `;
 }
 
-function Labels({ labels }) {
+// Per question, its labels in the question's own option order (from the
+// dataset's summary), options without an example to train on included.
+function Labels({ labels, summary }) {
+  const optionsOf = new Map((summary?.questions ?? []).map((question) => [question.id, question.options]));
   return html`
     <div class="fit-labels">
-      ${Object.entries(labels).map(
-        ([question, counts]) => html`<div class="line num" key=${question}>
+      ${Object.entries(labels).map(([question, counts]) => {
+        const options = optionsOf.get(question) ?? [];
+        const order = [...options, ...Object.keys(counts).filter((label) => !options.includes(label))];
+        return html`<div class="line num" key=${question}>
           <code>${question}</code>
-          ${Object.entries(counts).map(([label, count]) => html`<span><b>${label}</b> ${count}</span>`)}
-        </div>`,
-      )}
+          ${order.map((label) => html`<span class=${counts[label] ? "" : "none"}><b>${label}</b> ${counts[label] ?? 0}</span>`)}
+        </div>`;
+      })}
     </div>
   `;
 }
@@ -187,6 +193,7 @@ function gpuNote() {
 
 export function FitForm() {
   const data = fitData.value;
+  const summary = useSummary(data);
   const files = dataFiles.value ?? [];
   const result = planned.value;
   const list = models.value ?? [];
@@ -203,7 +210,7 @@ export function FitForm() {
             ${data && html`<a class="hint-link" href=${href("datasets", data)}>Show in Datasets</a>`}
           </div></div>
           ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits} /></div>`}
-          ${result && html`<div class="row"><label>Labels</label><div><${Labels} labels=${result.labels} /><span class="hint">to train on and to tune</span></div></div>`}
+          ${result && html`<div class="row"><label>Labels</label><div><${Labels} labels=${result.labels} summary=${summary?.name === data ? summary : null} /><span class="hint">to train on and to tune</span></div></div>`}
           ${result?.warnings.map((warning) => html`<p class="warn-text">${warning}</p>`)}
           ${planError.value && html`<p class="warn-text">${planError.value}</p>`}
         </div></section>

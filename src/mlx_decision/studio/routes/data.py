@@ -100,8 +100,17 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
 
     @router.get("")
     async def list_data():
-        """``{files}``: each file's ``name``, ``bytes`` and ``modified``."""
-        return {"files": await asyncio.to_thread(files.list_data)}
+        """``{files, folder, display, upload_limit}``: each file's ``name``,
+        ``bytes`` and ``modified``; the ``data/`` folder (``display`` with the
+        home folder as ``~``) and the most an upload's body can hold (a larger
+        file is copied into the folder instead)."""
+        folder = files.root / "data"
+        return {
+            "files": await asyncio.to_thread(files.list_data),
+            "folder": str(folder),
+            "display": tilde(str(folder)),
+            "upload_limit": max_body_bytes,
+        }
 
     @router.get("/{name}")
     async def describe_data(name: str):

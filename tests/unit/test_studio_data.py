@@ -73,8 +73,12 @@ def test_a_good_file_is_saved_and_described(studio):
     assert len(body["sample"]) == 5 and body["sample"][0] == {
         "id": "1", "state": "ticket 0", "labels": {"team": "tech"},
     }  # fmt: skip
-    files = studio.get("/studio/api/data").json()["files"]
+    listed = studio.get("/studio/api/data").json()
+    files = listed["files"]
     assert [(f["name"], f["bytes"]) for f in files] == [("tickets", len(GOOD.encode()))]
+    # The folder, and the most an upload holds (a larger file is copied there).
+    assert listed["folder"] == str(path.parent.resolve()) == listed["display"]
+    assert listed["upload_limit"] == 200_000
     assert studio.get("/studio/api/data/tickets").json() == body
     # Other tabs hear of it.
     recent = [message for _, (_, message) in studio.app_state.hub.recent]

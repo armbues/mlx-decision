@@ -142,3 +142,75 @@ def test_a_yes_no_question_maps_by_name(studio, page, hub):
     expect(sheet.get_by_label("Option for negative")).to_have_value("false")
     expect(sheet.get_by_label("Option for positive")).to_have_value("true")
     expect(sheet.get_by_label("Name")).to_have_value("reviews-test")
+
+
+def open_sheet(page):
+    page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
+    return page.locator(".sheet")
+
+
+def test_a_second_get_skips_the_name_a_running_get_writes(studio, page):
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    expect(sheet.get_by_label("Name")).to_have_value("trec-train")
+    sheet.get_by_role("button", name="Get").click()
+    expect(page.locator(".sidebar .job")).to_have_count(1)  # runs for 20 s
+    sheet = open_sheet(page)
+    expect(sheet.locator(".fam[aria-selected='true'] b")).to_have_text("TREC")
+    name = sheet.get_by_label("Name")
+    expect(name).to_have_value("trec-train-2")
+    name.fill("trec-train")
+    expect(sheet.locator(".warn-text")).to_have_text("A Get that is running writes trec-train")
+    expect(sheet.get_by_role("button", name="Get")).to_be_disabled()
+    name.fill("trec-train-2")
+    sheet.get_by_role("button", name="Get").click()
+    expect(page.locator(".sidebar .job")).to_have_count(2)
+
+
+def test_the_sample_defaults_to_the_splits_rows_when_fewer(studio, page):
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    rows = sheet.get_by_role("spinbutton", name="Rows")
+    expect(rows).to_have_value("1000")  # train: 5,452 rows
+    sheet.locator(".crow[data-split='test']").click()
+    expect(rows).to_have_value("500")  # test: 500 rows
+    sheet.locator(".crow[data-split='train']").click()
+    expect(rows).to_have_value("1000")
+    rows.fill("250")  # typed: another split keeps it
+    sheet.locator(".crow[data-split='test']").click()
+    expect(rows).to_have_value("250")
+
+
+def test_the_sheet_opens_again_on_the_entry_last_used(studio, page, hub):
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    sheet.locator(".fam[data-preset='sst5']").click()
+    sheet.locator(".crow[data-split='validation']").click()
+    sheet.get_by_role("button", name="Cancel").click()
+    sheet = open_sheet(page)
+    expect(sheet.locator(".fam[aria-selected='true'] b")).to_have_text("SST-5")
+    expect(sheet.locator(".crow[aria-checked='true']")).to_have_attribute(
+        "data-split", "validation"
+    )
+
+    # "Another dataset…" as it was left, until a Get starts it afresh.
+    sheet.locator(".fam[data-preset='any']").click()
+    field = sheet.get_by_label("Hugging Face dataset")
+    field.fill("org/reviews")
+    field.press("Enter")
+    sheet.get_by_label("Config").select_option("en")
+    sheet.get_by_label("Split").select_option("train")
+    expect(sheet.get_by_role("spinbutton", name="Rows")).to_have_value("12")  # 12 rows only
+    sheet.get_by_role("button", name="Cancel").click()
+    sheet = open_sheet(page)
+    expect(sheet.locator(".fam[aria-selected='true'] b")).to_have_text("Another dataset…")
+    expect(sheet.get_by_label("Hugging Face dataset")).to_have_value("hf:org/reviews")
+    expect(sheet.locator(".any-table tbody tr")).to_have_count(5)
+    sheet.get_by_label("Question set").select_option("ticket-triage")
+    sheet.get_by_label("Option for negative").select_option("billing")
+    sheet.get_by_role("button", name="Get").click()
+    expect(page.locator(".toast")).to_contain_text("Get org/reviews train")
+    sheet = open_sheet(page)
+    expect(sheet.locator(".fam[aria-selected='true'] b")).to_have_text("Another dataset…")
+    expect(sheet.get_by_label("Hugging Face dataset")).to_have_value("")
+    expect(sheet.locator(".any-table")).to_have_count(0)

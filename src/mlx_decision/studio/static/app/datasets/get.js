@@ -1,15 +1,17 @@
 // Get a Dataset: the `data` command's presets, each with its question, options
 // and splits; the split picked (train by default), an optional random sample
-// and the file's name. It runs `data` as a job; the file joins the Datasets
-// list when it is done.
+// (1,000 rows by default, or the split's rows when fewer) and the file's name
+// (the first one free: not a file there, not one a Get is writing). It runs
+// `data` as a job; the file joins the Datasets list when it is done. The
+// sheet opens again on the entry last used.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
-import { dataFiles } from "../store/data.js";
+import { freeName, nameTaken } from "../store/data.js";
 import { toast } from "../store/ui.js";
-import { AnyDataset, anyJob, anyProblem } from "./any-dataset.js";
+import { AnyDataset, anyJob, anyProblem, defaultSample, resetAny } from "./any-dataset.js";
 
 const ANY = "\u0000any"; // the list's last entry: any Hugging Face dataset
 
@@ -20,6 +22,7 @@ const picked = signal(null); // preset name
 const split = signal(null);
 const sampling = signal(false);
 const sample = signal("1000");
+const sampleTyped = signal(false); // typed: another split keeps it
 const seed = signal("0");
 const name = signal("");
 const named = signal(false);
@@ -28,22 +31,23 @@ const starting = signal(false);
 const preset = computed(() => presets.value?.find((item) => item.name === picked.value) ?? null);
 const splitRows = computed(() => preset.value?.splits.find((item) => item.name === split.value)?.rows ?? 0);
 
-// The first free name like PRESET-SPLIT.
-function freeName(base) {
-  const taken = new Set((dataFiles.value ?? []).map((item) => item.name));
-  let candidate = base;
-  for (let n = 2; taken.has(candidate); n += 1) candidate = `${base}-${n}`;
-  return candidate;
-}
-
+// The name and the sample for the split picked, unless typed.
 function suggest() {
-  if (!named.value && preset.value) name.value = freeName(`${preset.value.name}-${split.value}`);
+  if (!preset.value) return;
+  if (!named.value) name.value = freeName(`${preset.value.name}-${split.value}`);
+  if (!sampleTyped.value) sample.value = defaultSample(splitRows.value);
 }
 
-function pick(presetName) {
+function pickSplit(splitName) {
+  split.value = splitName;
+  suggest();
+}
+
+// A preset on its default split; ``keep`` keeps the split picked before, if it has it.
+function pick(presetName, keep = false) {
   picked.value = presetName;
   if (presetName === ANY) return;
-  split.value = preset.value.default_split;
+  if (!(keep && preset.value.splits.some((item) => item.name === split.value))) split.value = preset.value.default_split;
   suggest();
 }
 
@@ -52,7 +56,8 @@ const problem = computed(() => {
   if (!preset.value) return "Pick a dataset";
   const value = name.value.trim();
   if (!NAME.test(value)) return "Name the file: letters, digits, '.', '_' or '-'";
-  if ((dataFiles.value ?? []).some((item) => item.name === value)) return `A data file named ${value} exists already`;
+  const taken = nameTaken(value);
+  if (taken) return taken;
   if (sampling.value) {
     const count = Number(sample.value);
     if (!Number.isInteger(count) || count < 1 || count > splitRows.value) return `A sample is 1 to ${splitRows.value} rows`;
@@ -75,6 +80,9 @@ async function start() {
   try {
     const { job } = await api("/jobs", { method: "POST", body });
     closeSheet();
+    // The next Get starts afresh: "Another dataset…" empty, a preset's name free again.
+    if (picked.value === ANY) resetAny(true);
+    named.value = false;
     toast(`${job.title}: it joins Datasets when it is done`);
   } catch (error) {
     toast(`Could not get the dataset: ${error.message}`);
@@ -118,10 +126,7 @@ function Picked() {
       <div class="cat" role="radiogroup" aria-label="Split">
         ${item.splits.map(
           (entry) => html`<button class="crow" role="radio" aria-checked=${entry.name === split.value ? "true" : "false"}
-            data-split=${entry.name} onClick=${() => {
-              split.value = entry.name;
-              suggest();
-            }}>
+            data-split=${entry.name} onClick=${() => pickSplit(entry.name)}>
             <span class="radio"></span>
             <span><code>${entry.name}</code>${entry.evaluation && html`<small>The coverage suite evaluates on it: keep it for training eval</small>`}</span>
             <span class="meta num">${entry.rows.toLocaleString("en")} rows</span>
@@ -132,7 +137,10 @@ function Picked() {
         <input type="checkbox" checked=${sampling.value} onChange=${(event) => (sampling.value = event.target.checked)} />
         A random sample of
         <input class="setting-input mono" aria-label="Rows" type="number" min="1" max=${splitRows.value} value=${sample.value}
-               onFocus=${() => (sampling.value = true)} onInput=${(event) => (sample.value = event.target.value)} />
+               onFocus=${() => (sampling.value = true)} onInput=${(event) => {
+                 sample.value = event.target.value;
+                 sampleTyped.value = true;
+               }} />
         rows, seed
         <input class="setting-input mono" aria-label="Seed" type="number" min="0" value=${seed.value}
                onInput=${(event) => (seed.value = event.target.value)} />
@@ -163,8 +171,10 @@ export async function openGetDataset() {
     toast(`Could not list the datasets: ${error.message}`);
     return;
   }
-  named.value = false;
-  pick(picked.value && presets.value.some((item) => item.name === picked.value) ? picked.value : presets.value[0].name);
+  // The entry last used ("Another dataset…" as it was left), else the first.
+  const known = picked.value === ANY || presets.value.some((item) => item.name === picked.value);
+  if (picked.value !== ANY) named.value = false;
+  pick(known ? picked.value : presets.value[0].name, true);
   openSheet({
     title: "Get a Dataset",
     purpose: "A public dataset turned into a dataset of labelled examples in the workspace's data/ folder, with the question and wording of the data command's presets. It downloads from the Hugging Face Hub as a job.",
