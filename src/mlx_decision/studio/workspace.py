@@ -272,6 +272,15 @@ class Workspace:
         self.changed("data", name, "saved")
         return path
 
+    def delete_data(self, name: str) -> None:
+        """Delete a training data file; ``NotFound`` when there is none."""
+        path = self.data_path(name)
+        with self.lock:
+            if not path.is_file():
+                raise NotFound(f"no data file named {name!r}")
+            path.unlink()
+        self.changed("data", name, "deleted")
+
     # Sets
 
     def set_path(self, name: str) -> Path:

@@ -6,7 +6,8 @@ bad file is refused with up to 20 of its errors, each naming its line. A
 good one is written under ``name`` (a workspace name; an existing file is
 not replaced). ``GET /studio/api/data`` lists the files; ``GET
 /studio/api/data/{name}`` describes one: its questions with their labels
-and counts, a few examples and its path.
+and counts, a few examples and its path. ``DELETE /studio/api/data/{name}``
+deletes one, unless a fit or an evaluation that is not over reads it (409).
 """
 
 import asyncio
@@ -18,7 +19,8 @@ from fastapi import APIRouter, Request
 
 from ...data.format import DataError, Example, check_examples, read_examples
 from ...errors import DecisionError
-from ..workspace import NotFound, Workspace, check_name
+from ..jobs import Jobs
+from ..workspace import Conflict, NotFound, Workspace, check_name
 from . import ApiError, field, json_body
 
 ERRORS_SHOWN = 20
@@ -26,7 +28,7 @@ SAMPLE = 5  # examples the inspector shows
 PREVIEW_CHARS = 240
 
 
-def data_router(files: Workspace, max_body_bytes: int) -> APIRouter:
+def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
     router = APIRouter(prefix="/studio/api/data")
 
     @router.get("")
@@ -46,6 +48,16 @@ def data_router(files: Workspace, max_body_bytes: int) -> APIRouter:
         except DecisionError as error:
             raise ApiError(422, f"{name}: {error}", param="name") from None
         return {"name": name, "path": str(path), "bytes": path.stat().st_size, **describe(examples)}
+
+    @router.delete("/{name}", status_code=204)
+    async def delete_data(name: str):
+        """204 once deleted; 404 when there is none; 409 while a job that has
+        not ended (a fit or an evaluation) reads it."""
+        check_name(name, "a data file's name")
+        for job in jobs.jobs.values():
+            if job.state != "ended" and job.details.get("data") == name:
+                raise Conflict(f"{job.title} reads {name}: stop it or wait until it ends")
+        await asyncio.to_thread(files.delete_data, name)
 
     @router.post("")
     async def upload(request: Request):

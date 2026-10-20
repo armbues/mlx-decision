@@ -3,6 +3,7 @@ JSON-lines file (checked, errors by line, a name taken), and the inspector's
 Data for the file picked."""
 
 import json
+import re
 
 import pytest
 from drive import open_studio
@@ -95,3 +96,18 @@ def test_a_second_tab_sees_new_data(studio, page, tmp_path):
     add(page, good)
     expect(other.locator(".sidebar .data-list .sb-item")).to_have_text(["more", "tickets"])
     other.close()
+
+
+def test_delete_the_picked_file(studio, page):
+    open_studio(page, studio, "training/tickets")
+    row = page.locator(".sidebar .data-list li", has_text="tickets")
+    row.hover()
+    row.get_by_role("button", name="Delete tickets…").click()
+    sheet = page.locator(".sheet")
+    expect(sheet).to_contain_text("data/tickets.jsonl (1 example) is deleted")
+    sheet.get_by_role("button", name="Delete").click()
+    expect(page.locator(".toast")).to_contain_text("Deleted data/tickets.jsonl")
+    expect(page.locator(".sidebar .data-list .sb-item")).to_have_count(0)
+    expect(page.locator(".sidebar .sb-empty", has_text="No data yet")).to_be_visible()
+    expect(page).to_have_url(re.compile(r"#/training$"))
+    assert not (studio.workspace / "data" / "tickets.jsonl").exists()

@@ -18,7 +18,7 @@ def test_get_a_dataset(studio, page):
     page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator(".fam b")).to_have_text(
-        ["TREC", "TweetEval Offensive", "SST-5", "OpenBookQA", "ANLI round 3"]
+        ["TREC", "TweetEval Offensive", "SST-5", "OpenBookQA", "ANLI round 3", "Another dataset…"]
     )
     expect(sheet.locator(".fam[aria-selected='true'] b")).to_have_text("TREC")
     expect(sheet.locator(".ds-options li")).to_have_count(6)
@@ -57,5 +57,88 @@ def test_a_name_taken_is_said(studio, page):
     expect(sheet.locator(".warn-text")).to_have_text("A data file named tickets exists already")
     expect(sheet.get_by_role("button", name="Get")).to_be_disabled()
     expect(sheet.locator(".sheet-foot")).to_contain_text(
-        re.compile("mlx-decision data hf:ORG/NAME")
+        re.compile("mlx-decision data does the same")
     )
+
+
+@pytest.fixture
+def hub(monkeypatch):
+    """A Hub stand-in: org/reviews, configs en and de, splits train and test."""
+    import datasets
+
+    from mlx_decision.data import sources
+
+    features = datasets.Features({
+        "review": datasets.Value("string"),
+        "sentiment": datasets.ClassLabel(names=["negative", "positive"]),
+    })  # fmt: skip
+    rows = {"review": [f"review {i}" for i in range(12)], "sentiment": [i % 2 for i in range(12)]}
+    monkeypatch.setattr(sources, "hub_configs", lambda repo, revision=None: ["en", "de"])
+    monkeypatch.setattr(
+        sources, "hub_splits", lambda repo, config=None, revision=None: ["train", "test"]
+    )
+    monkeypatch.setattr(
+        sources,
+        "load_hub",
+        lambda repo, config=None, split=None, revision=None: sources._from_dataset(
+            datasets.Dataset.from_dict(rows, features=features), "reviews", split, {}
+        ),
+    )
+
+
+def test_another_dataset_with_a_question_set(studio, page, hub):
+    open_studio(page, studio, "training")
+    page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
+    sheet = page.locator(".sheet")
+    sheet.locator(".fam[data-preset='any']").click()
+    get = sheet.get_by_role("button", name="Get")
+    expect(get).to_be_disabled()
+    field = sheet.get_by_label("Hugging Face dataset")
+    field.fill("org/reviews")
+    field.press("Enter")  # reads; it does not get
+    sheet.get_by_label("Config").select_option("en")
+    sheet.get_by_label("Split").select_option("train")
+    expect(sheet.locator(".any-table tbody tr")).to_have_count(5)
+    expect(sheet.get_by_label("State column")).to_have_value("review")
+    expect(sheet.get_by_label("Label column")).to_have_value("sentiment")
+    sheet.get_by_label("Question set").select_option("ticket-triage")
+    question = sheet.get_by_label("Question", exact=True)
+    expect(question).to_have_value("department")  # the first choice or yes/no question
+    expect(question.locator("option[value='frustration']")).to_have_attribute(
+        "disabled", ""
+    )  # a score
+    # No class is named like an option: everything left out, and Get says why.
+    expect(sheet.get_by_label("Option for negative")).to_have_value("")
+    expect(sheet.locator(".fam-pane > .warn-text")).to_have_text(
+        "Map at least one class to an option"
+    )
+    sheet.get_by_label("Option for negative").select_option("billing")
+    sheet.get_by_label("Option for positive").select_option("technical")
+    expect(sheet.get_by_label("Name")).to_have_value("reviews-train")
+    expect(get).to_be_enabled()
+    get.click()
+
+    expect(page.locator(".toast")).to_contain_text("Get org/reviews train")
+    job = next(iter(studio.app.state.jobs.jobs.values()))
+    assert job.details["label_map"] == {"negative": "billing", "positive": "technical"}
+    assert job.details["question"] == "department" and job.details["set"] == "ticket-triage"
+    written = (job.folder / "question.json").read_text()
+    assert '"department"' in written and "Which team should handle this" in written
+    assert "negative=billing,positive=technical" in job.argv
+
+
+def test_a_yes_no_question_maps_by_name(studio, page, hub):
+    open_studio(page, studio, "training")
+    page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
+    sheet = page.locator(".sheet")
+    sheet.locator(".fam[data-preset='any']").click()
+    sheet.get_by_label("Hugging Face dataset").fill("hf:org/reviews")
+    sheet.get_by_role("button", name="Read").click()
+    sheet.get_by_label("Config").select_option("de")
+    sheet.get_by_label("Split").select_option("test")
+    sheet.get_by_label("Question set").select_option("ticket-triage")
+    sheet.get_by_label("Question", exact=True).select_option("is_urgent")
+    # negative / positive read as no / yes.
+    expect(sheet.get_by_label("Option for negative")).to_have_value("false")
+    expect(sheet.get_by_label("Option for positive")).to_have_value("true")
+    expect(sheet.get_by_label("Name")).to_have_value("reviews-test")

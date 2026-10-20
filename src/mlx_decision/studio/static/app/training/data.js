@@ -95,6 +95,41 @@ function showErrors(file, errors) {
   });
 }
 
+// ---------- delete ----------
+
+// Delete the picked file, after asking; the Training page goes back to its start.
+export function deleteData(name) {
+  const summary = described.value[name];
+  const count = summary?.examples != null ? ` (${plural(summary.examples, "example")})` : "";
+  openSheet({
+    title: `Delete ${name}?`,
+    purpose: `The training data file data/${name}.jsonl${count} is deleted. This cannot be undone; models fitted on it stay.`,
+    actions: [
+      {
+        label: "Delete",
+        primary: true,
+        danger: true,
+        onSelect: async () => {
+          try {
+            await api(`/data/${encodeURIComponent(name)}`, { method: "DELETE" });
+          } catch (error) {
+            if (error.status !== 404) {
+              toast(`Not deleted: ${error.message}`);
+              return;
+            }
+          }
+          closeSheet();
+          const { [name]: _, ...rest } = described.value;
+          described.value = rest;
+          dataFiles.value = (dataFiles.value ?? []).filter((item) => item.name !== name);
+          if (pickedData() === name) navigate("training");
+          toast(`Deleted data/${name}.jsonl`);
+        },
+      },
+    ],
+  });
+}
+
 // ---------- the sidebar's list ----------
 
 export function DataList() {
@@ -117,10 +152,13 @@ export function DataList() {
       <ul class="sb-list data-list">
         ${(list ?? []).map(
           (item) => html`
-            <li key=${item.name}>
+            <li key=${item.name} class=${item.name === picked ? "open" : ""}>
               <a class="sb-item" href=${href("training", item.name)} aria-current=${item.name === picked ? "true" : undefined}>
                 <${icons.File} /><span class="label">${item.name}</span>
               </a>
+              ${item.name === picked &&
+              html`<button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
+                onClick=${() => deleteData(item.name)}><${icons.Trash} /></button>`}
             </li>
           `,
         )}

@@ -9,6 +9,9 @@ import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
 import { dataFiles } from "../store/data.js";
 import { toast } from "../store/ui.js";
+import { AnyDataset, anyJob, anyProblem } from "./any-dataset.js";
+
+const ANY = "\u0000any"; // the list's last entry: any Hugging Face dataset
 
 const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
 
@@ -39,11 +42,13 @@ function suggest() {
 
 function pick(presetName) {
   picked.value = presetName;
+  if (presetName === ANY) return;
   split.value = preset.value.default_split;
   suggest();
 }
 
 const problem = computed(() => {
+  if (picked.value === ANY) return anyProblem.value;
   if (!preset.value) return "Pick a dataset";
   const value = name.value.trim();
   if (!NAME.test(value)) return "Name the file: letters, digits, '.', '_' or '-'";
@@ -57,10 +62,14 @@ const problem = computed(() => {
 
 async function start() {
   if (problem.value || starting.value) return;
-  const body = { kind: "data", preset: preset.value.name, split: split.value, name: name.value.trim() };
-  if (sampling.value) {
-    body.sample = Number(sample.value);
-    body.seed = Number(seed.value) || 0;
+  let body;
+  if (picked.value === ANY) body = anyJob();
+  else {
+    body = { kind: "data", preset: preset.value.name, split: split.value, name: name.value.trim() };
+    if (sampling.value) {
+      body.sample = Number(sample.value);
+      body.seed = Number(seed.value) || 0;
+    }
   }
   starting.value = true;
   try {
@@ -83,11 +92,15 @@ function Presets() {
           <span><b>${item.title}</b><span>${item.question.type} · ${plural(item.question.options.length, "option")}</span></span>
         </button>`,
       )}
+      <button class="fam ds" role="option" aria-selected=${picked.value === ANY ? "true" : "false"} data-preset="any" onClick=${() => pick(ANY)}>
+        <span><b>Another dataset…</b><span>any on the Hub, with your question set</span></span>
+      </button>
     </div>
   `;
 }
 
 function Picked() {
+  if (picked.value === ANY) return html`<${AnyDataset} />`;
   const item = preset.value;
   if (!item) return null;
   const question = item.question;
@@ -157,7 +170,7 @@ export async function openDatasets() {
     purpose: "A public dataset turned into training data in the workspace's data/ folder, with the question and wording of the data command's presets. It downloads from the Hugging Face Hub as a job.",
     Body,
     wide: true,
-    note: "Any other dataset: mlx-decision data hf:ORG/NAME in a terminal.",
+    note: "In a terminal, mlx-decision data does the same.",
     actions: () => [{ label: "Get", primary: true, disabled: Boolean(problem.value) || starting.value, onSelect: start }],
   });
 }

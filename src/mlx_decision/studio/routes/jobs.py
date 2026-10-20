@@ -13,6 +13,7 @@ events so far, for a tab that opens one later.
 """
 
 import asyncio
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -23,15 +24,20 @@ from fastapi import APIRouter, Request
 from ...config import Config
 from ...data.presets import PRESETS
 from ...data.presets import SPLITS as PRESETS_SPLITS
+from ...flags import join_pairs
 from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
 from ..catalog import option_arguments
-from ..jobs import Job, JobConflict, Jobs
+from ..jobs import FOLDER, Job, JobConflict, Jobs
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
 
 KINDS = ("download", "convert", "fit", "eval", "data")
 DATA_SUFFIX = ".jsonl"
+# A dataset's config or split name.
+PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+# The question a data job's labels answer, written into its folder for -q.
+QUESTION_FILE = "question.json"
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
 BITS = (8, 4)
 # What fit and eval take from a model's load options (the others do not apply).
@@ -54,9 +60,11 @@ class Plan:
         title: str,
         details: dict[str, Any],
         output: Path | None = None,
+        inputs: dict[str, bytes] | None = None,
     ):
         self.argv, self.holds_gpu, self.title, self.output = argv, holds_gpu, title, output
         self.details = details
+        self.inputs = inputs  # files for the job's folder (FOLDER in argv)
 
 
 def jobs_router(
@@ -206,7 +214,10 @@ def jobs_router(
         return Plan(argv, holds_gpu=True, title=title, details=details)
 
     def dataset(body: dict) -> Plan:
-        """A preset's split as training data in ``data/`` (TRS-6)."""
+        """A preset's split, or any Hugging Face dataset's with a question set's
+        question, as training data in ``data/`` (TRS-6)."""
+        if body.get("source") is not None:
+            return any_dataset(body)
         name = field(body, "preset", str)
         if name not in PRESETS:
             raise ApiError(400, f"preset must be one of {', '.join(PRESETS)}", param="preset")
@@ -243,6 +254,90 @@ def jobs_router(
         }
         title = f"Get {name} {split}" + (f" ({sample} rows)" if sample else "")
         return Plan(argv, holds_gpu=False, title=title, details=details, output=output)
+
+    def any_dataset(body: dict) -> Plan:
+        """``hf:ORG/NAME``'s split with ``text`` as the state and ``label`` as
+        the answer to a question set's question; the label's classes mapped to
+        the question's options (``label_map``; classes left out are not used)."""
+        source = field(body, "source", str).strip()
+        repo = source.removeprefix("hf:")
+        if not source.startswith("hf:") or not REPO_ID.fullmatch(repo) or ".." in repo:
+            raise ApiError(400, "give a Hugging Face dataset as hf:ORG/NAME", param="source")
+        config = field(body, "config", str, required=False)
+        split = field(body, "split", str)
+        for key, value in (("config", config), ("split", split)):
+            if value is not None and not PART.fullmatch(value):
+                raise ApiError(400, f"not a dataset's {key}: {value!r}", param=key)
+        text, label = field(body, "text", str), field(body, "label", str)
+        for key, value in (("text", text), ("label", label)):
+            if not value.strip() or len(value) > 200:
+                raise ApiError(400, f"name the {key} column", param=key)
+        if text == label:
+            raise ApiError(400, "the state and the label are different columns", param="label")
+        set_name = named(body, "set", "a set's name")
+        try:
+            questions = files.load_set(set_name)[0].get("questions") or {}
+        except WorkspaceError as error:
+            raise ApiError(404, error.message, param="set") from None
+        question_id = field(body, "question", str)
+        question = questions.get(question_id)
+        if not isinstance(question, dict):
+            raise ApiError(404, f"{set_name} has no question {question_id}", param="question")
+        kind = question.get("type")
+        if kind == "noul":
+            options = ["true", "false"]
+        elif kind == "choice":
+            options = list(question.get("criteria") or {})
+        else:
+            raise ApiError(
+                400,
+                f"{question_id} is a {kind} question; the labels of a dataset answer a choice "
+                "or a noul here (a score: mlx-decision data --shape rating)",
+                param="question",
+            )
+        label_map = body.get("label_map")
+        if not isinstance(label_map, dict) or not label_map:
+            raise ApiError(400, "map at least one class to an option", param="label_map")
+        for raw, option in label_map.items():
+            if not isinstance(option, str) or option not in options:
+                raise ApiError(
+                    400, f"{raw}: {option!r} is none of {question_id}'s options", param="label_map"
+                )
+            if "=" in raw or raw != raw.strip() or not raw:
+                raise ApiError(400, f"a class the map cannot name: {raw!r}", param="label_map")
+        splits_rows = field(body, "rows", int, required=False)
+        sample = field(body, "sample", int, required=False)
+        if sample is not None and (sample < 1 or (splits_rows and sample > splits_rows)):
+            raise ApiError(400, "sample must be 1 or more, up to the split's rows", param="sample")
+        seed = field(body, "seed", int, required=False)
+        default = f"{repo.rsplit('/', 1)[-1]}-{split}"
+        file_name = (
+            named(body, "name", "a data file's name") if body.get("name") is not None else default
+        )
+        try:
+            output = files.data_path(file_name)
+        except WorkspaceError as error:
+            raise ApiError(400, error.message, param="name") from None
+        if output.exists():
+            raise ApiError(409, f"a data file named {file_name} exists already", param="name")
+        writing(output, "name")
+        argv = ["data", source]
+        if config is not None:
+            argv += ["--config", config]
+        argv += ["--split", split, "--shape", "text", "--text", text, "--label", label]
+        argv += ["-q", f"{FOLDER}/{QUESTION_FILE}", "--label-map", join_pairs(label_map)]
+        if sample is not None:
+            argv += ["--sample", str(sample), "--seed", str(seed or 0)]
+        argv += ["-o", str(output)]
+        details = {
+            "source": source, "config": config, "split": split, "text": text, "label": label,
+            "set": set_name, "question": question_id, "label_map": label_map,
+            "sample": sample, "seed": seed, "name": file_name,
+        }  # fmt: skip
+        title = f"Get {repo} {split}" + (f" ({sample} rows)" if sample else "")
+        inputs = {QUESTION_FILE: json.dumps({question_id: question}, ensure_ascii=False).encode()}
+        return Plan(argv, holds_gpu=False, title=title, details=details, output=output,
+                    inputs=inputs)  # fmt: skip
 
     plans: dict[str, Callable[[dict], Plan]] = {
         "data": dataset,
@@ -284,6 +379,7 @@ def jobs_router(
                 output=plan.output,
                 title=plan.title,
                 details=plan.details,
+                inputs=plan.inputs,
             )
         except JobConflict as error:
             raise conflict(error) from None

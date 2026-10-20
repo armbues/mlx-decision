@@ -1,7 +1,9 @@
 """Training data in the Studio: uploads checked as training fit checks them,
-errors by line, name clashes and escapes refused, and a file's summary."""
+errors by line, name clashes and escapes refused, a file's summary, and its
+deletion (not while a job reads it)."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -142,3 +144,28 @@ def test_the_list_is_by_name(studio):
         assert upload(studio, name, GOOD).status_code == 200
     names = [item["name"] for item in studio.get("/studio/api/data").json()["files"]]
     assert names == ["Alpha", "tickets", "tickets-2"]
+
+
+def remove(studio, name):
+    return studio.request("DELETE", f"/studio/api/data/{name}", json={})
+
+
+def test_delete(studio):
+    upload(studio, "tickets", GOOD)
+    upload(studio, "other", GOOD)
+    # A fit that has not ended reads it: refused.
+    jobs = studio.app_state.jobs.jobs
+    jobs["fit"] = SimpleNamespace(state="running", details={"data": "tickets"}, title="Fit x")
+    try:
+        busy = remove(studio, "tickets")
+        assert busy.status_code == 409 and "Fit x reads tickets" in busy.text
+        jobs["fit"].state = "ended"
+        assert remove(studio, "tickets").status_code == 204
+    finally:
+        del jobs["fit"]
+    assert [item["name"] for item in studio.get("/studio/api/data").json()["files"]] == ["other"]
+    recent = [message for _, (_, message) in studio.app_state.hub.recent]
+    assert {"type": "workspace", "folder": "data", "name": "tickets", "action": "deleted"} in recent
+    assert remove(studio, "tickets").status_code == 404
+    assert remove(studio, "..%2Fother").status_code in (400, 404)
+    assert (studio.workspace / "data" / "other.jsonl").exists()

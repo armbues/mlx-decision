@@ -207,7 +207,7 @@ def class_names(column: Column, table: Table, label_map: dict[str, str] | None) 
     return [_raw(v) for v in sorted(values, key=float if numeric else str)]
 
 
-def _class_of(column: Column, value: Any) -> str | None:
+def class_of(column: Column, value: Any) -> str | None:
     """A row's raw class: a class label's name (None for -1, no label), else the value."""
     if value is None or value == "":
         return None
@@ -368,7 +368,7 @@ def build(table: Table, mapping: Mapping, wording: Wording, indices: list[int]) 
         label_column = table.columns[columns["label"]]
         for index, row in zip(indices, rows, strict=True):
             value = row.get(columns["label"])
-            name = _class_of(label_column, value)
+            name = class_of(label_column, value)
             option = _lookup(wording.label_map, label_column, value, name) if name else None
             if option is None:
                 built.skipped["no label" if name is None else f"label {name!r} unmapped"] += 1
@@ -435,7 +435,7 @@ def build(table: Table, mapping: Mapping, wording: Wording, indices: list[int]) 
             raise SourceError(f"-q: a rating question is a score with {len(raws)} levels")
     label_column = table.columns[columns["label"]]
     for index, row in zip(indices, rows, strict=True):
-        raw = _class_of(label_column, row.get(columns["label"]))
+        raw = class_of(label_column, row.get(columns["label"]))
         if raw is None or raw not in raws:
             built.skipped["no label"] += 1
             continue

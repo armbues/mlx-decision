@@ -44,9 +44,11 @@ from typing import Any
 
 from ..gpu import Gpu
 from ..watchdog import WATCH_VARIABLE, remove
-from .workspace import INTERRUPTED, JOB_FILE, Workspace, encode, now
+from .workspace import INTERRUPTED, JOB_FILE, Workspace, check_name, encode, now
 
 EVENTS_FILE = "events.jsonl"
+# In a job's arguments: its folder, where its ``inputs`` are.
+FOLDER = "{folder}"
 STDERR_FILE = "stderr.log"
 # The CLI as the Studio runs it: the same environment's package.
 COMMAND = (sys.executable, "-m", "mlx_decision")
@@ -162,6 +164,7 @@ class Jobs:
         output: Path | None = None,
         title: str | None = None,
         details: dict[str, Any] | None = None,
+        inputs: dict[str, bytes] | None = None,
     ) -> Job:
         """Run ``mlx-decision ARGV --events`` as a job.
 
@@ -170,9 +173,11 @@ class Jobs:
         and the unload before its process starts. Raises ``JobConflict``
         while another GPU job is waiting or running, and ``RuntimeError``
         once the Studio is stopping. ``details`` are what the job was started
-        with (the page's fields), kept in its summary.
+        with (the page's fields), kept in its summary. ``inputs`` are files
+        written into the job's folder before it runs (``FOLDER`` in ``argv``
+        stands for that folder).
         """
-        job = self._create(kind, argv, holds_gpu, output, title, details)
+        job = self._create(kind, argv, holds_gpu, output, title, details, inputs)
         await self._launch(job)
         return job
 
@@ -185,12 +190,13 @@ class Jobs:
         output: Path | None = None,
         title: str | None = None,
         details: dict[str, Any] | None = None,
+        inputs: dict[str, bytes] | None = None,
     ) -> Job:
         """``start`` without waiting: the job is returned at once, waiting for
         the GPU or about to run; one that cannot start ends ``failed``. Raises
         ``JobConflict`` and ``RuntimeError`` as ``start`` does, before
         anything is created."""
-        job = self._create(kind, argv, holds_gpu, output, title, details)
+        job = self._create(kind, argv, holds_gpu, output, title, details, inputs)
 
         async def launch() -> None:
             with suppress(Exception):  # the job's outcome says what went wrong
@@ -207,12 +213,13 @@ class Jobs:
         output: Path | None,
         title: str | None,
         details: dict[str, Any] | None = None,
+        inputs: dict[str, bytes] | None = None,
     ) -> Job:
         if self.closing:
             raise RuntimeError("the Studio is stopping")
         if holds_gpu and self.gpu_job is not None:
             raise JobConflict(self.gpu_job)
-        job = self._new(kind, list(argv), holds_gpu, output, title, details or {})
+        job = self._new(kind, list(argv), holds_gpu, output, title, details or {}, inputs or {})
         if holds_gpu:
             self.gpu_job = job
         self._changed(job)
@@ -242,11 +249,15 @@ class Jobs:
         output: Path | None,
         title: str | None,
         details: dict[str, Any],
+        inputs: dict[str, bytes],
     ) -> Job:
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         job_id = f"{stamp}-{kind}-{secrets.token_hex(3)}"
         folder = self.workspace.path("jobs", job_id)
         folder.mkdir()
+        for name, data in inputs.items():  # a job's own files: names, not paths
+            self.workspace.write(self.workspace.inside(folder / check_name(name)), data)
+        argv = [word.replace(FOLDER, str(folder)) for word in argv]
         output = Path(output) if output is not None else None
         title = title or (f"{kind} {output.name}" if output is not None else kind)
         job = Job(
