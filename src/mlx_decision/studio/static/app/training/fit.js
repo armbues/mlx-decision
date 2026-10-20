@@ -1,5 +1,6 @@
 // The fit form: the dataset picked in its own field (or by the Datasets page's
-// Fit on It…), its split and labels, the base model, the method cards the
+// Fit on It…), what the report is scored on (a share of it, or another dataset:
+// the same Get's report file by default, from the records), its split and labels, the base model, the method cards the
 // base's family offers (each with its memory estimate and the fit check, as
 // `training fit`'s menu has them), the result's name and the options. Start Fit (⌘↩) starts `training fit` as a job;
 // the Studio builds its command line.
@@ -53,27 +54,53 @@ export function fitOn(name) {
   navigate("training");
 }
 
+// What the report is scored on: "" (a share of the dataset) or another
+// dataset's name. Picked for one dataset; another dataset starts from its
+// default: the same Get's report file, when its record names one.
+const reportChoice = signal(null); // {data, file}
+
+const recordOf = (name) => (dataFiles.value ?? []).find((item) => item.name === name)?.record ?? null;
+
+// The datasets a report can be scored on: not the dataset itself, not one
+// kept for Evaluate.
+export const reportFiles = computed(() =>
+  (dataFiles.value ?? []).filter((item) => item.name !== fitData.value && item.record?.role !== "evaluate").map((item) => item.name),
+);
+
+function defaultReport(data) {
+  const sibling = recordOf(data)?.get?.files?.find((file) => file.role === "report" && file.name !== data);
+  return sibling && reportFiles.value.includes(sibling.name) ? sibling.name : "";
+}
+
+export const reportFile = computed(() => {
+  const data = fitData.value;
+  const chosen = reportChoice.value;
+  if (chosen?.data === data && (chosen.file === "" || reportFiles.value.includes(chosen.file))) return chosen.file;
+  return data ? defaultReport(data) : "";
+});
+
 let timer = null;
 let asked = 0;
 
-// The plan again whenever the data, the base, the share kept aside or the seed change.
+// The plan again whenever the data, the report, the base, the share kept aside or the seed change.
 effect(() => {
   const data = fitData.value;
+  const report = reportFile.value;
   const model = baseName.value;
   const share = holdout.value;
   const order = seed.value;
   clearTimeout(timer);
   if (!data || !model) return;
-  timer = setTimeout(() => plan(model, data, share, order), 150);
+  timer = setTimeout(() => plan(model, data, report, share, order), 150);
 });
 
-async function plan(model, data, share, order) {
+async function plan(model, data, report, share, order) {
   const ask = ++asked;
+  const body = { model, data, seed: Number(order) || 0 };
+  if (report) body.report = report;
+  else body.holdout = share / 100;
   try {
-    const result = await api("/fit/plan", {
-      method: "POST",
-      body: { model, data, holdout: share / 100, seed: Number(order) || 0 },
-    });
+    const result = await api("/fit/plan", { method: "POST", body });
     if (ask !== asked) return; // a newer question is out
     planned.value = result;
     planError.value = null;
@@ -92,7 +119,9 @@ export const notReady = computed(() => {
   if (job) return `${job.title} is running; one job at a time can use the GPU`;
   if (!fitData.value) return "Get or add a dataset first, on the Datasets page";
   if (planError.value) return planError.value;
-  if (!planned.value || !picked.value || planned.value.data !== fitData.value) return "Reading the data…";
+  const current = planned.value;
+  if (!current || !picked.value || current.data !== fitData.value || (current.report ?? "") !== reportFile.value)
+    return "Reading the data…";
   if (!picked.value.fits) return "The method needs more memory than this Mac's GPU working set";
   const value = name.value.trim();
   if (!NAME.test(value)) return "Give the fitted model a name: letters, digits, '.', '_' or '-'";
@@ -109,9 +138,10 @@ export async function startFit() {
     data: planned.value.data,
     name: name.value.trim(),
     method: method.method,
-    holdout: holdout.value / 100,
     seed: Number(seed.value) || 0,
   };
+  if (planned.value.report) body.report = planned.value.report;
+  else body.holdout = holdout.value / 100;
   if (method.head_only) body.head_only = true;
   if (method.epochs) {
     body.epochs = Number(epochs.value) || 3;
@@ -133,19 +163,45 @@ export async function startFit() {
 
 const TITLES = { head: "Head", readout: "Readout", finetune: "Fine-tune", calibrate: "Calibrate" };
 
-function Split({ splits }) {
-  const share = (count) => `${((count / Math.max(1, splits.examples)) * 100).toFixed(2)}%`;
+// The examples to train on and to tune, and those the report is scored on:
+// kept aside from the dataset, or the report file's (``report``).
+function Split({ splits, report }) {
+  const total = Math.max(1, splits.fit + splits.dev + splits.holdout);
+  const share = (count) => `${((count / total) * 100).toFixed(2)}%`;
+  const held = report ? `${splits.holdout} in ${report} for the report` : `${splits.holdout} kept aside for the report`;
   return html`
     <div class="split-field">
-      <div class="split" role="img" aria-label=${`${splits.fit} to train on, ${splits.dev} to tune, ${splits.holdout} kept aside`}>
+      <div class=${`split${report ? " other-file" : ""}`} role="img" aria-label=${`${splits.fit} to train on, ${splits.dev} to tune, ${held}`}>
         <i class="fit" style=${`width:${share(splits.fit)}`}></i><i class="dev" style=${`width:${share(splits.dev)}`}></i><i class="held" style=${`width:${share(splits.holdout)}`}></i>
       </div>
-      <div class="split-legend num">
+      <div class=${`split-legend num${report ? " other-file" : ""}`}>
         <span><s class="fit"></s>${splits.fit} to train on</span>
         <span><s class="dev"></s>${splits.dev} to tune</span>
-        <span><s class="held"></s>${splits.holdout} kept aside for the report</span>
+        <span><s class="held"></s>${held}</span>
       </div>
     </div>
+  `;
+}
+
+function ReportOn({ data }) {
+  const files = reportFiles.value;
+  const current = reportFile.value;
+  const roleOf = (name) => recordOf(name)?.role;
+  return html`
+    <div class="row"><label for="fit-report">Report on</label><div class="line">
+      <select id="fit-report" value=${current} onChange=${(event) => (reportChoice.value = { data, file: event.target.value })}>
+        <option value="">A share of this dataset</option>
+        ${files.length > 0 &&
+        html`<optgroup label="Another dataset">
+          ${files.map((file) => html`<option value=${file}>${file}${roleOf(file) ? ` (${roleOf(file)})` : ""}</option>`)}
+        </optgroup>`}
+      </select>
+      ${current === ""
+        ? html`<input id="fit-holdout" type="number" min="5" max="90" aria-label="Share kept aside" value=${holdout.value}
+                 onChange=${(event) => (holdout.value = Math.min(90, Math.max(5, Number(event.target.value) || 20)))} /> %
+            <span class="hint">kept aside, by label</span>`
+        : html`<span class="hint">${defaultReport(data) === current ? "got with it as its report split" : "it must ask the same questions"}</span>`}
+    </div></div>
   `;
 }
 
@@ -209,7 +265,8 @@ export function FitForm() {
             ${result && result.data === data && html`<span class="hint num">${plural(result.splits.examples, "example")}</span>`}
             ${data && html`<a class="hint-link" href=${href("datasets", data)}>Show in Datasets</a>`}
           </div></div>
-          ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits} /></div>`}
+          ${data && html`<${ReportOn} data=${data} />`}
+          ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits} report=${result.report} /></div>`}
           ${result && html`<div class="row"><label>Labels</label><div><${Labels} labels=${result.labels} summary=${summary?.name === data ? summary : null} /><span class="hint">to train on and to tune</span></div></div>`}
           ${result?.warnings.map((warning) => html`<p class="warn-text">${warning}</p>`)}
           ${planError.value && html`<p class="warn-text">${planError.value}</p>`}
@@ -249,11 +306,6 @@ export function FitForm() {
               <label class="check"><input type="checkbox" checked=${earlyStop.value} onChange=${(event) => (earlyStop.value = event.target.checked)} /> stop early when the tuning examples get worse</label>
               <span class="hint">the best epoch is kept</span>
             </div></div>`}
-            <div class="row"><label for="fit-holdout">Kept aside</label><div class="line">
-              <input id="fit-holdout" type="number" min="5" max="90" value=${holdout.value}
-                     onChange=${(event) => (holdout.value = Math.min(90, Math.max(5, Number(event.target.value) || 20)))} /> %
-              <span class="hint">for the report, by label</span>
-            </div></div>
             <div class="row"><label for="fit-seed">Seed</label><div class="line">
               <input id="fit-seed" type="number" min="0" value=${seed.value} onChange=${(event) => (seed.value = Number(event.target.value) || 0)} />
               <span class="hint">same seed, same split</span>

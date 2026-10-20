@@ -183,7 +183,10 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         not ended (a fit or an evaluation) reads it."""
         check_name(name, "a data file's name")
         for job in jobs.jobs.values():
-            if job.state != "ended" and job.details.get("data") == name:
+            if job.state != "ended" and name in (
+                job.details.get("data"),
+                job.details.get("report"),
+            ):
                 raise Conflict(f"{job.title} reads {name}: stop it or wait until it ends")
         await asyncio.to_thread(files.delete_data, name)
 

@@ -1056,7 +1056,7 @@ a.sb-item { color: var(--fg); }
 .split i { display: block; height: 100%; }
 .split .fit, .split-legend s.fit { background: var(--accent); }
 .split .dev, .split-legend s.dev { background: color-mix(in srgb, var(--accent) 45%, var(--track)); }
-.split .held, .split-legend s.held { background: var(--fg-3); }
+.split .held, .split-legend.other-file s.held { background: repeating-linear-gradient(135deg, var(--fg-3) 0 2px, transparent 2px 4px); }
 .split-legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--fg-2); flex-wrap: wrap; }
 .split-legend s { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; text-decoration: none; }
 .fit-labels { display: grid; gap: 4px; }
@@ -1208,3 +1208,8 @@ a.sb-item { color: var(--fg); }
 .kv dd.ds-siblings small { display: inline; color: var(--fg-2); margin: 0; }
 .ds-siblings .gone { color: var(--fg-3); text-decoration: line-through; }
 .ds-map { display: inline-block; margin-right: 12px; }
+
+/* The fit form's split when the report is another file: its part set apart */
+.split.other-file .held { background: repeating-linear-gradient(135deg, var(--fg-3) 0 3px, transparent 3px 6px); margin-left: 4px; }
+.split-legend.other-file s.held { background: repeating-linear-gradient(135deg, var(--fg-3) 0 2px, transparent 2px 4px); }
+.fit-form #fit-report { max-width: 300px; }

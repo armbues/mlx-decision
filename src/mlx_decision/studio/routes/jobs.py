@@ -176,8 +176,16 @@ def jobs_router(
             if epochs < 1:
                 raise ApiError(400, "epochs must be 1 or more", param="epochs")
             argv += ["--epochs", str(epochs)]
+        report_name = None
+        if body.get("report") is not None:  # the report on another file
+            report_name, report = data_file(body, "report")
+            if report_name == data_name:
+                raise ApiError(400, "report on another file than the one to train on", "report")
+            argv += ["--validation", str(report)]
         holdout = field(body, "holdout", (int, float), required=False)
         if holdout is not None:
+            if report_name is not None:
+                raise ApiError(400, "a report file or a holdout share, not both", "holdout")
             if not HOLDOUT_MIN <= holdout <= HOLDOUT_MAX:
                 raise ApiError(400, "holdout must be from 0.05 to 0.9", param="holdout")
             argv += ["--holdout", f"{holdout:g}"]
@@ -195,6 +203,7 @@ def jobs_router(
         details = {
             "model": base,
             "data": data_name,
+            "report": report_name,
             "name": name,
             "method": method,
             "epochs": epochs,
@@ -389,7 +398,8 @@ def jobs_router(
         ``download``: ``repo``, ``bits`` (8 or 4; default full size);
         ``convert``: ``model``, ``bits`` (default 8), ``name``;
         ``fit``: ``model``, ``data``, ``name``, ``method``, ``epochs``,
-        ``holdout``, ``seed``, ``early_stop``, ``head_only`` (finetune);
+        ``holdout`` or ``report`` (a data file the report is scored on),
+        ``seed``, ``early_stop``, ``head_only`` (finetune);
         ``eval``: ``model``, ``data``, ``compare``; ``data``: ``preset`` (or
         ``source`` with ``config``, ``text``, ``label``, ``set``, ``question``,
         ``label_map``), ``splits`` (each ``split``, ``role``: train, report or

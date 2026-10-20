@@ -147,6 +147,71 @@ def label_counts(examples: list[Example]) -> dict[str, dict[str, int]]:
     return {qid: dict(sorted(c.items())) for qid, c in counts.items()}
 
 
+def _question_kinds(examples: list[Example]) -> dict[str, tuple]:
+    """Each labelled question's type and options, as the first example that
+    labels it asks it: a choice's option ids, a score's level count."""
+    kinds: dict[str, tuple] = {}
+    for example in examples:
+        for question_id in example.labels:
+            if question_id in kinds:
+                continue
+            question = example.request["questions"][question_id]
+            kind = question.get("type")
+            criteria = question.get("criteria")
+            if kind == "choice":
+                options: tuple = (
+                    tuple(sorted(criteria)) if isinstance(criteria, dict | list) else ()
+                )
+            elif kind == "score":
+                options = (len(criteria) if isinstance(criteria, list) else 0,)
+            else:
+                options = ()
+            kinds[question_id] = (kind, options)
+    return kinds
+
+
+def report_mismatch(
+    train: list[Example], report: list[Example], train_name: str, report_name: str
+) -> str | None:
+    """Why ``report`` cannot score a fit on ``train``: other labelled questions,
+    or the same question with another type or other options; None when it can."""
+    ours, theirs = _question_kinds(train), _question_kinds(report)
+    if set(ours) != set(theirs):
+        return (
+            f"{report_name} labels other questions than {train_name}: "
+            f"{', '.join(sorted(theirs)) or 'none'} against {', '.join(sorted(ours))}"
+        )
+    for question_id in sorted(ours):
+        (kind, options), (their_kind, their_options) = ours[question_id], theirs[question_id]
+        if kind != their_kind:
+            return (
+                f"question {question_id} is a {kind} in {train_name} "
+                f"but a {their_kind} in {report_name}"
+            )
+        if options != their_options:
+            if kind == "score":
+                return (
+                    f"question {question_id} has {options[0]} levels in {train_name} "
+                    f"but {their_options[0]} in {report_name}"
+                )
+            return (
+                f"question {question_id} has other options in {report_name} "
+                f"({', '.join(their_options)}) than in {train_name} ({', '.join(options)})"
+            )
+    return None
+
+
+def shared_states(train: list[Example], report: list[Example]) -> int:
+    """How many examples of ``report`` have a state that is also in ``train``:
+    examples the report would score although the fit learned from them."""
+
+    def key(example: Example) -> str:
+        return json.dumps(example.request.get("state"), sort_keys=True)
+
+    seen = {key(example) for example in train}
+    return sum(1 for example in report if key(example) in seen)
+
+
 def _calibrations(scored: list[Scored], fit: Fit) -> Fit:
     """A calibration per fitted question (same id, type and options) on ``scored``,
     added to ``fit``; biases where every example asks it the same way."""

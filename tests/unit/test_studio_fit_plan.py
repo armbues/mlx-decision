@@ -154,3 +154,85 @@ def test_head_only_goes_with_finetune(studio):
     body = {"kind": "fit", "model": "tiny-clef", "data": "tickets", "method": "head"}
     refused = studio.post("/studio/api/jobs", json={**body, "head_only": True})
     assert refused.status_code == 400 and refused.json()["error"]["param"] == "head_only"
+
+
+def write_data(studio, name, rows, question=TEAM, qid="team"):
+    """``rows``: (state, label) pairs, as data/NAME.jsonl."""
+    lines = [
+        json.dumps({"state": state, "questions": {qid: question}, "labels": {qid: label}})
+        for state, label in rows
+    ]
+    (studio.data.parent / f"{name}.jsonl").write_text("\n".join(lines) + "\n")
+
+
+def test_the_report_on_another_file(studio):
+    write_data(studio, "report", [(f"new ticket {i}", "tech") for i in range(8)])
+    body = plan(studio, "tiny-laya", report="report", holdout=0.25).json()
+    assert body["report"] == "report"
+    splits = body["splits"]
+    # Every example of the data trains or tunes; the report file is the holdout.
+    assert splits["examples"] == 60 and splits["holdout"] == 8
+    assert splits["fit"] + splits["dev"] == 60
+    assert sum(body["labels"]["team"].values()) == 60
+    assert not any("also in" in warning for warning in body["warnings"])
+    # A report file sharing states with the data: said.
+    write_data(studio, "overlap", [("ticket 0 ", "tech"), ("ticket 1 word ", "billing"),
+                                   ("brand new", "sales")])  # fmt: skip
+    warned = plan(studio, "tiny-laya", report="overlap").json()
+    assert (
+        "2 of 3 examples in overlap have a state that is also in tickets: the report would "
+        "score examples the fit learns from"
+    ) in warned["warnings"]
+
+
+@pytest.mark.parametrize(
+    ("question", "qid", "message"),
+    [
+        (TEAM, "department", "other labels other questions than tickets: department against team"),
+        ({"type": "noul"}, "team", "question team is a choice in tickets but a noul in other"),
+        (
+            {"type": "choice", "criteria": {"billing": "x", "tech": "y"}},
+            "team",
+            "question team has other options in other (billing, tech) than in tickets "
+            "(billing, sales, tech)",
+        ),  # fmt: skip
+    ],
+)
+def test_a_report_file_with_other_questions_is_refused(studio, question, qid, message):
+    label = "true" if question.get("type") == "noul" else "tech"
+    write_data(studio, "other", [("x", label)], question=question, qid=qid)
+    refused = plan(studio, "tiny-laya", report="other")
+    assert refused.status_code == 422
+    error = refused.json()["error"]
+    assert error["param"] == "report"
+    assert error["message"] == message
+
+
+def test_report_refusals(studio):
+    assert plan(studio, "tiny-laya", report="missing").status_code == 404
+    assert plan(studio, "tiny-laya", report="../x").status_code == 400
+    same = plan(studio, "tiny-laya", report="tickets")
+    assert same.status_code == 400 and same.json()["error"]["param"] == "report"
+
+
+def test_a_fit_reported_on_another_file(studio, models):
+    write_data(studio, "report", [(f"new ticket {i}", "tech") for i in range(8)])
+    body = {"kind": "fit", "model": "tiny-laya", "data": "tickets", "report": "report"}
+    for extra, param in (({"report": "tickets"}, "report"),
+                         ({"report": "missing"}, "report"),
+                         ({"holdout": 0.3}, "holdout")):  # fmt: skip
+        refused = studio.post("/studio/api/jobs", json={**body, **extra})
+        assert refused.status_code in (400, 404), refused.text
+        assert refused.json()["error"]["param"] == param
+    started = studio.post("/studio/api/jobs", json={**body, "method": "calibrate", "seed": 2})
+    assert started.status_code == 202, started.text
+    job = started.json()["job"]
+    command = job["command"]
+    report = (studio.data.parent / "report.jsonl").resolve()
+    assert command[command.index("--validation") + 1] == str(report)
+    assert "--holdout" not in command
+    assert job["details"]["report"] == "report"
+    # The report file is in use: it cannot be deleted while the fit runs.
+    busy = studio.request("DELETE", "/studio/api/data/report", json={})
+    assert busy.status_code == 409 and "reads report" in busy.text
+    studio.post(f"/studio/api/jobs/{job['id']}/stop", json={})
