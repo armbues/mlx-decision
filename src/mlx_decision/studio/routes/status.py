@@ -83,7 +83,7 @@ def status_router(
     gpu: Gpu,
     files: Workspace,
     models: Models,
-    config: Config,
+    config: Callable[[], Config],
     host: str,
     port: int,
     api_key: str | None,
@@ -107,15 +107,16 @@ def status_router(
             "models": pool.names,
             "default_model": pool.default,
             "config": {
-                "path": str(config.path),
-                "exists": config.path.is_file(),
-                "values": config_values(config),
+                "path": str(config().path),
+                "exists": config().path.is_file(),
+                "values": config_values(config()),
             },
         }
 
     @router.get("/models")
     async def list_models():
         def describe() -> list[dict[str, Any]]:
+            current = config()
             loaded = set(pool.loaded())
             listed = []
             for name, spec in pool.specs.items():
@@ -136,7 +137,7 @@ def status_router(
                     entry["error"] = str(error)
                 try:
                     entry.update(models.facts(name))
-                    entry["cli"] = cli_arguments(spec, config, entry.get("repo"))
+                    entry["cli"] = cli_arguments(spec, current, entry.get("repo"))
                     entry["memory"] = models.memory(name)
                 except (ValueError, OSError) as error:
                     entry["memory"] = None

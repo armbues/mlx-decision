@@ -433,7 +433,7 @@ def test_set_models_dir_creates_the_file(tmp_path):
         ("port = 8100", 'port = 8100\nmodels_dir = "{v}"\n'),
         (
             'host = "x"\n\n[later]\nkey = 1\n',
-            'host = "x"\n\nmodels_dir = "{v}"\n\n[later]\nkey = 1\n',
+            'host = "x"\nmodels_dir = "{v}"\n\n[later]\nkey = 1\n',
         ),
     ],
 )
@@ -471,4 +471,109 @@ def test_set_models_dir_refuses_what_it_cannot_do_cleanly(tmp_path):
     with pytest.raises(ConfigError, match="add models_dir"):
         set_models_dir(None, path)
     assert path.read_text() == nested
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+# write_key: the Settings page's writes, one line per key
+
+
+FILE = """# my Studio
+port = 8001  # a comment that stays
+models = [
+  "~/Models/laya",  # the English one
+  "org/repo",
+]
+
+memory_budget_gb = 12
+
+[server]
+port = 9000
+"""
+
+
+def test_write_key_replaces_a_line_in_place(tmp_path):
+    from mlx_decision.config import write_key
+
+    path = tmp_path / "config.toml"
+    path.write_text(FILE)
+    assert write_key("port", 8100, path) == "port = 8100"
+    assert path.read_text() == FILE.replace(
+        "port = 8001  # a comment that stays\n", "port = 8100\n"
+    )
+    assert load(path).port == 8100
+    # A list over several lines is one key.
+    write_key("models", ["~/Models/d3", "~/Models/laya"], path)
+    text = path.read_text()
+    assert 'models = ["~/Models/d3", "~/Models/laya"]\n' in text
+    assert "the English one" not in text and "[server]\nport = 9000\n" in text
+    assert text.startswith("# my Studio\nport = 8100\nmodels = [")
+    assert load(path).memory_budget_gb == 12
+
+
+def test_write_key_adds_before_the_first_table_or_at_the_end(tmp_path):
+    from mlx_decision.config import write_key
+
+    path = tmp_path / "config.toml"
+    path.write_text(FILE)
+    write_key("host", "0.0.0.0", path)
+    # After the last top-level line, one blank line before the table.
+    assert path.read_text() == FILE.replace(
+        "memory_budget_gb = 12\n\n[server]", 'memory_budget_gb = 12\nhost = "0.0.0.0"\n\n[server]'
+    )
+    plain = tmp_path / "plain.toml"
+    plain.write_text("port = 1")  # no newline at the end
+    write_key("workspace", tmp_path / "ws", plain)
+    assert plain.read_text() == f'port = 1\nworkspace = "{tmp_path / "ws"}"\n'
+    created = tmp_path / "new" / "config.toml"
+    assert write_key("default_model", "laya", created) == 'default_model = "laya"'
+    assert created.read_text() == 'default_model = "laya"\n'
+
+
+def test_write_key_writes_home_folders_with_a_tilde(tmp_path, monkeypatch):
+    from mlx_decision.config import write_key
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path = tmp_path / "config.toml"
+    assert write_key("models_dir", tmp_path / "Models", path) == 'models_dir = "~/Models"'
+    assert write_key("models_dir", "hf-cache", path) == 'models_dir = "hf-cache"'
+    assert path.read_text() == 'models_dir = "hf-cache"\n'
+
+
+def test_write_key_takes_a_key_out(tmp_path):
+    from mlx_decision.config import write_key
+
+    path = tmp_path / "config.toml"
+    path.write_text(FILE)
+    assert write_key("models", None, path) is None
+    assert path.read_text() == FILE.replace(
+        'models = [\n  "~/Models/laya",  # the English one\n  "org/repo",\n]\n', ""
+    )
+    before = path.read_text()
+    assert write_key("models", None, path) is None  # not there: nothing changes
+    assert path.read_text() == before
+    write_key("port", None, path)
+    assert load(path).port is None
+    assert "[server]\nport = 9000\n" in path.read_text()  # the table's own port stays
+
+
+def test_write_key_refuses_and_leaves_the_file(tmp_path):
+    from mlx_decision.config import write_key
+
+    path = tmp_path / "config.toml"
+    path.write_text(FILE)
+    (tmp_path / "a-file").write_text("x")
+    for key, value, message in [
+        ("port", 70000, "port must be between 1 and 65535"),
+        ("memory_budget_gb", -1, "must not be negative"),
+        ("models", "laya", "must be a list"),
+        ("models_dir", tmp_path / "a-file", "must be a folder"),
+        ("host", "", "must not be empty"),
+        ("api_key", "secret", "not a key"),
+    ]:
+        with pytest.raises(ConfigError, match=message):
+            write_key(key, value, path)
+    assert path.read_text() == FILE
+    path.write_text("port = \n")
+    with pytest.raises(ConfigError, match="not valid TOML"):
+        write_key("port", 1, path)
     assert not list(tmp_path.glob(".*.tmp"))

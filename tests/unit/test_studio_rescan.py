@@ -141,7 +141,11 @@ def test_the_catalog_survives_a_named_model_that_cannot_be_read(tmp_path):
     skipped = []
     found = catalog.scan(lambda path, reason: skipped.append(reason))
     assert [spec.name for spec in found] == ["mine"]
-    assert skipped and "the named models" in skipped[0]
+    assert skipped and skipped[0].startswith(str(tmp_path / "missing"))
+    # One that cannot be read does not hide the others named with it.
+    write_model(tmp_path / "kept" / "named")
+    catalog.references.append(str(tmp_path / "kept"))
+    assert sorted(spec.name for spec in catalog.scan()) == ["mine", "named"]
 
 
 def test_pool_remove(tmp_path):

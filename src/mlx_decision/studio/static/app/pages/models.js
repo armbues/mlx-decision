@@ -3,6 +3,7 @@
 // they are also in the inspector, the memory card and a row's context menu.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
+import { useEffect } from "preact/hooks";
 import { Download, Picture } from "../components/icons.js";
 import { LoadButton } from "../components/load-button.js";
 import { groupColour, groupLabel, markOf } from "../families.js";
@@ -13,6 +14,8 @@ import { SHORTCUTS, onKey } from "../keys.js";
 import { openConvert } from "../models/convert.js";
 import { openDownload } from "../models/download.js";
 import { FirstStart } from "../models/first-start.js";
+import { Places, loadPlaces } from "../settings/places.js";
+import { settingsChange } from "../stream.js";
 import { href, route } from "../router.js";
 import { gpuJob, jobs, progress, stopJob } from "../store/jobs.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
@@ -379,6 +382,10 @@ const action = computed(() => ({
 onKey("download", () => openDownload());
 
 function Centre() {
+  // Where models live: again when the list changes (a download, a rescan) or the config does.
+  useEffect(() => {
+    loadPlaces();
+  }, [models.value, settingsChange.value]);
   const list = models.value;
   if (!list) return html`<div class="centre-inner"></div>`;
   const fitted = list.filter((model) => model.fitted).length;
@@ -402,6 +409,7 @@ function Centre() {
                 <${Downloading} />
               </div>
             </section>
+            <${Places} />
             <${ContextMenu} />
           `}
     </div>

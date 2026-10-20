@@ -1,8 +1,8 @@
 // The page and its item from the address: #/playground/<set>, #/models/<name>,
-// #/training.
+// #/training, #/settings.
 import { signal } from "@preact/signals";
 
-export const PAGES = ["playground", "models", "training"];
+export const PAGES = ["playground", "models", "training", "settings"];
 
 function parse() {
   const [page, item] = location.hash.replace(/^#\/?/, "").split("/");

@@ -31,8 +31,10 @@ from .routes.jobs import JobMessages, jobs_router
 from .routes.models import models_router
 from .routes.run import Models, Recorder, run_router
 from .routes.sets import sets_router
+from .routes.settings import settings_router
 from .routes.status import status_router
 from .security import NO_STORE, Session
+from .settings import Settings
 from .stream import Hub, stream_router
 from .workspace import Workspace, root_folder
 
@@ -50,6 +52,7 @@ def create_studio(
     max_body_bytes: int = MAX_BODY_BYTES,
     dev: bool = False,
     catalog: Catalog | None = None,
+    sources: dict[str, str] | None = None,
 ) -> FastAPI:
     """The Studio's app for a process serving ``host:port``.
 
@@ -58,11 +61,14 @@ def create_studio(
     ``app.state.workspace`` the workspace (``workspace``, else ``home()``),
     created and cleaned up here; ``app.state.hub`` the stream's hub;
     ``app.state.jobs`` the jobs, stopped when the Studio stops; a fresh
-    stream's snapshot carries this process's jobs. ``app.state.config``
-    is the config file as read; downloads go where its ``models_dir`` says.
+    stream's snapshot carries this process's jobs. ``app.state.settings``
+    holds the config file as last read (downloads go where its
+    ``models_dir`` says) and changes it (the Settings page).
     ``catalog`` is where the pool's models came from (``web``'s); the Studio
     looks there again after a job wrote a model (by default only the
-    workspace's ``models/``), as ``app.state.rescans``.
+    workspace's ``models/``), as ``app.state.rescans``. ``sources`` says
+    where each setting came from ("flag", "config", "default"; ``web``'s),
+    for the config the Models page shows.
     ``config`` is the config file the process read (read here when not
     given), shown by the status route. The pool's default model loads at
     startup unless ``load_default`` is False. With ``dev`` the page's files
@@ -89,6 +95,18 @@ def create_studio(
         hub.publish("catalog", {"added": added, "removed": removed})
 
     rescans = Rescans(gpu, catalog, catalog_changed)
+    settings = Settings(
+        config,
+        gpu,
+        catalog,
+        files,
+        host,
+        port,
+        rescans,
+        sources,
+        on_change=lambda key: hub.publish("settings", {"key": key}),
+        api_key=bool(api_key),
+    )
     app = FastAPI(
         title="mlx-decision Studio",
         lifespan=studio_lifespan(gpu, files, hub, status, load_default, page, jobs, rescans),
@@ -101,7 +119,7 @@ def create_studio(
     app.state.workspace = files
     app.state.hub = hub
     app.state.jobs = jobs
-    app.state.config = config
+    app.state.settings = settings
     app.state.rescans = rescans
     security.install(app, session, host, port, api_key)
     recorder = Recorder(files, models)
@@ -109,20 +127,22 @@ def create_studio(
     add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
     page.mount(app)
     app.include_router(page_router(page, session, api_key))
-    app.include_router(status_router(gpu, files, models, config, host, port, api_key, status))
+    current = lambda: settings.config  # noqa: E731 - read at each request: Settings changes it
+    app.include_router(status_router(gpu, files, models, current, host, port, api_key, status))
     app.include_router(sets_router(files, max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
     app.include_router(models_router(gpu, max_body_bytes, rescans))
-    app.include_router(jobs_router(jobs, gpu, files, lambda: app.state.config, max_body_bytes))
+    app.include_router(jobs_router(jobs, gpu, files, current, max_body_bytes))
     app.include_router(
         downloads_router(
             gpu,
-            lambda: app.state.config,
+            current,
             max_body_bytes,
-            set_config=lambda updated: setattr(app.state, "config", updated),
+            set_config=lambda updated: setattr(settings, "config", updated),
             catalog=catalog,
         )
     )
+    app.include_router(settings_router(gpu, files, catalog, settings, max_body_bytes))
     app.include_router(stream_router(hub))
     return app
 
@@ -151,12 +171,14 @@ def status_reader(gpu: Gpu) -> Callable[[], dict[str, Any]]:
     and the memory they count against the budget, in bytes. Safe to call
     from any thread."""
     pool = gpu.pool
-    budget = None
+    limits: dict[int | None, int] = {}
 
     def status() -> dict[str, Any]:
-        nonlocal budget
-        if budget is None:  # the working set does not change: read it once
-            budget = pool.limit()
+        # The working set does not change: read once per budget (Settings
+        # may change the budget).
+        if pool.budget not in limits:
+            limits[pool.budget] = pool.limit()
+        budget = limits[pool.budget]
         return {
             "busy": gpu.holder,
             "loaded": pool.loaded(),

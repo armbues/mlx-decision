@@ -33,6 +33,7 @@ from mlx_decision.config import Config
 from mlx_decision.memory import ModelTooLargeError
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, server
+from mlx_decision.studio.catalog import Catalog
 
 GB = 10**9
 FAKE_JOB = Path(__file__).resolve().parents[1] / "fake_job.py"
@@ -141,8 +142,16 @@ def write_studio(
     (data / "tickets.jsonl").write_text(json.dumps(line) + "\n")
     # Its own config file (none), never the one in the user's home.
     config = Config(home / "config.toml")
+    # Where the models come from, as web passes it (Where models live, rescans).
+    catalog = Catalog([] if empty else [str(models)], home / "ws" / "models", include_cache=False)
     app = create_studio(
-        pool, port=port, workspace=home / "ws", config=config, load_default=False, dev=dev
+        pool,
+        port=port,
+        workspace=home / "ws",
+        config=config,
+        load_default=False,
+        dev=dev,
+        catalog=catalog,
     )
     fake_jobs(app)
     return app

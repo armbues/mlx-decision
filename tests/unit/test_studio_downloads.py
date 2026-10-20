@@ -244,7 +244,7 @@ def test_the_hugging_face_cache_answer_is_added_to_the_config(make_studio, tmp_p
     assert answer.json()["destination"]["setting"] == "models_dir"
     # Before the first table; every other byte kept.
     assert config.read_text() == (
-        '# my settings\nmemory_budget_gb = 8\n\nmodels_dir = "hf-cache"\n\n[server]\n'
+        '# my settings\nmemory_budget_gb = 8\nmodels_dir = "hf-cache"\n\n[server]\n'
         "  port = 9000 # kept\n"
     )
     assert studio.get("/studio/api/downloads/first").json()["models_dir_set"] is True

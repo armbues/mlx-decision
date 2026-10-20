@@ -12,6 +12,7 @@ const PAGE_LINKS = [
   { id: "playground", label: "Playground", Icon: icons.Playground },
   { id: "models", label: "Models", Icon: icons.Models },
   { id: "training", label: "Training", Icon: icons.Training },
+  { id: "settings", label: "Settings", Icon: icons.Settings },
 ];
 
 function Pages({ current }) {

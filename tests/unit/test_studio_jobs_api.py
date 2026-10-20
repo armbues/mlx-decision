@@ -166,7 +166,7 @@ def test_a_download_goes_where_the_config_says(studio, tmp_path):
     wait_for(studio, job["id"])
     # models_dir set (read at each start): the repo's name in it.
     models_dir = tmp_path / "downloads"
-    studio.app_state.config = Config(tmp_path / "config.toml", models_dir=models_dir)
+    studio.app_state.settings.config = Config(tmp_path / "config.toml", models_dir=models_dir)
     job = start(studio, kind="download", repo="Org/model-x").json()["job"]
     assert job["command"][1:] == [
         "download",

@@ -86,23 +86,24 @@ class Catalog:
 
     def scan(self, on_skip: Callable[[Path, str], None] = lambda path, reason: None):
         """The models there are now. A named model that cannot be read any more
-        does not stop the others from being listed."""
+        is passed to ``on_skip`` and left out; the others are still listed."""
         references = self._references()
         try:
             return studio_models(
                 references, self.workspace_models, self.options, self.include_cache, on_skip
             )
-        except (ValueError, OSError) as error:
-            on_skip(Path("."), f"the named models: {error}")
-            folder = [str(self.models_dir)] if references[-1:] == [str(self.models_dir)] else []
-            try:
-                return studio_models(
-                    folder, self.workspace_models, self.options, self.include_cache, on_skip
-                )
-            except (ValueError, OSError):
-                return studio_models(
-                    [], self.workspace_models, self.options, self.include_cache, on_skip
-                )
+        except (ValueError, OSError):
+            readable = []
+            for reference in references:
+                try:
+                    discover([reference], self.options, on_skip)
+                except (ValueError, OSError) as error:
+                    on_skip(Path(reference), f"{reference}: {error}")
+                    continue
+                readable.append(reference)
+            return studio_models(
+                readable, self.workspace_models, self.options, self.include_cache, on_skip
+            )
 
     def _references(self) -> list[str]:
         """``references``, and ``models_dir`` last when it has models and is not

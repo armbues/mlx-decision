@@ -1180,6 +1180,19 @@ def web(
 
     log_to_stderr()
     config = read_config()
+    from .studio.settings import setting_sources
+
+    sources = setting_sources(
+        config,
+        {
+            "models": model,
+            "default_model": default_model,
+            "memory_budget_gb": memory_budget,
+            "host": host,
+            "port": port,
+            "workspace": workspace,
+        },
+    )
     host = config.resolve(host, "host", "127.0.0.1")
     port = config.resolve(port, "port", 8000)
     try:
@@ -1228,6 +1241,7 @@ def web(
             load_default=default_model is not None,
             dev=dev,
             catalog=catalog,
+            sources=sources,
         )
     except (OSError, ValueError) as error:
         sock.close()

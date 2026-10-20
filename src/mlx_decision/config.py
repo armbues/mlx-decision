@@ -190,45 +190,107 @@ def set_models_dir(value: Path | None, path: Path | None = None) -> str:
     """Add ``models_dir`` to the config file: ``value``, or the Hugging Face cache
     for None. Returns the line added.
 
-    The one write to the file: it is created if missing; otherwise the line
-    goes before the first table (or at the end) and every other byte is kept.
-    A folder under the home folder is written with ``~``. Raises
-    ``ConfigError`` when the file already has the key, is not valid TOML, or
-    cannot be written.
+    The CLI's one write to the file (``write_key``): it is created if
+    missing; otherwise the line goes before the first table (or at the end)
+    and every other byte is kept. A folder under the home folder is written
+    with ``~``. Raises ``ConfigError`` when the file already has the key, is
+    not valid TOML, or cannot be written.
     """
+    path = path if path is not None else home() / FILE_NAME
+    if "models_dir" in _read_toml(path):
+        raise ConfigError(f"{path}: already sets models_dir")
+    line = write_key("models_dir", HF_CACHE if value is None else value, path)
+    assert line is not None
+    return line
+
+
+def toml_value(key: str, value: Any) -> str:
+    """``value`` as the file writes it: a folder under the home folder with
+    ``~``, strings quoted, lists of strings, numbers as they are."""
     import json
+
+    if isinstance(value, Path):
+        folder = value.expanduser().absolute()
+        try:
+            value = "~/" + str(folder.relative_to(Path.home()))
+        except ValueError:
+            value = str(folder)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list | tuple):
+        return "[" + ", ".join(toml_value(key, item) for item in value) + "]"
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ConfigError(f"{key}: cannot write {value!r}")
+    return repr(value)
+
+
+def write_key(key: str, value: Any, path: Path | None = None) -> str | None:
+    """Set the top-level ``key`` in the config file to ``value``, or take it out
+    for None; returns the line written (None when taken out).
+
+    Only that key's line changes (a list spread over several lines counts as
+    one): it is replaced where it is, else added after the last top-level
+    line (before the first table, one blank line between) or at the end;
+    taken out, its lines go. Comments, tables and every other
+    byte stay. The value is checked as the file's reader checks it, and the
+    result is read back: it must hold the old values with this one change,
+    else nothing is written. The file is created if missing and replaced
+    whole (a temporary file renamed). Raises ``ConfigError``.
+    """
     import re
 
     path = path if path is not None else home() / FILE_NAME
+    if key not in _READERS:
+        raise ConfigError(f"{key}: not a key of {FILE_NAME}")
+    old = _read_text(path)
+    data = _read_toml(path, old)
+    expected = dict(data)
+    line = None
     if value is None:
-        text = HF_CACHE
+        expected.pop(key, None)
     else:
-        folder = Path(value).expanduser().absolute()
+        line = f"{key} = {toml_value(key, value)}"
+        written = tomllib.loads(line)[key]
         try:
-            text = "~/" + str(folder.relative_to(Path.home()))
-        except ValueError:
-            text = str(folder)
-    line = f"models_dir = {json.dumps(text, ensure_ascii=False)}"
-    try:
-        old = path.read_bytes().decode() if path.exists() else ""
-    except (OSError, UnicodeDecodeError) as error:
-        raise ConfigError(f"{path}: cannot read it: {error}") from None
-    try:
-        if "models_dir" in tomllib.loads(old):
-            raise ConfigError(f"{path}: already sets models_dir")
-    except tomllib.TOMLDecodeError as error:
-        raise ConfigError(f"{path}: not valid TOML: {error}") from None
+            _READERS[key](written, path.parent)
+        except _WrongValue as error:
+            raise ConfigError(f"{key} {error}") from None
+        expected[key] = written
     table = re.search(r"^[ \t]*\[", old, re.MULTILINE)
-    if table is not None:
-        new = old[: table.start()] + line + "\n\n" + old[table.start() :]
+    top = old[: table.start()] if table is not None else old
+    rest = old[len(top) :]
+    found = re.search(rf"^[ \t]*{re.escape(key)}[ \t]*=", top, re.MULTILINE)
+    if found is not None:
+        start = found.start()
+        lines = top[start:].splitlines(keepends=True)
+        end = None
+        for count in range(1, len(lines) + 1):  # a list may take several lines
+            try:
+                if key in tomllib.loads("".join(lines[:count])):
+                    end = start + len("".join(lines[:count]))
+                    break
+            except tomllib.TOMLDecodeError:
+                continue
+        if end is None:
+            raise ConfigError(f"{path}: cannot find where {key} ends; change it yourself")
+        replaced = "" if line is None else line + "\n"
+        new = top[:start] + replaced + top[end:] + rest
+    elif line is None:
+        return None  # not in the file: nothing to take out
+    elif table is not None:  # after the last top-level line, a blank line before the table
+        kept = top.rstrip("\n")
+        new = (kept + "\n" if kept else "") + line + "\n\n" + rest
     else:
         new = old + ("\n" if old and not old.endswith("\n") else "") + line + "\n"
     try:
-        added = tomllib.loads(new).get("models_dir")
+        result = tomllib.loads(new)
     except tomllib.TOMLDecodeError:
-        added = None
-    if added != text:  # what looked like a table header was inside a value
-        raise ConfigError(f"{path}: cannot add models_dir to it; add {line} yourself")
+        result = None
+    if result != expected:  # what looked like a line of its own was not
+        if found is None:
+            raise ConfigError(f"{path}: cannot add {key} to it; add {line} yourself")
+        how = f"set {line}" if line else f"take out {key}"
+        raise ConfigError(f"{path}: cannot change {key} safely; {how} yourself")
     temporary = path.with_name(f".{path.name}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -238,6 +300,20 @@ def set_models_dir(value: Path | None, path: Path | None = None) -> str:
         temporary.unlink(missing_ok=True)
         raise ConfigError(f"{path}: cannot write it: {error.strerror or error}") from None
     return line
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_bytes().decode() if path.exists() else ""
+    except (OSError, UnicodeDecodeError) as error:
+        raise ConfigError(f"{path}: cannot read it: {error}") from None
+
+
+def _read_toml(path: Path, text: str | None = None) -> dict[str, Any]:
+    try:
+        return tomllib.loads(_read_text(path) if text is None else text)
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(f"{path}: not valid TOML: {error}") from None
 
 
 class _WrongValue(Exception):

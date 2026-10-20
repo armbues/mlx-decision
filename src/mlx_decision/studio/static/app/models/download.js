@@ -235,7 +235,7 @@ function Foot() {
   return html`
     <div class="repo-field">
       <label for="repo-id">Other repo id</label>
-      <input id="repo-id" class="sheet-input mono" placeholder="org/name" spellcheck="false" autocomplete="off"
+      <input id="repo-id" class="sheet-input mono" placeholder="org/name" spellcheck=${false} autocomplete="off"
              value=${typed.value} onInput=${(event) => (typed.value = event.target.value)} onKeyDown=${onKeyDown} />
       <button class="btn" disabled=${!typed.value.trim()} onClick=${checkTyped}>Check</button>
     </div>

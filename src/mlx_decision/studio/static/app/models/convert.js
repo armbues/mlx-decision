@@ -96,7 +96,7 @@ function Body() {
     </div>
     <label class="name-field">
       <span>Name</span>
-      <input class="sheet-input mono" aria-label="Name" spellcheck="false" value=${name.value}
+      <input class="sheet-input mono" aria-label="Name" spellcheck=${false} value=${name.value}
              onInput=${(event) => {
                name.value = event.target.value;
                named.value = true;

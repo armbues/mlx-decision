@@ -57,7 +57,7 @@ function WhereModelsGo() {
           <input type="radio" name="place" value="folder" checked=${place.value === "folder"}
                  onChange=${() => (place.value = "folder")} />
           <span><b>A folder</b><small>Each model in a folder of its own; <code>-m</code> takes their names.</small>
-            <input class="folder-path mono" aria-label="Folder" value=${folder.value} spellcheck="false"
+            <input class="folder-path mono" aria-label="Folder" value=${folder.value} spellcheck=${false}
                    onFocus=${() => (place.value = "folder")} onInput=${(event) => (folder.value = event.target.value)} />
           </span>
         </label>

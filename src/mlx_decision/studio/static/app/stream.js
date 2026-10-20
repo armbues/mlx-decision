@@ -3,12 +3,14 @@
 // replays what was missed.
 import { batch, signal } from "@preact/signals";
 import { applyEvent, applyJob, applySnapshot } from "./store/jobs.js";
-import { applyStatus, connection, loadModels } from "./store/status.js";
+import { applyStatus, connection, loadModels, loadStatus } from "./store/status.js";
 import { setsChanged } from "./store/sets.js";
 
 // The latest change to the workspace ({folder, name, action, ...}), for pages
 // that show a set or its history.
 export const workspaceChange = signal(null);
+// The latest change to the config file ({key}), for the Settings page.
+export const settingsChange = signal(null);
 
 let queue = [];
 let scheduled = false;
@@ -23,6 +25,10 @@ function apply(message) {
       break;
     case "catalog": // models came or went
       loadModels();
+      break;
+    case "settings": // the config file changed (Settings, in this tab or another)
+      settingsChange.value = message;
+      loadStatus();
       break;
     case "job":
       applyJob(message.job);
