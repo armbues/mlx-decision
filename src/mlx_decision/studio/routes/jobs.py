@@ -34,7 +34,7 @@ from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
 from ..catalog import option_arguments
 from ..checks import training_data_warnings
-from ..jobs import Job, JobConflict, Jobs
+from ..jobs import Job, JobBlocked, JobConflict, Jobs
 from ..security import is_loopback
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
@@ -452,11 +452,13 @@ def jobs_router(
                 inputs=plan.inputs,
                 also=plan.also,
             )
-        except (JobConflict, RuntimeError) as error:
+        except (JobConflict, JobBlocked, RuntimeError) as error:
             if plan.undo is not None:
                 plan.undo()
             if isinstance(error, JobConflict):
                 raise conflict(error) from None
+            if isinstance(error, JobBlocked):
+                raise ApiError(409, str(error), code="batch_running") from None
             raise ApiError(503, str(error), kind="api_error") from None
         return {"job": job.summary()}
 

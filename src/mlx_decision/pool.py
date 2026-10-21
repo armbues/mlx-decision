@@ -257,6 +257,9 @@ class ModelPool:
         self._groups: OrderedDict[tuple[str, str], _Group] = OrderedDict()
         self._loaded: OrderedDict[str, DecisionModel] = OrderedDict()
         self._sizes: dict[str, int] = {}
+        # Models kept loaded by name -> who keeps them (a batch): never unloaded
+        # to make room, and not by ``unload``.
+        self._pinned: dict[str, str] = {}
         # Copies for other threads (the server's /health), replaced after each change.
         self._loaded_names: tuple[str, ...] = ()
         self._used_bytes = 0
@@ -323,15 +326,36 @@ class ModelPool:
         self._changed()
         return names
 
+    def pin(self, name: str, holder: str) -> None:
+        """Keep ``name`` (with the weights it shares) loaded for ``holder`` until
+        ``unpin``: a model that needs its memory is refused with ``Busy``."""
+        self._pinned[name] = holder
+
+    def unpin(self, name: str) -> None:
+        self._pinned.pop(name, None)
+
+    def pinned_by(self, name: str) -> str | None:
+        """Who keeps ``name``'s weights loaded (it or a model sharing them), or None."""
+        key = self._keys.get(name)
+        return next(
+            (holder for pinned, holder in self._pinned.items() if self._keys.get(pinned) == key),
+            None,
+        )
+
     def unload(self, name: str) -> list[str]:
         """Unload ``name`` with everything that shares its weights (a base and
         the fitted models on it) and free their memory; returns the names
         unloaded, none when it is not loaded. Raises ``KeyError`` for a name
-        the pool does not have."""
+        the pool does not have, ``Busy`` for one ``pin`` keeps loaded."""
         if name not in self.specs:
             raise KeyError(name)
         if name not in self._loaded:
             return []
+        holder = self.pinned_by(name)
+        if holder is not None:
+            from .gpu import Busy
+
+            raise Busy(holder)
         names = self._drop(self._keys[name], "")
         _release_memory()
         self._changed()
@@ -478,12 +502,24 @@ class ModelPool:
 
     def _make_room(self, needed: int, name: str, keep: tuple[str, str]) -> None:
         """Unload the least recently used models (with all that share their base)
-        until ``needed`` more bytes fit; never the group ``keep``."""
+        until ``needed`` more bytes fit; never the group ``keep`` nor a pinned
+        one: ``Busy`` naming who pinned it when only that would make room."""
         limit = self.limit()
         unloaded = False
+        pinned = {self._keys[n]: who for n, who in self._pinned.items() if n in self._keys}
         while sum(group.total for group in self._groups.values()) + needed > limit:
-            old = next((key for key in self._groups if key != keep), None)
+            old = next((key for key in self._groups if key != keep and key not in pinned), None)
             if old is None:
+                blocking = [
+                    who for key, who in pinned.items() if key in self._groups and key != keep
+                ]
+                if blocking:
+                    if unloaded:
+                        _release_memory()
+                        self._changed()
+                    from .gpu import Busy
+
+                    raise Busy(blocking[0])
                 break
             self._drop(old, f"to make room for {name}")
             unloaded = True

@@ -23,6 +23,7 @@ from ..gpu import Gpu
 from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
+from .batches import BatchError, Batches
 from .catalog import Catalog
 from .jobs import Jobs
 from .page import Page, watch
@@ -127,6 +128,28 @@ def create_studio(
     app.state.rescans = rescans
     security.install(app, session, host, port, api_key)
     recorder = Recorder(files, models)
+    batches = Batches(gpu, files, models, record=lambda answered: recorder.speed(answered, "batch"))
+    batches.open()
+    app.state.batches = batches
+
+    def batch_blocks() -> str | None:
+        running = batches.running
+        if running is None:
+            return None
+        model = running.info["model"]
+        return f"the batch {running.name} is running on {model}; start this when it is done"
+
+    def job_blocks() -> None:
+        job = jobs.gpu_job
+        if job is not None:
+            raise BatchError(
+                f"{job.title} is using the GPU; start the batch when it has ended",
+                status=409,
+                code="gpu_job_running",
+            )
+
+    jobs.blocked = batch_blocks
+    batches.refuse = job_blocks
     routes.install_errors(app)
     add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
     page.mount(app)
@@ -218,7 +241,8 @@ def studio_lifespan(
     """Start the GPU (its default model loads, with ``load_default``) and close it
     at the end, as ``server.gpu_lifespan`` does, plus the stream: changes to the
     GPU's holder, the pool, the workspace and the ``jobs`` become messages; the
-    streams end when the Studio stops. Running jobs are stopped first. A job
+    streams end when the Studio stops. A running batch and running jobs are
+    stopped first. A job
     that wrote a model and ended ``done`` starts a rescan."""
 
     def publish_status() -> None:
@@ -260,6 +284,9 @@ def studio_lifespan(
         finally:  # also when the default model fails to load
             if watcher is not None:
                 watcher.cancel()
+            batches = getattr(app.state, "batches", None)
+            if batches is not None:  # after the row on the worker; what it answered stays
+                await batches.shutdown()
             if jobs is not None:
                 await jobs.shutdown()
             hub.close()

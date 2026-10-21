@@ -8,6 +8,8 @@ Layout (``README.md`` in the folder says the same for its readers)::
     history/images/<sha256>.<ext>  the images of those runs, each stored once
     data/<name>/                 datasets: dataset.json and one file per split
     data/<name>.jsonl            or one file of training data (``training fit --data``)
+    batches/<name>/              a dataset's rows answered by a model: batch.json,
+                                 questions.json, rows.jsonl, results.jsonl
     models/<name>/               converted and fitted models (``-m``)
     jobs/<id>/                   one folder per job
     speed/<fingerprint>.jsonl    measured request times per model
@@ -47,7 +49,7 @@ from ..data.dataset import DATASET_FILE, open_dataset
 from ..errors import DecisionError
 from ..images import check_data_urls
 
-FOLDERS = ("sets", "history", "data", "models", "jobs", "speed")
+FOLDERS = ("sets", "history", "data", "batches", "models", "jobs", "speed")
 NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}")
 SET_SUFFIX = ".json"
 DATA_SUFFIX = ".jsonl"
@@ -91,6 +93,11 @@ README when it starts.
 - `data/`: datasets, each a folder (`dataset.json` with its questions and
   what each label value means, and one JSON-lines file per split) or a
   single JSON-lines file: `mlx-decision training fit -m MODEL --data data/NAME`.
+- `batches/`: a dataset's rows answered by a model, one folder per batch:
+  `batch.json` (what it ran, how far it got), `questions.json`, `rows.jsonl`
+  and `results.jsonl` (one line per row answered).
+  `mlx-decision run -m MODEL -q batches/NAME/questions.json --states
+  batches/NAME/rows.jsonl --json` answers the same rows.
 - `models/`: models the Studio converted or fitted, each a model folder:
   `mlx-decision run -m models/NAME`.
 - `jobs/`: one folder per job (download, convert, fit, eval): `job.json`

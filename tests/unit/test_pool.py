@@ -486,3 +486,44 @@ def test_a_failing_change_callback_leaves_the_pool_working(models, caplog):
         assert pool.get("beta").name == "beta"
     assert pool.loaded() == ["beta"]
     assert "the pool's change callback failed" in caplog.text
+
+
+# Pinned models (a batch keeps its model loaded)
+
+
+def test_a_pinned_model_is_never_unloaded_to_make_room(models):
+    from mlx_decision.gpu import Busy
+
+    pool, _ = make_pool(models, budget=2200)  # two of the three fit
+    pool.get("Alpha")
+    pool.pin("Alpha", "batch tweets")
+    pool.get("beta")
+    pool.get("gamma")  # beta goes, though Alpha was used longer ago
+    assert pool.loaded() == ["Alpha", "gamma"]
+
+    alone, _ = make_pool(models, budget=1100)  # one at a time
+    alone.get("Alpha")
+    alone.pin("Alpha", "batch tweets")
+    with pytest.raises(Busy, match="batch tweets"):
+        alone.get("beta")
+    with pytest.raises(Busy, match="batch tweets"):
+        alone.unload("Alpha")
+    assert alone.loaded() == ["Alpha"]
+    alone.unpin("Alpha")
+    alone.get("beta")
+    assert alone.loaded() == ["beta"]
+
+
+def test_a_pin_keeps_the_weights_a_fitted_model_shares(fits):
+    from mlx_decision.gpu import Busy
+
+    pool, _ = make_pool(fits, budget=1100 + 2 * fit_bytes(fits / "fit-a"))
+    pool.get("fit-a")
+    pool.pin("fit-a", "batch b")
+    pool.get("fit-b")  # shares the base: no room needed
+    assert pool.pinned_by("base") == pool.pinned_by("fit-b") == "batch b"
+    assert pool.pinned_by("other") is None
+    with pytest.raises(Busy):
+        pool.get("other")
+    with pytest.raises(Busy):
+        pool.unload("fit-b")  # it shares the pinned weights

@@ -77,6 +77,10 @@ class JobConflict(Exception):
         self.running = running
 
 
+class JobBlocked(Exception):
+    """A GPU job refused while something else uses the model pool (a batch)."""
+
+
 @dataclass
 class Job:
     id: str
@@ -138,7 +142,8 @@ class Jobs:
 
     ``command`` is what runs (the CLI; tests put a stand-in there).
     ``on_change(job, event)`` is called on the loop when a job changes
-    (``event`` None) or sends an event.
+    (``event`` None) or sends an event. ``blocked``, when set, says why a GPU
+    job cannot start now (a batch runs), or None.
     """
 
     def __init__(
@@ -158,6 +163,7 @@ class Jobs:
         self.on_change: Callable[[Job, dict[str, Any] | None], None] | None = None
         self.jobs: dict[str, Job] = {}
         self.gpu_job: Job | None = None
+        self.blocked: Callable[[], str | None] | None = None
         self.closing = False
 
     # Starting and running
@@ -180,7 +186,8 @@ class Jobs:
         removed after a kill). A GPU job waits for the request on the worker
         and the unload before its process starts. Raises ``JobConflict``
         while another GPU job is waiting or running, and ``RuntimeError``
-        once the Studio is stopping. ``details`` are what the job was started
+        once the Studio is stopping, ``JobBlocked`` while ``blocked`` says so.
+        ``details`` are what the job was started
         with (the page's fields), kept in its summary. ``inputs`` are files
         written into the job's folder before it runs (``FOLDER`` in ``argv``
         stands for that folder). ``also`` are more files it writes (cleaned up
@@ -230,6 +237,8 @@ class Jobs:
             raise RuntimeError("the Studio is stopping")
         if holds_gpu and self.gpu_job is not None:
             raise JobConflict(self.gpu_job)
+        if holds_gpu and self.blocked is not None and (reason := self.blocked()):
+            raise JobBlocked(reason)
         job = self._new(kind, list(argv), holds_gpu, output, title, details or {}, inputs or {})
         job.also = [Path(path) for path in also]
         if holds_gpu:
