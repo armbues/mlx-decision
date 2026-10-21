@@ -2,22 +2,22 @@
 // has New Fit and New Evaluation, then the History of fits and evaluations
 // (the running one on top); the centre is the fit form (#/training), the
 // Evaluate form (#/training/evaluate) or a run's progress and report
-// (#/training/JOB); the inspector shows the dataset of the form or the run.
+// (#/training/JOB). No inspector: the forms show the dataset's labels.
 import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { uploadData } from "../datasets/files.js";
 import { openGetDataset } from "../datasets/get.js";
-import { DatasetSummary } from "../datasets/summary.js";
 import { plural } from "../format.js";
 import { onKey, SHORTCUTS } from "../keys.js";
 import { href, navigate, route } from "../router.js";
 import { dataFiles } from "../store/data.js";
 import { fitById, fits } from "../store/fits.js";
 import { progress } from "../store/jobs.js";
-import { EvalForm, evalData, evalModel, evalNotReady, evalSplit, startEval } from "../training/evaluate.js";
-import { FitForm, fitData, notReady, planned, startFit, trainSplit } from "../training/fit.js";
+import { inspectorMode } from "../store/ui.js";
+import { EvalForm, evalData, evalModel, evalNotReady, startEval } from "../training/evaluate.js";
+import { FitForm, fitData, notReady, planned, startFit } from "../training/fit.js";
 import { FitView } from "../training/run.js";
 
 const EVALUATE = "evaluate";
@@ -147,14 +147,7 @@ function FitList() {
   `;
 }
 
-const Dataset = () => {
-  const id = shown();
-  const job = id ? fitById(id) : null;
-  const name = job ? job.details?.data : evaluating() ? evalData.value : fitData.value;
-  const split = job ? (job.details?.split ?? null) : evaluating() ? evalSplit.value : trainSplit.value;
-  if (!name) return html`<div class="empty"><b>No dataset</b><span>The form's dataset shows here.</span></div>`;
-  return html`<${DatasetSummary} name=${name} split=${split} />`;
-};
+inspectorMode("training", { mode: "none" });
 
 export default {
   id: "training",
@@ -163,5 +156,4 @@ export default {
   status,
   Centre,
   SidebarList: FitList,
-  tabs: [{ id: "dataset", label: "Dataset", Body: Dataset }],
 };

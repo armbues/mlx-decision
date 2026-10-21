@@ -7,12 +7,13 @@ import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import { openNewBatch } from "../batches/start.js";
-import { BatchView, RowInspector } from "../batches/view.js";
+import { BatchView, pickedRow, RowInspector } from "../batches/view.js";
 import * as icons from "../components/icons.js";
 import { plural } from "../format.js";
 import { href, route } from "../router.js";
 import { batchByName, batches, batchProgressText, loadBatches } from "../store/batches.js";
 import { dataFiles } from "../store/data.js";
+import { inspectorMode } from "../store/ui.js";
 
 const shown = () => (route.value.page === "batches" ? route.value.item : null);
 
@@ -101,6 +102,13 @@ function BatchList() {
 }
 
 const Row = () => html`<${RowInspector} name=${shown()} />`;
+
+// The inspector only while a row is picked (closing it unpicks the row).
+inspectorMode("batches", {
+  mode: "pick",
+  picked: computed(() => pickedRow.value != null && pickedRow.value.name === shown()),
+  close: () => (pickedRow.value = null),
+});
 
 export default {
   id: "batches",

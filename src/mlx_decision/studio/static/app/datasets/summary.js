@@ -93,6 +93,19 @@ export function DatasetSummary({ name, split = null }) {
   `;
 }
 
+// A split's labels on one line, per question: "topic: analyst 20 · fed 20 · other 20".
+export function LabelLine({ name, split = null }) {
+  const summary = useSummary(name, split);
+  if (!summary || summary.error) return null;
+  const asked = summary.questions.filter((question) => question.labelled > 0);
+  if (!asked.length) return html`<span class="hint">No labels in this split</span>`;
+  return html`<span class="hint label-line">${asked.map((question, index) => {
+    const shown = question.labels.slice(0, 6).map(([label, count]) => `${label} ${count.toLocaleString("en")}`);
+    const more = question.labels.length > 6 ? ` · ${question.labels.length - 6} more` : "";
+    return html`${index ? html`<br />` : ""}${asked.length > 1 ? html`<code>${question.id}</code>: ` : ""}${shown.join(" · ")}${more}`;
+  })}</span>`;
+}
+
 // The path for a command line: with ~ when the shell needs no quotes for it.
 const pathWord = (summary) => (/^[A-Za-z0-9_@%+=:,./~-]+$/.test(summary.display) ? summary.display : shellWord(summary.path));
 

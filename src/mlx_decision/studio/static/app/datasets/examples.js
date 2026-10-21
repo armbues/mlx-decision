@@ -8,7 +8,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { api } from "../api.js";
 import { plural } from "../format.js";
 import { modifiedOf } from "../store/data.js";
-import { FileGroup, useSummary, valueWords } from "./summary.js";
+import { useSummary, valueWords } from "./summary.js";
 
 export const PAGE = 50;
 
@@ -287,7 +287,6 @@ export function ExampleInspector({ name, split = null, shown = null }) {
                   </dd></div>`;
                 })}
               </dl></section>`}`}
-      ${summary && !summary.error && html`<${FileGroup} summary=${summary} />`}
     </div>
   `;
 }

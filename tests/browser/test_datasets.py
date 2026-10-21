@@ -122,9 +122,14 @@ def test_the_table_pages_filters_and_searches(support, page):
 def test_the_example_whole_in_the_inspector(support, page):
     open_studio(page, support, "datasets/support")
     inspector = page.locator(".inspector")
-    expect(inspector).to_contain_text("No example picked")
-    expect(inspector.locator(".file-group")).to_contain_text("--data")
+    # No inspector until an example is picked; the files are in the centre.
+    expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))
+    expect(
+        page.get_by_role("button", name="Pick a row to see it in the inspector")
+    ).to_be_disabled()
+    expect(page.locator(".centre .ds-files .file-group")).to_contain_text("--data")
     page.locator(".ex-row", has_text="My card was charged twice").click()
+    expect(page.locator(".app")).to_have_class(re.compile(r"\binspector-open\b"))
     expect(inspector.locator(".idet-head h2")).to_have_text("t7")
     expect(inspector.locator(".idet-head p")).to_have_text("Example 8 of 120")
     whole = inspector.locator(".ex-whole")
@@ -140,9 +145,17 @@ def test_the_example_whole_in_the_inspector(support, page):
     page.keyboard.press("ArrowUp")
     page.keyboard.press("ArrowUp")
     expect(inspector.locator(".idet-head h2")).to_have_text("t6")
+    # Esc closes it and unpicks; the close button too.
+    page.keyboard.press("Escape")
+    expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))
+    expect(page.locator(".ex-row[aria-selected='true']")).to_have_count(0)
+    page.locator(".ex-row", has_text="My card was charged twice").click()
+    inspector.get_by_role("button", name="Close the Example").click()
+    expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))
     # Another dataset: nothing picked, its first page.
+    page.locator(".ex-row", has_text="My card was charged twice").click()
     page.locator(".sidebar .data-list .sb-item", has_text="tickets").click()
-    expect(inspector).to_contain_text("No example picked")
+    expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))
     expect(page.locator(".ex-rows .ex-row")).to_have_count(1)
 
 
@@ -153,10 +166,10 @@ def test_fit_on_it(support, page):
     form = page.locator(".fit-form")
     expect(form.locator("#fit-data")).to_have_value("support")
     expect(form.locator(".split-legend")).to_contain_text("24 kept aside for the report")
-    expect(page.locator(".inspector .data-inspector h2")).to_have_text("support")
-    # The form's own field picks another; the inspector follows.
+    # No inspector on Training: the form shows the dataset's labels itself.
+    expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))
+    expect(page.get_by_role("button", name="Show Inspector")).to_have_count(0)
     form.locator("#fit-data").select_option("tickets")
-    expect(page.locator(".inspector .data-inspector h2")).to_have_text("tickets")
     page.goto(f"{support.base}/#/datasets/tickets")
     page.get_by_role("button", name="Fit on It…").click()
     expect(form.locator("#fit-data")).to_have_value("tickets")
@@ -390,7 +403,7 @@ def test_a_folder_without_questions(studio, page):
     page.locator(".ex-row", has_text="tweet test 1").click()
     inspector = page.locator(".inspector")
     expect(inspector.locator(".igroup", has_text="Values")).to_contain_text("Fed | Central Banks")
-    expect(inspector.locator(".file-group")).to_contain_text("test.jsonl")
+    expect(page.locator(".centre .ds-files .file-group")).to_contain_text("test.jsonl")
     # Not ready: Fit on It… says why and offers Write Questions.
     expect(page.locator(".pane-head").get_by_role("button", name="Write Questions")).to_be_visible()
     shot(page, "datasets-folder-not-ready")

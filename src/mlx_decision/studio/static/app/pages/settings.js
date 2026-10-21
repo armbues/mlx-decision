@@ -7,6 +7,7 @@ import { useEffect } from "preact/hooks";
 import { ConfigFile } from "../settings/config.js";
 import { listed, loadPlaces } from "../settings/places.js";
 import { models } from "../store/status.js";
+import { inspectorMode } from "../store/ui.js";
 import { settingsChange } from "../stream.js";
 
 const status = computed(() => {
@@ -26,7 +27,7 @@ function Centre() {
       <div class="pane-head">
         <div>
           <h1>Settings</h1>
-          <p>The config file that the Studio and the CLI read.</p>
+          <p>The config file the Studio and the CLI read; a flag on the command line wins over it. A change is written at once; the models and the budget apply now, the rest at the next start.</p>
         </div>
       </div>
       <${ConfigFile} />
@@ -34,17 +35,11 @@ function Centre() {
   `;
 }
 
-const About = () => html`
-  <div class="about-settings">
-    <p>A flag on the command line wins over the config file, and the file wins over the built-in default. The CLI reads the same file: <code>run</code>, <code>chat</code>, <code>server</code>, <code>mcp</code>, <code>web</code>, <code>training</code> and <code>benchmark</code>, where a key applies.</p>
-    <p>A change is written at once, one line in the file; comments and everything else stay as they are. <code>models_dir</code>, <code>default_model</code>, <code>memory_budget_gb</code> and models added to <code>models</code> apply now; the rest at the next start.</p>
-  </div>
-`;
+inspectorMode("settings", { mode: "none" });
 
 export default {
   id: "settings",
   title: "Settings",
   status,
   Centre,
-  tabs: [{ id: "about", label: "About", Body: About }],
 };

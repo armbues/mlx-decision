@@ -36,7 +36,7 @@ def test_the_form_and_start_fit(studio, page):
     expect(page.locator(".sidebar .sb-empty", has_text="fits")).to_have_text(
         "No fits or evaluations yet"
     )
-    expect(page.locator(".inspector .data-inspector h2")).to_have_text("support")
+    expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))  # none here
     form.locator("#fit-base").select_option("tiny-clef")
 
     cards = form.locator(".method")

@@ -6,6 +6,7 @@
 // Evaluation runs `training eval` as a job, which holds the GPU like a fit.
 import { computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
+import { LabelLine } from "../datasets/summary.js";
 import { api } from "../api.js";
 import { plural } from "../format.js";
 import { href, navigate } from "../router.js";
@@ -195,6 +196,7 @@ export function EvalForm() {
             ${result && result.data === data && html`<span class="hint num">${plural(result.examples, "example")}</span>`}
           </div></div>`}
           ${item?.kind !== "folder" && result && result.data === data && html`<div class="row"><label></label><span class="hint num">${plural(result.examples, "example")}</span></div>`}
+          ${data && !notReadyData.value && html`<div class="row"><label>Labels</label><div class="line"><${LabelLine} name=${data} split=${evalSplit.value} /></div></div>`}
           ${notReadyData.value &&
           html`<p class="warn-text">${notReadyData.value}${
             item?.kind === "folder" && !item.error

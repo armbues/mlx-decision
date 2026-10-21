@@ -10,16 +10,16 @@ import { html } from "htm/preact";
 import { api } from "../api.js";
 import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
-import { ExampleInspector, ExampleTable, filterLabel, filterValue, query, showDataset } from "../datasets/examples.js";
+import { ExampleInspector, ExampleTable, filterLabel, filterValue, pickedExample, query, showDataset } from "../datasets/examples.js";
 import { DatasetList, deleteData, pickedDataset, revealData, uploadData } from "../datasets/files.js";
 import { openNewBatch } from "../batches/start.js";
 import { openGetDataset } from "../datasets/get.js";
-import { Labels, Values, useSummary } from "../datasets/summary.js";
+import { FileGroup, Labels, Values, useSummary } from "../datasets/summary.js";
 import { ROLE_WORDS } from "../datasets/splits.js";
 import { fileSize, plural } from "../format.js";
 import { navigate } from "../router.js";
 import { dataFiles, datasetOf, described, summaryKey } from "../store/data.js";
-import { toast } from "../store/ui.js";
+import { inspectorMode, toast } from "../store/ui.js";
 import { evalOn } from "../training/evaluate.js";
 import { fitOn } from "../training/fit.js";
 
@@ -249,6 +249,7 @@ function Picked({ name }) {
     <${Questions} summary=${summary} />
     <${ValuesSection} summary=${summary} />
     <${ExampleTable} summary=${summary} />
+    <div class="ds-files"><${FileGroup} summary=${summary} /></div>
   `;
 }
 
@@ -274,6 +275,13 @@ function Inspector() {
   const summary = name ? described.value[summaryKey(name, splitOf(name))] : null;
   return html`<${ExampleInspector} name=${name} split=${splitOf(name)} shown=${summary?.split ?? null} />`;
 }
+
+// The inspector only while an example is picked (closing it unpicks it).
+inspectorMode("datasets", {
+  mode: "pick",
+  picked: computed(() => pickedExample.value != null && pickedExample.value.name === pickedDataset()),
+  close: () => (pickedExample.value = null),
+});
 
 export default {
   id: "datasets",

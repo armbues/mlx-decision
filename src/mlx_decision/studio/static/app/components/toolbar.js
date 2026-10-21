@@ -4,7 +4,7 @@ import { html } from "htm/preact";
 import { SHORTCUTS } from "../keys.js";
 import { gpuJob, progress } from "../store/jobs.js";
 import { busy, connection } from "../store/status.js";
-import { inspectorShown, sidebarShown, theme, toggleInspector } from "../store/ui.js";
+import { inspector, sidebarShown, theme, toggleInspector } from "../store/ui.js";
 import * as icons from "./icons.js";
 import { MenuButton, MenuItem } from "./menu.js";
 
@@ -94,7 +94,9 @@ export function Toolbar({ page }) {
   const Target = page.Target;
   const Tools = page.Tools;
   const sidebarLabel = sidebarShown.value ? "Hide Sidebar" : "Show Sidebar";
-  const inspectorLabel = inspectorShown.value ? "Hide Inspector" : "Show Inspector";
+  const { mode, shown } = inspector.value;
+  const inspectorLabel =
+    mode === "pick" ? (shown ? "Close the Inspector" : "Pick a row to see it in the inspector") : shown ? "Hide Inspector" : "Show Inspector";
   return html`
     <header class="toolbar">
       <div class="tb-left">
@@ -116,9 +118,11 @@ export function Toolbar({ page }) {
       <div class="tb-right">
         ${Tools && html`<${Tools} />`}
         <${ThemeMenu} />
-        <button class="icon-btn" aria-label=${inspectorLabel} title=${inspectorLabel} onClick=${toggleInspector}>
+        ${mode !== "none" &&
+        html`<button class="icon-btn" aria-label=${inspectorLabel} title=${inspectorLabel} onClick=${toggleInspector}
+          disabled=${mode === "pick" && !shown} aria-pressed=${shown ? "true" : "false"}>
           <${icons.InspectorToggle} />
-        </button>
+        </button>`}
       </div>
     </header>
   `;

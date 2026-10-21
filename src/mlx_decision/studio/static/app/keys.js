@@ -2,7 +2,7 @@
 // a key whose action nobody handles is left to the browser.
 import { closePreview, preview } from "./components/lightbox.js";
 import { closeSheet, sheet } from "./components/sheet.js";
-import { inspectorShown, narrow, openMenu, toggleInspector } from "./store/ui.js";
+import { inspector, openMenu, toggleInspector } from "./store/ui.js";
 
 export const SHORTCUTS = {
   run: "⌘↩",
@@ -41,13 +41,13 @@ export function trigger(action, event = null) {
   return handler(event) !== false;
 }
 
-// Esc closes the image preview, else the open menu, else the sheet, else the
-// inspector opened over a narrow window.
+// Esc closes the image preview, else the open menu, else the sheet, else an
+// inspector opened over the centre or on a pick (which unpicks).
 onKey("escape", () => {
   if (preview.value !== null) closePreview();
   else if (openMenu.value !== null) openMenu.value = null;
   else if (sheet.value !== null) closeSheet();
-  else if (narrow.value && inspectorShown.value) toggleInspector();
+  else if (inspector.value.shown && (inspector.value.over || inspector.value.mode === "pick")) toggleInspector();
   else return false;
 });
 

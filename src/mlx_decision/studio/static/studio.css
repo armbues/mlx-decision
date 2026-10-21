@@ -696,14 +696,17 @@ a.sb-item { color: var(--fg); }
 .toasts { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 50; display: grid; gap: 6px; justify-items: center; pointer-events: none; }
 .toast { background: var(--menu); color: var(--fg); box-shadow: var(--menu-shadow); border-radius: 9px; padding: 7px 14px; font-size: 12px; }
 
-/* Below 1,100 px the inspector leaves the layout; its toggle opens it over the centre. */
-.app.narrow { --insp-w: 0px; }
-.app.narrow .inspector {
+/* Below 1,100 px the inspector leaves the layout; its toggle opens it over the centre.
+   An inspector shown on a pick does so below 1,280 px (insp-over). */
+.app.narrow, .app.insp-over { --insp-w: 0px; }
+.app.narrow .inspector, .app.insp-over .inspector {
   position: fixed; top: 52px; right: 0; bottom: 0; width: 370px; z-index: 20;
   box-shadow: var(--menu-shadow); transform: translateX(100%); visibility: hidden;
   transition: transform 0.2s ease, visibility 0.2s;
 }
-.app.narrow.inspector-open .inspector { transform: none; visibility: visible; }
+.app.narrow.inspector-open .inspector, .app.insp-over.inspector-open .inspector { transform: none; visibility: visible; }
+.insp-tabs { position: relative; }
+.insp-close { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
 
 /* ---------- Models: list, memory card, inspector ---------- */
 .page-models .centre-inner { max-width: 980px; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }

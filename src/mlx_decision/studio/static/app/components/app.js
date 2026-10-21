@@ -3,7 +3,7 @@ import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import { PAGES } from "../pages/index.js";
 import { route } from "../router.js";
-import { inspectorShown, narrow, sidebarShown } from "../store/ui.js";
+import { inspector, narrow, sidebarShown } from "../store/ui.js";
 import { BusyBanner } from "./banner.js";
 import { Inspector } from "./inspector.js";
 import { Lightbox } from "./lightbox.js";
@@ -23,7 +23,8 @@ export function App() {
     `page-${page.id}`,
     sidebarShown.value ? "" : "no-sidebar",
     narrow.value ? "narrow" : "",
-    inspectorShown.value ? "inspector-open" : "no-inspector",
+    inspector.value.shown ? "inspector-open" : "no-inspector",
+    inspector.value.over ? "insp-over" : "",
     page.wide?.value ? "compare" : "", // a wider inspector, for a table of models
   ];
   const Centre = page.Centre;
