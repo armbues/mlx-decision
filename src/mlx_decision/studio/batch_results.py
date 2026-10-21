@@ -3,9 +3,11 @@ rows have labels, the metrics ``training eval`` reports, a confusion matrix
 and a reliability diagram's bins; the rows as table pages, filtered on the
 server; the export; the answers saved as a labelled dataset.
 
-``Results`` joins ``rows.jsonl`` and ``results.jsonl`` once per change of
-either file (their size and modification time), so a page of a large batch
-does not read them again. The methods block: call them off the loop.
+``Results`` reads a batch's rows once and the new tail of ``results.jsonl``
+as it grows, so a page of a large batch does not read them again. The
+response is kept unrounded (the metrics are ``training eval``'s); the JSON
+lines export rounds it as the wire does. The methods block: call them off
+the loop.
 """
 
 from __future__ import annotations
@@ -14,13 +16,15 @@ import csv
 import io
 import json
 import threading
-from dataclasses import dataclass
+from collections import OrderedDict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ..data.dataset import Dataset, SplitOut, write_dataset
 from ..data.format import Example
 from ..metrics import confusion, metrics, record
+from ..types import _round_floats as round_floats
 from .batches import BATCH_FILE, QUESTIONS_FILE, RESULTS_FILE, ROWS_FILE, BatchError, read_lines
 from .workspace import NotFound
 
@@ -73,57 +77,105 @@ def state_text(state: Any) -> str:
     return state if isinstance(state, str) else json.dumps(state, ensure_ascii=False)
 
 
+@dataclass
+class _Joined:
+    """A batch's rows with the results read so far, kept between requests."""
+
+    rows_stamp: tuple
+    shared: dict[str, Any]  # questions.json's
+    questions: dict[str, Any]  # those and the rows' own, by id, in order
+    entries: list[Entry]
+    by_row: dict[int, Entry]
+    offset: int = 0  # bytes of results.jsonl read (whole lines)
+    analysed: dict[float, dict[str, Any]] = field(default_factory=dict)  # by Unsure's bound
+
+
 class Results:
-    """The batches' results, each joined once per change of its files."""
+    """The batches' results. A batch's rows are read once (``rows.jsonl`` and
+    ``questions.json`` do not change); ``results.jsonl`` grows as rows are
+    answered, and each read takes only its new whole lines. The latest few
+    batches are kept (``KEEP``); one lock, so two tabs do not read a batch twice."""
+
+    KEEP = 4
 
     def __init__(self, root: Path):
         self.root = root
-        self._cache: dict[str, tuple[tuple, dict[str, Any], list[Entry]]] = {}
+        self._cache: OrderedDict[str, _Joined] = OrderedDict()
         self._lock = threading.Lock()
 
-    def _stamp(self, folder: Path) -> tuple:
-        stamps = []
-        for file in (ROWS_FILE, RESULTS_FILE, QUESTIONS_FILE):
-            try:
-                stat = (folder / file).stat()
-            except FileNotFoundError:
-                raise NotFound(f"no batch named {folder.name!r}") from None
-            stamps.append((stat.st_size, stat.st_mtime_ns))
-        return tuple(stamps)
+    @staticmethod
+    def _stat(path: Path, name: str):
+        try:
+            return path.stat()
+        except FileNotFoundError:
+            raise NotFound(f"no batch named {name!r}") from None
 
-    def load(self, name: str) -> tuple[dict[str, Any], list[Entry]]:
-        """The batch's shared questions and its entries in row order."""
+    def _joined(self, name: str) -> _Joined:
         folder = self.root / name
-        stamp = self._stamp(folder)
+        rows_stat = self._stat(folder / ROWS_FILE, name)
+        questions_stat = self._stat(folder / QUESTIONS_FILE, name)
+        results_size = self._stat(folder / RESULTS_FILE, name).st_size
+        stamp = (rows_stat.st_size, rows_stat.st_mtime_ns, questions_stat.st_mtime_ns)
         with self._lock:
-            cached = self._cache.get(name)
-            if cached is not None and cached[0] == stamp:
-                return cached[1], cached[2]
-        questions = json.loads((folder / QUESTIONS_FILE).read_bytes())["questions"]
-        results = {item["row"]: item for item in read_lines(folder / RESULTS_FILE)}
-        entries = []
+            joined = self._cache.get(name)
+            if joined is None or joined.rows_stamp != stamp or results_size < joined.offset:
+                joined = self._read_rows(folder, stamp)
+            if results_size > joined.offset:
+                self._read_results(folder / RESULTS_FILE, joined)
+            self._cache[name] = joined
+            self._cache.move_to_end(name)
+            while len(self._cache) > self.KEEP:
+                self._cache.popitem(last=False)
+            return joined
+
+    @staticmethod
+    def _read_rows(folder: Path, stamp: tuple) -> _Joined:
+        shared = json.loads((folder / QUESTIONS_FILE).read_bytes())["questions"]
+        questions = dict(shared)
+        entries, by_row = [], {}
         for row in read_lines(folder / ROWS_FILE):
             request = {k: v for k, v in row.items() if k not in ("row", "id", "labels")}
-            request.setdefault("questions", questions)
-            result = results.get(row["row"])
-            picked = {}
-            if result is not None and "response" in result:
-                for qid, answer in result["response"].get("answers", {}).items():
-                    picked[qid] = answer_key(answer)
-            entries.append(
-                Entry(
-                    row["row"],
-                    row.get("id", str(row["row"])),
-                    row.get("state"),
-                    row.get("labels") or {},
-                    request,
-                    result,
-                    picked,
-                )
-            )
-        with self._lock:
-            self._cache[name] = (stamp, questions, entries)
-        return questions, entries
+            for qid, question in (request.get("questions") or {}).items():
+                questions.setdefault(qid, question)  # a row's own question
+            request.setdefault("questions", shared)
+            entry = Entry(
+                row["row"], row.get("id", str(row["row"])), row.get("state"),
+                row.get("labels") or {}, request, None, {},
+            )  # fmt: skip
+            entries.append(entry)
+            by_row[entry.row] = entry
+        return _Joined(stamp, shared, questions, entries, by_row)
+
+    @staticmethod
+    def _read_results(path: Path, joined: _Joined) -> None:
+        """The whole lines added to ``results.jsonl`` since the last read."""
+        with open(path, "rb") as file:
+            file.seek(joined.offset)
+            data = file.read()
+        end = data.rfind(b"\n") + 1  # a torn last line waits for its newline
+        for text in data[:end].split(b"\n"):
+            if not text.strip():
+                continue
+            try:
+                item = json.loads(text)
+            except ValueError:
+                continue
+            entry = joined.by_row.get(item.get("row")) if isinstance(item, dict) else None
+            if entry is None:
+                continue
+            entry.result = item
+            entry.picked = {
+                qid: answer_key(answer)
+                for qid, answer in (item.get("response") or {}).get("answers", {}).items()
+            }
+        joined.offset += end
+        joined.analysed.clear()
+
+    def load(self, name: str) -> tuple[dict[str, Any], list[Entry]]:
+        """The batch's questions (the shared ones, then the rows' own) and its
+        entries in row order."""
+        joined = self._joined(name)
+        return joined.questions, joined.entries
 
     def forget(self, name: str) -> None:
         with self._lock:
@@ -134,8 +186,20 @@ class Results:
     def analyse(self, name: str, unsure: float = UNSURE) -> dict[str, Any]:
         """Per question: its type, the count of each answer, Unsure's count, and
         with labels the metrics, confusion matrix, wrong count and reliability
-        bins (``low``, ``high``, ``n``, ``accuracy``, ``confidence``)."""
-        questions, entries = self.load(name)
+        bins (``low``, ``high``, ``n``, ``accuracy``, ``confidence``). Kept until
+        more rows are answered."""
+        joined = self._joined(name)
+        with self._lock:
+            cached = joined.analysed.get(unsure)
+        if cached is not None:
+            return cached
+        result = self._analyse(joined.questions, joined.entries, unsure)
+        with self._lock:
+            joined.analysed[unsure] = result
+        return result
+
+    @staticmethod
+    def _analyse(questions, entries, unsure: float) -> dict[str, Any]:
         answered = [e for e in entries if e.result is not None]
         out: dict[str, Any] = {}
         for qid, question in questions.items():
@@ -143,6 +207,8 @@ class Results:
             counts = dict.fromkeys(order, 0)
             records, unsure_count = [], 0
             for entry in answered:
+                if qid not in entry.request["questions"]:
+                    continue  # another row's own question
                 picked = entry.picked.get(qid)
                 if picked is not None:
                     counts[picked[0]] = counts.get(picked[0], 0) + 1
@@ -309,7 +375,7 @@ class Results:
             if entry.error is not None:
                 body = {"error": {**entry.error, "type": "invalid_request_error"}, "line": number}
             else:
-                body = entry.result["response"]
+                body = round_floats(entry.result["response"])  # as the wire rounds it
             lines.append(json.dumps({"id": entry.id, **body}, ensure_ascii=False))
         return "".join(line + "\n" for line in lines)
 
@@ -320,10 +386,12 @@ class Results:
     ) -> dict[str, Any]:
         """``folder`` (a new dataset folder): the batch's answered rows with the
         top answers as labels, by question only where the confidence is at least
-        ``threshold``; a row left with no label is left out. One split, named
-        after the batch's, with the role train; ``source`` names the batch."""
+        ``threshold``; a row left with no label is left out. One split, ``train``
+        with the role train, from the batch's split (its ``split``); ``source``
+        names the batch."""
         info = json.loads((self.root / name / BATCH_FILE).read_bytes())
-        questions, entries = self.load(name)
+        joined = self._joined(name)
+        shared, entries = joined.shared, joined.entries
         examples, left_out = [], 0
         for entry in entries:
             if entry.result is None or entry.error is not None:
@@ -337,12 +405,12 @@ class Results:
                 left_out += 1
                 continue
             request = dict(entry.request)
-            if request.get("questions") == questions:
-                request["questions"] = questions  # the same object: shared in dataset.json
+            if request.get("questions") == shared:
+                request["questions"] = shared  # the same object: shared in dataset.json
             examples.append(Example(entry.id, request, labels))
         if not examples:
             raise BatchError("no row has an answer to keep as a label", param="threshold")
-        split = info.get("split") or "train"
+        split = "train"
         source = {
             "source": f"batch:{name}",
             "batch": name,
@@ -353,7 +421,7 @@ class Results:
             "threshold": threshold,
         }
         dataset = Dataset(folder, source=source)
-        meta = {"role": "train", "examples": len(examples)}
+        meta = {"role": "train", "examples": len(examples), "split": info.get("split")}
         try:
             write_dataset(folder, dataset, [SplitOut(split, examples, meta)])
         except FileExistsError:

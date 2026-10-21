@@ -672,7 +672,9 @@ def dataset_summary(path: Path) -> dict[str, Any]:
         }
         for name, meta in dataset.splits.items()
     ]
-    summary["questions"] = list(dataset.questions or {})
+    # The questions: dataset.json's, else those the lines ask (a plain file's).
+    asked = dataset.questions or dataset.first_line().get("questions")
+    summary["questions"] = list(asked) if isinstance(asked, dict) else []
     summary["source"] = dataset.source
     return summary
 

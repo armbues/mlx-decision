@@ -127,6 +127,7 @@ def batches_router(batches: Batches, files: Workspace, max_body_bytes: int) -> A
     async def delete(name: str):
         await asyncio.to_thread(batches.delete, name)
         results.forget(name)
+        files.changed("batches", name, "deleted")  # every tab's list
         return {"deleted": name}
 
     @router.post("/{name}/dataset", status_code=201)

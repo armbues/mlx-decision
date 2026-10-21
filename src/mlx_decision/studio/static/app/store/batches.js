@@ -56,6 +56,15 @@ export function applyBatch(summary) {
   if (before?.state === "running" && summary.state !== "running") toast(endedText(summary));
 }
 
+// A batch deleted (here or in another tab): gone from the list.
+export function batchesChanged(change) {
+  if (change.action === "deleted") {
+    const { [change.name]: _, ...rest } = live.value;
+    live.value = rest;
+  }
+  loadBatches();
+}
+
 export function applyBatchProgress({ type, name, ...fields }) {
   progressOf.value = { ...progressOf.value, [name]: fields };
 }

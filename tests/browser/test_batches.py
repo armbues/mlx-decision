@@ -225,3 +225,110 @@ def test_export_save_answers_and_delete(tweets, page):
     expect(page).to_have_url(re.compile(r"#/batches$"))
     expect(page.locator(".batch-empty")).to_be_visible()
     assert not (tweets.workspace / "batches" / "tweets-fake").exists()
+
+
+# The review's fixes
+
+
+def test_a_new_batch_with_a_deleted_ones_name_starts_clean(tweets, page):
+    open_studio(page, tweets, "batches")
+    new_batch(page)
+    done(page)
+    table = page.locator(".batch-rows")
+    table.get_by_role("tab", name="Wrong").click()
+    table.locator(".ex-rows .batch-row").first.click()
+    expect(page.locator(".batch-inspector h2")).to_have_text(re.compile(r"^train/"))
+    page.get_by_role("button", name="More actions for tweets-fake").click()
+    menu_item(page, "Delete…").click()
+    page.locator(".sheet").get_by_role("button", name="Delete").click()
+    expect(page).to_have_url(re.compile(r"#/batches$"))
+    new_batch(page, split="test")  # the same free name, tweets-fake
+    expect(page).to_have_url(re.compile(r"#/batches/tweets-fake$"))
+    done(page, "9 answered")
+    expect(table.get_by_role("tab", name="All")).to_have_attribute("aria-selected", "true")
+    expect(table.locator(".ex-rows .batch-row")).to_have_count(9)
+    expect(page.locator(".batch-inspector")).to_have_count(0)  # no row of the deleted batch
+
+
+def test_every_questions_answer_in_the_table_and_wrong_only_with_labels(tweets, page):
+    open_studio(page, tweets, "batches")
+    body = {
+        "state": "",
+        "questions": {"topic": TOPIC, "urgent": {"type": "noul", "instructions": "Urgent?"}},
+    }
+    put_set(page, tweets, "both", body)
+    page.locator(".sidebar").get_by_role("button", name="New Batch").click()
+    sheet = page.locator(".sheet")
+    sheet.locator("#batch-data").select_option("tweets")
+    sheet.locator("#batch-split").select_option("test")
+    sheet.locator("#batch-questions").select_option("both")
+    hint = sheet.locator(".hint")
+    expect(hint).to_contain_text("The labels count for topic")
+    expect(hint).to_contain_text("answers only for urgent")
+    sheet.get_by_role("button", name="Start").click()
+    done(page, "9 answered")
+    row = page.locator(".batch-rows .ex-rows .batch-row").first
+    expect(row.locator(".chip-answer")).to_have_count(2)
+    expect(row.locator(".chip-answer.main i")).to_have_text("topic")
+    table = page.locator(".batch-rows")
+    table.get_by_role("tab", name="Wrong").click()
+    table.get_by_label("Question").select_option("urgent")
+    expect(table.get_by_role("tab", name="All")).to_have_attribute("aria-selected", "true")
+    expect(table.get_by_role("tab", name="Wrong")).to_have_count(0)
+    expect(table.locator(".ex-rows .batch-row")).to_have_count(9)
+    expect(row.locator(".chip-answer.main i")).to_have_text("urgent")
+    # The sidebar's entry: dataset and model under the name, the rows answered.
+    entry = page.locator(".batch-list .sb-item", has_text="tweets-fake")
+    expect(entry.locator("small")).to_have_text("tweets · fake")
+    expect(entry.locator(".count")).to_have_text("9")
+
+
+def test_a_delete_in_another_tab_and_a_failed_export(tweets, page):
+    open_studio(page, tweets, "batches")
+    new_batch(page, split="test")
+    done(page)
+    other = page.context.new_page()
+    other.goto(f"{tweets.base}/#/batches/tweets-fake")
+    expect(other.locator(".batch-progress")).to_be_visible()
+    page.get_by_role("button", name="More actions for tweets-fake").click()
+    menu_item(page, "Delete…").click()
+    page.locator(".sheet").get_by_role("button", name="Delete").click()
+    expect(other.locator(".batch-list .sb-item", has_text="tweets-fake")).to_have_count(0)
+    expect(other.locator(".centre")).to_contain_text("No batch named tweets-fake")
+    # An export that fails says so; the page stays.
+    open_studio(page, tweets, "batches")
+    new_batch(page, split="test")
+    done(page)
+    page.route(
+        "**/export?format=csv",
+        lambda route: route.fulfill(status=404, json={"error": {"message": "gone"}}),
+    )
+    page.get_by_role("button", name="Export").click()
+    menu_item(page, "CSV").click()
+    expect(page.locator(".toast", has_text="Could not export")).to_contain_text("gone")
+    expect(page.locator(".batch-progress")).to_be_visible()
+
+
+def test_the_rows_stay_reachable_by_keyboard(make_studio, page):
+    studio = make_studio()
+    write_tweets(studio.workspace / "data", count=120)
+    open_studio(page, studio, "batches")
+    new_batch(page)
+    done(page, "120 answered")
+    table = page.locator(".batch-rows")
+    rows = table.locator(".ex-rows .batch-row")
+    expect(rows).to_have_count(100)
+    # A right answer picked, then Wrong: a row to Tab into is still there.
+    right = table.locator(".ex-rows .batch-row:has(.batch-expected.right)").first
+    right.click()
+    table.get_by_role("tab", name="Wrong").click()
+    expect(table.locator('.ex-rows [tabindex="0"]')).to_have_count(1)
+    table.get_by_role("tab", name="All").click()
+    # Arrow keys go on to the next page.
+    rows.nth(99).click()
+    rows.nth(99).press("ArrowDown")
+    expect(table.locator(".ex-pager")).to_contain_text("101–120 of 120")
+    expect(page.locator(".batch-inspector h2")).to_have_text("train/100")
+    page.locator('.batch-rows [data-row="100"]').press("ArrowUp")
+    expect(table.locator(".ex-pager")).to_contain_text("1–100 of 120")
+    expect(page.locator(".batch-inspector h2")).to_have_text("train/99")

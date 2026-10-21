@@ -247,6 +247,8 @@ class Dataset:
         whole; ``lenient`` as ``parse_line`` (a dataset without labels yet)."""
         if not self.folder:
             with open(self.path, "rb") as file:
+                if lenient:
+                    return parse_examples(file, _plain_lenient, require_labels=False)
                 return parse_examples(file)
         split = split or next(iter(self.splits))
         with open(self.split_path(split), "rb") as file:
@@ -295,6 +297,16 @@ def _unasked(data: dict, line: int, values: dict[str, str] | None) -> Example:
         raise DataError("a line needs a state", line, "state")
     request = {k: v for k, v in data.items() if k not in ("id", "values", "labels")}
     return Example(example_id, request, {}, values)
+
+
+def _plain_lenient(data: Any, line: int) -> Example:
+    """A plain file's line read to browse or answer it: one without questions
+    keeps its state; one without labels is an example without them."""
+    if isinstance(data, dict) and not data.get("questions"):
+        return _unasked(data, line, None)
+    if isinstance(data, dict) and "labels" not in data:
+        data = {**data, "labels": {}}
+    return parse_example(data, line)
 
 
 def read_description(folder: Path) -> Dataset:

@@ -2,7 +2,7 @@
 // EventSource reconnects by itself and sends the last id, so the Studio
 // replays what was missed.
 import { batch, signal } from "@preact/signals";
-import { applyBatch, applyBatchProgress, applyBatchSnapshot } from "./store/batches.js";
+import { applyBatch, applyBatchProgress, applyBatchSnapshot, batchesChanged } from "./store/batches.js";
 import { applyEvent, applyJob, applySnapshot } from "./store/jobs.js";
 import { applyStatus, connection, loadModels, loadStatus } from "./store/status.js";
 import { dataChanged } from "./store/data.js";
@@ -54,6 +54,7 @@ function apply(message) {
     case "workspace":
       if (message.folder === "sets") setsChanged();
       if (message.folder === "data") dataChanged();
+      if (message.folder === "batches") batchesChanged(message);
       workspaceChange.value = message;
       break;
     case "reload": // web --dev: a page file changed

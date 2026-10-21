@@ -36,9 +36,12 @@ const METRICS = [
 // The open batch's results ({name, batch, results}), read again as it runs.
 const opened = signal(null);
 const openedError = signal(null);
-// The table's filters and page.
+// The table's filters and page, for the batch named (``created`` tells a new
+// batch of a deleted one's name from it).
 const NONE = { question: null, answer: null, gold: null, show: "all", search: "", offset: 0 };
-export const table = signal({ name: null, ...NONE });
+export const table = signal({ name: null, created: null, ...NONE });
+// The row to pick when the page an arrow key asked for arrives: "first" or "last".
+let pickOnPage = null;
 const rowsPage = signal(null);
 // The row picked: {name, row}, and that row whole.
 export const pickedRow = signal(null);
@@ -69,7 +72,14 @@ async function loadRows(query) {
   if (query.search.trim()) params.set("search", query.search.trim());
   try {
     const answer = await api(`/batches/${encoded(query.name)}/rows?${params}`);
-    if (table.value === query) rowsPage.value = { query, ...answer };
+    if (table.value !== query) return;
+    rowsPage.value = { query, ...answer };
+    if (pickOnPage && answer.rows.length) {
+      const row = pickOnPage === "first" ? answer.rows[0] : answer.rows[answer.rows.length - 1];
+      pickOnPage = null;
+      pick(query.name, row.row);
+      requestAnimationFrame(() => document.querySelector(`.batch-rows [data-row="${row.row}"]`)?.focus());
+    }
   } catch (error) {
     if (table.value === query) rowsPage.value = { query, matching: 0, offset: 0, rows: [], error: error.message };
   }
@@ -79,9 +89,13 @@ function filter(fields) {
   table.value = { ...table.value, offset: 0, ...fields };
 }
 
-export function openBatch(name) {
-  if (table.value.name === name) return;
-  table.value = { name, ...NONE };
+export function openBatch(name, created = null) {
+  const current = table.value;
+  if (current.name === name && (created == null || current.created == null || current.created === created)) {
+    if (created != null && current.created == null) table.value = { ...current, created };
+    return;
+  }
+  table.value = { name, created, ...NONE };
   opened.value = null;
   openedError.value = null;
   rowsPage.value = null;
@@ -94,9 +108,9 @@ async function pick(name, row) {
   wholeRow.value = null;
   try {
     const answer = await api(`/batches/${encoded(name)}/rows?row=${row}`);
-    if (pickedRow.value?.row === row) wholeRow.value = answer.row;
+    if (pickedRow.value?.name === name && pickedRow.value.row === row) wholeRow.value = answer.row;
   } catch (error) {
-    if (pickedRow.value?.row === row) wholeRow.value = { error: error.message };
+    if (pickedRow.value?.name === name && pickedRow.value.row === row) wholeRow.value = { error: error.message };
   }
 }
 
@@ -105,7 +119,7 @@ async function pick(name, row) {
 function Head({ batch }) {
   const running = batch.state === "running";
   const rest = !running && batch.answered < batch.total && batch.state !== "ready";
-  const exportHref = (format) => `/studio/api/batches/${encoded(batch.name)}/export?format=${format}`;
+  const save = (format) => exportFile(batch.name, format);
   const questions = batch.questions_from ? html`the set <a href=${href("playground", batch.questions_from)}>${batch.questions_from}</a>` : "its own questions";
   const rows = batch.sample
     ? `a sample of ${batch.sample.toLocaleString("en")} of ${batch.rows_in_split.toLocaleString("en")} rows (seed ${batch.seed})`
@@ -119,12 +133,12 @@ function Head({ batch }) {
         </p>
       </div>
       <div class="actions">
-        ${running && html`<button class="btn" onClick=${() => stopBatch(batch.name)}>Stop</button>`}
+        ${running && html`<button class="btn" disabled=${batch.stop_requested} onClick=${() => stopBatch(batch.name)}>${batch.stop_requested ? "Stopping…" : "Stop"}</button>`}
         ${rest && html`<button class="btn primary" onClick=${() => runRest(batch.name)} title="Answer the rows not answered yet">Run the Rest</button>`}
         ${!running && html`<button class="btn" onClick=${() => runAgain(batch.name)} title="A new batch of the same rows, questions and model">Run Again</button>`}
         <${MenuButton} id="batch-export" className="btn" label="Export" menuStyle="top:32px; right:0; width:220px">
-          <${MenuItem} onSelect=${() => location.assign(exportHref("csv"))}>CSV<//>
-          <${MenuItem} onSelect=${() => location.assign(exportHref("jsonl"))}>JSON Lines<//>
+          <${MenuItem} onSelect=${() => save("csv")}>CSV<//>
+          <${MenuItem} onSelect=${() => save("jsonl")}>JSON Lines<//>
         <//>
         <${MenuButton} id="batch-more" className="btn" ariaLabel=${`More actions for ${batch.name}`}
           label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
@@ -137,6 +151,26 @@ function Head({ batch }) {
       </div>
     </div>
   `;
+}
+
+// The export as a file: fetched first, so a failure is a toast, not a page of JSON.
+async function exportFile(name, format) {
+  try {
+    const response = await fetch(`/studio/api/batches/${encoded(name)}/export?format=${format}`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error?.message ?? `the Studio answered ${response.status}`);
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = `${name}.${format}`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+  } catch (error) {
+    toast(`Could not export ${name}: ${error.message}`);
+  }
 }
 
 function confirmDelete(batch) {
@@ -174,14 +208,19 @@ function copyCommand(batch) {
   );
 }
 
+// What a screen reader hears when a batch changes state (not each row).
+const STATES = { running: "Running", stopped: "Stopped", done: "Done", failed: "Failed" };
+
 function Progress({ batch }) {
   const fraction = batch.total ? batch.answered / batch.total : 0;
   const running = batch.state === "running";
   return html`
-    <div class=${`batch-progress ${batch.state}`} role="status">
-      <div class="bar" aria-hidden="true"><i style=${`width:${(fraction * 100).toFixed(1)}%`}></i></div>
+    <div class=${`batch-progress ${batch.state}`}>
+      <div class="bar" role="progressbar" aria-label="Rows answered" aria-valuemin="0" aria-valuemax=${batch.total} aria-valuenow=${batch.answered}>
+        <i style=${`width:${(fraction * 100).toFixed(1)}%`}></i></div>
       <span class="num">${batchProgressText(batch)}${batch.errors ? ` · ${plural(batch.errors, "error")}` : ""}</span>
       ${!running && batch.message && html`<span class="warn-text">${batch.message}</span>`}
+      <span class="sr-only" role="status">${STATES[batch.state] ?? ""}</span>
     </div>
   `;
 }
@@ -206,10 +245,11 @@ function Question({ id, item, batch }) {
     <section class="gsec batch-q" data-q=${id}>
       <div class="gsec-head"><h2 class="mono">${id}</h2><span class="tag">${item.type}${item.labelled ? " · with labels" : ""}</span></div>
       <div class="group bq-group">
-        <div class="bq-answers" role="list" aria-label=${`Answers to ${id}`}>
+        <div class="bq-answers" role="group" aria-label=${`Answers to ${id}`}>
           ${Object.entries(item.answers).map(
-            ([answer, count]) => html`<button role="listitem" class=${`bq-answer${current.question === id && current.answer === answer && current.gold == null ? " on" : ""}`}
-                key=${answer} disabled=${!count} onClick=${() => show({ answer })} title=${`Show the rows answered ${answer}`}>
+            ([answer, count]) => html`<button class=${`bq-answer${current.question === id && current.answer === answer && current.gold == null ? " on" : ""}`}
+                key=${answer} disabled=${!count} onClick=${() => show({ answer })} title=${`Show the rows answered ${answer}`}
+                aria-label=${`${answer}: ${count}; show these rows`}>
               <code>${answer}</code><span class="bq-bar"><i style=${`width:${((count / total) * 100).toFixed(1)}%`}></i></span><span class="num">${count.toLocaleString("en")}</span>
             </button>`,
           )}
@@ -247,6 +287,7 @@ function Search() {
   useEffect(() => {
     if (field.current) field.current.value = table.value.search;
   }, [name]);
+  useEffect(() => () => clearTimeout(timer.current), [name]); // typed for another batch: dropped
   return html`<input ref=${field} class="ex-search" type="search" placeholder="Search the states" aria-label="Search the states"
     spellcheck=${false} defaultValue=${table.value.search}
     onInput=${(event) => {
@@ -286,11 +327,27 @@ function Rows({ batch, results }) {
   const labelled = item?.labelled;
   const result = rowsPage.value?.query === current ? rowsPage.value : null;
   const picked = pickedRow.value?.name === batch.name ? pickedRow.value.row : null;
+  // The row Tab reaches: the picked one when it is on this page, else the first.
+  const focusable = result?.rows.some((row) => row.row === picked) ? picked : (result?.rows[0]?.row ?? null);
   const onKeyDown = (event) => {
     if (!result || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
     const rows = result.rows;
     const at = rows.findIndex((row) => row.row === picked);
-    const next = event.key === "ArrowDown" ? Math.min(rows.length - 1, at + 1) : Math.max(0, at - 1);
+    const down = event.key === "ArrowDown";
+    // Past a page's edge: the next or previous page, its first or last row.
+    if (down && at === rows.length - 1 && result.offset + PAGE < result.matching) {
+      event.preventDefault();
+      pickOnPage = "first";
+      table.value = { ...table.value, offset: result.offset + PAGE };
+      return;
+    }
+    if (!down && at === 0 && result.offset > 0) {
+      event.preventDefault();
+      pickOnPage = "last";
+      table.value = { ...table.value, offset: Math.max(0, result.offset - PAGE) };
+      return;
+    }
+    const next = down ? Math.min(rows.length - 1, at + 1) : Math.max(0, at - 1);
     if (rows[next]) {
       event.preventDefault();
       pick(batch.name, rows[next].row);
@@ -304,7 +361,11 @@ function Rows({ batch, results }) {
         <div class="ex-tools">
           <${Search} />
           ${questions.length > 1 &&
-          html`<select aria-label="Question" value=${question} onChange=${(event) => filter({ question: event.target.value, answer: null, gold: null })}>
+          html`<select aria-label="Question" value=${question} onChange=${(event) => {
+            const next = event.target.value;
+            const show = current.show === "wrong" && !results.questions[next]?.labelled ? "all" : current.show;
+            filter({ question: next, answer: null, gold: null, show });
+          }}>
             ${questions.map((id) => html`<option value=${id}>${id}</option>`)}
           </select>`}
           <select aria-label="Answer" value=${current.answer ?? ""} onChange=${(event) => filter({ question, answer: event.target.value || null })}>
@@ -323,7 +384,7 @@ function Rows({ batch, results }) {
         </div>
         ${result?.error && html`<p class="warn-text">${result.error}</p>`}
         <div class=${`ex-head batch-head${labelled ? " labelled" : ""}`} aria-hidden="true">
-          <span>Id</span><span>State</span><span class="mono">${question}</span>${labelled && html`<span>Expected</span>`}
+          <span>Id</span><span>State</span><span>${questions.length > 1 ? "Answers" : html`<span class="mono">${question}</span>`}</span>${labelled && html`<span>Expected <span class="mono">${questions.length > 1 ? question : ""}</span></span>`}
         </div>
         <div class="ex-rows" role="listbox" aria-label="Rows" onKeyDown=${onKeyDown}>
           ${result?.rows.map((row) => {
@@ -331,15 +392,22 @@ function Rows({ batch, results }) {
             const expected = row.labels[question];
             const right = expected != null && answer ? answer.answer === expected : null;
             return html`<div class=${`ex-row batch-row${labelled ? " labelled" : ""}`} key=${row.row} role="option" data-row=${row.row}
-                tabindex=${row.row === picked || (picked == null && row === result.rows[0]) ? "0" : "-1"}
+                tabindex=${row.row === focusable ? "0" : "-1"}
                 aria-selected=${row.row === picked ? "true" : "false"} onClick=${() => pick(batch.name, row.row)}>
               <span class="ex-id mono" title=${row.id}>${row.id}</span>
               <span class="ex-state" title=${row.state}>${row.state}</span>
               <span class="batch-answer">${
                 row.error
                   ? html`<span class="lab err" title=${row.error.message}>error</span>`
-                  : answer &&
-                    html`<span class=${`lab${answer.confidence < UNSURE ? " unsure" : ""}`}>${answer.answer}</span><small class="num">${Math.round(answer.confidence * 100)}%</small>`
+                  : [question, ...questions.filter((id) => id !== question)]
+                      .filter((id) => row.answers[id])
+                      .map((id) => {
+                        const one = row.answers[id];
+                        const many = questions.length > 1;
+                        return html`<span key=${id} class=${`chip-answer${id === question ? " main" : ""}`} title=${`${id}: ${one.answer}, ${Math.round(one.confidence * 100)}% sure`}>
+                          ${many && html`<i>${id}</i>`}<span class=${`lab${one.confidence < UNSURE ? " unsure" : ""}`}>${one.answer}</span><small class="num">${Math.round(one.confidence * 100)}%</small>
+                        </span>`;
+                      })
               }</span>
               ${labelled && html`<span class=${`batch-expected${right === false ? " wrong" : right ? " right" : ""}`}>${
                 expected != null ? html`${right === false ? "✗ " : right ? "✓ " : ""}<code>${expected}</code>` : html`<span class="no-label">none</span>`
@@ -356,8 +424,8 @@ function Rows({ batch, results }) {
 // ---------- the centre ----------
 
 export function BatchView({ name }) {
-  openBatch(name);
   const batch = batchByName(name);
+  openBatch(name, batch?.created ?? null);
   const answered = batch?.answered ?? 0;
   const running = batch?.state === "running";
   const changes = resultsChanged.value;

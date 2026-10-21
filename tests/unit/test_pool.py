@@ -527,3 +527,17 @@ def test_a_pin_keeps_the_weights_a_fitted_model_shares(fits):
         pool.get("other")
     with pytest.raises(Busy):
         pool.unload("fit-b")  # it shares the pinned weights
+
+
+def test_a_load_the_pin_refuses_unloads_nothing(models):
+    from mlx_decision.gpu import Busy
+
+    pool, _ = make_pool(models, budget=2200)  # two of the three fit
+    pool.get("Alpha")
+    pool.pin("Alpha", "batch tweets")
+    pool.get("beta")
+    big = pool.specs["gamma"]
+    pool._sizes["gamma"] = 1500  # gamma alone needs more than Alpha leaves
+    with pytest.raises(Busy, match="batch tweets"):
+        pool.get(big.name)
+    assert pool.loaded() == ["Alpha", "beta"]  # beta was not unloaded for nothing

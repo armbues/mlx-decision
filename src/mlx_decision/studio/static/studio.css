@@ -1370,6 +1370,7 @@ a.btn.primary { color: var(--accent-fg); }
 .confusion-table td.zero { color: var(--fg-3); }
 .confusion-table .cm-cell { all: unset; display: block; text-align: right; cursor: default; border-radius: 3px; padding: 0 2px; }
 .confusion-table .cm-cell:hover { background: var(--fill); color: var(--accent); }
+.confusion-table .cm-cell:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
 
 /* The reliability diagram (batches) */
 .reliability { width: 240px; }
@@ -1455,3 +1456,13 @@ button.sb-item { border: 0; background: transparent; width: 100%; text-align: le
   .batch-head.labelled, .batch-row.labelled { grid-template-columns: minmax(40px, 70px) minmax(0, 1fr) minmax(70px, 120px) minmax(56px, 90px); }
 }
 a.job-title { color: inherit; text-decoration: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.batch-answer { overflow: hidden; flex-wrap: wrap; row-gap: 2px; padding: 4px 0; }
+.batch-answer .chip-answer .lab { flex: none; max-width: 160px; }
+.batch-answer .chip-answer { display: inline-flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; }
+.batch-answer .chip-answer:not(.main) { opacity: 0.75; }
+.batch-answer .chip-answer i { font-style: normal; font: 10.5px var(--mono); color: var(--fg-2); }
+.batch-list .sb-item { height: auto; min-height: 28px; padding-top: 4px; padding-bottom: 4px; }
+.batch-list .sb-item .label { display: grid; line-height: 1.2; }
+.batch-list .sb-item .label small { font-size: 10.5px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-list .sb-item[aria-current] .label small { color: inherit; opacity: 0.8; }

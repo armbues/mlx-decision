@@ -84,13 +84,13 @@ function BatchList() {
           const kind = running ? "spin" : STATE_ICON[batch.state];
           const short = running
             ? `${batch.total ? Math.floor((batch.answered / batch.total) * 100) : 0}%`
-            : { stopped: "Stopped", failed: "Failed", ready: "Not started" }[batch.state] ?? "";
-          return html`<li key=${batch.name} class=${`batch-row${running ? " running" : ""}`}>
+            : { stopped: "Stopped", failed: "Failed", ready: "Not started" }[batch.state] ?? batch.answered.toLocaleString("en");
+          return html`<li key=${batch.name} class=${`batch-entry${running ? " running" : ""}`}>
             <a class="sb-item" href=${href("batches", batch.name)} aria-current=${batch.name === name ? "true" : undefined}
-               title=${`${batch.dataset} on ${batch.model}`}>
+               title=${`${batch.name}: ${batch.dataset} on ${batch.model}`}>
               ${kind ? html`<${icons.StatusIcon} kind=${kind} />` : html`<${icons.Batches} />`}
-              <span class="label">${batch.name}</span>
-              <span class="count">${short}</span>
+              <span class="label">${batch.name}<small>${batch.dataset} · ${batch.model}</small></span>
+              <span class="count num">${short}</span>
             </a>
           </li>`;
         })}

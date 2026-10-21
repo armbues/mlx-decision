@@ -6,8 +6,8 @@ import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
 import { navigate } from "../router.js";
-import { loadBatches, runningBatch } from "../store/batches.js";
-import { dataChanged, dataFiles, datasetOf, freeName, nameTaken } from "../store/data.js";
+import { batches, loadBatches, runningBatch } from "../store/batches.js";
+import { dataChanged, dataFiles, datasetOf, describe, described, freeName, nameTaken, summaryKey } from "../store/data.js";
 import { gpuJob } from "../store/jobs.js";
 import { reloadSets, sets } from "../store/sets.js";
 import { models, status } from "../store/status.js";
@@ -35,9 +35,67 @@ function defaultModel() {
 
 const usable = () => (dataFiles.value ?? []).filter((item) => !item.error);
 
-// Whether the dataset asks questions of its own: a folder's dataset.json, or
-// a plain file's lines (training data carries them on every line).
-const asks = (item) => item?.kind === "file" || (item?.questions ?? []).length > 0;
+// Whether the dataset asks questions of its own: its dataset.json's, or those
+// on its lines (the list reads them from the first line).
+const asks = (item) => (item?.questions ?? []).length > 0;
+
+// A batch's default name, as the Studio makes it: dataset-model, then -2, -3…
+// when taken.
+function defaultName(dataset, model) {
+  const base = `${dataset}-${model}`.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").slice(0, 70) || "batch";
+  const taken = new Set((batches.value ?? []).map((item) => item.name));
+  let name = base;
+  for (let n = 2; taken.has(name); n += 1) name = `${base}-${n}`;
+  return name;
+}
+
+// The set's questions (by name), read when the set is picked: {name, questions} or null.
+const setQuestions = signal(null);
+
+let reading = null; // the set being read
+
+async function readSet(name) {
+  if (!name || setQuestions.value?.name === name || reading === name) return;
+  reading = name;
+  try {
+    const { body } = await api(`/sets/${encodeURIComponent(name)}`);
+    setQuestions.value = { name, questions: body?.questions ?? {} };
+  } catch {
+    setQuestions.value = { name, questions: {} };
+  } finally {
+    reading = null;
+  }
+}
+
+// Whether a set's question is asked as the dataset's labels answer it: the same
+// id, type and options (as the Studio decides it).
+function sameAs(asked, labelled) {
+  if (!asked || !labelled || (asked.type ?? "noul") !== (labelled.type ?? "noul")) return false;
+  const options = (question) =>
+    question.type === "choice" ? Object.keys(question.criteria ?? {}).sort().join("\u0000") : question.type === "score" ? String((question.criteria ?? []).length) : "noul";
+  const theirs = labelled.type === "choice" ? [...(labelled.options ?? [])].sort().join("\u0000") : labelled.type === "score" ? String((labelled.options ?? []).length) : "noul";
+  return options(asked) === theirs;
+}
+
+// What the batch's labels will count for, in words.
+function LabelsHint({ item, current }) {
+  const summary = described.value[summaryKey(current.dataset, current.split)];
+  if (!summary || summary.error) return null;
+  const labelled = (summary.questions ?? []).filter((question) => question.labelled > 0);
+  if (current.questions === OWN) {
+    if (!labelled.length) return html`Its rows have no labels: answers only.`;
+    return html`Its labels give accuracy and the rest for ${labelled.map((question, index) => html`${index ? ", " : ""}<code>${question.id}</code>`)}.`;
+  }
+  const set = setQuestions.value?.name === current.questions ? setQuestions.value.questions : null;
+  if (!set) return null;
+  const byId = Object.fromEntries(labelled.map((question) => [question.id, question]));
+  const counted = Object.keys(set).filter((id) => sameAs(set[id], byId[id]));
+  const others = Object.keys(set).filter((id) => !counted.includes(id));
+  if (!counted.length) return html`Answers only: ${item?.name ?? "the dataset"} has no labels for these questions.`;
+  return html`The labels count for ${counted.map((id, index) => html`${index ? ", " : ""}<code>${id}</code>`)}${
+    others.length ? html`; answers only for ${others.map((id, index) => html`${index ? ", " : ""}<code>${id}</code>`)} (not asked as the dataset asks them)` : ""
+  }.`;
+}
 
 function choose(dataset, split = null) {
   const item = datasetOf(dataset);
@@ -82,6 +140,7 @@ function whyNot() {
   if (!current.model) return "Pick a model";
   if (current.sample && !(current.size >= 1)) return "A sample is at least one row";
   if (current.name && !NAME.test(current.name)) return "A name is letters, digits, dots, dashes and underscores";
+  if (current.name && (batches.value ?? []).some((item) => item.name === current.name)) return `A batch named ${current.name} exists already`;
   if (runningBatch.value) return `The batch ${runningBatch.value.name} is running; one at a time`;
   if (gpuJob.value) return `${gpuJob.value.title} is using the GPU`;
   return null;
@@ -123,7 +182,9 @@ function NewBatch() {
   const own = asks(item);
   const count = (item?.questions ?? []).length;
   const rows = rowsOf(item, current.split);
-  const placeholder = current.dataset && current.model ? `${current.dataset}-${current.model}` : "";
+  const placeholder = current.dataset && current.model ? defaultName(current.dataset, current.model) : "";
+  if (current.dataset && current.split && !described.value[summaryKey(current.dataset, current.split)]) describe(current.dataset, current.split);
+  if (current.questions !== OWN) readSet(current.questions);
   return html`
     <div class="form-grid batch-form">
       <label for="batch-data">Dataset</label>
@@ -152,18 +213,14 @@ function NewBatch() {
       <label for="batch-questions">Questions</label>
       <div>
         <select id="batch-questions" value=${current.questions} onChange=${(event) => set({ questions: event.target.value })}>
-          ${own && html`<option value=${OWN}>${count ? `Its own (${plural(count, "question")})` : "Its own (on its lines)"}</option>`}
+          ${own && html`<option value=${OWN}>Its own (${plural(count, "question")})</option>`}
           ${(sets.value ?? []).map((entry) => html`<option value=${entry.name}>The set ${entry.name}</option>`)}
           ${!own && !(sets.value ?? []).length && html`<option value=${OWN}>No questions yet</option>`}
         </select>
         <small class="hint">${
-          current.questions === OWN
-            ? own
-              ? "Its labels give accuracy and the rest."
-              : html`${current.dataset} has no questions yet. <a href=${`#/playground/data:${encodeURIComponent(current.dataset ?? "")}`} onClick=${closeSheet}>Write them in the Playground</a>, or pick a question set.`
-            : own
-              ? "The dataset's labels count for the set's questions asked as the dataset asks them (the same id, type and options); the others get answers only."
-              : "Answers only: the dataset has no labels for these questions."
+          current.questions === OWN && !own
+            ? html`${current.dataset} has no questions yet. <a href=${`#/playground/data:${encodeURIComponent(current.dataset ?? "")}`} onClick=${closeSheet}>Write them in the Playground</a>, or pick a question set.`
+            : html`<${LabelsHint} item=${item} current=${current} />`
         }</small>
       </div>
 

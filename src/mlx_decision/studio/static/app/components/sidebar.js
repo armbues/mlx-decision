@@ -70,10 +70,10 @@ function BatchJob({ batch }) {
     <li class="job running batch-job" data-batch=${batch.name}>
       <div class="job-top">
         <${icons.Batches} /><a class="job-title" href=${href("batches", batch.name)} title=${`Batch ${batch.name}`}>Batch ${batch.name}</a>
-        <button aria-label=${`Stop the batch ${batch.name}`} title="Stop" onClick=${() => stopBatch(batch.name)}><${icons.Close} /></button>
+        <button aria-label=${`Stop the batch ${batch.name}`} title="Stop" disabled=${batch.stop_requested} onClick=${() => stopBatch(batch.name)}><${icons.Close} /></button>
       </div>
       <div class="bar"><i style=${`width:${(fraction * 100).toFixed(1)}%`}></i></div>
-      <small class="num">${batchProgressText(batch)}</small>
+      <small class="num">${batch.stop_requested ? "Stopping…" : batchProgressText(batch)}</small>
     </li>
   `;
 }

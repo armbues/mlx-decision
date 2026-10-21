@@ -177,8 +177,12 @@ class Batches:
                 leftover.unlink(missing_ok=True)
             info = self._read_info(folder)
             if info is not None and info.get("state") == "running":
+                answered, errors = count_results(folder / RESULTS_FILE)
                 info["state"] = "stopped"
                 info["message"] = "the Studio stopped while it ran"
+                info["answered"], info["errors"] = answered, errors
+                if answered >= info.get("total", 0):
+                    info["state"], info["message"] = "done", None
                 if info.get("passes"):
                     info["passes"][-1].setdefault("ended", None)
                 self.files.write(folder / BATCH_FILE, encode(info))
@@ -190,6 +194,10 @@ class Batches:
             for folder in self.root.iterdir():
                 if folder.name.startswith(".") or not folder.is_dir():
                     continue
+                try:
+                    check_name(folder.name, "a batch's name")
+                except WorkspaceError:
+                    continue  # not a workspace name (a copy made in Finder): not a batch here
                 info = self.summary(folder.name)
                 if info is not None:
                     found.append(info)
@@ -211,15 +219,22 @@ class Batches:
         return info
 
     def live(self, batch: Batch) -> dict[str, Any]:
-        return {**batch.info, "seconds_left": batch.seconds_left()}
+        return {
+            **batch.info,
+            "seconds_left": batch.seconds_left(),
+            "stop_requested": batch.stop_requested,
+        }
 
     @staticmethod
     def _read_info(folder: Path) -> dict[str, Any] | None:
+        """``batch.json``, named after its folder (a copied folder is its own batch)."""
         try:
             info = json.loads((folder / BATCH_FILE).read_bytes())
         except (OSError, ValueError):
             return None
-        return info if isinstance(info, dict) and isinstance(info.get("name"), str) else None
+        if not isinstance(info, dict) or not isinstance(info.get("name"), str):
+            return None
+        return {**info, "name": folder.name}
 
     def rows(self, name: str) -> list[dict[str, Any]]:
         """The rows of batch ``name`` (blocks)."""
@@ -265,7 +280,7 @@ class Batches:
             asked = body.get("questions") if isinstance(body, dict) else None
             if not isinstance(asked, dict) or not asked:
                 raise BatchError(f"the set {questions_from} has no questions", param="questions")
-        elif data.folder and not data.questions:
+        elif data.folder and not data.questions and not data.first_line().get("questions"):
             raise BatchError(
                 f"{dataset} has no questions yet: write them in the Playground or pick a "
                 "question set",
@@ -291,10 +306,9 @@ class Batches:
             picked = list(range(total))
         if len(picked) > MAX_ROWS:
             raise BatchError(f"at most {MAX_ROWS:,} rows: take a sample", param="sample")
-        try:
-            chosen = self.gpu.pool.resolve(model)
-        except DecisionError as error:
-            raise BatchError(error.message, param="model") from None
+        if model not in self.gpu.pool.specs:
+            raise BatchError(f"no model is named {model}", param="model")
+        chosen = model
 
         shared = asked if asked is not None else first_questions(examples, data.questions)
         lines, labelled = [], set()
@@ -315,8 +329,8 @@ class Batches:
             row["labels"] = labels
             lines.append(row)
 
-        name = self._new_name(name or default_name(dataset, chosen))
-        folder = self.folder(name)
+        folder = self._claim(name, default_name(dataset, chosen))
+        name = folder.name
         info = {
             "name": name,
             "dataset": dataset,
@@ -336,7 +350,6 @@ class Batches:
             "created": now(),
             "passes": [],
         }
-        folder.mkdir()
         try:
             self.files.write(folder / QUESTIONS_FILE, encode({"questions": shared}))
             self.files.write(folder / ROWS_FILE, b"".join(line(row) for row in lines))
@@ -347,13 +360,30 @@ class Batches:
             raise
         return folder
 
-    def _new_name(self, wanted: str) -> str:
-        check_name(wanted, "a batch's name")
-        name, number = wanted, 1
-        while self.folder(name).exists():
-            number += 1
-            name = f"{wanted[:70]}-{number}"
-        return name
+    def _claim(self, given: str | None, default: str) -> Path:
+        """A new batch's folder, made: ``given`` (409 when taken), else ``default``,
+        ``default-2``, ... (the first free; ``mkdir`` decides, so two starts at
+        once get two names)."""
+        self.root.mkdir(exist_ok=True)
+        if given is not None:
+            folder = self.folder(check_name(given, "a batch's name"))
+            try:
+                folder.mkdir()
+            except FileExistsError:
+                raise BatchError(
+                    f"a batch named {given} exists already", status=409, param="name"
+                ) from None
+            return folder
+        check_name(default, "a batch's name")
+        for number in range(1, 10_000):
+            name = default if number == 1 else f"{default[:70]}-{number}"
+            folder = self.folder(name)
+            try:
+                folder.mkdir()
+            except FileExistsError:
+                continue
+            return folder
+        raise BatchError(f"no free name like {default}", status=409, param="name")
 
     async def start(self, name: str) -> dict[str, Any]:
         """Run batch ``name`` from where it stopped (its first pass, or Run the
@@ -435,8 +465,8 @@ class Batches:
         state, message = "done", None
         handle = None
         try:
-            rows, done = await asyncio.to_thread(self._rest, batch.folder)
-            info["answered"] = len(done)
+            rows, done, errors = await asyncio.to_thread(self._rest, batch.folder)
+            info["answered"], info["errors"] = len(done), errors
             shared = await asyncio.to_thread(self.questions, batch.name)
             handle = await asyncio.to_thread(open, batch.folder / RESULTS_FILE, "ab")
             for row in rows:
@@ -463,11 +493,14 @@ class Batches:
                         "row": row["row"],
                         "error": {"message": error.message, "param": error.param},
                     }
+                    if error.code:
+                        result["error"]["code"] = error.code
                     info["errors"] += 1
                 else:
                     result = {
                         "row": row["row"],
-                        "response": answered.result.to_wire(),
+                        # Unrounded, so the metrics are training eval's; the export rounds.
+                        "response": answered.result.model_dump(),
                         "latency_ms": round(answered.seconds * 1000, 3),
                         "input_tokens": answered.result.usage.input_tokens,
                         "truncated": answered.result.truncated,
@@ -481,33 +514,39 @@ class Batches:
                 self._changed(batch, True)
             if batch.stop_requested and state == "done" and info["answered"] < info["total"]:
                 state = "stopped"
+        except asyncio.CancelledError:
+            state, message = "stopped", "the batch was cancelled"
+            raise
         except Exception as error:
             logger.exception("batch %s failed", batch.name)
             state, message = "failed", f"the batch failed: {error}"
         finally:
+            # The pool and the running batch first: nothing below may skip them.
+            self.gpu.pool.unpin(info["model"])
+            self.running = None
             if handle is not None:
                 with suppress(OSError):
                     handle.close()
             if info["answered"] >= info["total"] and state != "failed":
-                state = "done"
+                state, message = "done", None
             info["state"], info["message"] = state, message
             info["passes"][-1]["ended"] = now()
             try:
-                await asyncio.to_thread(self._save, batch)
+                self._save(batch)  # small; on the loop, so a cancel cannot skip it
             except Exception:
                 logger.exception("saving batch %s failed", batch.name)
-            self.gpu.pool.unpin(info["model"])
-            self.running = None
             self._changed(batch, False)
 
-    def _rest(self, folder: Path) -> tuple[list[dict[str, Any]], set[int]]:
-        """The rows not answered yet, and the rows answered; a torn last line of
-        ``results.jsonl`` cut off first."""
+    def _rest(self, folder: Path) -> tuple[list[dict[str, Any]], set[int], int]:
+        """The rows not answered yet, the rows answered and how many of those are
+        errors; a torn last line of ``results.jsonl`` cut off first."""
         results = folder / RESULTS_FILE
         cut_torn_line(results)
-        done = {item["row"] for item in read_lines(results) if isinstance(item.get("row"), int)}
+        answered = [item for item in read_lines(results) if isinstance(item.get("row"), int)]
+        done = {item["row"] for item in answered}
+        errors = sum("error" in item for item in answered)
         rows = [row for row in read_lines(folder / ROWS_FILE) if row.get("row") not in done]
-        return rows, done
+        return rows, done, errors
 
     def _record(self, answered) -> None:
         try:
@@ -544,9 +583,13 @@ class Batches:
             raise NotFound(f"no batch named {name!r}")
         if info["model"] not in self.gpu.pool.specs:
             raise BatchError(f"{info['model']} is not in the Studio's list any more", param="model")
-        new = self._new_name(re.sub(r"-\d+$", "", name))
-        folder = self.folder(new)
-        folder.mkdir()
+        # A name with a number added (tweets-d3-edge-2) runs again as tweets-d3-edge-3;
+        # a name that only ends in digits (a model's Julia-1) keeps them.
+        base = default_name(info.get("dataset", ""), info["model"])
+        folder = self._claim(
+            None, base if re.fullmatch(rf"{re.escape(base)}(-\d+)?", name) else name
+        )
+        new = folder.name
         try:
             for file in (QUESTIONS_FILE, ROWS_FILE):
                 self.files.write(folder / file, (source / file).read_bytes())
@@ -578,6 +621,12 @@ def first_questions(examples, questions: dict[str, Any] | None) -> dict[str, Any
         if own:
             return own
     raise BatchError("the rows have no questions: pick a question set", param="questions")
+
+
+def count_results(path: Path) -> tuple[int, int]:
+    """The rows ``results.jsonl`` answered, and how many of them are errors."""
+    items = [item for item in read_lines(path) if isinstance(item.get("row"), int)]
+    return len({item["row"] for item in items}), sum("error" in item for item in items)
 
 
 def read_lines(path: Path) -> list[dict[str, Any]]:

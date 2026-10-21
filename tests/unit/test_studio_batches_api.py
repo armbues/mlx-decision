@@ -190,7 +190,8 @@ def test_the_answers_saved_as_a_dataset_train_a_fit(studio):
     dataset, _ = open_dataset(folder)
     assert dataset.missing() == []
     assert dataset.questions == {"topic": TOPIC}
-    assert dataset.splits == {"train": {"role": "train", "examples": 12}}
+    # One split, train, from the batch's train split.
+    assert dataset.splits == {"train": {"role": "train", "examples": 12, "split": "train"}}
     assert dataset.source["batch"] == name and dataset.source["model"] == "fake"
     answers = {
         r["row"]: r["response"]["answers"]["topic"]["choice"]

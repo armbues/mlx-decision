@@ -337,10 +337,8 @@ class ModelPool:
     def pinned_by(self, name: str) -> str | None:
         """Who keeps ``name``'s weights loaded (it or a model sharing them), or None."""
         key = self._keys.get(name)
-        return next(
-            (holder for pinned, holder in self._pinned.items() if self._keys.get(pinned) == key),
-            None,
-        )
+        pins = tuple(self._pinned.items())  # changed on the event loop, read on the worker
+        return next((holder for pinned, holder in pins if self._keys.get(pinned) == key), None)
 
     def unload(self, name: str) -> list[str]:
         """Unload ``name`` with everything that shares its weights (a base and
@@ -506,20 +504,17 @@ class ModelPool:
         one: ``Busy`` naming who pinned it when only that would make room."""
         limit = self.limit()
         unloaded = False
-        pinned = {self._keys[n]: who for n, who in self._pinned.items() if n in self._keys}
+        pins = tuple(self._pinned.items())  # changed on the event loop, read on the worker
+        pinned = {self._keys[n]: who for n, who in pins if n in self._keys}
+        kept = [key for key in self._groups if key == keep or key in pinned]
+        blocking = [pinned[key] for key in kept if key in pinned and key != keep]
+        if blocking and sum(self._groups[key].total for key in kept) + needed > limit:
+            from .gpu import Busy
+
+            raise Busy(blocking[0])  # before unloading anything for nothing
         while sum(group.total for group in self._groups.values()) + needed > limit:
             old = next((key for key in self._groups if key != keep and key not in pinned), None)
             if old is None:
-                blocking = [
-                    who for key, who in pinned.items() if key in self._groups and key != keep
-                ]
-                if blocking:
-                    if unloaded:
-                        _release_memory()
-                        self._changed()
-                    from .gpu import Busy
-
-                    raise Busy(blocking[0])
                 break
             self._drop(old, f"to make room for {name}")
             unloaded = True
