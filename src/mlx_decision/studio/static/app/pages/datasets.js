@@ -1,18 +1,22 @@
 // Datasets: the files of labelled examples in the workspace's data/ folder,
 // which fits and evaluations read. The sidebar lists them with Get a Dataset…
 // and Add…; the centre shows the one picked (its questions with their labels
-// and counts, its examples in a paged table) with Fit on It…, Show in Finder
-// and Delete; the inspector the example picked, whole, and the file.
+// and counts, its examples in a paged table) with Fit on It…, Evaluate, Open
+// in Playground, and Show in Finder and Delete in its "…" menu; the inspector
+// the example picked, whole, and the file.
 import { computed } from "@preact/signals";
 import { html } from "htm/preact";
+import { api } from "../api.js";
+import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
 import { ExampleInspector, ExampleTable, filterLabel, query, showDataset } from "../datasets/examples.js";
 import { DatasetList, deleteData, pickedDataset, revealData, uploadData } from "../datasets/files.js";
 import { openGetDataset } from "../datasets/get.js";
 import { Labels, useSummary } from "../datasets/summary.js";
 import { ROLE_WORDS } from "../datasets/splits.js";
 import { fileSize, plural } from "../format.js";
-import { href } from "../router.js";
+import { href, navigate } from "../router.js";
 import { dataFiles, described } from "../store/data.js";
+import { toast } from "../store/ui.js";
 import { evalOn } from "../training/evaluate.js";
 import { fitOn } from "../training/fit.js";
 
@@ -106,6 +110,18 @@ function Source({ name, record }) {
   `;
 }
 
+// A question set from the file's questions and first examples, opened in the
+// Playground: the base model tried on them before a fit, the fitted one after.
+async function openInPlayground(name) {
+  try {
+    const made = await api(`/data/${encodeURIComponent(name)}/set`, { method: "POST", body: {} });
+    navigate("playground", made.name);
+    toast(`Saved as the question set ${made.name}, with ${plural(made.examples, "example")} from ${name}`);
+  } catch (error) {
+    toast(`Could not open ${name} in the Playground: ${error.message}`);
+  }
+}
+
 function Picked({ name }) {
   const summary = useSummary(name);
   if (!summary) return null;
@@ -119,9 +135,16 @@ function Picked({ name }) {
       </div>
       <div class="actions">
         <button class="btn primary" onClick=${() => fitOn(name)} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
-        <button class="btn" onClick=${() => evalOn(name)} title=${`Score a model on ${name}, on the Training page`}>Evaluate a Model on It…</button>
-        <button class="btn" onClick=${() => revealData(name)}>Show in Finder</button>
-        <button class="btn" onClick=${() => deleteData(name)}>Delete…</button>
+        <button class="btn" onClick=${() => evalOn(name)} title=${`Score a model on ${name}, on the Training page`}>Evaluate on It…</button>
+        <button class="btn" onClick=${() => openInPlayground(name)}
+                title=${`A new question set with ${name}'s questions and its first ${Math.min(summary.examples, 10)} examples, to try a model on`}>Open in Playground</button>
+        <${MenuButton} id="data-more" className="btn" ariaLabel=${`More actions for ${name}`}
+          label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
+          menuStyle="top:32px; right:0; width:200px">
+          <${MenuItem} onSelect=${() => revealData(name)}>Show in Finder<//>
+          <${MenuSeparator} />
+          <${MenuItem} onSelect=${() => deleteData(name)}>Delete…<//>
+        <//>
       </div>
     </div>
     ${summary.record && html`<${Source} name=${name} record=${summary.record} />`}

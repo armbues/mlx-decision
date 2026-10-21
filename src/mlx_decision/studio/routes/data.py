@@ -14,8 +14,10 @@ the file). ``GET
 ``limit``, a label filter, a search in the states), each state cut to a
 line; ``GET /studio/api/data/{name}/examples/{index}`` one example whole.
 ``POST /studio/api/data/{name}/reveal`` shows the file in Finder (a browser
-on this Mac only). ``DELETE /studio/api/data/{name}`` deletes one, unless a
-fit or an evaluation that is not over reads it (409).
+on this Mac only). ``POST /studio/api/data/{name}/set`` saves a question
+set made from the file (its questions and first examples) to try in the
+Playground. ``DELETE /studio/api/data/{name}`` deletes one, unless a fit or
+an evaluation that is not over reads it (409).
 """
 
 import asyncio
@@ -44,6 +46,7 @@ PREVIEW_CHARS = 240
 LINE_CHARS = 200  # a state cut to a line, in the example table
 PAGE_LIMIT = 200  # the most examples a page holds
 CACHED_FILES = 4  # files kept read, for paging through them
+SET_EXAMPLES = 10  # examples a set made from a file holds
 
 
 class Read:
@@ -177,6 +180,18 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
             await asyncio.to_thread(reveal, path)
         return Response(status_code=204)
 
+    @router.post("/{name}/set")
+    async def to_set(name: str):
+        """``{name, examples}``: a new question set holding the file's questions
+        and its first examples, each named by its id and its labels; saved
+        under the file's name or, when taken, the first free ``NAME-2``, ...."""
+        _, found = await read(name)
+        if not found.examples:
+            raise ApiError(422, f"{name} has no examples", param="name")
+        body = set_from(found.examples[:SET_EXAMPLES])
+        saved, _ = await asyncio.to_thread(files.save_new_set, name, body)
+        return {"name": saved, "examples": len(body["examples"])}
+
     @router.delete("/{name}", status_code=204)
     async def delete_data(name: str):
         """204 once deleted; 404 when there is none; 409 while a job that has
@@ -264,6 +279,43 @@ def describe(examples: list[Example]) -> dict[str, Any]:
             for example in examples[:SAMPLE]
         ],
     }
+
+
+def set_from(examples: list[Example]) -> dict[str, Any]:
+    """A question set from labelled examples, laid out as the Studio saves one:
+    the questions as each was first asked, every example by name (its id and
+    its labels, so answers can be held against them) with its state and its
+    images when they are data URLs, the first also at the top level."""
+    questions: dict[str, Any] = {}
+    listed = []
+    for example in examples:
+        asked = example.request["questions"]
+        for question_id, question in asked.items():
+            questions.setdefault(question_id, question)
+        # Ids are unique in a file, so the names are too.
+        labels = ", ".join(label_word(asked[q], label) for q, label in example.labels.items())
+        named = f"{example.id} · {labels}" if labels else example.id
+        item: dict[str, Any] = {"name": named, "state": example.request.get("state", "")}
+        images = example.request.get("images")
+        if images and all(isinstance(i, str) and i.startswith("data:image/") for i in images):
+            item["images"] = images
+        listed.append(item)
+    body: dict[str, Any] = {"state": listed[0]["state"], "questions": questions}
+    if "images" in listed[0]:
+        body["images"] = listed[0]["images"]
+    body["examples"] = listed
+    return body
+
+
+def label_word(question: dict[str, Any], label: str) -> str:
+    """A label as the Playground's answers show it: an option id, yes or no,
+    a score's level counted from 1."""
+    kind = question.get("type")
+    if kind == "noul":
+        return "yes" if label == "true" else "no"
+    if kind == "score":
+        return f"level {int(label) + 1}"
+    return label
 
 
 def where(path: Path) -> dict[str, Any]:

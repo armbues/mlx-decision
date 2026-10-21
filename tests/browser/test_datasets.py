@@ -1,13 +1,14 @@
 """The Datasets page: the sidebar's list, Add… (checked, errors by line, a
 name taken) and delete; the picked dataset's questions with their labels,
 its examples in a paged table (a label filter, a search in the states), the
-example picked whole in the inspector, Fit on It… and the empty state."""
+example picked whole in the inspector, Fit on It…, Open in Playground and
+the empty state."""
 
 import json
 import re
 
 import pytest
-from drive import open_studio, shot
+from drive import open_studio, pick, shot
 
 expect = pytest.importorskip("playwright.sync_api").expect
 pytestmark = pytest.mark.browser
@@ -159,6 +160,39 @@ def test_fit_on_it(support, page):
     expect(form.locator("#fit-data")).to_have_value("tickets")
 
 
+def test_open_in_playground(support, page):
+    open_studio(page, support, "datasets/support")
+    # Show in Finder and Delete… are in the "…" menu, so the actions fit at 1,100 px.
+    page.get_by_role("button", name="More actions for support").click()
+    expect(page.locator(".menu .mi")).to_have_text(["Show in Finder", "Delete…"])
+    page.set_viewport_size({"width": 1100, "height": 800})
+    shot(page, "datasets-actions")
+    page.keyboard.press("Escape")
+    page.get_by_role("button", name="Open in Playground").click()
+    # A new set named after the file, its first ten examples named by id and label.
+    expect(page).to_have_url(f"{support.base}/#/playground/support")
+    expect(page.locator(".toast")).to_contain_text(
+        "Saved as the question set support, with 10 examples from support"
+    )
+    tabs = page.locator(".ex-chip [role=tab]")
+    expect(tabs).to_have_count(10)
+    expect(tabs.first).to_have_text("t0 · tech")
+    expect(tabs.nth(8)).to_have_text("t8 · billing")
+    expect(page.locator(".question[data-q='team']")).to_be_visible()
+    expect(page.locator(".state-text")).to_have_value("Ticket 0: something about tech")
+    # It joins the sidebar's question sets, as the one open.
+    expect(page.locator(".sb-item[href='#/playground/support']")).to_have_attribute(
+        "aria-current", "true"
+    )
+    shot(page, "playground-from-dataset")
+    saved = support.set_file("support")
+    assert saved["questions"] == {"team": TEAM} and len(saved["examples"]) == 10
+    # Once more: the name is taken, so -2.
+    page.goto(f"{support.base}/#/datasets/support")
+    page.get_by_role("button", name="Open in Playground").click()
+    expect(page).to_have_url(f"{support.base}/#/playground/support-2")
+
+
 def test_add_a_file_errors_by_line_and_a_name_taken(studio, page, tmp_path):
     open_studio(page, studio, "datasets")
     good = tmp_path / "support tickets.jsonl"
@@ -241,7 +275,7 @@ def test_delete_the_picked_file(studio, page):
 
 def test_delete_from_the_centre(studio, page):
     open_studio(page, studio, "datasets/tickets")
-    page.locator(".centre .pane-head").get_by_role("button", name="Delete…").click()
+    pick(page, page.get_by_role("button", name="More actions for tickets"), "Delete…")
     page.locator(".sheet").get_by_role("button", name="Delete").click()
     expect(page.locator(".sidebar .data-list .sb-item")).to_have_count(0)
 

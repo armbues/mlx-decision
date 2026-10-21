@@ -1,6 +1,6 @@
 // The Evaluate form: a model, a model to compare it with (a fitted model's base
 // by default) and a dataset (one kept for Evaluate by default, or the one the
-// Datasets page's "Evaluate a Model on It…" picked). The plan says what the
+// Datasets page's "Evaluate on It…" picked). The plan says what the
 // data asks and warns when a fitted model was fitted on this very file. Start
 // Evaluation runs `training eval` as a job, which holds the GPU like a fit.
 import { computed, effect, signal } from "@preact/signals";
@@ -52,7 +52,7 @@ export const evalData = computed(() => {
   return (files.find((item) => item.record?.role === "evaluate") ?? files[0])?.name ?? null;
 });
 
-// "Evaluate a Model on It…" (the Datasets page): the form, with the dataset picked.
+// "Evaluate on It…" (the Datasets page): the form, with the dataset picked.
 export function evalOn(name) {
   chosenData.value = name;
   navigate("training", "evaluate");

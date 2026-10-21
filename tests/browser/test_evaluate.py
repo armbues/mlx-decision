@@ -1,5 +1,5 @@
 """Evaluate in the Training page: the form from the Datasets page's
-"Evaluate a Model on It…" (a fitted model and its base by default), the
+"Evaluate on It…" (a fitted model and its base by default), the
 warning when the model was fitted on this very file, the job's progress and
 its report of both models with the differences, and the History listing
 fits and evaluations. The job is ``tests/fake_job.py`` acting as
@@ -37,7 +37,7 @@ def studio(make_studio):
 
 def test_evaluate_a_fitted_model_against_its_base(studio, page):
     open_studio(page, studio, "datasets/tickets")
-    page.get_by_role("button", name="Evaluate a Model on It…").click()
+    page.get_by_role("button", name="Evaluate on It…").click()
     expect(page).to_have_url(f"{studio.base}/#/training/evaluate")
     form = page.locator(".eval-form")
     expect(form.locator("#eval-data")).to_have_value("tickets")

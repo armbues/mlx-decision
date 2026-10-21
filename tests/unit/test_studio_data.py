@@ -301,3 +301,36 @@ def test_a_path_under_the_home_folder_is_shown_with_a_tilde(studio, monkeypatch)
     monkeypatch.setattr(Path, "home", lambda: (studio.workspace / "..").resolve())
     body = studio.get("/studio/api/data/tickets").json()
     assert body["display"] == "~/ws/data/tickets.jsonl"
+
+
+def test_a_question_set_from_a_file(studio):
+    upload(studio, "tickets", GOOD)
+    made = studio.post("/studio/api/data/tickets/set", json={})
+    assert made.status_code == 200, made.text
+    assert made.json() == {"name": "tickets", "examples": 8}
+    body = studio.app_state.workspace.load_set("tickets")[0]
+    assert body["questions"] == {"team": TEAM, "urgent": URGENT}
+    assert body["state"] == "ticket 0"
+    # Each example named by its id and its labels (a yes / no as the answers say it).
+    names = [example["name"] for example in body["examples"]]
+    assert names[0] == "1 · tech" and names[6:] == ["7 · billing, yes", "8 · sales, no"]
+    assert [example["state"] for example in body["examples"]][:2] == ["ticket 0", "ticket 1"]
+    # Again: the name taken, so -2.
+    assert studio.post("/studio/api/data/tickets/set", json={}).json()["name"] == "tickets-2"
+
+
+def test_a_set_from_a_file_holds_its_first_ten_examples(studio):
+    level = {"type": "score", "criteria": ["low", "mid", "high"]}
+    lines = [
+        json.dumps({"id": f"r{i}", "state": {"n": i}, "questions": {"level": level},
+                    "labels": {"level": i % 3}})
+        for i in range(12)
+    ]  # fmt: skip
+    upload(studio, "levels", "\n".join(lines) + "\n")
+    assert studio.post("/studio/api/data/levels/set", json={}).json()["examples"] == 10
+    body = studio.app_state.workspace.load_set("levels")[0]
+    names = [example["name"] for example in body["examples"]]
+    # Score labels as levels counted from 1.
+    assert names[:4] == ["r0 · level 1", "r1 · level 2", "r2 · level 3", "r3 · level 1"]
+    assert body["state"] == {"n": 0} and body["examples"][9]["state"] == {"n": 9}
+    assert studio.post("/studio/api/data/missing/set", json={}).status_code == 404
