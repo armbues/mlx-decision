@@ -350,7 +350,7 @@ function DatasetBanner() {
   if (!missing.length) return null;
   return html`
     <div class="notice ds-banner" role="status">
-      <span><b>Not ready for a fit:</b> ${missing.join("; ")}.</span>
+      <span><b>Not ready for a fit, as saved:</b> ${missing.join("; ")}.</span>
     </div>
   `;
 }

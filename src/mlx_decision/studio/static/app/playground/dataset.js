@@ -11,7 +11,7 @@ import { closeSheet, openSheet } from "../components/sheet.js";
 import { dataChanged } from "../store/data.js";
 import { sets } from "../store/sets.js";
 import { toast } from "../store/ui.js";
-import { fromBody, rowsFrom, toFile } from "./draft.js";
+import { answersFor, answersFromFile, fromBody, rowsFrom, toFile } from "./draft.js";
 import { bodyText, datasetOfDocument, drafts, loaders, setEntry, setName } from "./session.js";
 
 const encode = encodeURIComponent;
@@ -37,34 +37,6 @@ const factsOf = (doc, seed, search) => ({
   search,
 });
 
-// The answers map by question uid, so it follows a question renamed here.
-function answersByUid(draft, answers) {
-  const byUid = {};
-  for (const question of draft.questions) if (answers?.[question.id]) byUid[question.uid] = answers[question.id];
-  return byUid;
-}
-
-// A map target the question takes: a choice's option, yes or no, a level.
-function takes(question, target) {
-  if (question.type === "choice") return question.options.some((option) => option.key === target);
-  if (question.type === "noul") return [true, false, "true", "false"].includes(target);
-  const level = Number(target);
-  return Number.isInteger(level) && level >= 0 && level < question.levels.length;
-}
-
-// The answers map for the questions as they are now: by their current ids,
-// targets they no longer take dropped (those values are then unmapped).
-export function answersFor(draft, byUid) {
-  const answers = {};
-  for (const question of draft.questions) {
-    const answer = byUid?.[question.uid];
-    if (!answer || !question.id.trim()) continue;
-    const map = Object.fromEntries(Object.entries(answer.map ?? {}).filter(([, target]) => takes(question, target)));
-    answers[question.id] = { column: answer.column, map, left_out: [...(answer.left_out ?? [])] };
-  }
-  return answers;
-}
-
 export async function loadDataset(documentName, options = {}) {
   const name = datasetOfDocument(documentName);
   try {
@@ -72,13 +44,14 @@ export async function loadDataset(documentName, options = {}) {
     const draft = fromBody({ state: "", questions: doc.questions });
     draft.examples = rowsFrom(doc.rows);
     draft.current = draft.examples[0].uid;
+    draft.answers = answersFromFile(draft, doc.answers);
     setEntry(documentName, {
       sha256: doc.sha256,
       modified: null,
       baseline: bodyText(draft, true),
       draft,
       onDisk: null,
-      dataset: { ...factsOf(doc, options.seed ?? 0, options.search ?? ""), answers: answersByUid(draft, doc.answers) },
+      dataset: factsOf(doc, options.seed ?? 0, options.search ?? ""),
     });
   } catch (error) {
     setEntry(documentName, { error: error.message, status: error.status });
@@ -128,14 +101,14 @@ export async function saveDataset() {
   try {
     const result = await api(`/data/${encode(name)}/questions`, {
       method: "PUT",
-      body: { questions: body.questions, answers: answersFor(value.draft, value.dataset.answers), loaded: value.sha256 },
+      body: { questions: body.questions, answers: answersFor(value.draft), loaded: value.sha256 },
     });
     const current = drafts.value[documentName];
     setEntry(documentName, {
       ...current,
       sha256: result.sha256,
       baseline: bodyText(current.draft, true),
-      dataset: { ...current.dataset, missing: result.missing, answers: answersByUid(current.draft, result.answers) },
+      dataset: { ...current.dataset, missing: result.missing },
     });
     dataChanged();
     toast(`Saved data/${name}/dataset.json`);

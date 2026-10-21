@@ -125,7 +125,7 @@ def test_run_all_on_the_rows_keeps_a_history(studio, page):
     assert not (studio.workspace / "history" / "data:tweets.jsonl").exists()
 
 
-def test_a_renamed_option_drops_its_mapping(studio, page):
+def test_a_renamed_option_keeps_its_mapping_a_removed_one_drops_it(studio, page):
     folder = write_tweets(studio, questions=True)
     open_studio(page, studio, "playground/data:tweets")
     expect(page.locator(".ds-banner")).to_have_count(0)  # every value mapped or left out
@@ -133,10 +133,13 @@ def test_a_renamed_option_drops_its_mapping(studio, page):
     topic.get_by_label("Option key").first.fill("analysts")
     page.keyboard.press("Meta+s")
     expect(page.locator(".toast")).to_contain_text("Saved data/tweets/dataset.json")
-    assert described(folder)["answers"]["topic"]["map"] == {"1": "fed"}
+    assert described(folder)["answers"]["topic"]["map"] == {"0": "analysts", "1": "fed"}
+    topic.get_by_role("button", name="Remove option fed").click()
+    page.keyboard.press("Meta+s")
     expect(page.locator(".ds-banner")).to_contain_text(
-        "topic: label values not mapped to an answer or left out: 0"
+        "topic: label values not mapped to an answer or left out: 1"
     )
+    assert described(folder)["answers"]["topic"]["map"] == {"0": "analysts"}
 
 
 def test_start_from_a_set_and_save_as_a_set(studio, page):

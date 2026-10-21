@@ -472,3 +472,131 @@ export function changedSince(body, request) {
   }
   return { all, ids };
 }
+
+// ---------- a dataset's answers map ----------
+//
+// A dataset's questions are answered by the values of one of its label
+// columns. The draft keeps, per question uid, {column, map, left_out}: the map
+// from each value to an option's uid (choice), true / false (noul) or a
+// level's uid (score), so it follows options and levels renamed or moved.
+
+export const LEFT_OUT = "\u0000out";
+
+// The draft's map from the file's: option keys and level indices to uids;
+// targets the question does not take are dropped.
+export function answersFromFile(draft, answers) {
+  const byUid = {};
+  for (const question of draft.questions) {
+    const answer = answers?.[question.id];
+    if (!answer) continue;
+    const map = {};
+    for (const [value, target] of Object.entries(answer.map ?? {})) {
+      const uid = targetUid(question, target);
+      if (uid !== null) map[value] = uid;
+    }
+    byUid[question.uid] = { column: answer.column, map, left_out: [...(answer.left_out ?? [])] };
+  }
+  return byUid;
+}
+
+function targetUid(question, target) {
+  if (question.type === "choice") return question.options.find((option) => option.key === target)?.uid ?? null;
+  if (question.type === "noul") return target === true || target === "true" ? true : target === false || target === "false" ? false : null;
+  const level = Number(target);
+  return Number.isInteger(level) ? (question.levels[level]?.uid ?? null) : null;
+}
+
+// What a value of the map stands for in the file: an option's key, true /
+// false, a level's index; null when the question no longer has it.
+export function targetValue(question, uid) {
+  if (question.type === "choice") return question.options.find((option) => option.uid === uid)?.key ?? null;
+  if (question.type === "noul") return typeof uid === "boolean" ? uid : null;
+  const index = question.levels.findIndex((level) => level.uid === uid);
+  return index >= 0 ? index : null;
+}
+
+// The map as dataset.json keeps it, by the questions' current ids.
+export function answersFor(draft) {
+  const answers = {};
+  for (const question of draft.questions) {
+    const answer = draft.answers?.[question.uid];
+    if (!answer?.column || !question.id.trim()) continue;
+    const map = {};
+    for (const [value, uid] of Object.entries(answer.map ?? {})) {
+      const target = targetValue(question, uid);
+      if (target !== null) map[value] = target;
+    }
+    answers[question.id] = { column: answer.column, map, left_out: [...(answer.left_out ?? [])] };
+  }
+  return answers;
+}
+
+const answerOf = (draft, questionUid) => draft.answers?.[questionUid] ?? { column: null, map: {}, left_out: [] };
+const withAnswer = (draft, questionUid, answer) => ({
+  ...draft,
+  answers: { ...(draft.answers ?? {}), [questionUid]: answer },
+});
+
+// "Answered by": the column whose values answer the question (null: asked, not trained).
+export function setAnswerColumn(draft, questionUid, column) {
+  if (!column) {
+    const { [questionUid]: _, ...rest } = draft.answers ?? {};
+    return { ...draft, answers: rest };
+  }
+  return withAnswer(draft, questionUid, { column, map: {}, left_out: [] });
+}
+
+// One value's target: an option's or level's uid, true / false, LEFT_OUT, or
+// null (not mapped).
+export function mapValue(draft, questionUid, value, target) {
+  const answer = answerOf(draft, questionUid);
+  const map = { ...answer.map };
+  delete map[value];
+  const leftOut = answer.left_out.filter((item) => item !== value);
+  if (target === LEFT_OUT) leftOut.push(value);
+  else if (target !== null) map[value] = target;
+  return withAnswer(draft, questionUid, { ...answer, map, left_out: leftOut });
+}
+
+// An id from a name: lower case, other characters than letters, digits, '.'
+// and '-' as '_' (as the data command makes them); a repeated one gets _2, _3.
+export function safeIds(names, fallback = "option") {
+  const ids = [];
+  for (const name of names) {
+    const base =
+      String(name)
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}_.-]+/gu, "_")
+        .replace(/^_+|_+$/g, "") || fallback;
+    let id = base;
+    for (let n = 2; ids.includes(id); n += 1) id = `${base}_${n}`;
+    ids.push(id);
+  }
+  return ids;
+}
+
+// Options from values: one option per value (``values``: [[value, name]]),
+// its id made from the name, the name as its description, each value mapped
+// to its option.
+export function optionsFromValues(draft, questionUid, values) {
+  const ids = safeIds(values.map(([value, name]) => name || value));
+  const options = values.map(([value, name], index) => option(ids[index], typed(name || value)));
+  const map = Object.fromEntries(values.map(([value], index) => [value, options[index].uid]));
+  const next = mapQuestion(draft, questionUid, (question) => ({ ...question, options }));
+  const answer = answerOf(draft, questionUid);
+  return withAnswer(next, questionUid, { ...answer, map, left_out: [] });
+}
+
+// A row's expected answer for a question, as the Run All grid shows answers:
+// a choice's option key, "yes" / "no", a level from 1; null when its value is
+// not mapped or left out.
+export function expectedAnswer(draft, question, values) {
+  const answer = draft.answers?.[question.uid];
+  const value = answer ? values?.[answer.column] : undefined;
+  if (value === undefined || value === null || !(value in (answer.map ?? {}))) return null;
+  const target = targetValue(question, answer.map[value]);
+  if (target === null) return null;
+  if (question.type === "noul") return target ? "yes" : "no";
+  if (question.type === "score") return String(target + 1);
+  return target;
+}

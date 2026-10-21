@@ -649,7 +649,126 @@ function Question({ question, index, count }) {
         ${question.type === "noul" && html`<${NoulRows} question=${question} />`}
       </div>
       <${Problem} problem=${wholeProblem} />
+      ${dataset.value && html`<${AnswerMap} question=${question} />`}
     </section>
+  `;
+}
+
+// ---------- a dataset's answers map ----------
+
+const OUT_VALUE = "out";
+const NONE_VALUE = "";
+
+// The targets a value can have: not mapped, left out, then the question's
+// options, yes and no, or its levels; each [select value, label, target].
+function targetsOf(question) {
+  const list = [[NONE_VALUE, "— not mapped —", null], [OUT_VALUE, "Leave out", edit.LEFT_OUT]];
+  if (question.type === "choice")
+    for (const option of question.options) list.push([`o:${option.uid}`, option.key || "(no key)", option.uid]);
+  if (question.type === "noul") list.push(["yes", "Yes", true], ["no", "No", false]);
+  if (question.type === "score")
+    question.levels.forEach((level, index) =>
+      list.push([`l:${level.uid}`, `Level ${index + 1}${level.description.text ? ` · ${level.description.text}` : ""}`, level.uid]),
+    );
+  return list;
+}
+
+// A value's current target as the select shows it.
+function selectedFor(question, answer, value) {
+  if (answer.left_out.includes(value)) return OUT_VALUE;
+  if (!(value in answer.map)) return NONE_VALUE;
+  const target = answer.map[value];
+  if (question.type === "noul") return target ? "yes" : "no";
+  if (question.type === "choice") return question.options.some((o) => o.uid === target) ? `o:${target}` : NONE_VALUE;
+  return question.levels.some((l) => l.uid === target) ? `l:${target}` : NONE_VALUE;
+}
+
+// Names pasted for a column's values: "0: Analyst Update", "LABEL_0": "…", or
+// one name a line in the values' order.
+function parseNames(text, values) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const named = {};
+  const pair = /^["']?(?:LABEL_)?([\w.-]+)["']?\s*[:=]\s*["']?(.+?)["']?,?$/;
+  for (const line of lines) {
+    const match = line.match(pair);
+    if (match && values.includes(match[1])) named[match[1]] = match[2].trim();
+  }
+  if (Object.keys(named).length) return named;
+  return Object.fromEntries(values.slice(0, lines.length).map((value, index) => [value, lines[index].replace(/^["',\s]+|["',\s]+$/g, "")]));
+}
+
+const pasted = signal("");
+
+function pasteNames(question, column, values) {
+  pasted.value = "";
+  openSheet({
+    title: `Names for ${column}'s values`,
+    purpose: `One name a line in the values' order (${values.slice(0, 4).join(", ")}${values.length > 4 ? ", …" : ""}), or pairs such as 0: Analyst Update or "LABEL_0": "Analyst Update" as a dataset card lists them. They become the options: ids made from the names, the names as descriptions.`,
+    Body: () => html`<textarea class="field mono paste-names" aria-label="Names" rows="10" spellcheck=${false}
+      value=${pasted.value} onInput=${(event) => (pasted.value = event.target.value)}></textarea>`,
+    actions: () => [
+      {
+        label: "Make Options",
+        primary: true,
+        disabled: !pasted.value.trim(),
+        onSelect: () => {
+          const names = parseNames(pasted.value, values);
+          updateDraft((value) => edit.optionsFromValues(value, question.uid, values.map((item) => [item, names[item] ?? null])));
+          closeSheet();
+        },
+      },
+    ],
+  });
+}
+
+function AnswerMap({ question }) {
+  const facts = dataset.value;
+  const current = draft.value;
+  const answer = current.answers?.[question.uid] ?? null;
+  const columns = Object.keys(facts.columns ?? {});
+  if (!columns.length) return null;
+  const column = answer?.column ?? null;
+  const values = column ? Object.entries(facts.columns[column]?.values ?? {}) : [];
+  const targets = targetsOf(question);
+  const unmapped = column ? values.filter(([value]) => selectedFor(question, answer, value) === NONE_VALUE).map(([value]) => value) : [];
+  const setColumn = (next) => updateDraft((value) => edit.setAnswerColumn(value, question.uid, next || null));
+  const fromValues = () =>
+    updateDraft((value) => edit.optionsFromValues(value, question.uid, values.map(([item, info]) => [item, info.name ?? null])));
+  return html`
+    <div class="answer-map">
+      <div class="am-head">
+        <label>Answered by
+          <select aria-label=${`Answered by, ${question.id}`} value=${column ?? ""} onChange=${(event) => setColumn(event.target.value)}>
+            <option value="">No column (asked, not trained)</option>
+            ${columns.map((name) => html`<option value=${name}>${name}</option>`)}
+          </select>
+        </label>
+        ${column && question.type === "choice" &&
+        html`<span class="am-tools">
+          <button class="btn sm" title="One option per value, named from the value's name" onClick=${fromValues}>Options from Values</button>
+          <button class="btn sm" title="Paste the values' names, then make the options" onClick=${() => pasteNames(question, column, values.map(([item]) => item))}>Paste Names…</button>
+        </span>`}
+      </div>
+      ${column &&
+      html`<div class="am-rows" role="table" aria-label=${`${question.id}'s values`}>
+        ${values.map(
+          ([value, info]) => html`<div class=${`am-row ${unmapped.includes(value) ? "open" : ""}`} role="row" key=${value} data-value=${value}>
+            <code class="am-value">${value}</code>
+            <span class="am-name">${info.name ?? ""}</span>
+            <span class="num dim">${info.rows?.toLocaleString("en") ?? ""}</span>
+            <select aria-label=${`Answer for ${value}`} value=${selectedFor(question, answer, value)}
+                    onChange=${(event) => {
+                      const picked = targets.find(([key]) => key === event.target.value);
+                      updateDraft((draftValue) => edit.mapValue(draftValue, question.uid, value, picked ? picked[2] : null));
+                    }}>
+              ${targets.map(([key, label]) => html`<option value=${key}>${label}</option>`)}
+            </select>
+          </div>`,
+        )}
+      </div>
+      ${unmapped.length > 0 &&
+      html`<p class="am-open">${unmapped.length === values.length ? "No value is mapped yet" : `${unmapped.length} ${unmapped.length === 1 ? "value is" : "values are"} not mapped`}: ${unmapped.slice(0, 12).join(", ")}${unmapped.length > 12 ? ", …" : ""}. Map each to an answer or leave it out.</p>`}`}
+    </div>
   `;
 }
 

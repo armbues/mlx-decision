@@ -1236,6 +1236,25 @@ a.sb-item { color: var(--fg); }
 .row-values { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 2px 0; font-size: 12px; color: var(--fg-2); }
 .row-values i { font-style: normal; font-family: var(--mono); font-size: 11.5px; }
 .row-values code { font: 11.5px var(--mono); color: var(--fg); }
+/* A dataset's answers map, under each question in the Playground */
+.answer-map { margin-top: 8px; padding: 10px 12px; border-radius: 8px; border: 0.5px solid var(--sep); background: var(--group); display: grid; gap: 8px; font-size: 12.5px; }
+.answer-map .am-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.answer-map .am-head label { display: inline-flex; align-items: center; gap: 8px; color: var(--fg-2); }
+.answer-map select { font: inherit; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 2px 6px; max-width: 260px; }
+.answer-map .am-tools { display: inline-flex; gap: 6px; margin-left: auto; }
+.answer-map .am-rows { display: grid; max-height: 320px; overflow-y: auto; border-top: 0.5px solid var(--sep); }
+.answer-map .am-row { display: grid; grid-template-columns: minmax(40px, auto) minmax(0, 1fr) 54px minmax(140px, 220px); gap: 10px; align-items: center; padding: 4px 0; border-bottom: 0.5px solid var(--sep); }
+.answer-map .am-row.open .am-value { color: var(--orange); }
+.answer-map .am-value { font: 12px var(--mono); }
+.answer-map .am-name { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.answer-map .num { text-align: right; }
+.answer-map .am-open { margin: 0; color: var(--orange); }
+.paste-names { width: 100%; min-height: 180px; }
+/* The Run All grid on a dataset: each answer against the row's expected one */
+.ex-grid th small.agree { display: block; font-weight: 400; color: var(--fg-2); font-size: 11px; }
+.ex-grid td .x { display: block; font-size: 11px; color: var(--fg-3); }
+.ex-grid td.agree .v { color: var(--green); }
+.ex-grid td.disagree .v { color: var(--red, #d70015); }
 /* A split cut into parts, in Download's table of splits */
 .sheet .st-parts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 2px 0 4px; font-size: 12px; color: var(--fg-2); }
 .sheet .st-parts label { display: inline-flex; align-items: center; gap: 6px; }

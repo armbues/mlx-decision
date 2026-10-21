@@ -8,7 +8,7 @@ import { remembered } from "../store/prefs.js";
 import { sets } from "../store/sets.js";
 import { busy, loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
-import { changedSince, currentExample, fromBody, locate, toBody, toFile } from "./draft.js";
+import { answersFor, changedSince, currentExample, fromBody, locate, toBody, toFile } from "./draft.js";
 
 const CHECK_DELAY_MS = 150;
 
@@ -56,7 +56,7 @@ export const drafts = signal({});
 // The file a draft writes: what "Edited" compares (switching examples is not an
 // edit; for a dataset only its questions count, its rows being a sample).
 export const bodyText = (current, dataset = false) =>
-  JSON.stringify(dataset ? toFile(current).body.questions : toFile(current).body);
+  JSON.stringify(dataset ? [toFile(current).body.questions, answersFor(current)] : toFile(current).body);
 
 export function loadedEntry(loaded, modified = null) {
   const loadedDraft = fromBody(loaded.body);

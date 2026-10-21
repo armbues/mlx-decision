@@ -9,12 +9,13 @@ import { clock, duration } from "../format.js";
 import { loadedNames } from "../store/status.js";
 import { SHORTCUTS } from "../keys.js";
 import { answerValue } from "./changes.js";
-import { TYPE_LABELS, changedSince, toBody } from "./draft.js";
+import { TYPE_LABELS, changedSince, expectedAnswer, toBody } from "./draft.js";
 import { focusLater } from "./editor.js";
 import { CompareView } from "./compare.js";
 import { Grid } from "./grid.js";
 import { batchFromHistory, cardContext, openRun, showExample } from "./history.js";
 import {
+  dataset,
   built,
   answersView as view,
   canRun,
@@ -158,6 +159,19 @@ function ViewSwitch() {
   `;
 }
 
+// On a dataset: each row's expected answers, from its values and the map.
+function expectedOf(current) {
+  if (!dataset.value) return null;
+  return Object.fromEntries(
+    current.examples
+      .filter((item) => item.row)
+      .map((item) => [
+        item.name,
+        Object.fromEntries(current.questions.map((question) => [question.id, expectedAnswer(current, question, item.row.values)])),
+      ]),
+  );
+}
+
 function AllExamples() {
   const current = draft.value;
   const name = modelName.value;
@@ -190,7 +204,7 @@ function AllExamples() {
       }</span>
       <button class="btn primary" disabled=${!canRunAll.value} onClick=${() => runAll()}>Run All</button>
     </div>`}
-    <${Grid} rows=${rows} questions=${questions} selected=${example.value?.name}
+    <${Grid} rows=${rows} questions=${questions} selected=${example.value?.name} expected=${expectedOf(current)}
       onPick=${(picked) => {
         showExample(picked);
         view.value = "one";
