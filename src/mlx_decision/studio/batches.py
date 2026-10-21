@@ -201,7 +201,7 @@ class Batches:
         """``batch.json`` of ``name`` (the running batch's as it is now), None if
         there is none (blocks)."""
         if self.running is not None and self.running.name == name:
-            return self._live(self.running)
+            return self.live(self.running)
         return self._read_info(self.folder(name))
 
     def get(self, name: str) -> dict[str, Any]:
@@ -210,7 +210,7 @@ class Batches:
             raise NotFound(f"no batch named {name!r}")
         return info
 
-    def _live(self, batch: Batch) -> dict[str, Any]:
+    def live(self, batch: Batch) -> dict[str, Any]:
         return {**batch.info, "seconds_left": batch.seconds_left()}
 
     @staticmethod
@@ -358,7 +358,7 @@ class Batches:
     async def start(self, name: str) -> dict[str, Any]:
         """Run batch ``name`` from where it stopped (its first pass, or Run the
         Rest); refused while another runs or the GPU is held (409)."""
-        self._check_free()
+        self.check_free()
         folder = self.folder(name)
         info = await asyncio.to_thread(self._read_info, folder)
         if info is None:
@@ -377,7 +377,7 @@ class Batches:
                 status=409,
                 param="model",
             )
-        self._check_free()  # again, after the awaits
+        self.check_free()  # again, after the awaits
         batch = Batch(folder, info)
         info["state"] = "running"
         info["message"] = None
@@ -392,9 +392,9 @@ class Batches:
             raise
         batch.task = asyncio.get_running_loop().create_task(self._run(batch))
         self._changed(batch, False)
-        return self._live(batch)
+        return self.live(batch)
 
-    def _check_free(self) -> None:
+    def check_free(self) -> None:
         if self.running is not None:
             raise BatchError(
                 f"{self.running.name} is running; one batch at a time",
@@ -418,7 +418,7 @@ class Batches:
             raise BatchError(f"{name} is not running", status=409)
         batch.stop_requested = True
         self._changed(batch, False)
-        return self._live(batch)
+        return self.live(batch)
 
     async def shutdown(self) -> None:
         """Stop the running batch and wait for it (the Studio stops)."""

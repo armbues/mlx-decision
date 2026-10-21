@@ -28,6 +28,7 @@ from .catalog import Catalog
 from .jobs import Jobs
 from .page import Page, watch
 from .rescan import Rescans
+from .routes.batches import BatchMessages, batches_router
 from .routes.data import data_router
 from .routes.datasets import datasets_router
 from .routes.downloads import downloads_router
@@ -90,7 +91,12 @@ def create_studio(
     page = Page(dev=dev)
     status = status_reader(gpu)
     jobs = Jobs(gpu, files)
-    hub = Hub(lambda: {"status": status(), "jobs": jobs.current()})
+
+    def running_batch() -> dict[str, Any] | None:  # the stream's snapshot
+        running = batches.running
+        return None if running is None else batches.live(running)
+
+    hub = Hub(lambda: {"status": status(), "jobs": jobs.current(), "batch": running_batch()})
     models = Models(gpu, files.root / "models", files)
     catalog = catalog or Catalog(workspace_models=files.root / "models", include_cache=False)
 
@@ -150,6 +156,8 @@ def create_studio(
 
     jobs.blocked = batch_blocks
     batches.refuse = job_blocks
+    batch_messages = BatchMessages(hub.publish)
+    batches.on_change = lambda batch, progress: batch_messages(batch, progress, batches.live(batch))
     routes.install_errors(app)
     add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
     page.mount(app)
@@ -161,6 +169,7 @@ def create_studio(
     app.include_router(training_router(gpu, files, max_body_bytes))
     app.include_router(datasets_router(max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
+    app.include_router(batches_router(batches, files, max_body_bytes))
     app.include_router(models_router(gpu, max_body_bytes, rescans))
     app.include_router(jobs_router(jobs, gpu, files, current, max_body_bytes))
     app.include_router(

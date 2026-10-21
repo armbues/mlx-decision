@@ -257,6 +257,7 @@ def test_the_stream_starts_with_a_snapshot_and_sends_changes(studio):
                 "memory": {"used": 0, "budget": 10**9, "working_set": working_set()},
             },
             "jobs": [],
+            "batch": None,  # the running batch
         }
         assert snapshot_id == studio.app.state.hub.last_id
         # A request through the Jev API loads the model: a status message.

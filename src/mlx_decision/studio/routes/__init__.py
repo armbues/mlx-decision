@@ -56,7 +56,10 @@ def install_errors(app: FastAPI) -> None:
 
     @app.exception_handler(WorkspaceError)
     async def workspace_error(request: Request, error: WorkspaceError):
-        body = {"message": error.message, "type": "invalid_request_error", "param": None}
+        param = getattr(error, "param", None)
+        body = {"message": error.message, "type": "invalid_request_error", "param": param}
+        if getattr(error, "code", None):
+            body["code"] = error.code
         if isinstance(error, Conflict):
             body["current"] = error.current
         return JSONResponse({"error": body}, status_code=error.status)
