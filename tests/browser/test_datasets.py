@@ -1,8 +1,9 @@
 """The Datasets page: the sidebar's list, Add (checked, errors by line, a
-name taken) and delete; the picked dataset's questions with their labels,
-its examples in a paged table (a label filter, a search in the states), the
-example picked whole in the inspector, Fit on It…, Open in Playground and
-the empty state."""
+name taken; rows of columns as a dataset folder) and delete; the picked
+dataset's splits as tabs, what keeps it from a fit, its questions with
+their labels and its label values, its examples in a paged table (a label or
+value filter, a search in the states), the example picked whole in the
+inspector, Fit on It…, Open in Playground and the empty state."""
 
 import json
 import re
@@ -99,7 +100,7 @@ def test_the_table_pages_filters_and_searches(support, page):
     sales.click()
     expect(sales).to_have_attribute("aria-pressed", "true")
     expect(page.get_by_label("Label", exact=True)).to_have_value(
-        json.dumps(["team", "sales"], separators=(",", ":"))
+        json.dumps(["q", "team", "sales"], separators=(",", ":"))
     )
     expect(pager).to_contain_text("of 20 ")
     sales.click()
@@ -213,7 +214,7 @@ def test_add_a_file_errors_by_line_and_a_name_taken(studio, page, tmp_path):
     # The same name again: another name is asked for.
     add(page, good)
     sheet = page.locator(".sheet")
-    expect(sheet).to_contain_text("a data file named support-tickets exists already")
+    expect(sheet).to_contain_text("a dataset named support-tickets exists already")
     expect(sheet.get_by_label("Name")).to_have_value("support-tickets-2")
     sheet.get_by_role("button", name="Add").click()
     expect(page.locator(".sidebar .data-list .sb-item")).to_have_text(
@@ -224,14 +225,14 @@ def test_add_a_file_errors_by_line_and_a_name_taken(studio, page, tmp_path):
     bad = tmp_path / "bad.jsonl"
     bad.write_text("\n".join([line(0, "tech"), line(1, "nobody"), "{not json", line(3, "sales")]))
     add(page, bad)
-    expect(sheet.locator("h2")).to_have_text("bad.jsonl cannot be used")
+    expect(sheet.locator("h2")).to_have_text("bad.jsonl is not training data")
     errors = sheet.locator(".data-errors li")
     expect(errors).to_have_count(2)
     expect(errors.nth(0)).to_contain_text("Line 2")
     expect(errors.nth(0)).to_contain_text('"nobody" is none of the options')
     expect(errors.nth(0).locator("code")).to_have_text("labels.team")
     expect(errors.nth(1)).to_contain_text("Line 3")
-    sheet.get_by_role("button", name="OK").click()
+    sheet.get_by_role("button", name="Cancel").click()
     assert not (studio.workspace / "data" / "bad.jsonl").exists()
 
 
@@ -253,7 +254,7 @@ def test_delete_the_picked_file(studio, page):
     row.hover()
     row.get_by_role("button", name="Delete tickets…").click()
     sheet = page.locator(".sheet")
-    expect(sheet).to_contain_text("data/tickets.jsonl (1 example) is deleted")
+    expect(sheet).to_contain_text("The dataset data/tickets.jsonl is deleted")
     sheet.get_by_role("button", name="Delete").click()
     expect(page.locator(".toast")).to_contain_text("Deleted data/tickets.jsonl")
     expect(page.locator(".sidebar .data-list .sb-item")).to_have_count(0)
@@ -262,7 +263,7 @@ def test_delete_the_picked_file(studio, page):
     assert not (studio.workspace / "data" / "tickets.jsonl").exists()
     # The empty state: what a dataset is, with Download and Add.
     empty = page.locator(".centre .ds-empty")
-    expect(empty).to_contain_text("A dataset is a file of labelled examples")
+    expect(empty).to_contain_text("A dataset holds examples")
     expect(empty.get_by_role("button", name="Download")).to_be_visible()
     expect(empty.get_by_role("button", name="Add")).to_be_visible()
     # Training says where datasets come from.
@@ -321,3 +322,134 @@ def test_a_file_over_the_upload_limit_is_copied_in_instead(make_studio, page, tm
     assert edge.stat().st_size <= 4_000
     add(page, edge)
     expect(sheet.locator("h2")).to_have_text("edge.jsonl is too large to add here")
+
+
+def write_tweets(studio, questions=False):
+    """data/tweets/: train (6 rows) and test (3), the label's values 0 and 1
+    named from a card; with ``questions``, a topic question answered by them."""
+    folder = studio.workspace / "data" / "tweets"
+    folder.mkdir()
+    for split, count in (("train", 6), ("test", 3)):
+        rows = [
+            {"id": f"{split}{i}", "state": f"tweet {split} {i}", "values": {"label": str(i % 2)}}
+            for i in range(count)
+        ]
+        (folder / f"{split}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    body = {
+        "columns": {"label": {"values": {"0": {"rows": 5, "name": "Analyst Update"},
+                                         "1": {"rows": 4, "name": "Fed | Central Banks"}}}},
+        "splits": {"train": {"role": "train", "examples": 6},
+                   "test": {"role": "evaluate", "examples": 3}},
+        "source": {"source": "hf:zeroshot/tweets"},
+    }  # fmt: skip
+    if questions:
+        body["questions"] = {"topic": {"type": "choice", "criteria": {"analyst": "A", "fed": "F"}}}
+        body["answers"] = {"topic": {"column": "label", "map": {"0": "analyst"}}}
+    (folder / "dataset.json").write_text(json.dumps(body))
+
+
+def test_a_folder_without_questions(studio, page):
+    write_tweets(studio)
+    open_studio(page, studio, "datasets/tweets")
+    row = page.locator(".sidebar .data-list li", has_text="tweets")
+    expect(row.locator(".mark")).to_have_count(1)  # not ready for a fit
+    expect(row.locator(".sb-item")).to_have_attribute(
+        "title", "Not ready for a fit: it has no questions yet"
+    )
+    centre = page.locator(".centre")
+    expect(centre.locator(".ds-banner")).to_contain_text(
+        "Not ready for a fit: it has no questions yet"
+    )
+    # The splits as tabs, the train split first shown.
+    tabs = centre.locator(".ds-tabs [role=tab]")
+    expect(tabs).to_have_count(2)
+    expect(tabs.first).to_contain_text("train")
+    expect(tabs.first).to_contain_text("Train")
+    expect(tabs.first).to_have_attribute("aria-selected", "true")
+    expect(centre.locator(".pane-head p")).to_contain_text(
+        "2 splits · 6 examples in train · 0 questions"
+    )
+    expect(centre.locator(".ds-source")).to_contain_text("zeroshot/tweets on the Hugging Face Hub")
+    # Its label values with their names; one picked filters the table.
+    values = centre.locator(".ds-question", has_text="label")
+    expect(values.locator(".label-counts code")).to_have_text(
+        ["0 · Analyst Update", "1 · Fed | Central Banks"]
+    )
+    expect(page.locator(".ex-rows .ex-row")).to_have_count(6)
+    expect(page.locator(".ex-rows .ex-row").first.locator(".lab")).to_have_text(
+        "0 · Analyst Update"
+    )
+    values.locator(".label-counts button", has_text="Fed").click()
+    expect(page.locator(".ex-rows .ex-row")).to_have_count(3)
+    # Another split.
+    tabs.nth(1).click()
+    expect(tabs.nth(1)).to_have_attribute("aria-selected", "true")
+    expect(page.locator(".ex-rows .ex-row")).to_have_count(3)
+    expect(page.locator(".ex-rows .ex-row").first.locator(".ex-id")).to_have_text("test0")
+    page.locator(".ex-row", has_text="tweet test 1").click()
+    inspector = page.locator(".inspector")
+    expect(inspector.locator(".igroup", has_text="Values")).to_contain_text("Fed | Central Banks")
+    expect(inspector.locator(".file-group")).to_contain_text("test.jsonl")
+    # Not ready: Fit on It… says why, and Open in Playground waits for questions.
+    expect(page.get_by_role("button", name="Open in Playground")).to_be_disabled()
+    page.get_by_role("button", name="Fit on It…").click()
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text("tweets is not ready for a fit")
+    sheet.get_by_role("button", name="OK").click()
+    expect(page).to_have_url(re.compile(r"#/datasets/tweets$"))
+    shot(page, "datasets-folder-not-ready")
+
+
+def test_a_folder_with_an_unmapped_value(studio, page):
+    write_tweets(studio, questions=True)
+    open_studio(page, studio, "datasets/tweets")
+    expect(page.locator(".ds-banner")).to_contain_text(
+        "topic: label values not mapped to an answer or left out: 1"
+    )
+    topic = page.locator(".ds-question", has_text="topic")
+    expect(topic).to_contain_text("Answered by the values of label")
+    expect(topic.locator(".label-counts li", has_text="analyst").locator(".num")).to_have_text("3")
+
+
+def test_add_rows_of_columns(studio, page, tmp_path):
+    open_studio(page, studio, "datasets")
+    rows = tmp_path / "topics.csv"
+    rows.write_text("text,topic\nrates rise,fed\nbuy apple,analyst\nfed holds,fed\n")
+    add(page, rows)
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text("Add topics.csv")
+    expect(sheet.get_by_label("State column")).to_have_value("text")
+    expect(sheet.get_by_label("Label column")).to_have_value("topic")
+    expect(sheet.get_by_label("Name")).to_have_value("topics")
+    sheet.get_by_role("button", name="Add").click()
+    expect(page.locator(".toast")).to_contain_text(
+        "Added topics.csv as data/topics/ · 3 examples · no questions yet"
+    )
+    expect(page).to_have_url(f"{studio.base}/#/datasets/topics")
+    expect(page.locator(".ds-banner")).to_contain_text("it has no questions yet")
+    assert (studio.workspace / "data" / "topics" / "dataset.json").exists()
+    # JSON lines that are not training data: added as rows the same way.
+    jsonl = tmp_path / "plain.jsonl"
+    jsonl.write_text('{"text": "a", "label": "x"}\n{"text": "b", "label": "y"}\n')
+    add(page, jsonl)
+    expect(sheet.locator("h2")).to_have_text("plain.jsonl is not training data")
+    sheet.get_by_role("button", name="Add as Rows…").click()
+    expect(sheet.locator("h2")).to_have_text("Add plain.jsonl")
+    sheet.get_by_role("button", name="Add").click()
+    expect(page).to_have_url(f"{studio.base}/#/datasets/plain")
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("width", [1440, 1100])
+def test_a_folder_light_and_dark(studio, page, theme, width):
+    write_tweets(studio)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.emulate_media(color_scheme=theme)
+    open_studio(page, studio, "datasets/tweets")
+    expect(page.locator(".ds-tabs [role=tab]")).to_have_count(2)
+    page.locator(".ex-row").first.click()
+    expect(page.locator(".inspector .ex-whole")).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    centre = page.locator(".centre")
+    assert centre.evaluate("e => e.scrollWidth <= e.clientWidth")
+    shot(page, f"datasets-folder-{theme}-{width}")

@@ -1,31 +1,40 @@
-// Datasets: the files of labelled examples in the workspace's data/ folder,
-// which fits and evaluations read. The sidebar lists them with Download
-// and Add; the centre shows the one picked (its questions with their labels
-// and counts, its examples in a paged table) with Fit on It…, Evaluate, Open
-// in Playground, and Show in Finder and Delete in its "…" menu; the inspector
-// the example picked, whole, and the file.
-import { computed } from "@preact/signals";
+// Datasets: the workspace's data/ folder, which fits and evaluations read. The
+// sidebar lists them with Download and Add; the centre shows the one picked:
+// its splits as tabs (each with its role and count), what keeps it from a fit,
+// where it came from, the split's questions with their labels and its label
+// values with their counts, and its examples in a paged table; with Fit on It…,
+// Evaluate on It…, Open in Playground, and Show in Finder and Delete in its "…"
+// menu. The inspector shows the example picked, whole, and the files.
+import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
-import { ExampleInspector, ExampleTable, filterLabel, query, showDataset } from "../datasets/examples.js";
+import { closeSheet, openSheet } from "../components/sheet.js";
+import { ExampleInspector, ExampleTable, filterLabel, filterValue, query, showDataset } from "../datasets/examples.js";
 import { DatasetList, deleteData, pickedDataset, revealData, uploadData } from "../datasets/files.js";
 import { openGetDataset } from "../datasets/get.js";
-import { Labels, useSummary } from "../datasets/summary.js";
+import { Labels, Values, useSummary } from "../datasets/summary.js";
 import { ROLE_WORDS } from "../datasets/splits.js";
 import { fileSize, plural } from "../format.js";
-import { href, navigate } from "../router.js";
-import { dataFiles, described } from "../store/data.js";
+import { navigate } from "../router.js";
+import { dataFiles, datasetOf, described, summaryKey } from "../store/data.js";
 import { toast } from "../store/ui.js";
 import { evalOn } from "../training/evaluate.js";
 import { fitOn } from "../training/fit.js";
+
+// The split shown, per dataset (null: its default split).
+const shownSplit = signal({});
+const splitOf = (name) => shownSplit.value[name] ?? null;
 
 const status = computed(() => {
   const list = dataFiles.value;
   if (!list) return null;
   const name = pickedDataset();
-  const summary = name ? described.value[name] : null;
-  if (summary?.examples != null) return { text: html`<b>${name}</b> · ${plural(summary.examples, "example")}` };
+  const summary = name ? described.value[summaryKey(name, splitOf(name))] : null;
+  if (summary?.examples != null) {
+    const split = summary.kind === "folder" ? html` · ${summary.split}` : "";
+    return { text: html`<b>${name}</b>${split} · ${plural(summary.examples, "example")}` };
+  }
   if (list.length === 0) return { text: "No datasets yet" };
   return { text: html`<b>${plural(list.length, "dataset")}</b> in data/` };
 });
@@ -41,7 +50,7 @@ function Empty() {
   return html`
     <div class="empty ds-empty">
       <b>No datasets yet</b>
-      <span>A dataset is a file of labelled examples: each a state, the questions asked about it and the correct answers. Fits learn from one and evaluations score models on one. Get a public dataset from the Hugging Face Hub, or add a JSON-lines file of your own.</span>
+      <span>A dataset holds examples: each a state and its label, split into the examples a fit learns from, those its report is scored on and those kept for an evaluation. Download a public dataset from the Hugging Face Hub, or add a file of your own (training data as JSON lines, or rows of columns).</span>
       <span class="empty-actions">
         <button class="btn primary" onClick=${openGetDataset}>Download</button>
         <button class="btn" onClick=${uploadData}>Add</button>
@@ -52,6 +61,7 @@ function Empty() {
 
 function Questions({ summary }) {
   const current = query.value;
+  if (summary.questions.length === 0) return null;
   return html`
     <section class="gsec"><div class="gsec-head"><h2>Questions</h2><span class="tag">Pick a label to see its examples</span></div>
       <div class="group ds-questions">
@@ -60,6 +70,7 @@ function Questions({ summary }) {
             <div class="ds-q-text">
               <b class="mono">${question.id}</b><span class="ds-q-type">${question.type}</span>
               ${question.instructions && html`<p>${question.instructions}</p>`}
+              ${question.answered_by && html`<small>Answered by the values of <code>${question.answered_by}</code></small>`}
             </div>
             <div class="ds-q-labels">
               <${Labels} question=${question} total=${summary.examples}
@@ -73,48 +84,105 @@ function Questions({ summary }) {
   `;
 }
 
+// The label columns' values in this split, each with its count and name.
+function ValuesSection({ summary }) {
+  const columns = Object.keys(summary.values ?? {});
+  if (columns.length === 0) return null;
+  const current = query.value;
+  return html`
+    <section class="gsec"><div class="gsec-head"><h2>Label values</h2><span class="tag">${
+      summary.questions.length ? "What the answers are mapped from" : "Pick a value to see its examples"
+    }</span></div>
+      <div class="group ds-questions">
+        ${columns.map(
+          (column) => html`<div class="ds-question" key=${column}>
+            <div class="ds-q-text"><b class="mono">${column}</b><span class="ds-q-type">${plural(summary.values[column].length, "value")}</span></div>
+            <div class="ds-q-labels">
+              <${Values} summary=${summary} column=${column} active=${current.column === column ? current.value : null}
+                onPick=${(value) => filterValue(column, value)} />
+            </div>
+          </div>`,
+        )}
+      </div>
+    </section>
+  `;
+}
+
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString("en", { year: "numeric", month: "short", day: "numeric" }) : "");
 
-// Where the dataset came from: its record, written by the Get (data --record).
-function Source({ name, record }) {
-  const hub = record.source?.startsWith("hf:");
-  const repo = hub ? record.source.slice(3) : record.source;
-  const rows = record.rows?.toLocaleString("en");
-  let taken = `all ${rows} rows`;
-  if (record.sample) taken = `a random sample of ${record.sample.toLocaleString("en")} of ${rows} rows (seed ${record.seed ?? 0})`;
-  else if (record.limit) taken = `the first ${record.limit.toLocaleString("en")} of ${rows} rows`;
-  const others = (record.get?.files ?? []).filter((file) => file.name !== name);
-  const listed = new Set((dataFiles.value ?? []).map((item) => item.name));
-  const role = record.role ? ROLE_WORDS[record.role] : null;
+// Where the dataset came from (its dataset.json's source) and what the split
+// shown holds: the source split, a sample or a part of it.
+function Source({ summary }) {
+  const source = summary.source ?? {};
+  const meta = summary.splits.find((split) => split.name === summary.split) ?? {};
+  const hub = source.source?.startsWith("hf:");
+  const repo = hub ? source.source.slice(3) : source.source;
+  let taken = meta.examples != null ? plural(meta.examples, "example") : "";
+  if (meta.part) taken = `${Math.round(meta.part * 100)}% of ${meta.split ? html`<code>${meta.split}</code>` : "the rows"}, drawn by label`;
+  else if (meta.sample) taken = `a random sample of ${meta.sample.toLocaleString("en")} rows (seed ${meta.seed ?? 0})`;
+  const role = meta.role ? ROLE_WORDS[meta.role] : null;
   return html`
-    <section class="gsec ds-source"><div class="gsec-head"><h2>Where it came from</h2>${record.created && html`<span class="tag">Got ${day(record.created)}</span>`}</div>
+    <section class="gsec ds-source"><div class="gsec-head"><h2>Where it came from</h2>${summary.created && html`<span class="tag">Downloaded ${day(summary.created)}</span>`}</div>
       <div class="group"><dl>
-        <div class="kv"><dt>Dataset</dt><dd>
-          ${record.preset && html`The <b>${record.preset}</b> preset: `}<code>${repo}</code>${hub ? " on the Hugging Face Hub" : ""}${record.config ? html`, config <code>${record.config}</code>` : ""}
-          ${record.revision && html`<small>At commit <code>${record.revision.slice(0, 7)}</code></small>`}
-        </dd></div>
-        <div class="kv"><dt>Split</dt><dd><code>${record.split ?? "–"}</code>: ${taken}</dd></div>
-        ${role && html`<div class="kv"><dt>Role</dt><dd>${role.label}<small>${role.words}</small></dd></div>`}
-        ${others.length > 0 &&
-        html`<div class="kv"><dt>Got with it</dt><dd class="ds-siblings">
-          ${others.map(
-            (file) => html`<span>${listed.has(file.name) ? html`<a href=${href("datasets", file.name)}>${file.name}</a>` : html`<span class="gone" title="Deleted">${file.name}</span>`}${
-              file.role ? html` <small>${ROLE_WORDS[file.role]?.label.toLowerCase() ?? file.role}</small>` : ""
-            }</span>`,
-          )}
+        ${repo &&
+        html`<div class="kv"><dt>Dataset</dt><dd>
+          ${source.preset && html`The <b>${source.preset}</b> preset: `}${source.source === "upload" ? "A file you added" : html`<code>${repo}</code>`}${hub ? " on the Hugging Face Hub" : ""}${source.config ? html`, config <code>${source.config}</code>` : ""}
+          ${source.revision && html`<small>At commit <code>${source.revision.slice(0, 7)}</code></small>`}
         </dd></div>`}
-        ${record.label_map &&
-        html`<div class="kv"><dt>Classes</dt><dd>${Object.entries(record.label_map).map(([raw, option]) => html`<span class="ds-map"><code>${raw}</code> → <code>${option}</code></span>`)}</dd></div>`}
+        <div class="kv"><dt>This split</dt><dd><code>${summary.split}</code>${meta.split && meta.split !== summary.split ? html` from <code>${meta.split}</code>` : ""}${taken ? html`: ${taken}` : ""}</dd></div>
+        ${role && html`<div class="kv"><dt>Role</dt><dd>${role.label}<small>${role.words}</small></dd></div>`}
       </dl></div>
     </section>
   `;
 }
 
-// A question set from the file's questions and first examples, opened in the
+// The splits as tabs: each with its role and count.
+function SplitTabs({ name, summary }) {
+  if (summary.kind !== "folder") return null;
+  return html`
+    <div class="ds-tabs" role="tablist" aria-label="Splits">
+      ${summary.splits.map(
+        (split) => html`<button role="tab" key=${split.name} aria-selected=${split.name === summary.split ? "true" : "false"}
+          data-split=${split.name} title=${split.role ? ROLE_WORDS[split.role].words : "no role"}
+          onClick=${() => (shownSplit.value = { ...shownSplit.value, [name]: split.name })}>
+          <code>${split.name}</code>${split.role && html`<span class="role">${ROLE_WORDS[split.role].label}</span>`}
+          ${split.examples != null && html`<span class="num">${split.examples.toLocaleString("en")}</span>`}
+        </button>`,
+      )}
+    </div>
+  `;
+}
+
+// What keeps the dataset from a fit, with what to do about it.
+function NotReady({ summary }) {
+  if (!summary.missing?.length) return null;
+  return html`
+    <div class="notice ds-banner" role="status">
+      <span><b>Not ready for a fit:</b> ${summary.missing.join("; ")}. A fit and an evaluation need questions, and for every label value the answer it stands for.</span>
+    </div>
+  `;
+}
+
+// Fit on It… and Evaluate on It…: the form, or what is missing first.
+function onIt(name, run, what) {
+  const item = datasetOf(name);
+  if (!item?.missing?.length) {
+    run(name);
+    return;
+  }
+  openSheet({
+    title: `${name} is not ready for ${what}`,
+    purpose: `${item.missing.join("; ")}. ${what === "a fit" ? "A fit learns" : "An evaluation scores models"} on questions whose answers the dataset's label values give: its questions first, then for each value the answer it stands for.`,
+    actions: [{ label: "OK", primary: true, onSelect: closeSheet }],
+  });
+}
+
+// A question set from the split's questions and first examples, opened in the
 // Playground: the base model tried on them before a fit, the fitted one after.
-async function openInPlayground(name) {
+async function openInPlayground(name, split) {
   try {
-    const made = await api(`/data/${encodeURIComponent(name)}/set`, { method: "POST", body: {} });
+    const query = split ? `?split=${encodeURIComponent(split)}` : "";
+    const made = await api(`/data/${encodeURIComponent(name)}/set${query}`, { method: "POST", body: {} });
     navigate("playground", made.name);
     toast(`Saved as the question set ${made.name}, with ${plural(made.examples, "example")} from ${name}`);
   } catch (error) {
@@ -123,21 +191,25 @@ async function openInPlayground(name) {
 }
 
 function Picked({ name }) {
-  const summary = useSummary(name);
+  const split = splitOf(name);
+  const summary = useSummary(name, split);
+  if (summary && query.value.name === name && query.value.split !== summary.split && !summary.error) showDataset(name, summary.split);
   if (!summary) return null;
   if (summary.error)
     return html`<div class="pane-head"><div><h1 class="mono">${name}</h1></div></div><p class="warn-text">${summary.error}</p>`;
+  const folder = summary.kind === "folder";
+  const asked = summary.questions.length > 0;
   return html`
     <div class="pane-head">
       <div>
         <h1 class="mono">${name}</h1>
-        <p>${plural(summary.examples, "example")} · ${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
+        <p>${folder ? `${plural(summary.splits.length, "split")} · ` : ""}${plural(summary.examples, "example")}${folder ? ` in ${summary.split}` : ""} · ${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
       </div>
       <div class="actions">
-        <button class="btn primary" onClick=${() => fitOn(name)} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
-        <button class="btn" onClick=${() => evalOn(name)} title=${`Score a model on ${name}, on the Training page`}>Evaluate on It…</button>
-        <button class="btn" onClick=${() => openInPlayground(name)}
-                title=${`A new question set with ${name}'s questions and its first ${Math.min(summary.examples, 10)} examples, to try a model on`}>Open in Playground</button>
+        <button class="btn primary" onClick=${() => onIt(name, fitOn, "a fit")} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
+        <button class="btn" onClick=${() => onIt(name, evalOn, "an evaluation")} title=${`Score a model on ${name}, on the Training page`}>Evaluate on It…</button>
+        <button class="btn" onClick=${() => openInPlayground(name, summary.split)} disabled=${!asked}
+                title=${asked ? `A new question set with ${name}'s questions and the first ${Math.min(summary.examples, 10)} examples of ${summary.split}, to try a model on` : `${name} has no questions yet`}>Open in Playground</button>
         <${MenuButton} id="data-more" className="btn" ariaLabel=${`More actions for ${name}`}
           label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
           menuStyle="top:32px; right:0; width:200px">
@@ -147,8 +219,11 @@ function Picked({ name }) {
         <//>
       </div>
     </div>
-    ${summary.record && html`<${Source} name=${name} record=${summary.record} />`}
+    <${NotReady} summary=${summary} />
+    <${SplitTabs} name=${name} summary=${summary} />
+    ${(summary.source || folder) && html`<${Source} summary=${summary} />`}
     <${Questions} summary=${summary} />
+    <${ValuesSection} summary=${summary} />
     <${ExampleTable} summary=${summary} />
   `;
 }
@@ -156,7 +231,7 @@ function Picked({ name }) {
 function Centre() {
   const list = dataFiles.value;
   const name = pickedDataset();
-  if (name && query.value.name !== name) showDataset(name);
+  if (name && query.value.name !== name) showDataset(name, splitOf(name));
   let body;
   if (!list) body = null;
   else if (list.length === 0) body = html`<${Empty} />`;
@@ -170,7 +245,11 @@ function Centre() {
   return html`<div class="centre-inner">${body}</div>`;
 }
 
-const Inspector = () => html`<${ExampleInspector} name=${pickedDataset()} />`;
+function Inspector() {
+  const name = pickedDataset();
+  const summary = name ? described.value[summaryKey(name, splitOf(name))] : null;
+  return html`<${ExampleInspector} name=${name} split=${splitOf(name)} shown=${summary?.split ?? null} />`;
+}
 
 export default {
   id: "datasets",

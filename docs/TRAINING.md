@@ -163,6 +163,9 @@ questions and what each value means live once, in `dataset.json`:
   pick another.
 - A plain JSON-lines file works everywhere a folder does, as a dataset
   of one split.
+- `--value-names "0=Analyst Update,1=Fed | Central Banks"` gives the
+  label's values names, kept in `columns` beside their row counts (the
+  Studio reads them from the dataset card when it lists them).
 
 ### `data`: datasets to training files
 

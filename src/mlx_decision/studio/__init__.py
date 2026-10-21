@@ -244,9 +244,8 @@ def studio_lifespan(
                     rescans.soon()
                 if ended and job.kind == "data":
                     # New datasets: every tab's list again.
-                    for output in job.outputs:
-                        if output.name.endswith(".jsonl"):
-                            files.changed("data", output.name.removesuffix(".jsonl"), "saved")
+                    for output in job.outputs:  # a dataset folder (or a plain file)
+                        files.changed("data", output.name.removesuffix(".jsonl"), "saved")
 
             jobs.on_change = job_changed
         watcher = None

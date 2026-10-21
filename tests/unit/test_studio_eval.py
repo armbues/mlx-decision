@@ -68,7 +68,8 @@ def plan(studio, **body):
 
 def test_the_plan_and_the_training_data_warning(studio):
     base = plan(studio, model="fake", data="train").json()
-    assert base == {"model": "fake", "compare": None, "data": "train", "examples": 20,
+    assert base == {"model": "fake", "compare": None, "data": "train", "split": "train",
+                    "examples": 20,
                     "questions": {"team": "choice"}, "warnings": []}  # fmt: skip
     # The fitted model on the file it was fitted on: said; on another file: not.
     same = plan(studio, model="fake-fit", data="train", compare="fake").json()

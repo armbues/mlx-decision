@@ -110,3 +110,37 @@ def test_no_comparison(studio, page):
     expect(table.locator("thead th")).to_have_text(["", "fake"])
     job = next(iter(studio.app.state.jobs.jobs.values()))
     assert "--compare" not in job.argv and job.details["warnings"] == []
+
+
+def test_evaluate_on_a_folders_evaluate_split(studio, page):
+    folder = studio.workspace / "data" / "help"
+    folder.mkdir()
+    for split, count in (("train", 4), ("validation", 3), ("test", 2)):
+        rows = [{"id": f"{split}{i}", "state": f"{split} {i}", "values": {"label": "yes"}}
+                for i in range(count)]  # fmt: skip
+        (folder / f"{split}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    body = {
+        "questions": {"ok": {"type": "noul", "instructions": "Is it fine?"}},
+        "answers": {"ok": {"column": "label", "map": {"yes": True}}},
+        "columns": {"label": {"values": {"yes": {"rows": 9}}}},
+        "splits": {"train": {"role": "train"}, "validation": {"role": "report"},
+                   "test": {"role": "evaluate"}},
+    }  # fmt: skip
+    (folder / "dataset.json").write_text(json.dumps(body))
+    open_studio(page, studio, "datasets/help")
+    page.get_by_role("button", name="Evaluate on It…").click()
+    form = page.locator(".eval-form")
+    expect(form.locator("#eval-data")).to_have_value("help")
+    split = form.locator("#eval-split")
+    expect(split).to_have_value("test")  # its evaluate split
+    expect(split.locator("option")).to_have_text(
+        ["train (train)", "validation (report)", "test (evaluate)"]
+    )
+    expect(form).to_contain_text("2 examples")
+    split.select_option("validation")
+    expect(form).to_contain_text("3 examples")
+    page.keyboard.press("Meta+Enter")
+    expect(page.locator(".centre .pane-head p")).to_contain_text("on help (validation)")
+    job = next(iter(studio.app.state.jobs.jobs.values()))
+    assert job.details["split"] == "validation"
+    assert job.argv[job.argv.index("--data") + 1].endswith("help/validation.jsonl")

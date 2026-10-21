@@ -447,8 +447,8 @@ export function FitView({ id }) {
   const running = job.state !== "ended";
   const done = job.outcome === "done";
   const sub = evaluation
-    ? [details.compare ? `${details.model} against ${details.compare}` : details.model, details.data && `on ${details.data}`].filter(Boolean).join(" · ")
-    : [details.model, details.data && `on ${details.data}`, details.report && `reported on ${details.report}`, details.method]
+    ? [details.compare ? `${details.model} against ${details.compare}` : details.model, details.data && `on ${details.data}${details.split && details.split !== details.data ? ` (${details.split})` : ""}`].filter(Boolean).join(" · ")
+    : [details.model, details.data && `on ${details.data}${details.split && details.split !== details.data ? ` (${details.split})` : ""}`, details.report && `reported on ${details.report}${details.report_split && details.report_split !== details.report ? ` (${details.report_split})` : ""}`, details.method]
         .filter(Boolean)
         .join(" · ");
   return html`

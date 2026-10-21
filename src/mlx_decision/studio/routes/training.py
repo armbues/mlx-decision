@@ -1,6 +1,7 @@
-"""The fit form's plan: what a fit of a model on a data file would do (TRS-1).
+"""The fit form's plan: what a fit of a model on a dataset would do (TRS-1).
 
-``POST /studio/api/fit/plan`` ``{model, data, holdout, seed, report}`` reads the data
+``POST /studio/api/fit/plan`` ``{model, data, split, holdout, seed, report,
+report_split}`` reads the data (a dataset's split, by default its train split)
 and finds the base as ``training fit``'s check stage does (no model loads)
 and answers what the fit wizard's method menu shows for the same data: the
 methods the family takes (``auto``'s pick first), each with the kinds it
@@ -8,20 +9,21 @@ runs, its peak memory and disk while it runs (estimates, as
 ``training.plan.estimate``) and whether that fits this Mac's GPU working
 set (the fit's own check); plus the splits (to train on, to tune, kept
 aside for the report), the label counts, the data's warnings and the
-fitted model's default name. With ``report`` (another data file) the
-report is scored on that file instead of a share of ``data``: refused when
+fitted model's default name. With ``report`` (a dataset and its
+``report_split``, by default its report split; the same dataset's other
+split too) the report is scored on that split instead of a share of
+``data``: refused when
 it labels other questions (ids, types, options), and a warning when
 examples of it have a state that is also in ``data``. The fit itself is a job (``POST
 /studio/api/jobs`` with ``kind`` "fit").
 """
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
 
-from ...data.format import read_examples
+from ...data.dataset import read_for
 from ...errors import DecisionError
 from ...gpu import Gpu
 from ...memory import working_set
@@ -29,9 +31,10 @@ from ...training import plan as kinds_plan
 from ...training.fitting import label_counts, prepare, report_mismatch, shared_states
 from ...training.wizard import DEFAULT_HOLDOUT, EPOCH_KINDS
 from ..checks import training_data_warnings
-from ..workspace import Workspace, WorkspaceError
+from ..workspace import Workspace
 from . import ApiError, field, json_body
 from .jobs import HOLDOUT_MAX, HOLDOUT_MIN, TRAINING_OPTIONS, short
+from .picks import pick_split
 
 DESCRIPTIONS = {
     "head": "Trains Clef's joint-schema head on your labels, then calibrates.",
@@ -49,11 +52,12 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
 
     @router.post("/eval/plan")
     async def eval_plan(request: Request):
-        """``{model, data, compare}`` -> ``{model, compare, data, examples,
-        questions, warnings}``: the data read (its labelled questions, each
-        with its type) and a warning for a fitted model that was fitted on
-        this very file (TRS-4). 404 for an unknown model or file, 422 for data
-        an evaluation cannot take."""
+        """``{model, data, split, compare}`` -> ``{model, compare, data, split,
+        examples, questions, warnings}``: the dataset's split read (by default
+        its evaluate split; its labelled questions, each with its type) and a
+        warning for a fitted model that was fitted on this very data (TRS-4).
+        404 for an unknown model, dataset or split, 422 for data an evaluation
+        cannot take."""
         body = await json_body(request, max_body_bytes)
         names = []
         for key in ("model", "compare"):
@@ -64,24 +68,32 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
         model_name, compare = names
         if compare == model_name:
             raise ApiError(400, "compare with another model", param="compare")
-        data_name, data = data_file(files, body, "data")
+        picked = pick_split(files, body, "data", "evaluate", "split")
+        data_name, data = picked.name, picked.path
+        shown = f"{data_name} ({picked.split})" if picked.dataset.folder else data_name
 
         def plan() -> dict[str, Any]:
-            examples = read_examples(data)
+            examples = read_for(data, "evaluate").examples
             questions = {}
             for example in examples:
                 for question_id in example.labels:
                     questions.setdefault(
                         question_id, example.request["questions"][question_id].get("type")
                     )
-            warnings = training_data_warnings(pool, names, data, data_name)
+            warnings = training_data_warnings(pool, names, data, shown)
             return {"examples": len(examples), "questions": questions, "warnings": warnings}
 
         try:
             planned = await asyncio.to_thread(plan)
         except (DecisionError, ValueError, OSError) as error:
             raise ApiError(422, str(error), param="data") from None
-        return {"model": model_name, "compare": compare, "data": data_name, **planned}
+        return {
+            "model": model_name,
+            "compare": compare,
+            "data": data_name,
+            "split": picked.split,
+            **planned,
+        }
 
     @router.post("/fit/plan")
     async def fit_plan(request: Request):
@@ -92,12 +104,16 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
         name = field(body, "model", str)
         if name not in pool.specs:
             raise ApiError(404, f"no model is named {name}", param="model")
-        data_name, data = data_file(files, body, "data")
-        report_name, report = None, None
+        picked = pick_split(files, body, "data", "train", "split")
+        data_name, data = picked.name, picked.path
+        report_name, report, report_split = None, None, None
         if body.get("report") is not None:
-            report_name, report = data_file(files, body, "report")
-            if report_name == data_name:
-                raise ApiError(400, "report on another file than the one to train on", "report")
+            other = pick_split(files, body, "report", "report")
+            report_name, report, report_split = other.name, other.path, other.split
+            if report == data:
+                raise ApiError(400, "report on another split than the one to train on", "report")
+            if other.dataset.folder:
+                report_name = f"{other.name} ({other.split})"
         holdout = field(body, "holdout", (int, float), required=False)
         holdout = DEFAULT_HOLDOUT if holdout is None else float(holdout)
         if not HOLDOUT_MIN <= holdout <= HOLDOUT_MAX:
@@ -141,7 +157,9 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
         return {
             "model": name,
             "data": data_name,
-            "report": report_name,
+            "split": picked.split,
+            "report": body.get("report"),
+            "report_split": report_split,
             "name": f"{short(name)}-{data_name}",
             **planned,
         }
@@ -151,19 +169,6 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
 
 class ReportMismatch(ValueError):
     """A report file that labels other questions than the data to train on."""
-
-
-def data_file(files: Workspace, body: dict, key: str) -> tuple[str, Path]:
-    """The data file ``body[key]`` names: 400 for a name that is not one, 404
-    when there is none."""
-    name = field(body, key, str)
-    try:
-        path = files.data_path(name)
-    except WorkspaceError as error:
-        raise ApiError(400, error.message, param=key) from None
-    if not path.is_file():
-        raise ApiError(404, f"no data file is named {name}", param=key)
-    return name, path
 
 
 def describe(prepared, limit: int) -> dict[str, Any]:

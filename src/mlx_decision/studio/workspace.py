@@ -6,7 +6,8 @@ Layout (``README.md`` in the folder says the same for its readers)::
     sets/<name>.json             question sets: request bodies for ``run -q``
     history/<name>.jsonl         one line per run of a set
     history/images/<sha256>.<ext>  the images of those runs, each stored once
-    data/<name>.jsonl            training data (``training fit --data``)
+    data/<name>/                 datasets: dataset.json and one file per split
+    data/<name>.jsonl            or one file of training data (``training fit --data``)
     models/<name>/               converted and fitted models (``-m``)
     jobs/<id>/                   one folder per job
     speed/<fingerprint>.jsonl    measured request times per model
@@ -42,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import Config, home
+from ..data.dataset import DATASET_FILE, open_dataset
 from ..errors import DecisionError
 from ..images import check_data_urls
 
@@ -85,8 +87,9 @@ README when it starts.
   per run (request, model, answers, timings). Images are stored once in
   `history/images/`, named by their SHA-256, and the lines refer to them.
   Clearing a set's history in the Studio deletes its file.
-- `data/`: training data as JSON lines:
-  `mlx-decision training fit -m MODEL --data data/NAME.jsonl`.
+- `data/`: datasets, each a folder (`dataset.json` with its questions and
+  what each label value means, and one JSON-lines file per split) or a
+  single JSON-lines file: `mlx-decision training fit -m MODEL --data data/NAME`.
 - `models/`: models the Studio converted or fitted, each a model folder:
   `mlx-decision run -m models/NAME`.
 - `jobs/`: one folder per job (download, convert, fit, eval): `job.json`
@@ -244,55 +247,87 @@ class Workspace:
                 changed.append(job_file)
         return changed
 
-    # Training data
+    # Datasets: a dataset folder data/NAME/, or a plain file data/NAME.jsonl
 
     def data_path(self, name: str) -> Path:
-        return self.path("data", name, DATA_SUFFIX, "a data file's name")
+        """Where a plain data file of ``name`` is (or goes)."""
+        return self.path("data", name, DATA_SUFFIX, "a dataset's name")
+
+    def dataset_folder(self, name: str) -> Path:
+        """Where a dataset folder of ``name`` is (or goes)."""
+        return self.path("data", name, what="a dataset's name")
+
+    def data_taken(self, name: str) -> bool:
+        """Whether a dataset of ``name`` is there (a folder or a file)."""
+        return self.dataset_folder(name).exists() or self.data_path(name).exists()
+
+    def dataset_location(self, name: str) -> Path:
+        """The folder (else the plain file) of dataset ``name``; ``NotFound``."""
+        folder = self.dataset_folder(name)
+        if (folder / DATASET_FILE).is_file():
+            return folder
+        path = self.data_path(name)
+        if path.is_file():
+            return path
+        raise NotFound(f"no dataset named {name!r}")
 
     def list_data(self) -> list[dict[str, Any]]:
-        """The datasets, by name: ``name``, ``bytes``, ``modified`` and ``record``
-        (where it came from, ``NAME.source.json``; None without one)."""
-        from ..data.make import read_record
-
+        """The datasets, by name: each as ``dataset_summary`` gives it."""
         found = []
-        for path in sorted((self.root / "data").glob(f"*{DATA_SUFFIX}")):
-            name = path.name[: -len(DATA_SUFFIX)]
-            if not NAME.fullmatch(name) or not path.is_file():
+        for path in _entries(self.root / "data"):
+            if path.name.startswith("."):
                 continue
-            stat = path.stat()
-            modified = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds")
-            found.append(
-                {
-                    "name": name,
-                    "bytes": stat.st_size,
-                    "modified": modified,
-                    "record": read_record(path),
-                }
-            )
+            if path.is_dir() and (path / DATASET_FILE).is_file() and NAME.fullmatch(path.name):
+                found.append(dataset_summary(path))
+            elif path.is_file() and path.name.endswith(DATA_SUFFIX):
+                name = path.name[: -len(DATA_SUFFIX)]
+                if NAME.fullmatch(name) and not (path.parent / name / DATASET_FILE).is_file():
+                    found.append(dataset_summary(path))
         return sorted(found, key=lambda item: (item["name"].casefold(), item["name"]))
 
     def save_data(self, name: str, data: bytes) -> Path:
-        """Write a new training data file (checked by the caller); ``Conflict``
-        when one of that name is there."""
+        """Write a new plain data file (checked by the caller); ``Conflict``
+        when a dataset of that name is there."""
         path = self.data_path(name)
         with self.lock:
-            if path.exists():
-                raise Conflict(f"a data file named {name} exists already")
+            if self.data_taken(name):
+                raise Conflict(f"a dataset named {name} exists already")
             self.write(path, data)
         self.changed("data", name, "saved")
         return path
 
     def delete_data(self, name: str) -> None:
-        """Delete a dataset and its record; ``NotFound`` when there is none."""
-        from ..data.make import record_path
-
-        path = self.data_path(name)
+        """Delete a dataset (its folder, or its file); ``NotFound`` when there is none."""
         with self.lock:
-            if not path.is_file():
-                raise NotFound(f"no data file named {name!r}")
-            path.unlink()
-            record_path(path).unlink(missing_ok=True)
+            path = self.dataset_location(name)
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
         self.changed("data", name, "deleted")
+
+    def save_dataset_questions(
+        self, name: str, questions: dict[str, Any] | None, answers: dict[str, Any]
+    ) -> None:
+        """Write a dataset folder's questions and answers into its
+        ``dataset.json`` (checked by the caller), the rest as it is."""
+        with self.lock:
+            folder = self.dataset_location(name)
+            if not folder.is_dir():
+                raise WorkspaceError(f"{name} is a plain file: its lines hold their own questions")
+            path = folder / DATASET_FILE
+            body = json.loads(path.read_text(encoding="utf-8"))
+            ordered: dict[str, Any] = {}
+            if questions:
+                ordered["questions"] = questions
+            if answers:
+                ordered["answers"] = answers
+            ordered.update(
+                {key: value for key, value in body.items() if key not in ("questions", "answers")}
+            )
+            text = json.dumps(ordered, indent=2, ensure_ascii=False) + "\n"
+            self.write(path, text.encode("utf-8"))
+        self.changed("data", name, "saved")
 
     # Sets
 
@@ -540,6 +575,47 @@ def check_body(body: Any) -> None:
             check_data_urls(part)
         except DecisionError as error:
             raise WorkspaceError(f"{where}{error.param}: {error.message}") from None
+
+
+def dataset_summary(path: Path) -> dict[str, Any]:
+    """A dataset as the list shows it: ``name``, ``kind`` (``folder`` or
+    ``file``), ``bytes`` (all its files), ``modified``, ``splits`` (each
+    ``name``, ``role``, ``examples``, the source ``split``, ``sample``,
+    ``part``), ``questions`` (their ids), ``missing`` (what a fit still
+    needs), ``source`` and, when it does not read, ``error``."""
+    folder = path.is_dir()
+    files = [p for p in path.iterdir() if p.is_file()] if folder else [path]
+    stats = [p.stat() for p in files]
+    newest = max((s.st_mtime for s in stats), default=path.stat().st_mtime)
+    summary: dict[str, Any] = {
+        "name": path.name if folder else path.name[: -len(DATA_SUFFIX)],
+        "kind": "folder" if folder else "file",
+        "bytes": sum(s.st_size for s in stats),
+        "modified": datetime.fromtimestamp(newest, UTC).isoformat(timespec="seconds"),
+        "splits": [],
+        "questions": [],
+        "missing": [],
+        "source": None,
+    }
+    try:
+        dataset, _ = open_dataset(path)
+    except (DecisionError, OSError) as error:
+        return summary | {"error": str(error)}
+    summary["splits"] = [
+        {
+            "name": name,
+            "role": meta.get("role"),
+            "examples": meta.get("examples"),
+            "split": meta.get("split"),
+            "sample": meta.get("sample"),
+            "part": meta.get("part"),
+        }
+        for name, meta in dataset.splits.items()
+    ]
+    summary["questions"] = list(dataset.questions or {})
+    summary["missing"] = dataset.missing()
+    summary["source"] = dataset.source
+    return summary
 
 
 def _entries(folder: Path) -> Iterator[Path]:

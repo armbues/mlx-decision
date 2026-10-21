@@ -11,9 +11,10 @@ suite's evaluation split marked.
 ``hf:ORG/NAME``: first its configs and splits (the Hub's metadata), then,
 with both settled, the split itself (into the Hugging Face cache, in a
 thread): the columns with their kinds, a few rows, the text columns that
-can be the state and the label columns with each class and its count, so
-the page can map the classes to a question set's options. Getting either
-is a ``data`` job (``POST /studio/api/jobs``).
+can be the state and the label columns with each value and its count (and
+the values' names when the dataset card lists them, as ``"LABEL_0":
+"Analyst Update"``). Downloading either is a ``data`` job (``POST
+/studio/api/jobs``) that writes a dataset folder.
 """
 
 import asyncio
@@ -143,7 +144,15 @@ def read_preview(repo: str, config: str | None, split: str | None) -> dict[str, 
     if split not in splits:
         raise SourceError(f"{source} has no split {split!r}; it has {', '.join(splits)}")
     table = sources.load_hub(repo, config, split)
-    return answer | {"split": split, **describe_table(table)}
+    described = describe_table(table)
+    card = None
+    for column in described["label_columns"]:
+        if column["kind"] == LABEL:
+            continue  # a class label names its classes itself
+        card = card if card is not None else (sources.hub_card(repo) or "")
+        values = [value for value, _ in column["classes"]]
+        column["names"] = sources.names_from_card(card, values) if card else None
+    return answer | {"split": split, **described}
 
 
 def describe_table(table: Table) -> dict[str, Any]:
@@ -174,7 +183,12 @@ def describe_table(table: Table) -> dict[str, Any]:
         counts = Counter(class_of(column, value) for value in table.column(column.name))
         counts.pop(None, None)
         label_columns.append(
-            {"name": column.name, "classes": [[name, counts.get(name, 0)] for name in classes]}
+            {
+                "name": column.name,
+                "kind": column.kind,
+                "classes": [[name, counts.get(name, 0)] for name in classes],
+                "names": None,  # the values' names, from the dataset card
+            }
         )
     labels = [column["name"] for column in label_columns]
     text = next((name for name in text_columns if name not in labels), None)

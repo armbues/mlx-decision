@@ -67,12 +67,13 @@ def test_a_good_file_is_saved_and_described(studio):
     assert team == {
         "id": "team", "type": "choice", "instructions": "Which team?",
         "options": ["billing", "tech", "sales"], "labelled": 8,
-        "labels": [["tech", 6], ["billing", 1], ["sales", 1]],
+        "labels": [["tech", 6], ["billing", 1], ["sales", 1]], "answered_by": None,
     }  # fmt: skip
     assert urgent["labelled"] == 2 and urgent["options"] == ["true", "false"]
     assert len(body["sample"]) == 5 and body["sample"][0] == {
-        "id": "1", "state": "ticket 0", "labels": {"team": "tech"},
+        "id": "1", "state": "ticket 0", "labels": {"team": "tech"}, "values": {},
     }  # fmt: skip
+    assert (body["kind"], body["split"], body["missing"]) == ("file", "tickets", [])
     listed = studio.get("/studio/api/data").json()
     files = listed["files"]
     assert [(f["name"], f["bytes"]) for f in files] == [("tickets", len(GOOD.encode()))]
@@ -189,7 +190,7 @@ def test_a_page_of_examples(studio):
     body = examples(studio, "tickets", offset=0, limit=3).json()
     assert (body["total"], body["matched"], body["offset"], body["limit"]) == (8, 8, 0, 3)
     assert body["examples"][0] == {
-        "index": 0, "id": "1", "state": "ticket 0", "labels": {"team": "tech"},
+        "index": 0, "id": "1", "state": "ticket 0", "labels": {"team": "tech"}, "values": {},
     }  # fmt: skip
     assert [e["index"] for e in body["examples"]] == [0, 1, 2]
     # The next pages, and one past the end.
@@ -245,7 +246,7 @@ def test_states_cut_to_a_line_and_a_whole_example(studio):
 
     whole = studio.get("/studio/api/data/mixed/examples/0").json()
     assert whole == {"index": 0, "id": "1", "state": long, "questions": {"team": TEAM},
-                     "labels": {"team": "tech"}}  # fmt: skip
+                     "labels": {"team": "tech"}, "values": {}}  # fmt: skip
     assert studio.get("/studio/api/data/mixed/examples/1").json()["state"] == json_state
     assert studio.get("/studio/api/data/mixed/examples/2").status_code == 404
     assert studio.get("/studio/api/data/missing/examples/0").status_code == 404

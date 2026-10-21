@@ -126,7 +126,9 @@ def parse_example(data: Any, line: int) -> Example:
     return Example(example_id, body, labels)
 
 
-def parse_examples(lines: Iterable[str | bytes], parse=parse_example) -> list[Example]:
+def parse_examples(
+    lines: Iterable[str | bytes], parse=parse_example, require_labels: bool = True
+) -> list[Example]:
     """The examples of JSON lines (blank lines skipped), checked as a whole;
     ``parse`` turns one line's object into an example (a dataset folder's
     lines take what they leave out from its ``dataset.json``)."""
@@ -151,7 +153,7 @@ def parse_examples(lines: Iterable[str | bytes], parse=parse_example) -> list[Ex
         examples.append(example)
     if not examples:
         raise DecisionError("the data holds no examples")
-    if not any(example.labels for example in examples):
+    if require_labels and not any(example.labels for example in examples):
         raise DecisionError("no example has a label")
     return examples
 

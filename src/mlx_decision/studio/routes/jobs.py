@@ -1,7 +1,8 @@
 """Jobs: start a download, conversion, fit or evaluation, follow it, stop it.
 
 The page names what a job works on, never a path: a model by its name in
-the Studio's list, a data file by its name in the workspace's ``data/``,
+the Studio's list, a dataset by its name in the workspace's ``data/`` (and
+a split of it by its name),
 a new model by the name it gets in ``models/``, a download by its repo id.
 The command line is built here from those. A job that needs the GPU while
 another one has it is refused (409, naming the running one).
@@ -23,30 +24,28 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 
 from ...config import Config
-from ...data.make import ROLES, SPLIT_FIELD, record_path
+from ...data.dataset import ROLES
 from ...data.presets import PRESETS
 from ...data.presets import SPLITS as PRESETS_SPLITS
-from ...data.shapes import safe_id, safe_ids
 from ...fitted import REPORT_FILE
 from ...flags import join_pairs
 from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
 from ..catalog import option_arguments
 from ..checks import training_data_warnings
-from ..jobs import FOLDER, Job, JobConflict, Jobs
+from ..jobs import Job, JobConflict, Jobs
 from ..security import is_loopback
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
+from .picks import pick_split
 from .sets import reveal
 
 KINDS = ("download", "convert", "fit", "eval", "data")
 DATA_SUFFIX = ".jsonl"
 # A dataset's config or split name.
 PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
-# The question a data job's labels answer, written into its folder for -q.
-QUESTION_FILE = "question.json"
-MAX_SPLITS = 10  # splits one Get takes
-MAX_INSTRUCTIONS = 2000  # characters of a new question's instructions
+MAX_SPLITS = 10  # splits one download takes
+MAX_NAME_CHARS = 200  # a value's name from the dataset card
 # A label column has at most this many classes (the preview lists no more).
 MAX_CLASSES = 50
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
@@ -99,13 +98,6 @@ def jobs_router(
         spec = pool.specs[name]
         options = {key: spec.options[key] for key in TRAINING_OPTIONS if key in spec.options}
         return ["-m", str(spec.path), *option_arguments(options)]
-
-    def data_file(body: dict, key: str = "data") -> tuple[str, Path]:
-        name = named(body, key, "a data file's name")
-        path = files.path("data", name, DATA_SUFFIX, "a data file's name")
-        if not path.is_file():
-            raise ApiError(404, f"no data file is named {name}", param=key)
-        return name, path
 
     def named(body: dict, key: str, what: str) -> str:
         try:
@@ -174,9 +166,11 @@ def jobs_router(
 
     def fit(body: dict) -> Plan:
         base = model(body)
-        data_name, data = data_file(body)
+        data = pick_split(files, body, "data", "train", "split")
+        data_name = data.name
         name, output = new_model(body, f"{short(base)}-{data_name}")
-        argv = ["training", "fit", *model_arguments(base), "--data", str(data), "-o", str(output)]
+        argv = ["training", "fit", *model_arguments(base), "--data", str(data.path)]
+        argv += ["-o", str(output)]
         method = field(body, "method", str, required=False)
         if method is not None:
             if method not in METHODS:
@@ -187,12 +181,13 @@ def jobs_router(
             if epochs < 1:
                 raise ApiError(400, "epochs must be 1 or more", param="epochs")
             argv += ["--epochs", str(epochs)]
-        report_name = None
-        if body.get("report") is not None:  # the report on another file
-            report_name, report = data_file(body, "report")
-            if report_name == data_name:
-                raise ApiError(400, "report on another file than the one to train on", "report")
-            argv += ["--validation", str(report)]
+        report_name = report_split = None
+        if body.get("report") is not None:  # the report on another split or dataset
+            report = pick_split(files, body, "report", "report")
+            report_name, report_split = report.name, report.split
+            if report.path == data.path:
+                raise ApiError(400, "report on another split than the one to train on", "report")
+            argv += ["--validation", str(report.path)]
         holdout = field(body, "holdout", (int, float), required=False)
         if holdout is not None:
             if report_name is not None:
@@ -214,7 +209,9 @@ def jobs_router(
         details = {
             "model": base,
             "data": data_name,
+            "split": data.split,
             "report": report_name,
+            "report_split": report_split,
             "name": name,
             "method": method,
             "epochs": epochs,
@@ -227,30 +224,36 @@ def jobs_router(
 
     def evaluate(body: dict) -> Plan:
         name = model(body)
-        data_name, data = data_file(body)
+        data = pick_split(files, body, "data", "evaluate", "split")
+        data_name = data.name
         compare = model(body, "compare", required=False)
         if compare == name:
             raise ApiError(400, "compare with another model", param="compare")
-        argv = ["training", "eval", *model_arguments(name), "--data", str(data)]
+        argv = ["training", "eval", *model_arguments(name), "--data", str(data.path)]
         title = f"Evaluate {name}"
         if compare is not None:
             argv += ["--compare", str(pool.specs[compare].path)]
             title += f" against {compare}"
         # Kept with the job, so its report says them too.
-        warnings = training_data_warnings(pool, [name, compare], data, data_name)
-        details = {"model": name, "data": data_name, "compare": compare, "warnings": warnings}
+        shown = f"{data_name} ({data.split})" if data.dataset.folder else data_name
+        warnings = training_data_warnings(pool, [name, compare], data.path, shown)
+        details = {"model": name, "data": data_name, "split": data.split, "compare": compare,
+                   "warnings": warnings}  # fmt: skip
         return Plan(argv, holds_gpu=True, title=title, details=details)
 
     def get_splits(body: dict, known: dict[str, int] | None) -> list[dict[str, Any]]:
         """``splits``: each ``split`` once (one of ``known`` when given), its
-        ``role`` (one split per role) and an optional ``sample`` (up to the
-        split's rows: ``known``'s, or the entry's ``rows`` when it has them)."""
+        ``role``, or ``parts`` (each a ``role`` and its ``share``, adding up
+        to 1 at most) when it is cut; a role once across them; an optional
+        ``sample`` (up to the split's rows: ``known``'s, or the entry's
+        ``rows`` when it has them)."""
         listed = body.get("splits")
         if not isinstance(listed, list) or not listed:
             raise ApiError(400, "pick at least one split", param="splits")
         if len(listed) > MAX_SPLITS:
             raise ApiError(400, f"at most {MAX_SPLITS} splits", param="splits")
         result: list[dict[str, Any]] = []
+        roles: list[str] = []
         for item in listed:
             if not isinstance(item, dict):
                 raise ApiError(400, "each split is an object: {split, role, sample}", "splits")
@@ -260,42 +263,59 @@ def jobs_router(
                 raise ApiError(400, f"no split {split!r}{have}", param="splits")
             if any(entry["split"] == split for entry in result):
                 raise ApiError(400, f"{split} is listed twice", param="splits")
-            role = field(item, "role", str)
-            if role not in ROLES:
-                raise ApiError(400, f"a role is one of {', '.join(ROLES)}", param="splits")
-            if any(entry["role"] == role for entry in result):
-                raise ApiError(400, f"one split per role: two are {role}", param="splits")
+            parts = item.get("parts")
+            if parts is not None:
+                if not isinstance(parts, list) or not 1 <= len(parts) <= len(ROLES):
+                    raise ApiError(400, f"{split}: parts is a list of 1 to 3", param="splits")
+                spec = []
+                for part in parts:
+                    if not isinstance(part, dict):
+                        raise ApiError(400, "each part is {role, share}", param="splits")
+                    share = field(part, "share", (int, float))
+                    if not 0 < share <= 1:
+                        raise ApiError(400, f"{split}: a share is above 0, at most 1", "splits")
+                    spec.append((field(part, "role", str), float(share)))
+                if sum(share for _, share in spec) > 1 + 1e-9:
+                    raise ApiError(400, f"{split}: the shares add up to more than 1", "splits")
+            else:
+                spec = [(field(item, "role", str), None)]
+            for role, _ in spec:
+                if role not in ROLES:
+                    raise ApiError(400, f"a role is one of {', '.join(ROLES)}", param="splits")
+                if role in roles:
+                    raise ApiError(400, f"one split per role: two are {role}", param="splits")
+                roles.append(role)
             rows = known[split] if known is not None else field(item, "rows", int, False)
             sample = field(item, "sample", int, required=False)
             if sample is not None and (sample < 1 or (rows and sample > rows)):
                 most = f" to {rows}" if rows else " or more"
                 raise ApiError(400, f"{split}: a sample is 1{most} rows", param="splits")
-            result.append({"split": split, "role": role, "sample": sample})
+            entry = {"split": split, "role": spec[0][0] if parts is None else None,
+                     "parts": None if parts is None else [
+                         {"role": role, "share": share} for role, share in spec],
+                     "sample": sample}  # fmt: skip
+            result.append(entry)
         return result
 
-    def get_files(body: dict, default: str, splits: list[dict]) -> tuple[str, list[Path]]:
-        """The Get's name (``name``, else ``default``) and its files, NAME-SPLIT in
-        ``data/``, each free: not there, not written by a job."""
-        base = (
-            named(body, "name", "a data file's name") if body.get("name") is not None else default
-        )
-        outputs = []
-        for entry in splits:
-            file_name = f"{base}-{entry['split']}"
-            try:
-                output = files.data_path(file_name)
-            except WorkspaceError as error:
-                raise ApiError(400, error.message, param="name") from None
-            if output.exists():
-                raise ApiError(409, f"a data file named {file_name} exists already", param="name")
-            writing(output, "name")
-            outputs.append(output)
-        return base, outputs
+    def get_folder(body: dict, default: str) -> tuple[str, Path]:
+        """The dataset's name (``name``, else ``default``) and its folder in
+        ``data/``: free (no dataset of that name, none a job writes)."""
+        name = named(body, "name", "a dataset's name") if body.get("name") is not None else default
+        try:
+            folder = files.dataset_folder(name)
+            taken = files.data_taken(name)
+        except WorkspaceError as error:
+            raise ApiError(400, error.message, param="name") from None
+        if taken:
+            raise ApiError(409, f"a dataset named {name} exists already", param="name")
+        writing(folder, "name")
+        writing(files.data_path(name), "name")
+        return name, folder
 
-    def get_plan(argv: list[str], body: dict, title: str, base: str, outputs: list[Path],
-                 splits: list[dict], details: dict, inputs=None, undo=None) -> Plan:  # fmt: skip
-        """``data`` with each split, its sample and the seed, one file per split
-        with its record (and roles)."""
+    def get_plan(argv: list[str], body: dict, title: str, name: str, folder: Path,
+                 splits: list[dict], details: dict) -> Plan:  # fmt: skip
+        """``data`` with each split, its sample, the seed and the roles (or
+        parts), into the dataset folder."""
         seed = field(body, "seed", int, required=False)
         for entry in splits:
             argv += ["--split", entry["split"]]
@@ -303,40 +323,42 @@ def jobs_router(
         if sampled:
             for entry in splits:
                 argv += ["--sample", str(entry["sample"] or 0)]
+        cut_any = any(entry["parts"] for entry in splits)
+        if sampled or cut_any:
             argv += ["--seed", str(seed or 0)]
-        pattern = outputs[0].parent / f"{base}-{SPLIT_FIELD}{DATA_SUFFIX}"
-        argv += ["-o", str(pattern), "--record", "--roles", ",".join(e["role"] for e in splits)]
-        names = [f"{base}-{entry['split']}" for entry in splits]
-        parts = [
+        roles = ",".join(
+            "+".join(f"{p['role']}:{p['share']:g}" for p in entry["parts"])
+            if entry["parts"]
+            else entry["role"]
+            for entry in splits
+        )
+        argv += ["--roles", roles, "-o", str(folder)]
+        shown = [
             entry["split"] + (f" ({entry['sample']} rows)" if entry["sample"] else "")
             for entry in splits
         ]
-        details = {**details, "splits": splits, "seed": seed if sampled else None,
-                   "name": base, "files": names}  # fmt: skip
-        also = outputs[1:] + [record_path(output) for output in outputs]
-        return Plan(argv, holds_gpu=False, title=f"Get {title} {', '.join(parts)}",
-                    details=details, output=outputs[0], inputs=inputs, also=also,
-                    undo=undo)  # fmt: skip
+        details = {**details, "splits": splits, "seed": seed if sampled or cut_any else None,
+                   "name": name}  # fmt: skip
+        return Plan(argv, holds_gpu=False, title=f"Download {title} {', '.join(shown)}",
+                    details=details, output=folder)  # fmt: skip
 
     def dataset(body: dict) -> Plan:
-        """A preset's splits, or any Hugging Face dataset's with a question set's
-        question, as datasets in ``data/``, each with its role and record (DS-5)."""
+        """A preset's splits, or any Hugging Face dataset's (its rows without a
+        question), as one dataset folder in ``data/`` (DS-5)."""
         if body.get("source") is not None:
             return any_dataset(body)
         name = field(body, "preset", str)
         if name not in PRESETS:
             raise ApiError(400, f"preset must be one of {', '.join(PRESETS)}", param="preset")
         splits = get_splits(body, PRESETS_SPLITS[name])
-        base, outputs = get_files(body, name, splits)
+        base, folder = get_folder(body, name)
         argv = ["data", "--preset", name]
-        return get_plan(argv, body, name, base, outputs, splits, {"preset": name})
+        return get_plan(argv, body, name, base, folder, splits, {"preset": name})
 
     def any_dataset(body: dict) -> Plan:
-        """``hf:ORG/NAME``'s splits with ``text`` as the state and ``label`` as
-        the answer to a question set's question; the label's classes mapped to
-        the question's options (``label_map``; classes left out are not used).
-        With ``new_question`` the question is made from the label's classes
-        and saved as a new set first (``new_question``)."""
+        """``hf:ORG/NAME``'s splits: ``text`` the state's column, ``label`` the
+        column whose values the rows keep (answered by questions written
+        later), ``value_names`` the values' names (from the dataset card)."""
         source = field(body, "source", str).strip()
         repo = source.removeprefix("hf:")
         if not source.startswith("hf:") or not REPO_ID.fullmatch(repo) or ".." in repo:
@@ -351,105 +373,24 @@ def jobs_router(
                 raise ApiError(400, f"name the {key} column", param=key)
         if text == label:
             raise ApiError(400, "the state and the label are different columns", param="label")
-        dataset_name = repo.rsplit("/", 1)[-1]
-        made = body.get("new_question") is not None
-        if made:
-            set_name, set_body, question_id, question, label_map = new_question(body, dataset_name)
-        else:
-            set_name, question_id, question, label_map = set_question(body)
-        base, outputs = get_files(body, dataset_name, splits)
-        undo = None
-        if made:
-            try:
-                set_name, _ = files.save_new_set(set_name, set_body)
-            except WorkspaceError as error:
-                raise ApiError(error.status, error.message, param="new_question") from None
-            undo = lambda: files.delete_set(set_name)  # noqa: E731
+        names = body.get("value_names")
+        if names is not None:
+            ok = isinstance(names, dict) and len(names) <= MAX_CLASSES and all(
+                isinstance(k, str) and isinstance(v, str) and 0 < len(v) <= MAX_NAME_CHARS
+                and "=" not in k and k == k.strip() and k
+                for k, v in names.items()
+            )  # fmt: skip
+            if not ok:
+                raise ApiError(400, "value_names maps each value to a short name", "value_names")
+        base, folder = get_folder(body, repo.rsplit("/", 1)[-1])
         argv = ["data", source]
         if config is not None:
             argv += ["--config", config]
         argv += ["--shape", "text", "--text", text, "--label", label]
-        argv += ["-q", f"{FOLDER}/{QUESTION_FILE}", "--label-map", join_pairs(label_map)]
-        details = {
-            "source": source, "config": config, "text": text, "label": label,
-            "set": set_name, "question": question_id, "label_map": label_map,
-            "new_set": made,
-        }  # fmt: skip
-        inputs = {QUESTION_FILE: json.dumps({question_id: question}, ensure_ascii=False).encode()}
-        return get_plan(argv, body, repo, base, outputs, splits, details, inputs, undo)
-
-    def map_key(raw: Any, key: str) -> str:
-        """A class as the label map can name it (``class=option`` pairs)."""
-        if not isinstance(raw, str) or "=" in raw or raw != raw.strip() or not raw:
-            raise ApiError(400, f"a class the map cannot name: {raw!r}", param=key)
-        return raw
-
-    def set_question(body: dict) -> tuple[str, str, dict, dict[str, str]]:
-        """``set``'s question ``question`` and ``label_map`` onto its options."""
-        set_name = named(body, "set", "a set's name")
-        try:
-            questions = files.load_set(set_name)[0].get("questions") or {}
-        except WorkspaceError as error:
-            raise ApiError(404, error.message, param="set") from None
-        question_id = field(body, "question", str)
-        question = questions.get(question_id)
-        if not isinstance(question, dict):
-            raise ApiError(404, f"{set_name} has no question {question_id}", param="question")
-        kind = question.get("type")
-        if kind == "noul":
-            options = ["true", "false"]
-        elif kind == "choice":
-            options = list(question.get("criteria") or {})
-        else:
-            raise ApiError(
-                400,
-                f"{question_id} is a {kind} question; the labels of a dataset answer a choice "
-                "or a noul here (a score: mlx-decision data --shape rating)",
-                param="question",
-            )
-        label_map = body.get("label_map")
-        if not isinstance(label_map, dict) or not label_map:
-            raise ApiError(400, "map at least one class to an option", param="label_map")
-        for raw, option in label_map.items():
-            if not isinstance(option, str) or option not in options:
-                raise ApiError(
-                    400, f"{raw}: {option!r} is none of {question_id}'s options", param="label_map"
-                )
-            map_key(raw, "label_map")
-        return set_name, question_id, question, label_map
-
-    def new_question(body: dict, dataset_name: str) -> tuple[str, dict, str, dict, dict[str, str]]:
-        """``new_question``: ``instructions``, the label's ``classes`` (every one an
-        option: its id made safe, its name the text) and the set's name (``set``,
-        default the dataset's; a taken one gets -2). Returns the set's name and
-        body (no state yet), the question's id, the question and the map."""
-        made = field(body, "new_question", dict)
-        instructions = field(made, "instructions", str).strip()
-        if not instructions or len(instructions) > MAX_INSTRUCTIONS:
-            raise ApiError(
-                400, f"the question's instructions: 1 to {MAX_INSTRUCTIONS} characters",
-                param="new_question",
-            )  # fmt: skip
-        classes = made.get("classes")
-        if not isinstance(classes, list) or not 2 <= len(classes) <= MAX_CLASSES:
-            raise ApiError(400, f"a choice needs 2 to {MAX_CLASSES} classes", "new_question")
-        classes = [map_key(raw, "new_question") for raw in classes]
-        if len(set(classes)) != len(classes):
-            raise ApiError(400, "each class once", param="new_question")
-        name = made.get("set") or safe_id(dataset_name, "question")[:80]
-        try:
-            check_name(name, "a set's name")
-        except WorkspaceError as error:
-            raise ApiError(400, error.message, param="new_question") from None
-        ids = safe_ids(classes)
-        question_id = safe_id(dataset_name, "question")
-        question = {
-            "type": "choice",
-            "instructions": instructions,
-            "criteria": dict(zip(ids, classes, strict=True)),
-        }
-        set_body = {"state": "", "questions": {question_id: question}}
-        return name, set_body, question_id, question, dict(zip(classes, ids, strict=True))
+        if names:
+            argv += ["--value-names", join_pairs(names)]
+        details = {"source": source, "config": config, "text": text, "label": label}
+        return get_plan(argv, body, repo, base, folder, splits, details)
 
     plans: dict[str, Callable[[dict], Plan]] = {
         "data": dataset,
@@ -471,16 +412,18 @@ def jobs_router(
         """``{kind, ...}`` -> ``{job}``. Kinds and their fields:
         ``download``: ``repo``, ``bits`` (8 or 4; default full size);
         ``convert``: ``model``, ``bits`` (default 8), ``name``;
-        ``fit``: ``model``, ``data``, ``name``, ``method``, ``epochs``,
-        ``holdout`` or ``report`` (a data file the report is scored on),
-        ``seed``, ``early_stop``, ``head_only`` (finetune);
-        ``eval``: ``model``, ``data``, ``compare``; ``data``: ``preset`` (or
-        ``source`` with ``config``, ``text``, ``label``, ``set``, ``question``,
-        ``label_map``), ``splits`` (each ``split``, ``role``: train, report or
-        evaluate, one per role, ``sample``), ``seed``, ``name`` (the Get's: its
-        files are NAME-SPLIT in ``data/``; default the preset's or dataset's). ``name`` is the new
-        model's in ``models/`` (default as the CLI names it); ``data`` a file
-        in ``data/`` by its name."""
+        ``fit``: ``model``, ``data`` (a dataset) and ``split`` (default its train
+        split), ``name``, ``method``, ``epochs``, ``holdout`` or ``report``
+        (a dataset, with ``report_split``, default its report split, the
+        report is scored on), ``seed``, ``early_stop``, ``head_only``
+        (finetune); ``eval``: ``model``, ``data`` and ``split`` (default its
+        evaluate split), ``compare``; ``data``: ``preset`` (or ``source``
+        with ``config``, ``text``, ``label``, ``value_names``), ``splits``
+        (each ``split`` with its ``role``: train, report or evaluate, or its
+        ``parts`` as ``[{role, share}]``; a role once; ``sample``), ``seed``,
+        ``name`` (the dataset folder's in ``data/``; default the preset's or
+        dataset's). ``name`` is the new model's in ``models/`` (default as
+        the CLI names it)."""
         body = await json_body(request, max_body_bytes)
         kind = field(body, "kind", str)
         if kind not in plans:

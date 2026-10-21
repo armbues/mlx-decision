@@ -10,6 +10,7 @@ CSV and JSON lines files are read with the standard library.
 
 import csv
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -155,6 +156,48 @@ def hub_splits(repo: str, config: str | None = None, revision: str | None = None
     return list(_datasets().get_dataset_split_names(repo, config, revision=revision))
 
 
+def hub_card(repo: str, revision: str | None = None) -> str | None:
+    """A Hub dataset's card (its README), or None when there is none or it
+    cannot be read."""
+    try:
+        from huggingface_hub import hf_hub_download
+
+        path = hf_hub_download(repo, "README.md", repo_type="dataset", revision=revision)
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except Exception:  # no card, offline, or the Hub's errors
+        return None
+
+
+# A value and its name in a card: "LABEL_3": "Dividend", "3": "Dividend",
+# 3: Dividend, - 3 = Dividend, | 3 | Dividend |.
+_LABEL_PAIR = re.compile(r"""["']?(?:LABEL_)?([\w.-]+)["']?\s*[:=]\s*["']([^"'\n]{1,80})["']""")
+_LINE_PAIR = re.compile(
+    r"""^\s*[-*|]?\s*`?["']?([\w.-]+)["']?`?\s*"""
+    r"""(?::|=|\||-|–|—)\s*(.{1,80}?)\s*\|?\s*$"""
+)
+
+
+def names_from_card(card: str, values: list[str]) -> dict[str, str] | None:
+    """The names a dataset card gives its label's ``values`` (such as a list of
+    ``"LABEL_0": "Analyst Update"``), or None when it names fewer than half of
+    them. Only keys that are values count, the first name of each."""
+    wanted = set(values)
+    found: dict[str, str] = {}
+    for key, name in _LABEL_PAIR.findall(card):
+        if key in wanted and key not in found and name.strip():
+            found[key] = name.strip()
+    if len(found) * 2 < len(values):
+        for line in card.splitlines():
+            match = _LINE_PAIR.match(line)
+            if match and match.group(1) in wanted and match.group(1) not in found:
+                name = match.group(2).strip().strip("\"'`")
+                if name and name not in values:
+                    found[match.group(1)] = name
+    if not values or len(found) * 2 < len(values):
+        return None
+    return {value: found[value] for value in values if value in found}
+
+
 def saved_splits(path: Path) -> list[str]:
     """A saved dataset folder's splits; empty when it holds one dataset."""
     datasets = _datasets()
@@ -239,6 +282,36 @@ def _from_rows(rows: list[dict], name: str, origin: dict) -> Table:
         lambda column: [row.get(column) for row in rows],
         origin,
     )
+
+
+def table_from_text(text: str, kind: str, name: str) -> Table:
+    """The rows of an uploaded ``csv`` (header row) or ``jsonl`` (one object per
+    line) file's text."""
+    import io
+
+    if kind == "csv":
+        reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff"), newline=""))
+        rows = [
+            {key: _csv_value(value) for key, value in row.items() if key is not None}
+            for row in reader
+        ]
+    elif kind == "jsonl":
+        rows = []
+        for number, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise SourceError(f"line {number}: not JSON ({error.msg})") from None
+            if not isinstance(row, dict):
+                raise SourceError(f"line {number}: not an object")
+            rows.append(row)
+    else:
+        raise SourceError("the file is a .csv or a .jsonl file")
+    if not rows:
+        raise SourceError("the file holds no rows")
+    return _from_rows(rows, name, {"upload": name})
 
 
 def load_file(path: Path) -> Table:

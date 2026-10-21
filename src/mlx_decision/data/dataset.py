@@ -132,21 +132,23 @@ class Dataset:
                 "Studio)"
             )
 
-    def parse_line(self, split: str):
+    def parse_line(self, split: str, lenient: bool = False):
         """The line parser of ``split``'s file: its questions and labels filled
-        in from ``dataset.json``."""
+        in from ``dataset.json``. ``lenient`` (to browse a dataset that is not
+        ready): a line without questions keeps its state and values, and an
+        unmapped value gives no label."""
         file = self.split_path(split).name
 
         def parse(data: Any, line: int) -> Example:
             try:
-                return self._parse(data, line)
+                return self._parse(data, line, lenient)
             except DataError as error:
                 error.file = file
                 raise
 
         return parse
 
-    def _parse(self, data: Any, line: int) -> Example:
+    def _parse(self, data: Any, line: int, lenient: bool = False) -> Example:
         if not isinstance(data, dict):
             raise DataError('a line must be an object: {"state": ..., "values": ...}', line)
         values = data.get("values")
@@ -165,6 +167,8 @@ class Dataset:
         questions = body.get("questions")
         if questions is None:
             if not self.questions:
+                if lenient:
+                    return _unasked(data, line, values)
                 raise DataError("no questions: the line has none and the dataset none yet", line)
             questions = body["questions"] = self.questions
         labels = dict(body.get("labels") or {})
@@ -176,6 +180,8 @@ class Dataset:
             if value is None or value in (answer.get("left_out") or []):
                 continue
             mapped = (answer.get("map") or {}).get(value)
+            if mapped is None and lenient:
+                continue
             if mapped is None:
                 raise DataError(
                     f"{column} value {value!r} is not mapped for {question_id} "
@@ -187,14 +193,15 @@ class Dataset:
         body["labels"] = labels
         return replace(parse_example(body, line), values=values)
 
-    def read(self, split: str | None = None) -> list[Example]:
-        """The examples of ``split`` (a plain file: its only one), checked as a whole."""
+    def read(self, split: str | None = None, lenient: bool = False) -> list[Example]:
+        """The examples of ``split`` (a plain file: its only one), checked as a
+        whole; ``lenient`` as ``parse_line`` (a dataset without labels yet)."""
         if not self.folder:
             with open(self.path, "rb") as file:
                 return parse_examples(file)
         split = split or next(iter(self.splits))
         with open(self.split_path(split), "rb") as file:
-            return parse_examples(file, self.parse_line(split))
+            return parse_examples(file, self.parse_line(split, lenient), require_labels=not lenient)
 
     def sha256(self, split: str | None = None) -> str:
         """The SHA-256 a fit records for its data: a plain file's bytes; a split's
@@ -228,6 +235,17 @@ class Dataset:
         if self.created is not None:
             body["created"] = self.created
         return body
+
+
+def _unasked(data: dict, line: int, values: dict[str, str] | None) -> Example:
+    """A line of a dataset without questions: its id, state and values."""
+    example_id = data.get("id", str(line))
+    if not isinstance(example_id, str) or not example_id.strip():
+        raise DataError("an id is a non-empty string", line, "id")
+    if "state" not in data:
+        raise DataError("a line needs a state", line, "state")
+    request = {k: v for k, v in data.items() if k not in ("id", "values", "labels")}
+    return Example(example_id, request, {}, values)
 
 
 def read_description(folder: Path) -> Dataset:

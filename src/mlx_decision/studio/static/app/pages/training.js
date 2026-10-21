@@ -16,8 +16,8 @@ import { href, navigate, route } from "../router.js";
 import { dataFiles } from "../store/data.js";
 import { fitById, fits } from "../store/fits.js";
 import { progress } from "../store/jobs.js";
-import { EvalForm, evalData, evalModel, evalNotReady, startEval } from "../training/evaluate.js";
-import { FitForm, fitData, notReady, planned, startFit } from "../training/fit.js";
+import { EvalForm, evalData, evalModel, evalNotReady, evalSplit, startEval } from "../training/evaluate.js";
+import { FitForm, fitData, notReady, planned, startFit, trainSplit } from "../training/fit.js";
 import { FitView } from "../training/run.js";
 
 const EVALUATE = "evaluate";
@@ -149,9 +149,11 @@ function FitList() {
 
 const Dataset = () => {
   const id = shown();
-  const name = id ? fitById(id)?.details?.data : evaluating() ? evalData.value : fitData.value;
+  const job = id ? fitById(id) : null;
+  const name = job ? job.details?.data : evaluating() ? evalData.value : fitData.value;
+  const split = job ? (job.details?.split ?? null) : evaluating() ? evalSplit.value : trainSplit.value;
   if (!name) return html`<div class="empty"><b>No dataset</b><span>The form's dataset shows here.</span></div>`;
-  return html`<${DatasetSummary} name=${name} />`;
+  return html`<${DatasetSummary} name=${name} split=${split} />`;
 };
 
 export default {

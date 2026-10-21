@@ -1207,11 +1207,26 @@ a.sb-item { color: var(--fg); }
 .sheet .st-sample input:disabled { opacity: 0.4; }
 .sheet .name-field .suffix { white-space: nowrap; }
 
-/* The Datasets list: a Get's files under its name */
-.data-list .sb-group-name { display: block; padding: 6px 8px 2px; font-size: 11.5px; font-weight: 600; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.data-list li.nested .sb-item { padding-left: 18px; }
-.data-list .sb-item .role { font-variant: all-small-caps; letter-spacing: 0.03em; font-size: 12px; }
-.sb-list li.open:hover .sb-item .role, .sb-list li.open:focus-within .sb-item .role { visibility: hidden; }
+/* The Datasets list: a dataset not ready for a fit is marked */
+.data-list .sb-item .mark { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); flex: none; }
+.sb-list li.open:hover .sb-item .mark, .sb-list li.open:focus-within .sb-item .mark,
+.sb-list li.open:hover .sb-item .count, .sb-list li.open:focus-within .sb-item .count { visibility: hidden; }
+/* A dataset's splits as tabs, each with its role and count */
+.ds-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ds-tabs button { display: inline-flex; align-items: baseline; gap: 7px; font: inherit; font-size: 12.5px; color: var(--fg-2); background: var(--fill); border: 0.5px solid transparent; border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+.ds-tabs button code { font: 12px var(--mono); color: var(--fg); }
+.ds-tabs button .role { font-variant: all-small-caps; letter-spacing: 0.03em; }
+.ds-tabs button .num { color: var(--fg-3); }
+.ds-tabs button[aria-selected="true"] { background: var(--group); border-color: var(--sep-strong); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.ds-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ds-banner { display: flex; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--orange-fill); font-size: 12.5px; line-height: 1.45; }
+.ds-banner b { font-weight: 600; }
+.ds-q-text small code { font: 11.5px var(--mono); }
+.ex-labels .lab.value { background: transparent; border: 0.5px solid var(--sep-strong); }
+/* A split cut into parts, in Download's table of splits */
+.sheet .st-parts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 2px 0 4px; font-size: 12px; color: var(--fg-2); }
+.sheet .st-parts label { display: inline-flex; align-items: center; gap: 6px; }
+.sheet .st-parts .setting-input { width: 58px; padding: 2px 6px; }
 .ds-source dl { margin: 0; }
 .ds-siblings { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .kv dd.ds-siblings small { display: inline; color: var(--fg-2); margin: 0; }

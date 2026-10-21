@@ -93,68 +93,94 @@ def test_a_family_without_a_main_kind_offers_calibrate(studio, page):
     expect(form.locator("#fit-name")).to_have_value("fake-support")
 
 
-def write_get(studio, files):
-    """Data files written as one Get with records: ``files`` maps a name to
-    (role, rows), each row a label."""
-    data = studio.workspace / "data"
-    listed = [{"name": name, "split": name.split("-")[-1], "role": role}
-              for name, (role, _) in files.items()]  # fmt: skip
-    for name, (role, labels) in files.items():
+def write_folder(studio, name, splits):
+    """A dataset folder: ``splits`` maps a split to (role, rows), each row a label."""
+    folder = studio.workspace / "data" / name
+    folder.mkdir()
+    for split, (_, labels) in splits.items():
         lines = [
-            json.dumps(
-                {"state": f"{name} {i}", "questions": {"team": TEAM}, "labels": {"team": label}}
-            )  # fmt: skip
+            json.dumps({"state": f"{split} {i}", "values": {"label": label}})
             for i, label in enumerate(labels)
         ]
-        (data / f"{name}.jsonl").write_text("\n".join(lines) + "\n")
-        record = {"source": "hf:org/support", "split": name.split("-")[-1], "rows": len(labels),
-                  "role": role, "get": {"name": "support", "files": listed}}  # fmt: skip
-        (data / f"{name}.source.json").write_text(json.dumps(record))
+        (folder / f"{split}.jsonl").write_text("\n".join(lines) + "\n")
+    body = {
+        "questions": {"team": TEAM},
+        "answers": {"team": {"column": "label", "map": {v: v for v in TEAM["criteria"]}}},
+        "columns": {"label": {"values": {v: {"rows": 1} for v in TEAM["criteria"]}}},
+        "splits": {
+            split: {"role": role, "examples": len(rows)} for split, (role, rows) in splits.items()
+        },
+        "source": {"source": "hf:org/help"},
+    }
+    (folder / "dataset.json").write_text(json.dumps(body))
 
 
-def test_report_on_the_same_gets_report_file(studio, page):
+def test_report_on_the_datasets_report_split(studio, page):
     labels = ["tech", "billing", "sales"]
-    write_get(studio, {
-        "help-train": ("train", labels * 20),
-        "help-test": ("report", labels * 4),
-        "help-eval": ("evaluate", labels * 2),
+    write_folder(studio, "help", {
+        "train": ("train", labels * 20),
+        "test": ("report", labels * 4),
+        "eval": ("evaluate", labels * 2),
     })  # fmt: skip
-    open_studio(page, studio, "datasets/help-train")
+    open_studio(page, studio, "datasets/help")
     page.get_by_role("button", name="Fit on It…").click()
     form = page.locator(".fit-form")
     report = form.locator("#fit-report")
-    # The Get's report split, preselected; the file kept for Evaluate is not offered.
-    expect(report).to_have_value("help-test")
+    # The dataset's report split, preselected; its evaluate split is not offered.
+    expect(report).to_have_value("split:test")
     options = report.locator("option")
-    expect(options).to_have_text(["A share of this dataset", "help-test (report)", "support",
+    expect(options).to_have_text(["test (report)", "A share of its train split", "support",
                                   "tickets"])  # fmt: skip
-    expect(form).to_contain_text("got with it as its report split")
+    expect(form).to_contain_text("its report split")
     expect(form.locator("#fit-holdout")).to_have_count(0)
     legend = form.locator(".split-legend")
-    expect(legend).to_contain_text("12 in help-test for the report")
+    expect(legend).to_contain_text("12 in test for the report")
     expect(form.locator(".split")).to_have_class(re.compile("other-file"))
+    expect(form).to_contain_text("its train split: 60 examples")
     shot(page, "fit-report-on")
     expect(form.locator(".fit-labels .line span").first).to_contain_text("20")  # all 60 train
-    # A file with other questions: refused, with the reason.
-    report.select_option("support")  # the same question: fine
+    # Another dataset with other questions: refused, with the reason.
+    report.select_option("data:support")  # the same question: fine
     expect(legend).to_contain_text("in support for the report")
-    report.select_option("tickets")
+    report.select_option("data:tickets")
     expect(form.locator(".warn-text").last).to_contain_text("tickets labels other questions")
     expect(page.locator(".run-btn")).to_be_disabled()
-    # Back to the Get's file, then a share of the dataset.
-    report.select_option("help-test")
+    # Back to the report split, then a share of the train split.
+    report.select_option("split:test")
     expect(page.locator(".run-btn")).to_be_enabled()
     page.keyboard.press("Meta+Enter")
-    expect(page.locator(".centre h1")).to_have_text("Fit fake-help-train")
+    expect(page.locator(".centre h1")).to_have_text("Fit fake-help")
     job = next(iter(studio.app.state.jobs.jobs.values()))
-    assert job.details["report"] == "help-test" and job.details["holdout"] is None
-    assert job.argv[job.argv.index("--validation") + 1].endswith("help-test.jsonl")
-    expect(page.locator(".centre .pane-head p")).to_contain_text("reported on help-test")
+    assert (job.details["report"], job.details["report_split"]) == ("help", "test")
+    assert job.details["holdout"] is None
+    assert job.argv[job.argv.index("--data") + 1].endswith("help/train.jsonl")
+    assert job.argv[job.argv.index("--validation") + 1].endswith("help/test.jsonl")
+    expect(page.locator(".centre .pane-head p")).to_contain_text("reported on help (test)")
     page.locator(".sidebar .job").get_by_role("button", name=re.compile("^Stop ")).click()
     page.locator(".run-btn", has_text="New Fit").click()
     report.select_option("")
     expect(form.locator("#fit-holdout")).to_have_value("20")
     expect(legend).to_contain_text("12 kept aside for the report")
+
+
+def test_a_dataset_without_questions_is_not_fitted(studio, page):
+    folder = studio.workspace / "data" / "raw"
+    folder.mkdir()
+    (folder / "train.jsonl").write_text(json.dumps({"state": "s", "values": {"label": "1"}}) + "\n")
+    body = {
+        "columns": {"label": {"values": {"1": {"rows": 1}}}},
+        "splits": {"train": {"role": "train"}},
+    }
+    (folder / "dataset.json").write_text(json.dumps(body))
+    open_studio(page, studio, "training")
+    form = page.locator(".fit-form")
+    expect(form.locator("#fit-data option", has_text="raw")).to_have_text("raw (not ready)")
+    form.locator("#fit-data").select_option("raw")
+    expect(form.locator(".warn-text").first).to_have_text(
+        "raw is not ready for a fit: it has no questions yet"
+    )
+    expect(page.locator(".run-btn")).to_be_disabled()
+    expect(form.locator(".method")).to_have_count(0)
 
 
 def test_report_overlap_is_said(studio, page):
@@ -164,7 +190,7 @@ def test_report_overlap_is_said(studio, page):
     open_studio(page, studio, "training")
     form = page.locator(".fit-form")
     form.locator("#fit-data").select_option("support")
-    form.locator("#fit-report").select_option("copy")
+    form.locator("#fit-report").select_option("data:copy")
     expect(form.locator(".warn-text", has_text="also in")).to_have_text(
         "5 of 5 examples in copy have a state that is also in support: the report would "
         "score examples the fit learns from"

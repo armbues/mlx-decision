@@ -44,7 +44,8 @@ change the interface).
   whole, a stop leaves nothing), and `--roles` says what each split is
   for (`train`, `report`, `evaluate`; by default from the split names)
   or cuts one into seeded, stratified parts
-  (`--roles "train:0.8+report:0.1+evaluate:0.1"`).
+  (`--roles "train:0.8+report:0.1+evaluate:0.1"`). `--value-names
+  "0=Analyst Update,..."` names the label's values in `dataset.json`.
 - `training fit --data FOLDER` trains on a dataset folder's train split
   and reports on its report split (unless `--validation` or `--holdout`
   is given); `training eval --data FOLDER` scores its evaluate split.

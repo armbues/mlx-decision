@@ -1,7 +1,6 @@
 """Public datasets: the presets listed with their question and splits, and a
 ``data`` job built from a preset's name, never a path."""
 
-import json
 import sys
 import time
 from pathlib import Path
@@ -75,38 +74,62 @@ def test_a_data_job_from_a_preset(studio):
     started = get(studio, preset="trec", splits=splits(("train", "train"), ("test", "evaluate")))
     assert started.status_code == 202, started.text
     job = started.json()["job"]
-    train, test = studio.data / "trec-train.jsonl", studio.data / "trec-test.jsonl"
+    folder = studio.data / "trec"
     assert job["command"] == [
         "mlx-decision", "data", "--preset", "trec", "--split", "train", "--split", "test",
-        "-o", str(studio.data / "trec-{split}.jsonl"), "--record", "--roles", "train,evaluate",
+        "--roles", "train,evaluate", "-o", str(folder),
     ]  # fmt: skip
-    assert job["holds_gpu"] is False and job["title"] == "Get trec train, test"
-    assert job["details"]["name"] == "trec" and job["details"]["files"] == [
-        "trec-train",
-        "trec-test",
-    ]
-    assert job["output"] == str(train)
-    assert job["outputs"] == [str(train), str(test), str(studio.data / "trec-train.source.json"),
-                              str(studio.data / "trec-test.source.json")]  # fmt: skip
-    # A file a running Get writes is taken; another name goes alongside.
+    assert job["holds_gpu"] is False and job["title"] == "Download trec train, test"
+    assert job["details"]["name"] == "trec"
+    assert job["output"] == str(folder) and job["outputs"] == [str(folder)]
+    # A dataset a running download writes is taken; another name goes alongside.
     again = get(studio, preset="trec", splits=splits(("test", "train")))
-    assert again.status_code == 409 and "Get trec train, test is writing trec-test" in again.text
+    assert again.status_code == 409 and "Download trec train, test is writing trec" in again.text
     sampled = get(studio, preset="sst5", name="small", seed=7,
                   splits=splits(("train", "train", 200), ("validation", "report")))  # fmt: skip
     assert sampled.status_code == 202, sampled.text
     assert sampled.json()["job"]["command"][2:] == [
         "--preset", "sst5", "--split", "train", "--split", "validation", "--sample", "200",
-        "--sample", "0", "--seed", "7", "-o", str(studio.data / "small-{split}.jsonl"),
-        "--record", "--roles", "train,report",
+        "--sample", "0", "--seed", "7", "--roles", "train,report",
+        "-o", str(studio.data / "small"),
     ]  # fmt: skip
-    assert sampled.json()["job"]["title"] == "Get sst5 train (200 rows), validation"
+    assert sampled.json()["job"]["title"] == "Download sst5 train (200 rows), validation"
     assert sampled.json()["job"]["details"]["seed"] == 7
     for each in (job, sampled.json()["job"]):
         stop(studio, each)
 
 
+def test_a_split_cut_into_parts(studio):
+    parts = [{"role": "train", "share": 0.8}, {"role": "report", "share": 0.1},
+             {"role": "evaluate", "share": 0.1}]  # fmt: skip
+    started = get(studio, preset="trec", name="cut", splits=[{"split": "train", "parts": parts}])
+    assert started.status_code == 202, started.text
+    job = started.json()["job"]
+    assert job["command"][-6:] == [
+        "--seed", "0", "--roles", "train:0.8+report:0.1+evaluate:0.1", "-o",
+        str(studio.data / "cut"),
+    ]  # fmt: skip
+    assert job["details"]["splits"][0]["parts"] == parts
+    stop(studio, job)
+    for bad in (
+        [{"role": "train", "share": 0.8}, {"role": "report", "share": 0.4}],
+        [{"role": "train", "share": 0}],
+        [{"role": "fit", "share": 0.5}],
+        [{"role": "train", "share": 0.5}, {"role": "train", "share": 0.5}],
+        [],
+    ):
+        response = get(studio, preset="trec", splits=[{"split": "train", "parts": bad}])
+        assert response.status_code == 400, (bad, response.text)
+        assert response.json()["error"]["param"] == "splits"
+    # A role once across the parts and the whole splits.
+    both = [{"split": "train", "parts": [{"role": "train", "share": 0.5}]},
+            {"split": "test", "role": "train"}]  # fmt: skip
+    assert get(studio, preset="trec", splits=both).status_code == 400
+
+
 def test_refusals(studio):
-    (studio.data / "taken-train.jsonl").write_text("{}\n")
+    (studio.data / "taken.jsonl").write_text("{}\n")
+    (studio.data / "folder").mkdir()
     train = splits(("train", "train"))
     for body, status, param in [
         ({"preset": "imdb", "splits": train}, 400, "preset"),
@@ -131,6 +154,7 @@ def test_refusals(studio):
         ({"preset": "trec", "splits": ["train"]}, 400, "splits"),
         ({"preset": "trec", "splits": train, "name": "../x"}, 400, "name"),
         ({"preset": "trec", "splits": train, "name": "taken"}, 409, "name"),
+        ({"preset": "trec", "splits": train, "name": "folder"}, 409, "name"),
     ]:
         response = get(studio, **body)
         assert response.status_code == status, (body, response.text)
@@ -150,19 +174,10 @@ def test_a_finished_data_job_tells_every_tab(studio):
         time.sleep(0.02)
     assert jobs.jobs[job["id"]].outcome == "done"
     recent = [message for _, (_, message) in studio.app_state.hub.recent]
-    for name in ("mine-train", "mine-test"):
-        assert {"type": "workspace", "folder": "data", "name": name, "action": "saved"} in recent
-    # The list has each file's record; deleting a file deletes its record.
-    listed = {item["name"]: item for item in studio.get("/studio/api/data").json()["files"]}
-    assert listed["mine-test"]["record"]["role"] == "report"
-    assert listed["mine-test"]["record"]["get"]["name"] == "mine"
-    assert studio.get("/studio/api/data/mine-train").json()["record"]["role"] == "train"
-    assert studio.request("DELETE", "/studio/api/data/mine-train", json={}).status_code == 204
-    assert sorted(p.name for p in studio.data.iterdir()) == ["mine-test.jsonl",
-                                                            "mine-test.source.json"]  # fmt: skip
+    assert {"type": "workspace", "folder": "data", "name": "mine", "action": "saved"} in recent
 
 
-def test_a_stopped_get_leaves_no_file(studio):
+def test_a_stopped_download_leaves_nothing(studio):
     body = {"preset": "trec", "splits": splits(("train", "train"), ("test", "report"))}
     job = get(studio, **body).json()["job"]
     jobs = studio.app_state.jobs
@@ -177,7 +192,7 @@ def test_a_stopped_get_leaves_no_file(studio):
     assert list(studio.data.iterdir()) == []
 
 
-# Any dataset, with a question set's question
+# Any dataset: its rows and the label's values, no question
 
 
 @pytest.fixture
@@ -256,22 +271,9 @@ def test_the_preview_refuses(studio, hub):
     assert preview(studio, config="en", split="dev").status_code == 422
 
 
-QUESTIONS = {
-    "mood": {"type": "choice", "instructions": "How does the reviewer feel?",
-             "criteria": {"unhappy": "Not happy", "happy": "Happy"}},
-    "angry": {"type": "noul", "instructions": "Is the reviewer angry?"},
-    "level": {"type": "score", "criteria": ["low", "high"]},
-}  # fmt: skip
-
-
 def any_dataset(studio, **body):
-    files = studio.app_state.workspace
-    if not files.set_path("reviews").exists():
-        files.save_set("reviews", {"state": "", "questions": QUESTIONS})
     fields = {"source": "hf:org/reviews", "config": "en", "text": "review",
-              "splits": [{"split": "train", "role": "train"}],
-              "label": "sentiment", "set": "reviews", "question": "mood",
-              "label_map": {"negative": "unhappy", "positive": "happy"}}  # fmt: skip
+              "splits": [{"split": "train", "role": "train"}], "label": "sentiment"}  # fmt: skip
     return get(studio, **(fields | body))
 
 
@@ -281,40 +283,33 @@ def test_a_job_from_any_dataset(studio, hub):
     started = any_dataset(studio, splits=two, seed=2)
     assert started.status_code == 202, started.text
     job = started.json()["job"]
-    folder = studio.app_state.jobs.jobs[job["id"]].folder
     assert job["command"][1:] == [
         "data", "hf:org/reviews", "--config", "en", "--shape", "text",
-        "--text", "review", "--label", "sentiment", "-q", f"{folder}/question.json",
-        "--label-map", "negative=unhappy,positive=happy", "--split", "train", "--split", "test",
-        "--sample", "10", "--sample", "0", "--seed", "2",
-        "-o", str(studio.data / "reviews-{split}.jsonl"), "--record", "--roles", "train,report",
+        "--text", "review", "--label", "sentiment", "--split", "train", "--split", "test",
+        "--sample", "10", "--sample", "0", "--seed", "2", "--roles", "train,report",
+        "-o", str(studio.data / "reviews"),
     ]  # fmt: skip
-    assert json.loads((folder / "question.json").read_text()) == {"mood": QUESTIONS["mood"]}
-    assert job["title"] == "Get org/reviews train (10 rows), test"
-    assert job["details"]["label_map"] == {"negative": "unhappy", "positive": "happy"}
-    assert job["details"]["files"] == ["reviews-train", "reviews-test"]
+    assert job["title"] == "Download org/reviews train (10 rows), test"
+    assert job["details"]["label"] == "sentiment"
     stop(studio, job)
-    # A noul: true and false; one class left out is fine.
-    stars = {"1": "true", "5": "false"}
-    noul = any_dataset(studio, question="angry", label="stars", label_map=stars, name="angry")
-    assert noul.status_code == 202, noul.text
-    assert "1=true,5=false" in noul.json()["job"]["command"]
-    stop(studio, noul.json()["job"])
+    # The values' names (from the dataset card) go along.
+    named = any_dataset(studio, label="stars", name="stars",
+                        value_names={"1": "One star", "5": "Five, stars"})  # fmt: skip
+    assert named.status_code == 202, named.text
+    command = named.json()["job"]["command"]
+    assert command[command.index("--value-names") + 1] == "1=One star,5=Five\\, stars"
+    stop(studio, named.json()["job"])
 
 
 def test_a_job_from_any_dataset_refuses(studio, hub):
     for body, status, param in [
-        ({"question": "level"}, 400, "question"),  # a score
-        ({"question": "nope"}, 404, "question"),
-        ({"set": "missing"}, 404, "set"),
-        ({"set": "../x"}, 400, "set"),
-        ({"label_map": {}}, 400, "label_map"),
-        ({"label_map": {"negative": "sad"}}, 400, "label_map"),
-        ({"label_map": {"a=b": "happy"}}, 400, "label_map"),
         ({"label": "review"}, 400, "label"),  # the same column as the state
         ({"splits": [{"split": "../x", "role": "train"}]}, 400, "splits"),
         ({"config": "../x"}, 400, "config"),
         ({"source": "hf:../x"}, 400, "source"),
+        ({"value_names": {"a=b": "x"}}, 400, "value_names"),
+        ({"value_names": {"1": ""}}, 400, "value_names"),
+        ({"value_names": ["1"]}, 400, "value_names"),
         (
             {"splits": [{"split": "train", "role": "train", "sample": 13, "rows": 12}]},
             400,
@@ -326,83 +321,14 @@ def test_a_job_from_any_dataset_refuses(studio, hub):
         assert response.json()["error"]["param"] == param, (body, response.text)
 
 
-# A new question made from the label's classes
+def test_the_preview_names_values_from_the_card(studio, hub, monkeypatch):
+    from mlx_decision.data import sources
 
-
-def new_question(studio, body=None, **made):
-    """A Get of org/reviews' train split with a question made from ``stars``;
-    ``made`` changes the question's fields, ``body`` the Get's."""
-    fields = {"source": "hf:org/reviews", "config": "en", "text": "review", "label": "stars",
-              "splits": [{"split": "train", "role": "train"}]}  # fmt: skip
-    question = {"instructions": "How many stars?", "classes": ["1", "2", "3", "4", "5"]}
-    return get(studio, **(fields | (body or {})), new_question=question | made)
-
-
-def test_a_new_question_from_the_classes_is_saved_as_a_set(studio, hub):
-    files = studio.app_state.workspace
-    started = new_question(studio)
-    assert started.status_code == 202, started.text
-    job = started.json()["job"]
-    stars = {"1": "1", "2": "2", "3": "3", "4": "4", "5": "5"}
-    question = {"type": "choice", "instructions": "How many stars?", "criteria": stars}
-    # Saved under the dataset's name, to try in the Playground.
-    assert files.load_set("reviews")[0] == {"state": "", "questions": {"reviews": question}}
-    details = job["details"]
-    assert (details["set"], details["question"], details["new_set"]) == ("reviews", "reviews", True)
-    folder = studio.app_state.jobs.jobs[job["id"]].folder
-    assert json.loads((folder / "question.json").read_text()) == {"reviews": question}
-    assert job["command"][1:12] == [
-        "data", "hf:org/reviews", "--config", "en", "--shape", "text",
-        "--text", "review", "--label", "stars", "-q",
-    ]  # fmt: skip
-    assert job["command"][13:15] == ["--label-map", "1=1,2=2,3=3,4=4,5=5"]
-    stop(studio, job)
-
-    # Ids made safe from the class names (their text), each once; a taken
-    # set name gets -2.
-    classes = ["Very good", "very-good", "Très bien!", "a,b", "?"]
-    again = new_question(studio, {"name": "other"}, classes=classes, set="reviews")
-    assert again.status_code == 202, again.text
-    job = again.json()["job"]
-    assert job["details"]["set"] == "reviews-2"
-    body = files.load_set("reviews-2")[0]
-    assert body["questions"]["reviews"]["criteria"] == {
-        "very_good": "Very good", "very-good": "very-good", "très_bien": "Très bien!",
-        "a_b": "a,b", "option": "?",
-    }  # fmt: skip
-    assert job["details"]["label_map"] == {
-        "Very good": "very_good", "very-good": "very-good", "Très bien!": "très_bien",
-        "a,b": "a_b", "?": "option",
-    }  # fmt: skip
-    assert "a\\,b=a_b" in job["command"][job["command"].index("--label-map") + 1]
-    stop(studio, job)
-
-
-def test_a_new_question_refuses_and_saves_nothing(studio, hub):
-    files = studio.app_state.workspace
-    for made, status in [
-        ({"instructions": " "}, 400),
-        ({"instructions": "x" * 2001}, 400),
-        ({"classes": ["only"]}, 400),
-        ({"classes": [str(n) for n in range(51)]}, 400),
-        ({"classes": ["a", "a"]}, 400),
-        ({"classes": ["a=b", "c"]}, 400),
-        ({"classes": ["a", 1]}, 400),
-        ({"set": "../x"}, 400),
-    ]:
-        response = new_question(studio, **made)
-        assert response.status_code == status, (made, response.text)
-        assert response.json()["error"]["param"] == "new_question", (made, response.text)
-    # The files' name taken: refused before the set is saved.
-    files.save_data("reviews-train", b"")
-    assert new_question(studio).status_code == 409
-    assert files.list_sets() == []
-
-
-def test_a_new_set_is_taken_back_when_the_job_does_not_start(studio, hub, monkeypatch):
-    def refuse(*args, **kwargs):
-        raise RuntimeError("the Studio is stopping")
-
-    monkeypatch.setattr(studio.app_state.jobs, "submit", refuse)
-    assert new_question(studio).status_code == 503
-    assert studio.app_state.workspace.list_sets() == []
+    card = 'topics = {\n    "LABEL_1": "One star",\n    "LABEL_2": "Two stars",\n' + \
+        '    "LABEL_3": "Three",\n    "LABEL_4": "Four",\n}'  # fmt: skip
+    monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: card)
+    body = preview(studio, config="en", split="train").json()
+    columns = {column["name"]: column for column in body["label_columns"]}
+    assert columns["stars"]["names"] == {"1": "One star", "2": "Two stars", "3": "Three",
+                                         "4": "Four"}  # fmt: skip
+    assert columns["sentiment"]["names"] is None  # a class label names its classes

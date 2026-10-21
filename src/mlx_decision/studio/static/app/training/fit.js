@@ -1,6 +1,7 @@
 // The fit form: the dataset picked in its own field (or by the Datasets page's
-// Fit on It…), what the report is scored on (a share of it, or another dataset:
-// the same Get's report file by default, from the records), its split and labels, the base model, the method cards the
+// Fit on It…; it trains on its train split), what the report is scored on (its
+// report split by default, a share kept aside, or another dataset), the split
+// and labels, the base model, the method cards the
 // base's family offers (each with its memory estimate and the fit check, as
 // `training fit`'s menu has them), the result's name and the options. Start Fit (⌘↩) starts `training fit` as a job;
 // the Studio builds its command line.
@@ -12,7 +13,7 @@ import { plural, size } from "../format.js";
 import { gpuJob } from "../store/jobs.js";
 import { remembered } from "../store/prefs.js";
 import { href, navigate } from "../router.js";
-import { dataFiles } from "../store/data.js";
+import { dataFiles, datasetOf, splitFor } from "../store/data.js";
 import { loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
@@ -54,38 +55,59 @@ export function fitOn(name) {
   navigate("training");
 }
 
-// What the report is scored on: "" (a share of the dataset) or another
-// dataset's name. Picked for one dataset; another dataset starts from its
-// default: the same Get's report file, when its record names one.
-const reportChoice = signal(null); // {data, file}
+// The dataset's split to train on: its train split, else its first.
+const dataItem = computed(() => datasetOf(fitData.value));
+export const trainSplit = computed(() => splitFor(dataItem.value, "train") ?? dataItem.value?.splits?.[0]?.name ?? null);
+// What keeps the dataset from a fit, or null.
+const notReadyData = computed(() => {
+  const item = dataItem.value;
+  if (!item) return null;
+  if (item.error) return `${item.name} cannot be read: ${item.error}`;
+  return item.missing?.length ? `${item.name} is not ready for a fit: ${item.missing.join("; ")}` : null;
+});
 
-const recordOf = (name) => (dataFiles.value ?? []).find((item) => item.name === name)?.record ?? null;
+// What the report is scored on: "" (a share of the train split kept aside),
+// "split:NAME" (another split of the dataset) or "data:NAME" (another
+// dataset). Picked for one dataset; another dataset starts from its report
+// split when it has one.
+const reportChoice = signal(null); // {data, value}
 
-// The datasets a report can be scored on: not the dataset itself, not one
-// kept for Evaluate.
-export const reportFiles = computed(() =>
-  (dataFiles.value ?? []).filter((item) => item.name !== fitData.value && item.record?.role !== "evaluate").map((item) => item.name),
+// This dataset's other splits a report can be scored on (not its evaluate split).
+export const reportSplits = computed(() =>
+  (dataItem.value?.splits ?? []).filter((split) => split.name !== trainSplit.value && split.role !== "evaluate").map((split) => split.name),
+);
+// The other datasets ready for a run.
+export const reportData = computed(() =>
+  (dataFiles.value ?? []).filter((item) => item.name !== fitData.value && !item.error && !item.missing?.length).map((item) => item.name),
 );
 
-function defaultReport(data) {
-  const sibling = recordOf(data)?.get?.files?.find((file) => file.role === "report" && file.name !== data);
-  return sibling && reportFiles.value.includes(sibling.name) ? sibling.name : "";
+function defaultReport() {
+  const report = (dataItem.value?.splits ?? []).find((split) => split.role === "report" && split.name !== trainSplit.value);
+  return report ? `split:${report.name}` : "";
 }
 
-export const reportFile = computed(() => {
+export const reportValue = computed(() => {
   const data = fitData.value;
   const chosen = reportChoice.value;
-  if (chosen?.data === data && (chosen.file === "" || reportFiles.value.includes(chosen.file))) return chosen.file;
-  return data ? defaultReport(data) : "";
+  if (chosen?.data === data) {
+    const [kind, which] = chosen.value.split(/:(.*)/s);
+    if (chosen.value === "" || (kind === "split" && reportSplits.value.includes(which)) || (kind === "data" && reportData.value.includes(which)))
+      return chosen.value;
+  }
+  return data ? defaultReport() : "";
 });
+
+// A plan's report as reportValue says it.
+const reportOf = (result) =>
+  result.report == null ? "" : result.report === result.data && result.report_split ? `split:${result.report_split}` : `data:${result.report}`;
 
 let timer = null;
 let asked = 0;
 
 // The plan again whenever the data, the report, the base, the share kept aside or the seed change.
 effect(() => {
-  const data = fitData.value;
-  const report = reportFile.value;
+  const data = notReadyData.value ? null : fitData.value;
+  const report = reportValue.value;
   const model = baseName.value;
   const share = holdout.value;
   const order = seed.value;
@@ -97,7 +119,9 @@ effect(() => {
 async function plan(model, data, report, share, order) {
   const ask = ++asked;
   const body = { model, data, seed: Number(order) || 0 };
-  if (report) body.report = report;
+  const [kind, which] = report.split(/:(.*)/s);
+  if (kind === "split") Object.assign(body, { report: data, report_split: which });
+  else if (kind === "data") body.report = which;
   else body.holdout = share / 100;
   try {
     const result = await api("/fit/plan", { method: "POST", body });
@@ -117,10 +141,11 @@ async function plan(model, data, report, share, order) {
 export const notReady = computed(() => {
   const job = gpuJob.value;
   if (job) return `${job.title} is running; one job at a time can use the GPU`;
-  if (!fitData.value) return "Get or add a dataset first, on the Datasets page";
+  if (!fitData.value) return "Download or add a dataset first, on the Datasets page";
+  if (notReadyData.value) return notReadyData.value;
   if (planError.value) return planError.value;
   const current = planned.value;
-  if (!current || !picked.value || current.data !== fitData.value || (current.report ?? "") !== reportFile.value)
+  if (!current || !picked.value || current.data !== fitData.value || reportOf(current) !== reportValue.value)
     return "Reading the data…";
   if (!picked.value.fits) return "The method needs more memory than this Mac's GPU working set";
   const value = name.value.trim();
@@ -140,8 +165,10 @@ export async function startFit() {
     method: method.method,
     seed: Number(seed.value) || 0,
   };
-  if (planned.value.report) body.report = planned.value.report;
-  else body.holdout = holdout.value / 100;
+  if (planned.value.report) {
+    body.report = planned.value.report;
+    if (planned.value.report_split) body.report_split = planned.value.report_split;
+  } else body.holdout = holdout.value / 100;
   if (method.head_only) body.head_only = true;
   if (method.epochs) {
     body.epochs = Number(epochs.value) || 3;
@@ -164,7 +191,7 @@ export async function startFit() {
 const TITLES = { head: "Head", readout: "Readout", finetune: "Fine-tune", calibrate: "Calibrate" };
 
 // The examples to train on and to tune, and those the report is scored on:
-// kept aside from the dataset, or the report file's (``report``).
+// kept aside from the train split, or another split's or dataset's (``report``).
 function Split({ splits, report }) {
   const total = Math.max(1, splits.fit + splits.dev + splits.holdout);
   const share = (count) => `${((count / total) * 100).toFixed(2)}%`;
@@ -184,23 +211,26 @@ function Split({ splits, report }) {
 }
 
 function ReportOn({ data }) {
-  const files = reportFiles.value;
-  const current = reportFile.value;
-  const roleOf = (name) => recordOf(name)?.role;
+  const splits = reportSplits.value;
+  const others = reportData.value;
+  const current = reportValue.value;
+  const roleOf = (name) => dataItem.value?.splits?.find((split) => split.name === name)?.role;
   return html`
     <div class="row"><label for="fit-report">Report on</label><div class="line">
-      <select id="fit-report" value=${current} onChange=${(event) => (reportChoice.value = { data, file: event.target.value })}>
-        <option value="">A share of this dataset</option>
-        ${files.length > 0 &&
-        html`<optgroup label="Another dataset">
-          ${files.map((file) => html`<option value=${file}>${file}${roleOf(file) ? ` (${roleOf(file)})` : ""}</option>`)}
+      <select id="fit-report" value=${current} onChange=${(event) => (reportChoice.value = { data, value: event.target.value })}>
+        ${splits.length > 0 &&
+        html`<optgroup label=${`A split of ${data}`}>
+          ${splits.map((name) => html`<option value=${`split:${name}`}>${name}${roleOf(name) ? ` (${roleOf(name)})` : ""}</option>`)}
         </optgroup>`}
+        <option value="">A share of ${trainSplit.value && dataItem.value?.kind === "folder" ? `its ${trainSplit.value} split` : "this dataset"}</option>
+        ${others.length > 0 &&
+        html`<optgroup label="Another dataset">${others.map((name) => html`<option value=${`data:${name}`}>${name}</option>`)}</optgroup>`}
       </select>
       ${current === ""
         ? html`<input id="fit-holdout" type="number" min="5" max="90" aria-label="Share kept aside" value=${holdout.value}
                  onChange=${(event) => (holdout.value = Math.min(90, Math.max(5, Number(event.target.value) || 20)))} /> %
             <span class="hint">kept aside, by label</span>`
-        : html`<span class="hint">${defaultReport(data) === current ? "got with it as its report split" : "it must ask the same questions"}</span>`}
+        : html`<span class="hint">${current === defaultReport() ? "its report split" : current.startsWith("data:") ? "it must ask the same questions" : "another split of it"}</span>`}
     </div></div>
   `;
 }
@@ -249,24 +279,26 @@ function gpuNote() {
 
 export function FitForm() {
   const data = fitData.value;
-  const summary = useSummary(data);
+  const summary = useSummary(data, trainSplit.value);
   const files = dataFiles.value ?? [];
-  const result = planned.value;
+  const result = notReadyData.value ? null : planned.value;
   const list = models.value ?? [];
   const method = picked.value;
   return html`
     <div class="fit-form">
-      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled examples, as JSON lines</span></div>
+      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled examples to learn from</span></div>
         <div class="group form">
           <div class="row"><label for="fit-data">Dataset</label><div class="line">
             <select id="fit-data" value=${data ?? ""} onChange=${(event) => (chosenData.value = event.target.value)}>
-              ${files.map((item) => html`<option value=${item.name}>${item.name}</option>`)}
+              ${files.map((item) => html`<option value=${item.name}>${item.name}${item.missing?.length || item.error ? " (not ready)" : ""}</option>`)}
             </select>
-            ${result && result.data === data && html`<span class="hint num">${plural(result.splits.examples, "example")}</span>`}
+            ${result && result.data === data && html`<span class="hint num">${dataItem.value?.kind === "folder" ? `its ${result.split} split: ` : ""}${plural(result.splits.examples, "example")}</span>`}
             ${data && html`<a class="hint-link" href=${href("datasets", data)}>Show in Datasets</a>`}
           </div></div>
-          ${data && html`<${ReportOn} data=${data} />`}
-          ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits} report=${result.report} /></div>`}
+          ${notReadyData.value && html`<p class="warn-text">${notReadyData.value}</p>`}
+          ${data && !notReadyData.value && html`<${ReportOn} data=${data} />`}
+          ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits}
+            report=${result.report == null ? null : result.report === result.data ? `${result.report_split}` : result.report} /></div>`}
           ${result && html`<div class="row"><label>Labels</label><div><${Labels} labels=${result.labels} summary=${summary?.name === data ? summary : null} /><span class="hint">to train on and to tune</span></div></div>`}
           ${result?.warnings.map((warning) => html`<p class="warn-text">${warning}</p>`)}
           ${planError.value && html`<p class="warn-text">${planError.value}</p>`}

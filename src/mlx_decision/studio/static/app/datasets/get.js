@@ -1,11 +1,11 @@
-// Get a Dataset: the `data` command's presets, each with its question, options
-// and splits, or any Hugging Face dataset ("Another dataset…"). The table of
-// splits gives each its role (train, report, evaluate or left out) and its own
-// random sample (1,000 rows by default, or the split's rows when fewer); the
-// Get's name (the first one whose files are free: not there, not written by a
-// Get that is running) names its files NAME-SPLIT. It runs `data` as one job;
-// the files join the Datasets list when it is done, each with a record of
-// where it came from. The sheet opens again on the entry last used.
+// Download: the `data` command's presets, each with its question, options and
+// splits, or any Hugging Face dataset ("Another dataset…", its rows without a
+// question). The table of splits gives each its role (train, report, evaluate
+// or left out) or its parts, and its own random sample (1,000 rows by
+// default, or the split's rows when fewer); the dataset's name (the first
+// free one: not there, not written by a download that is running) names its
+// folder in data/. It runs `data` as one job; the dataset joins the Datasets
+// list when it is done. The sheet opens again on the entry last used.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
@@ -13,7 +13,7 @@ import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
 import { toast } from "../store/ui.js";
 import { AnyDataset, anyJob, anyProblem, resetAny } from "./any-dataset.js";
-import { NameAndSeed, SplitTable, chosen, freeBase, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
+import { NameAndSeed, SplitTable, freeBase, seeded, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
 
 const ANY = "\u0000any"; // the list's last entry: any Hugging Face dataset
 
@@ -34,7 +34,7 @@ const splits = computed(() =>
     note: split.evaluation ? "the coverage suite evaluates on it" : null,
   })),
 );
-const suggested = computed(() => (preset.value ? freeBase(preset.value.name, chosen(table, splits.value).map((split) => split.name)) : ""));
+const suggested = computed(() => (preset.value ? freeBase(preset.value.name) : ""));
 const base = computed(() => (named.value ? name.value.trim() : suggested.value));
 
 // A preset, its table kept when it is the one shown before (``keep``).
@@ -59,7 +59,7 @@ async function start() {
   if (picked.value === ANY) body = anyJob();
   else {
     body = { kind: "data", preset: preset.value.name, splits: splitsBody(table, splits.value), name: base.value };
-    if (body.splits.some((split) => split.sample != null)) body.seed = Number(seed.value) || 0;
+    if (seeded(table, splits.value)) body.seed = Number(seed.value) || 0;
   }
   starting.value = true;
   try {
@@ -68,11 +68,9 @@ async function start() {
     // The next Get starts afresh: "Another dataset…" empty, a preset's name free again.
     if (picked.value === ANY) resetAny(true);
     named.value = false;
-    const files = body.splits.length > 1 ? "the files join" : "the file joins";
-    const saved = job.details?.new_set ? `; the question is saved as the set ${job.details.set}` : "";
-    toast(`${job.title}: ${files} Datasets when the job is done${saved}`);
+    toast(`${job.title}: ${job.details?.name ?? "the dataset"} joins Datasets when the job is done`);
   } catch (error) {
-    toast(`Could not get the dataset: ${error.message}`);
+    toast(`Could not download the dataset: ${error.message}`);
   } finally {
     starting.value = false;
   }
@@ -88,7 +86,7 @@ function Presets() {
         </button>`,
       )}
       <button class="fam ds" role="option" aria-selected=${picked.value === ANY ? "true" : "false"} data-preset="any" onClick=${() => pick(ANY)}>
-        <span><b>Another dataset…</b><span>any on the Hub, with your question set</span></span>
+        <span><b>Another dataset…</b><span>any on the Hub; its questions written afterwards</span></span>
       </button>
     </div>
   `;
@@ -112,8 +110,7 @@ function Picked() {
       <h4>Splits</h4>
       <${SplitTable} state=${table} splits=${splits.value} />
     </div>
-    <${NameAndSeed} name=${name} named=${named} suggested=${suggested.value} seed=${seed}
-      sampled=${chosen(table, splits.value).some((split) => table.value[split.name].sampling)} />
+    <${NameAndSeed} name=${name} named=${named} suggested=${suggested.value} seed=${seed} sampled=${seeded(table, splits.value)} />
     ${problem.value && html`<p class="warn-text">${problem.value}</p>`}
   `;
 }
@@ -135,11 +132,11 @@ export async function openGetDataset() {
   if (picked.value !== ANY) named.value = false;
   pick(known ? picked.value : presets.value[0].name, true);
   openSheet({
-    title: "Get a Dataset",
-    purpose: "A public dataset turned into a dataset of labelled examples in the workspace's data/ folder, with the question and wording of the data command's presets. It downloads from the Hugging Face Hub as a job.",
+    title: "Download a Dataset",
+    purpose: "A public dataset from the Hugging Face Hub, as a dataset in the workspace's data/ folder: its splits, each with its role. A preset brings its question; another dataset brings its rows and label values, and you write its questions afterwards. It downloads as a job.",
     Body,
     wide: true,
     note: "In a terminal, mlx-decision data does the same.",
-    actions: () => [{ label: "Get", primary: true, disabled: Boolean(problem.value) || starting.value, onSelect: start }],
+    actions: () => [{ label: "Download", primary: true, disabled: Boolean(problem.value) || starting.value, onSelect: start }],
   });
 }

@@ -186,80 +186,12 @@ def _preset(name: str, split: str | None, limit, sample, seed) -> Made:
     return result
 
 
-# The record beside a data file NAME.jsonl: NAME.source.json.
-RECORD_SUFFIX = ".source.json"
-SPLIT_FIELD = "{split}"  # in -o, each split's name
-
-
-def record_path(output: str | Path) -> Path:
-    """Where the record of the data file ``output`` goes."""
-    output = Path(output)
-    stem = output.name.removesuffix(".jsonl") if output.name.endswith(".jsonl") else output.stem
-    return output.with_name(stem + RECORD_SUFFIX)
-
-
-def file_name(output: str | Path) -> str:
-    """A data file's name as the Studio lists it: without ``.jsonl``."""
-    name = Path(output).name
-    return name.removesuffix(".jsonl")
-
-
-def get_name(pattern: str) -> str:
-    """The name of a Get's files without their split: ``trec`` for
-    ``data/trec-{split}.jsonl``."""
-    name = file_name(pattern).replace(SPLIT_FIELD, "")
-    return name.strip("-_.") or name
-
-
-def record(
-    plan: "DataPlan", made: Made, *, role: str | None, files: list[dict[str, Any]], name: str
-) -> dict[str, Any]:
-    """Where a data file came from: the source (a preset's dataset on the Hub,
-    a Hub dataset, a file), config, revision, split, the split's rows, the
-    sample or limit and seed, the examples written, the question and class map
-    when given, the file's role, and the files of the same Get (``name``
-    without their split) with their splits and roles."""
-    origin = made.table.origin
-    preset = preset_data.PRESETS.get(plan.preset) if plan.preset else None
-    source = HUB_PREFIX + preset.source.repo if preset else plan.source
-    question = None
-    if plan.question is not None and plan.question_id:
-        question = {plan.question_id: plan.question}
-    return {
-        "source": source,
-        "preset": plan.preset,
-        "config": origin.get("config", plan.config),
-        "revision": origin.get("revision") or plan.revision,
-        "split": made.table.split or plan.split,
-        "rows": made.table.length,
-        "sample": plan.sample,
-        "limit": plan.limit,
-        "seed": plan.seed if plan.sample is not None else None,
-        "examples": len(made.examples),
-        "labels": made.label_counts(),
-        "question": question,
-        "label_map": plan.label_map,
-        "role": role,
-        "get": {"name": name, "files": files},
-        "created": datetime.now(UTC).isoformat(timespec="seconds"),
-    }
-
-
-def read_record(path: str | Path) -> dict[str, Any] | None:
-    """The record beside the data file ``path``, or None (none, or unreadable)."""
-    try:
-        loaded = json.loads(record_path(path).read_text())
-    except (OSError, ValueError):
-        return None
-    return loaded if isinstance(loaded, dict) else None
-
-
 def split_plans(
     plan: "DataPlan", splits: list[str | None], samples: list[int] | None
 ) -> list["DataPlan"]:
     """One plan per split: ``samples`` once for every split, or once per split
-    (0: the whole split); ``{split}`` in the output replaced by each split's
-    name. ``SourceError`` for what does not go together."""
+    (0: the whole split). Several splits go into a dataset folder.
+    ``SourceError`` for what does not go together."""
     if len(set(splits)) != len(splits):
         raise SourceError("--split: each split once")
     many = len(splits) > 1
@@ -271,25 +203,14 @@ def split_plans(
         samples = samples * len(splits)
     if many and plan.show is not None:
         raise SourceError("--show takes one --split")
-    if plan.output is not None:
-        if many and SPLIT_FIELD not in plan.output and not is_folder_output(plan.output):
-            raise SourceError(
-                "several --split: -o names a dataset folder (-o data/NAME, one file per split)"
-            )
-        if SPLIT_FIELD in plan.output and splits == [None]:
-            raise SourceError(f"-o has {SPLIT_FIELD}: name the split with --split")
-    result = []
-    for split, sample in zip(splits, samples, strict=True):
-        output = plan.output
-        if output is not None and split is not None and not is_folder_output(output):
-            output = output.replace(SPLIT_FIELD, split)
-        result.append(
-            replace(
-                plan, split=split, sample=sample or None, output=output,
-                output_pattern=plan.output,
-            )
-        )  # fmt: skip
-    return result
+    if many and plan.output is not None and not is_folder_output(plan.output):
+        raise SourceError(
+            "several --split: -o names a dataset folder (-o data/NAME, one file per split)"
+        )
+    return [
+        replace(plan, split=split, sample=sample or None)
+        for split, sample in zip(splits, samples, strict=True)
+    ]
 
 
 def partial_path(path: str | Path) -> Path:
@@ -298,60 +219,31 @@ def partial_path(path: str | Path) -> Path:
     return path.with_name(f".{path.name}.partial")
 
 
-def leftovers(plans: list["DataPlan"], with_records: bool) -> list[Path]:
-    """The partial files a run of ``plans`` writes (removed after a stop)."""
-    if plans and plans[0].folder:
+def leftovers(plans: list["DataPlan"]) -> list[Path]:
+    """What a run of ``plans`` writes on the way (removed after a stop)."""
+    if not plans or plans[0].output is None:
+        return []
+    if plans[0].folder:
         return [partial_folder(plans[0].output)]
-    found = []
-    for plan in plans:
-        if plan.output is not None:
-            found.append(partial_path(plan.output))
-            if with_records:
-                found.append(partial_path(record_path(plan.output)))
-    return found
+    return [partial_path(plans[0].output)]
 
 
-def write_made(
-    plans: list["DataPlan"],
-    made: list[Made],
-    *,
-    with_records: bool = False,
-    roles: list[str] | None = None,
-    before_rename=None,
-) -> list[Path]:
-    """Write each plan's examples (and, ``with_records``, its record) to a
-    partial file, then rename them all: the files appear together or not at
-    all. ``before_rename`` (when given) runs before the renames and may raise
-    to stop. An ``OSError`` removes the partials and passes on."""
+def write_file(plan: "DataPlan", made: Made, before_rename=None) -> Path:
+    """Write the examples to a partial file, then rename it into place.
+    ``before_rename`` (when given) runs first and may raise to stop."""
     from .format import write_examples
 
-    outputs = [Path(plan.output) for plan in plans]
-    written: list[tuple[Path, Path]] = []
+    output = Path(plan.output)
+    partial = partial_path(output)
     try:
-        files = [
-            {"name": file_name(output), "split": plan.split, "role": roles[i] if roles else None}
-            for i, (plan, output) in enumerate(zip(plans, outputs, strict=True))
-        ]
-        name = get_name(plans[0].output_pattern or plans[0].output)
-        for i, (plan, made_one, output) in enumerate(zip(plans, made, outputs, strict=True)):
-            partial = partial_path(output)
-            write_examples(partial, made_one.examples)
-            written.append((partial, output))
-            if with_records:
-                target = record_path(output)
-                body = record(plan, made_one, role=files[i]["role"], files=files, name=name)
-                partial = partial_path(target)
-                partial.write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n")
-                written.append((partial, target))
+        write_examples(partial, made.examples)
         if before_rename is not None:
             before_rename()
-        for partial, target in written:
-            partial.replace(target)
+        partial.replace(output)
     except BaseException:
-        for partial, _ in written:
-            partial.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
         raise
-    return outputs
+    return output
 
 
 # Dataset folders
@@ -364,8 +256,8 @@ REPORT_NAMES = ("validation", "valid", "dev", "val")
 
 
 def is_folder_output(output: str | None) -> bool:
-    """Whether ``-o`` names a dataset folder (no ``.jsonl``, no ``{split}``)."""
-    return output is not None and not output.endswith(".jsonl") and SPLIT_FIELD not in output
+    """Whether ``-o`` names a dataset folder (no ``.jsonl``)."""
+    return output is not None and not output.endswith(".jsonl")
 
 
 RoleSpec = list[tuple[str, float | None]]  # one split's role, or its parts with shares
@@ -535,10 +427,16 @@ def write_folder(
         names = [m.table.split or p.split or "train" for p, m in zip(plans, made, strict=True)]
         specs = default_roles(names)
     outs = folder_splits(plans, made, specs)
+    columns = merged_columns(made)
+    names = plans[0].value_names or {}
+    for body in columns.values():
+        for value, info in body["values"].items():
+            if names.get(value):
+                info["name"] = names[value]
     dataset = Dataset(
         Path(plans[0].output),
         answers=merged_answers(made),
-        columns=merged_columns(made),
+        columns=columns,
         source=source_of(plans[0], made[0]),
         created=datetime.now(UTC).isoformat(timespec="seconds"),
     )
@@ -585,7 +483,7 @@ class DataPlan:
     levels: list[str] | None = None
     questions_file: str | None = None
     question: dict[str, Any] | None = None  # read from ``questions_file``
-    output_pattern: str | None = None  # -o with {split}, when split into plans
+    value_names: dict[str, str] | None = None  # names of the label's values (a folder)
 
     def wording(self) -> dict[str, Any]:
         return {
@@ -648,6 +546,7 @@ class DataPlan:
             ("--question", self.instructions),
             ("--options", join_pairs(self.options) if self.options else None),
             ("--label-map", join_pairs(self.label_map) if self.label_map else None),
+            ("--value-names", join_pairs(self.value_names) if self.value_names else None),
             ("--levels", join_list(self.levels) if self.levels else None),
             ("--show", self.show),
             ("-o", self.output),
