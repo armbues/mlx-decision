@@ -9,6 +9,7 @@
 import { html } from "htm/preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api.js";
+import { Confusion, ticks } from "../components/charts.js";
 import { plural, shellWord } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { href } from "../router.js";
@@ -139,16 +140,6 @@ function lossSeries(events) {
     }
   }
   return { steps, epochs };
-}
-
-function ticks(low, high) {
-  const span = high - low || 1;
-  const step = 10 ** Math.floor(Math.log10(span / 3));
-  const nice = [1, 2, 5, 10].map((f) => f * step).find((s) => span / s <= 5) ?? step * 10;
-  const first = Math.ceil(low / nice) * nice;
-  const result = [];
-  for (let value = first; value <= high + 1e-9; value += nice) result.push(Number(value.toFixed(6)));
-  return result;
 }
 
 // ``done``: the fit ended done, so the epoch with the lowest dev loss is the kept one.
@@ -346,23 +337,6 @@ function Report({ job }) {
 // ---------- an evaluation's report ----------
 
 const value = (key, entry) => (entry?.[key] == null ? "–" : key === "mae" ? entry[key].toFixed(3) : percent(entry[key]));
-
-function Confusion({ question, name }) {
-  const labels = question.labels ?? Object.keys(question.confusion ?? {});
-  return html`
-    <div class="confusion">
-      <h4>${name}</h4>
-      <table class="confusion-table" aria-label=${`${name}: gold label by row, predicted by column`}>
-        <thead><tr><th>gold ↓ predicted →</th>${labels.map((label) => html`<th class="r"><code>${label}</code></th>`)}</tr></thead>
-        <tbody>${labels.map(
-          (gold) => html`<tr key=${gold}><th><code>${gold}</code></th>${labels.map(
-            (predicted) => html`<td class=${`r num${gold === predicted ? " hit" : ""}`}>${question.confusion?.[gold]?.[predicted] ?? 0}</td>`,
-          )}</tr>`,
-        )}</tbody>
-      </table>
-    </div>
-  `;
-}
 
 function EvalReport({ job }) {
   const [state, setState] = useState(null);

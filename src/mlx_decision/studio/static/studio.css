@@ -1367,4 +1367,19 @@ a.btn.primary { color: var(--accent-fg); }
 .confusion-table th code { font: 11px var(--mono); }
 .confusion-table td.hit { font-weight: 600; background: var(--selection); }
 .confusion-table .r { text-align: right; }
+.confusion-table td.zero { color: var(--fg-3); }
+.confusion-table .cm-cell { all: unset; display: block; text-align: right; cursor: default; border-radius: 3px; padding: 0 2px; }
+.confusion-table .cm-cell:hover { background: var(--fill); color: var(--accent); }
+
+/* The reliability diagram (batches) */
+.reliability { width: 240px; }
+.reliability h4 { margin: 0 0 4px; font: 600 11.5px var(--mono); }
+.reliability svg { display: block; width: 100%; height: auto; }
+.reliability .grid { stroke: var(--sep); stroke-width: 1; }
+.reliability .tick { font: 10px var(--font); fill: var(--fg-2); }
+.reliability .ideal { stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.reliability .bar { fill: var(--series-1); opacity: 0.85; }
+.reliability .bar.on { opacity: 1; }
+.reliability .rel-note { font-size: 11px; color: var(--fg-2); min-height: 2.6em; margin-top: 2px; }
+.reliability .rel-note b { color: var(--fg); font-weight: 600; }
 .new-list { margin-bottom: -6px; }
