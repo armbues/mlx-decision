@@ -311,7 +311,7 @@ function Rows() {
       <span class="dim num">${
         facts.search
           ? `${facts.matched?.toLocaleString("en") ?? 0} rows hold it${facts.matched > current.examples.length ? `, the first ${current.examples.length}` : ""}`
-          : `${plural(current.examples.length, "row")} of ${facts.total.toLocaleString("en")}${column ? `, about two per value of ${column}` : ""}`
+          : `${plural(current.examples.length, "row")} of ${facts.total.toLocaleString("en")}${column ? `, drawn across the values of ${column}` : ""}`
       }</span>
     </div>
     <div class="examples rows" role="tablist" aria-label="Rows">
@@ -477,11 +477,13 @@ function ChoiceRows({ question }) {
     });
     focusLater(`[data-item="${added.uid}"] [data-cell="key"]`);
   };
+  // The key column fits the longest key (the CSS clamps it).
+  const keyChars = Math.max(0, ...question.options.map((option) => option.key.length));
   return html`
     ${question.options.map(
       (item, index) => html`
         <div class=${`row opt-row ${drag.dragged === item.uid ? "dragging" : ""}`} key=${item.uid}
-             data-item=${item.uid} ...${drag.target(index)}>
+             data-item=${item.uid} style=${`--key-chars: ${keyChars}`} ...${drag.target(index)}>
           <span class="key-cell">
             <span class="grip-handle" title="Drag to reorder (or ⌥↑ / ⌥↓)" ...${drag.grip(item)}><${Grip} /></span>
             <input class=${`opt-key ${at(question.uid, item.uid) ? "bad" : ""}`} data-cell="key"

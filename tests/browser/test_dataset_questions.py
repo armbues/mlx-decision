@@ -64,7 +64,9 @@ def test_write_questions_on_a_dataset(studio, page):
     # Its rows: about two per value, each with its value; the state read-only.
     chips = page.locator(".examples.rows .ex-chip")
     expect(chips).to_have_count(8)
-    expect(page.locator(".rows-bar")).to_contain_text("8 rows of 8, about two per value of label")
+    expect(page.locator(".rows-bar")).to_contain_text(
+        "8 rows of 8, drawn across the values of label"
+    )
     expect(chips.first).to_contain_text("0 · Analyst Update")
     state = page.locator(".state-text")
     expect(state).not_to_be_editable()

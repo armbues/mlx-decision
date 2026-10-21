@@ -298,3 +298,22 @@ def test_runs_on_a_dataset_keep_their_own_history(studio):
     # Deleting the dataset deletes its history.
     assert studio.request("DELETE", "/studio/api/data/tweets", json={}).status_code == 204
     assert not history.exists()
+
+
+def test_rows_fill_in_for_values_with_few_and_go_by_short_names(studio):
+    folder = studio.data / "uneven"
+    # The value "a" has 9 rows, "b" one, "c" none: two of a, one of b, and
+    # three more of a fill in for b and c.
+    labels = ["a"] * 9 + ["b"]
+    rows = [
+        Example(f"uneven:train/{i}", {"state": f"row {i}"}, {}, {"label": label})
+        for i, label in enumerate(labels)
+    ]
+    columns = {"label": {"values": {v: {"rows": 1} for v in ("a", "b", "c")}}}
+    write_dataset(folder, Dataset(folder, columns=columns),
+                  [SplitOut("train", rows, {"role": "train"})])  # fmt: skip
+    doc = studio.get("/studio/api/data/uneven/document").json()
+    assert len(doc["rows"]) == 6  # two a value, three values
+    assert [row["values"]["label"] for row in doc["rows"]] == ["a"] * 5 + ["b"]
+    assert doc["rows"][0]["id"].startswith("uneven:train/")
+    assert all(row["name"] == row["id"].removeprefix("uneven:") for row in doc["rows"])

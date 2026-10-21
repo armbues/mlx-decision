@@ -445,7 +445,8 @@ ul.jobs .job { min-width: 0; grid-template-columns: minmax(0, 1fr); }
 .field { width: 100%; border: 0; background: transparent; padding: 3px 0; outline: none; min-width: 0; border-radius: 4px; }
 .field:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
 textarea.field { resize: vertical; line-height: 1.45; }
-.opt-row { grid-template-columns: 132px minmax(0, 1fr) 22px; }
+/* The key column fits the question's longest key (--key-chars), within limits. */
+.opt-row { grid-template-columns: clamp(132px, calc(var(--key-chars, 0) * 7.3px + 50px), 280px) minmax(0, 1fr) 22px; }
 .opt-key { font-family: var(--mono); font-size: 12px; background: var(--fill); border-radius: 5px; padding: 3px 7px; border: 0; width: 100%; outline: none; }
 .opt-key:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); }
 .level-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--fill); font-size: 11px; font-weight: 600; color: var(--fg-2); }
@@ -646,7 +647,7 @@ textarea.field { resize: vertical; line-height: 1.45; }
   .app { --sb-w: 224px; --insp-w: 370px; }
   .centre-inner { padding: 18px 18px 50px; }
   .row { grid-template-columns: 112px minmax(0, 1fr); }
-  .opt-row { grid-template-columns: 112px minmax(0, 1fr) 22px; }
+  .opt-row { grid-template-columns: clamp(112px, calc(var(--key-chars, 0) * 7.3px + 50px), 220px) minmax(0, 1fr) 22px; }
   .target .mdl .meta { display: none; }
   .btn.tool .lbl { display: none; }
 }

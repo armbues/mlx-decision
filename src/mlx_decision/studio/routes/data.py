@@ -26,6 +26,7 @@ columns first.
 
 import asyncio
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -261,12 +262,15 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
     ):
         """A dataset as the Playground opens it: ``questions``, ``answers``,
         ``columns``, ``splits``, ``split``, ``missing``, ``sha256`` (of its
-        ``dataset.json``, for a save) and ``rows`` of the split: about ``per``
-        rows for each value of the column its questions are answered by (the
-        first label column without questions), drawn with ``seed``, or with
-        ``search`` the rows whose state holds it (``matched`` counts them).
-        Each row: ``index``, ``id``, ``state``, ``values``, ``labels``. 400 for a
-        plain file (its lines hold their own questions)."""
+        ``dataset.json``, for a save) and ``rows`` of the split: ``per`` rows for
+        each value of the column its questions are answered by (the first
+        label column without questions), drawn with ``seed``, and other rows
+        filling in for values with fewer (as many as ``per`` times the values,
+        at most 40); or with ``search`` the rows whose state holds it
+        (``matched`` counts them). Each row: ``index``, ``id``, ``name`` (the id
+        without the prefix every id of the split shares up to a ':', such as
+        the dataset's name), ``state``, ``values``, ``labels``. 400 for a plain
+        file (its lines hold their own questions)."""
         path, found = await read(name, split)
         if not found.dataset.folder:
             raise ApiError(400, f"{name} is a plain file: its lines hold their own questions")
@@ -377,12 +381,26 @@ def sample_rows(found: Read, seed: int, per: int, search: str | None) -> dict[st
         picked = []
         for value in order:
             indices = groups.get(value, [])
-            picked += sorted(rng.sample(indices, min(per, len(indices))))
+            picked += rng.sample(indices, min(per, len(indices)))
         if len(picked) > DOCUMENT_ROWS:
-            picked = sorted(rng.sample(picked, DOCUMENT_ROWS), key=picked.index)
+            picked = rng.sample(picked, DOCUMENT_ROWS)
+        # Values with fewer rows than per: other rows fill in, up to per a value.
+        wanted = min(DOCUMENT_ROWS, len(examples), per * len(order))
+        taken = set(picked)
+        rest = [index for index in range(len(examples)) if index not in taken]
+        picked += rng.sample(rest, max(0, min(wanted - len(picked), len(rest))))
+        place = {value: position for position, value in enumerate(order)}
+
+        def where(index: int) -> tuple[int, int]:
+            value = (examples[index].values or {}).get(column)
+            return (place.get(value, len(order)), index)
+
+        picked.sort(key=where)
     else:
         rng = random.Random(f"{seed}")
         picked = sorted(rng.sample(range(len(examples)), min(len(examples), per * 5)))
+    shared = os.path.commonprefix([example.id for example in examples])
+    cut = shared.rfind(":") + 1 if len(examples) > 1 else 0
     return {
         "split": found.split,
         "splits": describe_splits(dataset),
@@ -397,6 +415,7 @@ def sample_rows(found: Read, seed: int, per: int, search: str | None) -> dict[st
             {
                 "index": index,
                 "id": examples[index].id,
+                "name": examples[index].id[cut:] or examples[index].id,
                 "state": examples[index].request.get("state"),
                 "values": examples[index].values or {},
                 "labels": examples[index].labels,

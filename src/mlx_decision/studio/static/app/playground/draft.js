@@ -95,11 +95,12 @@ function examplesFrom(body) {
 }
 
 // A dataset's rows as examples (the Playground on a dataset): named by their
-// id, read-only, each with its label values and labels.
+// short id (the server's ``name``), read-only, each with its label values and
+// labels.
 export function rowsFrom(rows) {
   if (!rows.length) return [{ ...exampleFrom(FIRST_EXAMPLE, ""), row: { values: {}, labels: {}, empty: true } }];
   return rows.map((row) => ({
-    ...exampleFrom(row.id, row.state, []),
+    ...exampleFrom(row.name ?? row.id, row.state, []),
     row: { index: row.index, values: row.values ?? {}, labels: row.labels ?? {} },
   }));
 }
