@@ -631,7 +631,8 @@ def dataset_summary(path: Path) -> dict[str, Any]:
     ``file``), ``bytes`` (all its files), ``modified``, ``splits`` (each
     ``name``, ``role``, ``examples``, the source ``split``, ``sample``,
     ``part``), ``questions`` (their ids), ``missing`` (what a fit still
-    needs), ``source`` and, when it does not read, ``error``."""
+    needs), ``source``, ``hides`` (a plain file of the folder's name, which
+    the list cannot show beside it) and, when it does not read, ``error``."""
     folder = path.is_dir()
     files = [p for p in path.iterdir() if p.is_file()] if folder else [path]
     stats = [p.stat() for p in files]
@@ -640,7 +641,7 @@ def dataset_summary(path: Path) -> dict[str, Any]:
         "name": path.name if folder else path.name[: -len(DATA_SUFFIX)],
         "kind": "folder" if folder else "file",
         "bytes": sum(s.st_size for s in stats),
-        "modified": datetime.fromtimestamp(newest, UTC).isoformat(timespec="seconds"),
+        "modified": datetime.fromtimestamp(newest, UTC).isoformat(timespec="milliseconds"),
         "splits": [],
         "questions": [],
         "missing": [],
@@ -648,8 +649,11 @@ def dataset_summary(path: Path) -> dict[str, Any]:
     }
     try:
         dataset, _ = open_dataset(path)
-    except (DecisionError, OSError) as error:
+        summary["missing"] = dataset.missing()
+    except (DecisionError, OSError, ValueError, TypeError, AttributeError) as error:
         return summary | {"error": str(error)}
+    if folder and (path.parent / f"{path.name}{DATA_SUFFIX}").is_file():
+        summary["hides"] = f"{path.name}{DATA_SUFFIX}"  # a plain file of its name, not listed
     summary["splits"] = [
         {
             "name": name,
@@ -662,7 +666,6 @@ def dataset_summary(path: Path) -> dict[str, Any]:
         for name, meta in dataset.splits.items()
     ]
     summary["questions"] = list(dataset.questions or {})
-    summary["missing"] = dataset.missing()
     summary["source"] = dataset.source
     return summary
 

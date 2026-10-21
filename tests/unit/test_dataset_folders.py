@@ -408,3 +408,98 @@ def test_a_plain_file_is_a_dataset_of_one_split(tmp_path):
     assert not dataset.folder and split is None and list(dataset.splits) == ["plain"]
     read = read_for(path)
     assert read.description == str(path) and read.examples[0].labels == {"team": "tech"}
+
+
+# Review findings
+
+
+def folder_with(tmp_path, body, lines, name="hand"):
+    folder = tmp_path / name
+    folder.mkdir()
+    for split, rows in lines.items():
+        (folder / f"{split}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (folder / DATASET_FILE).write_text(json.dumps(body))
+    return folder
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"splits": {"train": "train"}}, {"columns": {"label": ["a"]}},
+     {"columns": {"label": {"values": {"a": 3}}}}, {"questions": {"q": "text"}}],
+)  # fmt: skip
+def test_a_hand_edited_description_says_what_is_wrong(tmp_path, body):
+    folder = folder_with(tmp_path, body, {"train": [{"state": "s"}]})
+    with pytest.raises(DecisionError, match="must be an object"):
+        open_dataset(folder)
+
+
+def test_values_need_not_be_text(tmp_path):
+    body = {"questions": {"team": TEAM}, "columns": {"label": {"values": {"7": {}, "8": {}}}},
+            "answers": {"team": {"column": "label",
+                                 "map": {"7": "tech", "8": "billing"}}}}  # fmt: skip
+    rows = [{"state": "a", "values": {"label": 7}}, {"state": "b", "values": {"label": 8.0}}]
+    folder = folder_with(tmp_path, body, {"train": rows})
+    examples = read_for(folder).examples
+    assert [e.values for e in examples] == [{"label": "7"}, {"label": "8"}]
+    assert [e.labels["team"] for e in examples] == ["tech", "billing"]
+    bad = folder_with(tmp_path, body, {"train": [{"state": "a", "values": {"label": [7]}}]}, "bad")
+    with pytest.raises(DataError, match="column to a value"):
+        read_for(bad)
+
+
+def test_what_looks_ready_is(tmp_path):
+    # Values but no questions and no columns: not ready.
+    raw = folder_with(tmp_path, {}, {"train": [{"state": "a", "values": {"label": "x"}}]}, "raw")
+    assert open_dataset(raw)[0].missing() == ["it has no questions yet"]
+    # Every line asks its own: ready.
+    own = {"state": "a", "questions": {"team": TEAM}, "labels": {"team": "tech"}}
+    assert open_dataset(folder_with(tmp_path, {}, {"train": [own]}, "own"))[0].missing() == []
+    # Questions, values, no answers: not ready.
+    asked = folder_with(tmp_path, {"questions": {"team": TEAM}},
+                        {"train": [{"state": "a", "values": {"label": "x"}}]}, "asked")  # fmt: skip
+    assert open_dataset(asked)[0].missing() == ["no question is answered by one of its columns"]
+    # An answer naming a column the dataset has no values for.
+    body = {"questions": {"team": TEAM}, "columns": {"label": {"values": {"x": {}}}},
+            "answers": {"team": {"column": "topic", "map": {}}}}  # fmt: skip
+    wrong = folder_with(tmp_path, body, {"train": [{"state": "a", "values": {"label": "x"}}]}, "w")
+    assert open_dataset(wrong)[0].missing() == ["team: answered by topic, which has no values here"]
+
+
+def test_roles_come_from_the_split_names(tmp_path):
+    row = {"state": "a", "questions": {"team": TEAM}, "labels": {"team": "tech"}}
+    folder = folder_with(tmp_path, {}, {"train": [row], "test": [row]})
+    dataset, _ = open_dataset(folder)
+    assert {n: m["role"] for n, m in dataset.splits.items()} == {"test": "report", "train": "train"}
+    assert read_for(folder).split == "train"
+    assert default_roles(["train_r3", "dev_r3", "test_r3"]) == [
+        [("train", None)], [("report", None)], [("evaluate", None)]]  # fmt: skip
+
+
+def test_fit_without_a_train_split_says_so(tmp_path):
+    row = {"state": "a", "questions": {"team": TEAM}, "labels": {"team": "tech"}}
+    body = {"splits": {"a": {"role": "report"}, "b": {"role": None}, "c": {}}}
+    folder = folder_with(tmp_path, body, {"a": [row], "b": [row], "c": [row]})
+    base = write_model(tmp_path / "base")
+    result = run(
+        "training", "fit", "-m", str(base), "--data", str(folder), "-o", str(tmp_path / "f")
+    )
+    assert result.exit_code != 0
+    assert "no split has the role train" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_wording_flags_need_a_question_into_a_folder(saved, tmp_path):
+    result = run("data", str(saved), "--split", "train", "--label-map", "tech=t", "-o",
+                 str(tmp_path / "t"))  # fmt: skip
+    assert result.exit_code != 0
+    assert "--label-map goes with --question" in result.output
+    assert not (tmp_path / "t").exists()
+
+
+def test_the_fit_says_which_split_it_read(ready, tmp_path, monkeypatch):
+    base = write_model(tmp_path / "base")
+    monkeypatch.chdir(tmp_path)
+    result = run("training", "fit", "-m", str(base), "--data", str(ready))
+    assert result.exit_code == 0, result.output
+    assert f"from {ready} (train split)" in result.stderr
+    assert f"report on {ready} (validation split)" in result.stderr

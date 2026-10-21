@@ -195,7 +195,12 @@ export function EvalForm() {
             ${result && result.data === data && html`<span class="hint num">${plural(result.examples, "example")}</span>`}
           </div></div>`}
           ${item?.kind !== "folder" && result && result.data === data && html`<div class="row"><label></label><span class="hint num">${plural(result.examples, "example")}</span></div>`}
-          ${notReadyData.value && html`<p class="warn-text">${notReadyData.value}</p>`}
+          ${notReadyData.value &&
+          html`<p class="warn-text">${notReadyData.value}${
+            item?.kind === "folder" && !item.error
+              ? html` <button class="btn sm" onClick=${() => navigate("playground", `data:${data}`)}>${item.questions?.length ? "Edit Questions" : "Write Questions"}</button>`
+              : ""
+          }</p>`}
           ${questions.length > 0 &&
           html`<div class="row"><label>Scores</label><div class="line">${questions.map(
             ([id, kind]) => html`<span class="q-chip"><code>${id}</code> ${kind}</span>`,

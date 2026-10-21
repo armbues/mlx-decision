@@ -453,3 +453,16 @@ def test_a_folder_light_and_dark(studio, page, theme, width):
     centre = page.locator(".centre")
     assert centre.evaluate("e => e.scrollWidth <= e.clientWidth")
     shot(page, f"datasets-folder-{theme}-{width}")
+
+
+def test_a_part_says_where_it_was_cut_from(studio, page):
+    folder = studio.workspace / "data" / "cut"
+    folder.mkdir()
+    (folder / "train.jsonl").write_text(json.dumps({"state": "s", "values": {"label": "a"}}) + "\n")
+    part = {"role": "train", "split": "train", "part": 0.8, "examples": 1}
+    body = {"columns": {"label": {"values": {"a": {"rows": 1}}}}, "splits": {"train": part}}
+    (folder / "dataset.json").write_text(json.dumps(body))
+    open_studio(page, studio, "datasets/cut")
+    split = page.locator(".ds-source .kv", has_text="This split")
+    expect(split).to_contain_text("train: 80% of train, drawn by label")
+    expect(split).not_to_contain_text("[object Object]")

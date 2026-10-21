@@ -140,9 +140,9 @@ def test_report_on_the_datasets_report_split(studio, page):
     shot(page, "fit-report-on")
     expect(form.locator(".fit-labels .line span").first).to_contain_text("20")  # all 60 train
     # Another dataset with other questions: refused, with the reason.
-    report.select_option("data:support")  # the same question: fine
+    report.select_option("data:support/support")  # the same question: fine
     expect(legend).to_contain_text("in support for the report")
-    report.select_option("data:tickets")
+    report.select_option("data:tickets/tickets")
     expect(form.locator(".warn-text").last).to_contain_text("tickets labels other questions")
     expect(page.locator(".run-btn")).to_be_disabled()
     # Back to the report split, then a share of the train split.
@@ -176,9 +176,9 @@ def test_a_dataset_without_questions_is_not_fitted(studio, page):
     form = page.locator(".fit-form")
     expect(form.locator("#fit-data option", has_text="raw")).to_have_text("raw (not ready)")
     form.locator("#fit-data").select_option("raw")
-    expect(form.locator(".warn-text").first).to_have_text(
-        "raw is not ready for a fit: it has no questions yet"
-    )
+    warning = form.locator(".warn-text").first
+    expect(warning).to_contain_text("raw is not ready for a fit: it has no questions yet")
+    expect(warning.get_by_role("button", name="Write Questions")).to_be_visible()
     expect(page.locator(".run-btn")).to_be_disabled()
     expect(form.locator(".method")).to_have_count(0)
 
@@ -190,7 +190,7 @@ def test_report_overlap_is_said(studio, page):
     open_studio(page, studio, "training")
     form = page.locator(".fit-form")
     form.locator("#fit-data").select_option("support")
-    form.locator("#fit-report").select_option("data:copy")
+    form.locator("#fit-report").select_option("data:copy/copy")
     expect(form.locator(".warn-text", has_text="also in")).to_have_text(
         "5 of 5 examples in copy have a state that is also in support: the report would "
         "score examples the fit learns from"

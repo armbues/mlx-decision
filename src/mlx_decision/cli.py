@@ -3,7 +3,7 @@
 import json
 import re
 import sys
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -170,6 +170,8 @@ def build_questions(questions_file: Path | None, shorthand: dict) -> dict[str, A
         except DecisionError as error:
             fail(f"cannot read questions from {questions_file}: {error.message}")
         body = dict(data) if isinstance(data, dict) and "questions" in data else {"questions": data}
+        if isinstance(data, dict) and {"splits", "answers", "columns"} & set(data):
+            body = {"questions": data["questions"]}  # a dataset folder's dataset.json
     if shorthand:
         questions = body.setdefault("questions", {})
         if not isinstance(questions, dict):
@@ -963,12 +965,16 @@ def download(
         except Cancelled:
             if events:
                 echo_event(stage_event("cancelled", "nothing was kept"))
-            typer.echo("cancelled; nothing was kept", err=True)
+            say_cancelled("cancelled; nothing was kept")
             quit_now(130, left)
         except RepositoryNotFoundError:
             stop(f"{repo_id}: not found on the Hub (or private: set HF_TOKEN)")
         except (HfHubHTTPError, *http_errors(), OSError, ValueError) as error:
             stop(f"{repo_id}: {str(error).splitlines()[0]}")
+    if local_dir is not None:
+        from .download import record_source
+
+        record_source(Path(path), repo_id, check.revision)
     if events:
         if steps.done < total:  # files that were there already
             steps.at(total)
@@ -1533,7 +1539,7 @@ def convert(
         except Cancelled:
             if events:
                 echo_event(stage_event("cancelled", "nothing was written"))
-            typer.echo("cancelled; nothing was written", err=True)
+            say_cancelled("cancelled; nothing was written")
             raise typer.Exit(130) from None
         except (FileExistsError, FileNotFoundError, ValueError, PlatformError) as error:
             if events:
@@ -1728,9 +1734,17 @@ DataOption = Annotated[
 
 
 def echo_event(event) -> None:
-    """An event as one JSON line on stdout, at once."""
-    typer.echo(json.dumps(event.as_json(), ensure_ascii=False))
-    sys.stdout.flush()
+    """An event as one JSON line on stdout, at once. Nobody reading it (the
+    Studio killed, its pipe closed) is no error: a stop still cleans up."""
+    with suppress(OSError, ValueError):
+        typer.echo(json.dumps(event.as_json(), ensure_ascii=False))
+        sys.stdout.flush()
+
+
+def say_cancelled(text: str) -> None:
+    """The cancel line on stderr, which may be closed too (a killed Studio)."""
+    with suppress(OSError, ValueError):
+        typer.echo(text, err=True)
 
 
 def default_output(model: str, data: Path) -> Path:
@@ -1899,7 +1913,7 @@ def training_fit(
             progress.close()
             if events:
                 echo_event(stage_event("cancelled", "nothing was written"))
-            typer.echo("cancelled; nothing was written", err=True)
+            say_cancelled("cancelled; nothing was written")
             raise typer.Exit(130) from None
         except (
             DecisionError,
@@ -2123,7 +2137,7 @@ def training_eval(
             progress.close()
             if events:
                 echo_event(stage_event("cancelled", "stopped before the end"))
-            typer.echo("cancelled", err=True)
+            say_cancelled("cancelled")
             raise typer.Exit(130) from None
         except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
             progress.close()
@@ -2393,7 +2407,15 @@ def data_command(
     folder = plan.folder
     specs = None
     problem = None
-    if roles and not folder:
+    wording_flags = {"--options": options, "--label-map": label_map, "--id": question_id,
+                     "--noul": noul or None, "--levels": levels}  # fmt: skip
+    given = [flag for flag, value in wording_flags.items() if value is not None]
+    if folder and given and not plan.has_wording():
+        problem = (
+            f"{given[0]} goes with --question (or -q): into a dataset folder without a question "
+            "the rows keep their label values, mapped to answers later in dataset.json"
+        )
+    elif roles and not folder:
         problem = "--roles goes with -o naming a dataset folder"
     elif value_names and not folder:
         problem = "--value-names goes with -o naming a dataset folder"

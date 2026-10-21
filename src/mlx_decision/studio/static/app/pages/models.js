@@ -213,7 +213,7 @@ function Row({ model, nested }) {
         <${Mark} family=${model.family} />
         <span class="nm-txt"><b class="mono">${name}</b><span>${subline(model)}</span></span>
       </span>
-      <span class="cell r num c-size">${parameters(model.parameters)}</span>
+      <span class="cell r num c-size" title=${model.parameters ? `${parameters(model.parameters)} parameters` : null}>${model.disk_bytes != null ? gigabytes(model.disk_bytes) : parameters(model.parameters)}</span>
       <span class="cell r num"><b>${memoryCell(model)}</b></span>
       <span class="cell r c-reads">${reads(model)}</span>
       <span class="cell r num c-speed">${speedCell(model)}</span>
@@ -422,7 +422,8 @@ function ContextMenu() {
   return html`
     <div class="menu ctx-menu" role="menu" style=${`left:${left}px; top:${top}px`} onClick=${(e) => e.stopPropagation()}>
       <${MenuItem} onSelect=${() => openInPlayground(at.name)}>Open in Playground<//>
-      <${MenuItem} disabled=${blocked} onSelect=${() => (loaded ? unloadModel(at.name) : loadModel(at.name))}>
+      <${MenuItem} disabled=${blocked} sub=${busy.value ? `${busy.value} has the GPU` : pending.value[at.name] ? "Busy with it already" : null}
+        onSelect=${() => (loaded ? unloadModel(at.name) : loadModel(at.name))}>
         ${loaded ? "Unload" : "Load"}
       <//>
       <${MenuItem} disabled=${Boolean(convertWhyNot(byName.value.get(at.name)))} onSelect=${() => openConvert(at.name)}>Convert…<//>
@@ -488,7 +489,7 @@ function Centre() {
         : html`
             <${MemoryCard} />
             <section class="group mlist" aria-label="Models">
-              <div class="mhead"><span>Model</span><span class="r c-size">Size</span><span class="r" title="Estimates: the weights plus 10%, as the memory check counts them">Memory, est.</span><span class="r c-reads">Reads</span><span class="r c-speed" title="The median time of an answer here, measured">Speed</span><span class="r">Status</span></div>
+              <div class="mhead"><span>Model</span><span class="r c-size" title="Its files on disk">Size</span><span class="r" title="Estimates: the weights plus 10%, as the memory check counts them">Memory, est.</span><span class="r c-reads">Reads</span><span class="r c-speed" title="The median time of an answer here, measured">Speed</span><span class="r">Status</span></div>
               <div role="listbox" aria-label="Models"><${Listed} /></div>
             </section>
             <${Places} />

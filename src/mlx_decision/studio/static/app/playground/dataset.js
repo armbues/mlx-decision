@@ -4,15 +4,15 @@
 // the examples, read-only, each with its label values. Start from a Question
 // Set copies a set's questions in; Save as Question Set (files.js) copies the
 // questions and the rows shown into sets/.
-import { signal } from "@preact/signals";
+import { effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
-import { dataChanged } from "../store/data.js";
+import { dataChanged, dataFiles, datasetOf, reloadData } from "../store/data.js";
 import { sets } from "../store/sets.js";
 import { toast } from "../store/ui.js";
-import { answersFor, answersFromFile, fromBody, rowsFrom, toFile } from "./draft.js";
-import { bodyText, datasetOfDocument, drafts, loaders, setEntry, setName } from "./session.js";
+import { answersFor, answersFromFile, fromBody, replaceQuestions, rowsFrom, toFile } from "./draft.js";
+import { bodyText, datasetOfDocument, drafts, isDataset, isEdited, loaders, setEntry, setName } from "./session.js";
 
 const encode = encodeURIComponent;
 
@@ -39,6 +39,8 @@ const factsOf = (doc, seed, search) => ({
 
 export async function loadDataset(documentName, options = {}) {
   const name = datasetOfDocument(documentName);
+  if (!options.search) rowSearch.value = "";
+  if (!dataFiles.value) await reloadData(); // its modified time: a change elsewhere reloads it
   try {
     const doc = await fetchDocument(name, options);
     const draft = fromBody({ state: "", questions: doc.questions });
@@ -47,7 +49,7 @@ export async function loadDataset(documentName, options = {}) {
     draft.answers = answersFromFile(draft, doc.answers);
     setEntry(documentName, {
       sha256: doc.sha256,
-      modified: null,
+      modified: datasetOf(name)?.modified ?? null,
       baseline: bodyText(draft, true),
       draft,
       onDisk: null,
@@ -60,14 +62,17 @@ export async function loadDataset(documentName, options = {}) {
 loaders.dataset = loadDataset;
 
 // Other rows: another split, another draw (Shuffle) or a search. The questions
-// and their edits stay.
+// and their edits stay. ``rowSearch`` is the search box's text: empty again
+// for another split or dataset.
 export const rowsLoading = signal(false);
+export const rowSearch = signal("");
 
 export async function showRows(change) {
   const documentName = setName.value;
   const value = drafts.value[documentName];
   if (!value?.dataset) return;
   const options = { split: value.dataset.split, seed: value.dataset.seed, search: value.dataset.search, ...change };
+  if (change.split !== undefined || change.search === "") rowSearch.value = "";
   rowsLoading.value = true;
   try {
     const doc = await fetchDocument(value.dataset.name, options);
@@ -113,8 +118,8 @@ export async function saveDataset() {
     dataChanged();
     toast(`Saved data/${name}/dataset.json`);
   } catch (error) {
-    if (error.status === 409) changedOnDisk(documentName, name);
-    else toast(`Not saved: ${error.message}`);
+    if (error.status === 409 && error.current) changedOnDisk(documentName, name);
+    else toast(`Not saved: ${error.message}`); // e.g. a fit or an evaluation reads it
   }
 }
 
@@ -165,8 +170,7 @@ export function startFromSet() {
           try {
             const { body } = await api(`/sets/${encode(startFrom.value)}`);
             const current = drafts.value[documentName];
-            const questions = fromBody(body).questions;
-            setEntry(documentName, { ...current, draft: { ...current.draft, questions } });
+            setEntry(documentName, { ...current, draft: replaceQuestions(current.draft, body.questions ?? {}) });
             closeSheet();
             toast(`The questions of ${startFrom.value}: save to keep them`);
           } catch (error) {
@@ -177,3 +181,25 @@ export function startFromSet() {
     ],
   });
 }
+
+// A dataset open here that changes elsewhere (saved in another tab, deleted,
+// downloaded again): reloaded when it has no edits, its split, draw and search
+// kept; with edits it stays, and a save says it changed.
+effect(() => {
+  const list = dataFiles.value;
+  if (!list) return;
+  for (const [documentName, value] of Object.entries(drafts.peek())) {
+    if (!isDataset(documentName) || !value.dataset && !value.error) continue;
+    const item = list.find((entry) => entry.name === datasetOfDocument(documentName));
+    const modified = item?.modified ?? null;
+    if (value.dataset && modified === value.modified) continue;
+    if (value.dataset && value.modified === null && item) {
+      setEntry(documentName, { ...value, modified }); // opened before the list came: as it is
+      continue;
+    }
+    if (!value.dataset && !item) continue; // still gone
+    if (isEdited(value)) continue;
+    const keep = value.dataset ? { split: value.dataset.split, seed: value.dataset.seed, search: value.dataset.search } : {};
+    loadDataset(documentName, keep);
+  }
+});

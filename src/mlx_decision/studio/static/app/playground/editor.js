@@ -12,7 +12,7 @@ import { closeSheet, openSheet } from "../components/sheet.js";
 import { megapixels, plural } from "../format.js";
 import { SHORTCUTS } from "../keys.js";
 import { toast } from "../store/ui.js";
-import { rowsLoading, showRows, shuffle } from "./dataset.js";
+import { rowSearch, rowsLoading, showRows, shuffle } from "./dataset.js";
 import * as edit from "./draft.js";
 import {
   built,
@@ -282,7 +282,6 @@ const valueWords = (columns, column, value) => {
   return name ? `${value} · ${name}` : value;
 };
 
-const rowSearch = signal("");
 
 function Rows() {
   const current = draft.value;
@@ -680,7 +679,7 @@ function selectedFor(question, answer, value) {
   if (answer.left_out.includes(value)) return OUT_VALUE;
   if (!(value in answer.map)) return NONE_VALUE;
   const target = answer.map[value];
-  if (question.type === "noul") return target ? "yes" : "no";
+  if (question.type === "noul") return typeof target === "boolean" ? (target ? "yes" : "no") : NONE_VALUE;
   if (question.type === "choice") return question.options.some((o) => o.uid === target) ? `o:${target}` : NONE_VALUE;
   return question.levels.some((l) => l.uid === target) ? `l:${target}` : NONE_VALUE;
 }
@@ -745,6 +744,16 @@ function AnswerMap({ question }) {
             ${columns.map((name) => html`<option value=${name}>${name}</option>`)}
           </select>
         </label>
+        ${unmapped.length > 0 &&
+        html`<label class="am-rest">Set the rest to
+          <select aria-label=${`Set the rest of ${question.id} to`} value="" onChange=${(event) => {
+            const picked = targets.find(([key]) => key === event.target.value);
+            if (!picked) return;
+            updateDraft((draftValue) => unmapped.reduce((value, item) => edit.mapValue(value, question.uid, item, picked[2]), draftValue));
+          }}>
+            <option value="">…</option>
+            ${targets.filter(([key]) => key !== NONE_VALUE).map(([key, label]) => html`<option value=${key}>${label}</option>`)}
+          </select></label>`}
         ${column && question.type === "choice" &&
         html`<span class="am-tools">
           <button class="btn sm" title="One option per value, named from the value's name" onClick=${fromValues}>Options from Values</button>

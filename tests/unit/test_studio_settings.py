@@ -306,7 +306,7 @@ def test_off_this_mac_the_settings_are_read_only(layout):
 
 
 def test_the_workspace_is_shown_not_changed(live, layout, monkeypatch):
-    """It moves with --workspace or the config file edited by hand (D185)."""
+    """It moves with --workspace or the config file edited by hand."""
     item = next(
         item
         for item in live.get("/studio/api/places").json()["config"]["settings"]

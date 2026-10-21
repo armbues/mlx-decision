@@ -18,7 +18,15 @@ from pathlib import Path
 from typing import Any
 
 from . import presets as preset_data
-from .dataset import ROLES, Dataset, SplitOut, partial_folder, raw_value, write_dataset
+from .dataset import (
+    ROLES,
+    Dataset,
+    SplitOut,
+    partial_folder,
+    raw_value,
+    roles_by_name,
+    write_dataset,
+)
 from .format import Example, _label_to_json, parse_examples
 from .format import split as split_examples
 from .shapes import (
@@ -251,8 +259,6 @@ def write_file(plan: "DataPlan", made: Made, before_rename=None) -> Path:
 # The file a part is written to, by its role (another split's name taken:
 # SPLIT-ROLE).
 PART_NAMES = {"train": "train", "report": "validation", "evaluate": "test"}
-# A split's role by its name, when --roles leaves it open.
-REPORT_NAMES = ("validation", "valid", "dev", "val")
 
 
 def is_folder_output(output: str | None) -> bool:
@@ -299,18 +305,10 @@ def parse_roles(text: str, count: int) -> list[RoleSpec]:
 
 
 def default_roles(splits: list[str]) -> list[RoleSpec]:
-    """Roles by the splits' names: train for train, a validation split for the
-    report, test for evaluate when another split reports, else for the report."""
-    names = [name.lower() for name in splits]
-    roles: list[str | None] = [None] * len(splits)
-    if "train" in names:
-        roles[names.index("train")] = "train"
-    report = next((i for i, n in enumerate(names) if n in REPORT_NAMES), None)
-    if report is not None:
-        roles[report] = "report"
-    if "test" in names:
-        roles[names.index("test")] = "evaluate" if report is not None else "report"
-    return [[(role, None)] if role else [] for role in roles]
+    """Roles by the splits' names (``roles_by_name``: train_r3 trains, dev_r3
+    reports, test_r3 evaluates)."""
+    roles = roles_by_name(splits)
+    return [[(roles[name], None)] if roles[name] else [] for name in splits]
 
 
 def cut(examples: list[Example], shares: list[float], seed: int | str) -> list[list[Example]]:

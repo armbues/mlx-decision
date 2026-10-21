@@ -317,3 +317,21 @@ def test_rows_fill_in_for_values_with_few_and_go_by_short_names(studio):
     assert [row["values"]["label"] for row in doc["rows"]] == ["a"] * 5 + ["b"]
     assert doc["rows"][0]["id"].startswith("uneven:train/")
     assert all(row["name"] == row["id"].removeprefix("uneven:") for row in doc["rows"])
+
+
+def test_a_broken_dataset_does_not_empty_the_list(studio):
+    broken = studio.data / "broken"
+    broken.mkdir()
+    (broken / "train.jsonl").write_text('{"state": "s"}\n')
+    (broken / DATASET_FILE).write_text(json.dumps({"splits": {"train": "train"}}))
+    listed = studio.get("/studio/api/data")
+    assert listed.status_code == 200
+    items = {item["name"]: item for item in listed.json()["files"]}
+    assert "must be an object" in items["broken"]["error"] and "error" not in items["tweets"]
+
+
+def test_a_plain_file_behind_a_folder_is_said(studio):
+    plain = {"state": "s", "questions": {"topic": TOPIC}, "labels": {"topic": "fed"}}
+    (studio.data / "tweets.jsonl").write_text(json.dumps(plain) + "\n")
+    [item] = studio.get("/studio/api/data").json()["files"]
+    assert item["kind"] == "folder" and item["hides"] == "tweets.jsonl"

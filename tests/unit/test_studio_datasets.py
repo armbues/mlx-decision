@@ -332,3 +332,9 @@ def test_the_preview_names_values_from_the_card(studio, hub, monkeypatch):
     assert columns["stars"]["names"] == {"1": "One star", "2": "Two stars", "3": "Three",
                                          "4": "Four"}  # fmt: skip
     assert columns["sentiment"]["names"] is None  # a class label names its classes
+
+
+def test_a_part_that_rounds_to_no_row_is_refused(studio):
+    parts = [{"role": "train", "share": 0.999}, {"role": "report", "share": 0.001}]
+    response = get(studio, preset="trec", splits=[{"split": "test", "parts": parts}])
+    assert response.status_code == 400 and "is no row (report)" in response.text

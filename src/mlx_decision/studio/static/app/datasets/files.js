@@ -10,7 +10,7 @@ import { closeSheet, openSheet } from "../components/sheet.js";
 import { fileSize, plural } from "../format.js";
 import { href, navigate, route } from "../router.js";
 import { reveal } from "../settings/places.js";
-import { dataFiles, dataFolder, datasetOf, forget, nameTaken } from "../store/data.js";
+import { dataFiles, dataFolder, datasetOf, forget, nameTaken, reloadData } from "../store/data.js";
 import { toast } from "../store/ui.js";
 import { openGetDataset } from "./get.js";
 
@@ -38,6 +38,7 @@ export function uploadData() {
   picker.addEventListener("change", async () => {
     const file = picker.files?.[0];
     if (!file) return;
+    if (!dataFolder.value) await reloadData(); // the upload limit and the folder, if not read yet
     const limit = dataFolder.value?.upload_limit;
     if (limit && file.size > limit) tooLarge(file);
     else if (/\.csv$/i.test(file.name)) await askColumns(file, await file.text(), "csv");
@@ -201,7 +202,7 @@ export function deleteData(name) {
   const splits = folder ? ` (${plural(item.splits.length, "split")})` : "";
   openSheet({
     title: `Delete ${name}?`,
-    purpose: `The dataset ${where}${splits} is deleted. This cannot be undone; models fitted on it stay.`,
+    purpose: `The dataset ${where}${splits} is deleted${folder ? ", and the history of its questions tried in the Playground" : ""}. This cannot be undone; models fitted on it stay.`,
     actions: [
       {
         label: "Delete",
@@ -239,6 +240,8 @@ export async function revealData(name) {
 
 // What keeps a dataset from a fit, said on its row; null when it is ready.
 export const notReadyText = (item) => (item?.error ? item.error : item?.missing?.length ? `Not ready for a fit: ${item.missing.join("; ")}` : null);
+// A plain file of a folder's name, which the list cannot show beside it.
+const hiddenText = (item) => (item?.hides ? `data/${item.hides} has this name too and is not listed: rename it to see it` : null);
 
 function Row({ item, picked }) {
   const open = item.name === picked;
@@ -247,7 +250,7 @@ function Row({ item, picked }) {
   return html`
     <li key=${item.name} class=${open ? "open" : ""}>
       <a class="sb-item" href=${href("datasets", item.name)} aria-current=${open ? "true" : undefined}
-         title=${problem ?? (splits > 1 ? `${item.name}: ${item.splits.map((split) => split.name).join(", ")}` : item.name)}>
+         title=${[problem ?? (splits > 1 ? `${item.name}: ${item.splits.map((split) => split.name).join(", ")}` : item.name), hiddenText(item)].filter(Boolean).join(" · ")}>
         <${icons.File} /><span class="label">${item.name}</span>
         ${problem
           ? html`<span class="mark" aria-label="Not ready for a fit"></span>`

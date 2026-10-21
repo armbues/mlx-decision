@@ -27,6 +27,7 @@ from ...config import Config
 from ...data.dataset import ROLES
 from ...data.presets import PRESETS
 from ...data.presets import SPLITS as PRESETS_SPLITS
+from ...download import recorded_repo
 from ...fitted import REPORT_FILE
 from ...flags import join_pairs
 from ...gpu import Gpu
@@ -149,6 +150,9 @@ def jobs_router(
                 raise ApiError(409, f"{repo} is being downloaded already", param="repo")
         if output is not None:
             writing(output, "repo")
+            held = recorded_repo(output)
+            if held is not None and held != repo:
+                raise ApiError(409, f"{output.name} in models_dir holds {held}", param="repo")
         if quantized is not None:
             argv += ["--bits", str(quantized)]
         title = f"Download {repo}" + (f" ({quantized}-bit)" if quantized else "")
@@ -290,6 +294,14 @@ def jobs_router(
             if sample is not None and (sample < 1 or (rows and sample > rows)):
                 most = f" to {rows}" if rows else " or more"
                 raise ApiError(400, f"{split}: a sample is 1{most} rows", param="splits")
+            base = sample or rows
+            if parts is not None and base:
+                for role, share in spec:
+                    if round(share * base) < 1:
+                        raise ApiError(
+                            400, f"{split}: {share:.0%} of {base} rows is no row ({role})",
+                            param="splits",
+                        )  # fmt: skip
             entry = {"split": split, "role": spec[0][0] if parts is None else None,
                      "parts": None if parts is None else [
                          {"role": role, "share": share} for role, share in spec],

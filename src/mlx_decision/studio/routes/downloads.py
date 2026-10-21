@@ -26,7 +26,7 @@ from fastapi import APIRouter, Request
 
 from ...config import HF_CACHE, Config, ConfigError, set_models_dir
 from ...config import load as load_config
-from ...download import RepoCheck, check_repo
+from ...download import RepoCheck, check_repo, recorded_repo
 from ...gpu import Gpu
 from ...hub import http_errors, snapshot_revision
 from ...memory import MARGIN, QUANTIZED_BITS, working_set
@@ -77,8 +77,15 @@ def downloads_router(
             if snapshot is not None:
                 cached[snapshot[0]] = name
             elif folder is not None and spec.path.parent == folder:
-                in_folder[spec.path.name] = name
-        return lambda repo: cached.get(repo) or in_folder.get(repo.rsplit("/", 1)[-1])
+                in_folder[spec.path.name] = (name, recorded_repo(spec.path))
+
+        def found(repo: str) -> str | None:
+            if repo in cached:
+                return cached[repo]
+            name, recorded = in_folder.get(repo.rsplit("/", 1)[-1], (None, None))
+            return name if recorded in (None, repo) else None  # another repo of that name
+
+        return found
 
     @router.get("")
     async def offered():

@@ -57,7 +57,14 @@ export function fitOn(name) {
 
 // The dataset's split to train on: its train split, else its first.
 const dataItem = computed(() => datasetOf(fitData.value));
-export const trainSplit = computed(() => splitFor(dataItem.value, "train") ?? dataItem.value?.splits?.[0]?.name ?? null);
+// Picked for a dataset ("Train on"), else its train split, else its first.
+const trainChoice = signal(null); // {data, split}
+export const trainSplit = computed(() => {
+  const names = (dataItem.value?.splits ?? []).map((split) => split.name);
+  const chosen = trainChoice.value;
+  if (chosen?.data === fitData.value && names.includes(chosen.split)) return chosen.split;
+  return splitFor(dataItem.value, "train") ?? names[0] ?? null;
+});
 // What keeps the dataset from a fit, or null.
 const notReadyData = computed(() => {
   const item = dataItem.value;
@@ -76,9 +83,17 @@ const reportChoice = signal(null); // {data, value}
 export const reportSplits = computed(() =>
   (dataItem.value?.splits ?? []).filter((split) => split.name !== trainSplit.value && split.role !== "evaluate").map((split) => split.name),
 );
-// The other datasets ready for a run.
+// The other datasets ready for a run, each by a split: its report split (or
+// its only one), else every split but an evaluate one. Each [value, label].
 export const reportData = computed(() =>
-  (dataFiles.value ?? []).filter((item) => item.name !== fitData.value && !item.error && !item.missing?.length).map((item) => item.name),
+  (dataFiles.value ?? [])
+    .filter((item) => item.name !== fitData.value && !item.error && !item.missing?.length)
+    .flatMap((item) => {
+      const own = splitFor(item, "report");
+      const splits = own ? [own] : item.splits.filter((split) => split.role !== "evaluate").map((split) => split.name);
+      const many = item.kind === "folder";
+      return splits.map((split) => [`data:${item.name}/${split}`, many && !own ? `${item.name} (${split})` : item.name]);
+    }),
 );
 
 function defaultReport() {
@@ -91,7 +106,8 @@ export const reportValue = computed(() => {
   const chosen = reportChoice.value;
   if (chosen?.data === data) {
     const [kind, which] = chosen.value.split(/:(.*)/s);
-    if (chosen.value === "" || (kind === "split" && reportSplits.value.includes(which)) || (kind === "data" && reportData.value.includes(which)))
+    const others = reportData.value.map(([value]) => value);
+    if (chosen.value === "" || (kind === "split" && reportSplits.value.includes(which)) || (kind === "data" && others.includes(chosen.value)))
       return chosen.value;
   }
   return data ? defaultReport() : "";
@@ -99,7 +115,11 @@ export const reportValue = computed(() => {
 
 // A plan's report as reportValue says it.
 const reportOf = (result) =>
-  result.report == null ? "" : result.report === result.data && result.report_split ? `split:${result.report_split}` : `data:${result.report}`;
+  result.report == null
+    ? ""
+    : result.report === result.data && result.report_split
+      ? `split:${result.report_split}`
+      : `data:${result.report}/${result.report_split}`;
 
 let timer = null;
 let asked = 0;
@@ -107,22 +127,26 @@ let asked = 0;
 // The plan again whenever the data, the report, the base, the share kept aside or the seed change.
 effect(() => {
   const data = notReadyData.value ? null : fitData.value;
+  const split = trainSplit.value;
   const report = reportValue.value;
   const model = baseName.value;
   const share = holdout.value;
   const order = seed.value;
   clearTimeout(timer);
   if (!data || !model) return;
-  timer = setTimeout(() => plan(model, data, report, share, order), 150);
+  timer = setTimeout(() => plan(model, data, split, report, share, order), 150);
 });
 
-async function plan(model, data, report, share, order) {
+async function plan(model, data, split, report, share, order) {
   const ask = ++asked;
   const body = { model, data, seed: Number(order) || 0 };
+  if (split) body.split = split;
   const [kind, which] = report.split(/:(.*)/s);
   if (kind === "split") Object.assign(body, { report: data, report_split: which });
-  else if (kind === "data") body.report = which;
-  else body.holdout = share / 100;
+  else if (kind === "data") {
+    const [other, otherSplit] = which.split("/");
+    Object.assign(body, { report: other, report_split: otherSplit });
+  } else body.holdout = share / 100;
   try {
     const result = await api("/fit/plan", { method: "POST", body });
     if (ask !== asked) return; // a newer question is out
@@ -145,7 +169,7 @@ export const notReady = computed(() => {
   if (notReadyData.value) return notReadyData.value;
   if (planError.value) return planError.value;
   const current = planned.value;
-  if (!current || !picked.value || current.data !== fitData.value || reportOf(current) !== reportValue.value)
+  if (!current || !picked.value || current.data !== fitData.value || reportOf(current) !== reportValue.value || (trainSplit.value && current.split !== trainSplit.value))
     return "Reading the data…";
   if (!picked.value.fits) return "The method needs more memory than this Mac's GPU working set";
   const value = name.value.trim();
@@ -161,6 +185,7 @@ export async function startFit() {
     kind: "fit",
     model: planned.value.model,
     data: planned.value.data,
+    split: planned.value.split,
     name: name.value.trim(),
     method: method.method,
     seed: Number(seed.value) || 0,
@@ -224,7 +249,7 @@ function ReportOn({ data }) {
         </optgroup>`}
         <option value="">A share of ${trainSplit.value && dataItem.value?.kind === "folder" ? `its ${trainSplit.value} split` : "this dataset"}</option>
         ${others.length > 0 &&
-        html`<optgroup label="Another dataset">${others.map((name) => html`<option value=${`data:${name}`}>${name}</option>`)}</optgroup>`}
+        html`<optgroup label="Another dataset">${others.map(([value, label]) => html`<option value=${value}>${label}</option>`)}</optgroup>`}
       </select>
       ${current === ""
         ? html`<input id="fit-holdout" type="number" min="5" max="90" aria-label="Share kept aside" value=${holdout.value}
@@ -295,7 +320,19 @@ export function FitForm() {
             ${result && result.data === data && html`<span class="hint num">${dataItem.value?.kind === "folder" ? `its ${result.split} split: ` : ""}${plural(result.splits.examples, "example")}</span>`}
             ${data && html`<a class="hint-link" href=${href("datasets", data)}>Show in Datasets</a>`}
           </div></div>
-          ${notReadyData.value && html`<p class="warn-text">${notReadyData.value}</p>`}
+          ${notReadyData.value &&
+          html`<p class="warn-text">${notReadyData.value}${
+            dataItem.value?.kind === "folder" && !dataItem.value?.error
+              ? html` <button class="btn sm" onClick=${() => navigate("playground", `data:${data}`)}>${dataItem.value.questions?.length ? "Edit Questions" : "Write Questions"}</button>`
+              : ""
+          }</p>`}
+          ${data && !notReadyData.value && dataItem.value?.kind === "folder" && dataItem.value.splits.length > 1 &&
+          html`<div class="row"><label for="fit-split">Train on</label><div class="line">
+            <select id="fit-split" value=${trainSplit.value ?? ""} onChange=${(event) => (trainChoice.value = { data, split: event.target.value })}>
+              ${dataItem.value.splits.map((split) => html`<option value=${split.name}>${split.name}${split.role ? ` (${split.role})` : ""}</option>`)}
+            </select>
+            <span class="hint">the split the fit learns from</span>
+          </div></div>`}
           ${data && !notReadyData.value && html`<${ReportOn} data=${data} />`}
           ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits}
             report=${result.report == null ? null : result.report === result.data ? `${result.report_split}` : result.report} /></div>`}

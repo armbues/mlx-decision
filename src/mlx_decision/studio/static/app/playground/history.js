@@ -15,7 +15,7 @@ import { clock, duration, plural } from "../format.js";
 import { workspaceChange } from "../stream.js";
 import { toast } from "../store/ui.js";
 import { answerMax, answerValue, requestChanges, shownValue, summary, touched, valueLabel, wordDiff } from "./changes.js";
-import { FIRST_EXAMPLE, exampleByName, fromBody, selectExample } from "./draft.js";
+import { FIRST_EXAMPLE, exampleByName, replaceQuestions, selectExample } from "./draft.js";
 import { CompareTable } from "./compare.js";
 import { Grid } from "./grid.js";
 import {
@@ -30,6 +30,8 @@ import {
   runs,
   setName,
   updateDraft,
+  datasetOfDocument,
+  isDataset,
 } from "./session.js";
 
 // Set name -> {runs} (oldest first, images as references) or {error}.
@@ -247,7 +249,7 @@ function restoreButton(questions, number) {
   const restorable = built.value && JSON.stringify(built.value.body.questions) !== JSON.stringify(questions);
   if (!restorable) return null;
   const restore = () => {
-    updateDraft((value) => ({ ...value, questions: fromBody({ questions }).questions }));
+    updateDraft((value) => replaceQuestions(value, questions));
     toast(`Restored the questions of run #${number}; save to keep them`);
   };
   return html`<button class="btn" title="Put this run's questions back in the editor" onClick=${restore}>Restore These Questions</button>`;
@@ -422,12 +424,16 @@ function BatchAnswers({ entry }) {
   `;
 }
 
+// A document's history file as the workspace keeps it: a set's
+// history/NAME.jsonl, a dataset's history/datasets/NAME.jsonl.
+const historyFile = (name) => (isDataset(name) ? `history/datasets/${datasetOfDocument(name)}.jsonl` : `history/${name}.jsonl`);
+
 function clearHistory() {
   const set = setName.value;
   const count = lines.value?.length ?? 0;
   openSheet({
-    title: `Clear the history of ${set}?`,
-    purpose: `Deletes history/${set}.jsonl (${plural(count, "run")}) and the images no other set's history uses. The set itself stays.`,
+    title: `Clear the history of ${datasetOfDocument(set) ?? set}?`,
+    purpose: `Deletes ${historyFile(set)} (${plural(count, "run")}) and the images no other history uses. The ${isDataset(set) ? "dataset" : "set"} itself stays.`,
     actions: [
       {
         label: "Clear History",
@@ -459,7 +465,7 @@ export function History() {
   if (list.length === 0)
     return html`
       <div class="empty">
-        <b>No runs of this set yet</b>
+        <b>No runs of this ${isDataset(setName.value) ? "dataset's questions" : "set"} yet</b>
         <span>Every run is kept in the workspace's <code>history/</code> folder until you clear it.</span>
       </div>
     `;
@@ -473,7 +479,7 @@ export function History() {
         ? html`<${CompareAnswers} entry=${shown} />`
         : html`<${Moves} list=${list} line=${shown.lines[0]} />`}
     <div class="hist-foot">
-      <span class="dim"><code>history/${setName.value}.jsonl</code> · ${plural(entries.value.length, "entry", "entries")} · ${plural(list.length, "run")}</span>
+      <span class="dim"><code>${historyFile(setName.value)}</code> · ${plural(entries.value.length, "entry", "entries")} · ${plural(list.length, "run")}</span>
       <button class="btn plain danger" onClick=${clearHistory}>Clear History…</button>
     </div>
   `;

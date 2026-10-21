@@ -663,6 +663,8 @@ def fit(
                 "labels": label_counts(training),
                 "kinds": kinds,
                 "estimate": estimate.as_json(),
+                "source": source.source,
+                "validation": held.source if held is not None else None,
             },
             message=f"loading {origin.name}",
         )

@@ -71,7 +71,7 @@ def studio_models(
 @dataclasses.dataclass
 class Catalog:
     """Where the Studio's models come from (``studio_models``' arguments), kept
-    so it can look again after a download, convert or fit (D135).
+    so it can look again after a download, convert or fit.
 
     ``models_dir`` is the config's folder of models when it serves them (no
     ``-m``): scanned once it holds a model, so the first download into an
@@ -104,6 +104,15 @@ class Catalog:
             return studio_models(
                 readable, self.workspace_models, self.options, self.include_cache, on_skip
             )
+
+    def add_download(self, folder: Path) -> None:
+        """A model the Studio downloaded into ``folder``: listed from now on,
+        also when ``models_dir`` is not scanned (``web -m ...``)."""
+        folder = Path(folder)
+        within = self.models_dir is not None
+        scanned = within and folder.parent.resolve() == self.models_dir.resolve()
+        if not scanned and str(folder) not in self.references:
+            self.references.append(str(folder))
 
     def _references(self) -> list[str]:
         """``references``, and ``models_dir`` last when it has models and is not

@@ -293,8 +293,12 @@ export const stale = computed(() => {
 });
 
 // Nothing runs while a job holds the GPU (the API would answer 503 busy).
+// A dataset's search found no row: nothing to ask.
+const noRow = computed(() => !!example.value?.row?.empty);
+
 export const canRun = computed(
   () =>
+    !noRow.value &&
     !running.value &&
     !busy.value &&
     !!built.value &&
@@ -458,6 +462,7 @@ export function toggleCompared(name) {
 
 export const canCompare = computed(
   () =>
+    !noRow.value &&
     !running.value &&
     !busy.value &&
     !!built.value &&

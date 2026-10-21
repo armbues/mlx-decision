@@ -118,7 +118,7 @@ function Source({ summary }) {
   const hub = source.source?.startsWith("hf:");
   const repo = hub ? source.source.slice(3) : source.source;
   let taken = meta.examples != null ? plural(meta.examples, "example") : "";
-  if (meta.part) taken = `${Math.round(meta.part * 100)}% of ${meta.split ? html`<code>${meta.split}</code>` : "the rows"}, drawn by label`;
+  if (meta.part) taken = html`${Math.round(meta.part * 100)}% of ${meta.split ? html`<code>${meta.split}</code>` : "the rows"}, drawn by label`;
   else if (meta.sample) taken = `a random sample of ${meta.sample.toLocaleString("en")} rows (seed ${meta.seed ?? 0})`;
   const role = meta.role ? ROLE_WORDS[meta.role] : null;
   return html`

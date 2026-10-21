@@ -105,6 +105,7 @@ def status_router(
             "api": {"url": f"{home}/v1/systemone", "key_required": bool(api_key)},
             "workspace": str(files.root),
             "sets_folder": str(files.root / "sets"),
+            "data_folder": str(files.root / "data"),
             "cli_path": cli_path(),
             **current,
             "models": pool.names,

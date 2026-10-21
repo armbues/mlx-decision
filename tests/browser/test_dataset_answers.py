@@ -178,3 +178,87 @@ def test_a_score_maps_values_to_levels(tweets, page):
     expect(page.locator(".toast")).to_contain_text("Saved")
     answer = described(tweets)["answers"]["score"]
     assert answer["map"]["0"] == 0 and answer["map"]["19"] == 1
+
+
+def mapped_yes_no(page):
+    """A yes / no question answered by label: 1 yes, the rest no (Set the rest to)."""
+    pick(page, ".add-bar .btn", "Noul")
+    question = page.locator(".question").last
+    question.locator(".ins").fill("Is it about the Fed?")
+    question.get_by_label("Answered by, noul").select_option("label")
+    question.get_by_label("Answer for 1", exact=True).select_option("yes")
+    expect(question.locator(".am-open")).to_contain_text("19 values are not mapped")
+    question.get_by_label("Set the rest of noul to").select_option("no")
+    expect(question.locator(".am-open")).to_have_count(0)
+    return question
+
+
+def test_set_the_rest_and_restore_keeps_the_map(tweets, page):
+    open_studio(page, tweets, "playground/data:tweets")
+    pick_model(page, "fake")
+    question = mapped_yes_no(page)
+    page.locator(".run-btn").click()
+    expect(page.locator(".toolbar .activity")).to_contain_text(
+        "answered 40 examples", timeout=20_000
+    )
+    question.locator(".ins").fill("Is it about central banks?")
+    page.locator(".inspector").get_by_role("tab", name="History").click()
+    page.locator(".hist-list .hrow").first.click()
+    page.get_by_role("button", name="Restore These Questions").click()
+    expect(question.locator(".ins")).to_have_value("Is it about the Fed?")
+    expect(question.get_by_label("Answered by, noul")).to_have_value("label")
+    expect(question.get_by_label("Answer for 1", exact=True)).to_have_value("yes")
+    expect(question.get_by_label("Answer for 0", exact=True)).to_have_value("no")
+    expect(page.locator(".hist-foot")).to_contain_text("history/datasets/tweets.jsonl")
+
+
+def test_a_type_change_carries_the_map(tweets, page):
+    open_studio(page, tweets, "playground/data:tweets")
+    question = mapped_yes_no(page)
+    pick(page, question.locator(".gsec-head .right button"), "Choice")
+    # yes and no become options, in that order: the values follow.
+    yes = question.locator("[data-item]").first.get_attribute("data-item")
+    expect(question.get_by_label("Answer for 1", exact=True)).to_have_value(f"o:{yes}")
+    expect(question.locator(".am-open")).to_have_count(0)
+
+
+def test_a_save_while_a_job_reads_the_dataset_says_so(tweets, page):
+    from types import SimpleNamespace
+
+    open_studio(page, tweets, "playground/data:tweets")
+    mapped_yes_no(page)
+    jobs = tweets.app.state.jobs.jobs
+    jobs["fit"] = SimpleNamespace(state="running", details={"data": "tweets"}, title="Fit x")
+    try:
+        page.keyboard.press("Meta+s")
+        expect(page.locator(".toast")).to_contain_text("Fit x reads tweets")
+        expect(page.locator(".sheet")).to_have_count(0)  # no "changed on disk" sheet
+    finally:
+        del jobs["fit"]
+
+
+def test_get_code_on_a_dataset_names_its_file(tweets, page):
+    open_studio(page, tweets, "playground/data:tweets")
+    mapped_yes_no(page)
+    pick_model(page, "fake")
+    page.get_by_role("button", name="Get Code").first.click()
+    sheet = page.locator(".sheet")
+    sheet.get_by_role("tab", name="Command Line").click()
+    expect(sheet).to_contain_text("Reads the questions from data/tweets/dataset.json")
+    expect(sheet).to_contain_text("tweets/dataset.json")
+
+
+def test_an_open_dataset_follows_a_save_elsewhere(tweets, page):
+    open_studio(page, tweets, "playground/data:tweets")
+    expect(page.locator(".question")).to_have_count(0)
+    body = {"questions": {"fed": {"type": "noul", "instructions": "Fed?"}},
+            "answers": {"fed": {"column": "label", "map": {"1": True},
+                                "left_out": [str(i) for i in range(20) if i != 1]}}}  # fmt: skip
+    saved = page.evaluate(
+        """async (body) => (await fetch('/studio/api/data/tweets/questions',
+            {method: 'PUT', headers: {'Content-Type': 'application/json'},
+             body: JSON.stringify(body)})).status""",
+        body,
+    )
+    assert saved == 200
+    expect(page.locator(".question[data-q='fed']")).to_be_visible(timeout=10_000)

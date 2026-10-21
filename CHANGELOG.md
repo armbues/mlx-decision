@@ -50,6 +50,14 @@ change the interface).
   and reports on its report split (unless `--validation` or `--holdout`
   is given); `training eval --data FOLDER` scores its evaluate split.
   A split's own file works too, and plain JSON-lines files as before.
+  `training fit` says which split it trains on and reports on. Roles
+  come from split names such as `train_r3`, `dev_r3` and `test_r3`, also
+  for a folder whose `dataset.json` lists no splits. Into a folder,
+  `--label-map`, `--options`, `--id`, `--noul` and `--levels` need
+  `--question` (or `-q`). `run -q` reads the questions of a dataset
+  folder's `dataset.json`.
+- `download --local-dir` notes the repo in `.download.json` beside the
+  model, so another repo of the same name is not taken for it.
 - With `--events`, `MLX_DECISION_WATCH_STDIN=1` and a pipe on stdin,
   `training fit`, `training eval`, `download` and `convert` stop when
   the pipe closes (the program that started them is gone): at the next

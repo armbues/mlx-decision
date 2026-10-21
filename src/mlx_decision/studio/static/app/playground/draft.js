@@ -373,6 +373,44 @@ const keyFor = (text, taken, fallback) => {
 // Change a question's type, keeping what carries over: instructions always;
 // options and levels become each other; yes and no become two of them.
 export function changeType(draft, questionUid, type) {
+  const before = draft.questions.find((item) => item.uid === questionUid);
+  const next = changeTypeOnly(draft, questionUid, type);
+  const answer = draft.answers?.[questionUid];
+  if (!answer || !before || before.type === type) return next;
+  // A dataset's answers map follows: each value to the option, level or yes /
+  // no in the same place, where there is one; else it is no longer mapped.
+  const after = next.questions.find((item) => item.uid === questionUid);
+  const map = {};
+  for (const [value, target] of Object.entries(answer.map ?? {})) {
+    const moved = carryTarget(before, after, target);
+    if (moved !== null) map[value] = moved;
+  }
+  return { ...next, answers: { ...next.answers, [questionUid]: { ...answer, map } } };
+}
+
+// A map target from ``before``'s type to ``after``'s (changeType's order:
+// options and levels keep their place; a noul is [no, yes] as levels, and
+// yes, no as options; two options are yes and no).
+function carryTarget(before, after, target) {
+  const place =
+    before.type === "choice"
+      ? before.options.findIndex((item) => item.uid === target)
+      : before.type === "score"
+        ? before.levels.findIndex((item) => item.uid === target)
+        : target === true
+          ? 1
+          : target === false
+            ? 0
+            : -1;
+  if (place < 0) return null;
+  if (after.type === "score") return after.levels[place]?.uid ?? null;
+  if (after.type === "choice")
+    return before.type === "noul" ? (after.options[place === 1 ? 0 : 1]?.uid ?? null) : (after.options[place]?.uid ?? null);
+  if (before.type === "choice" && before.options.length === 2) return place === 0;
+  return null;
+}
+
+function changeTypeOnly(draft, questionUid, type) {
   return mapQuestion(draft, questionUid, (question) => {
     if (question.type === type) return question;
     const texts =
@@ -514,6 +552,15 @@ export function targetValue(question, uid) {
   if (question.type === "noul") return typeof uid === "boolean" ? uid : null;
   const index = question.levels.findIndex((level) => level.uid === uid);
   return index >= 0 ? index : null;
+}
+
+// The questions replaced (Restore from History, Start from a Question Set):
+// the answers map kept for the questions of the same id and options of the
+// same key.
+export function replaceQuestions(draft, questions) {
+  const kept = answersFor(draft);
+  const next = { ...draft, questions: fromBody({ questions }).questions };
+  return { ...next, answers: answersFromFile(next, kept) };
 }
 
 // The map as dataset.json keeps it, by the questions' current ids.

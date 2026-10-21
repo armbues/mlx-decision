@@ -297,3 +297,42 @@ def test_the_folder_must_be_under_the_home_folder(make_studio, tmp_path, monkeyp
     assert "a file is there" in refused(place="folder", path="~/notes.txt")
     assert "place must be" in refused(place="elsewhere")
     assert not (tmp_path / "config.toml").exists()  # nothing written
+
+
+def test_another_repo_of_the_same_name_is_not_taken_for_it(make_studio, tmp_path):
+    from mlx_decision.download import record_source
+
+    folder = tmp_path / "models"
+    write_model(folder / "d3-edge")
+    record_source(folder / "d3-edge", "someone/d3-edge", "abc")  # downloaded from another repo
+    studio = make_studio([folder], models_dir=folder)
+    families = studio.get("/studio/api/downloads").json()["families"]
+    here = {m["repo"]: m["on_this_mac"] for f in families
+            for m in f["models"]}  # fmt: skip
+    assert here["vllm-sr/d3-edge"] is None
+    refused = studio.post("/studio/api/jobs", json={"kind": "download", "repo": "vllm-sr/d3-edge"})
+    assert refused.status_code == 409 and "holds someone/d3-edge" in refused.text
+
+
+def test_a_download_into_a_folder_records_its_repo(make_studio, tmp_path):  # the fake Hub
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+    from mlx_decision.download import recorded_repo
+
+    result = CliRunner().invoke(app, ["download", "org/fake", "--local-dir", str(tmp_path / "m")])
+    assert result.exit_code == 0, result.output
+    assert recorded_repo(tmp_path / "m") == "org/fake"
+
+
+def test_a_download_is_listed_also_when_models_dir_is_not_scanned(tmp_path):
+    from mlx_decision.studio.catalog import Catalog
+
+    folder = tmp_path / "models"
+    write_model(folder / "fake")
+    catalog = Catalog(references=[])  # web -m ...: models_dir not scanned
+    catalog.add_download(folder / "fake")
+    assert [spec.path for spec in catalog.scan()] == [folder / "fake"]
+    scanned = Catalog(references=[], models_dir=folder)  # without -m: already scanned
+    scanned.add_download(folder / "fake")
+    assert scanned.references == []

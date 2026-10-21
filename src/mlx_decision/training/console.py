@@ -88,10 +88,15 @@ class Progress:
 
 def plan_lines(metrics: dict[str, Any]) -> list[str]:
     """The check stage's summary: the data, its labels, the kinds, the estimate."""
-    lines = [
+    lines = []
+    if metrics.get("source"):  # the file, or a dataset folder and its split
+        lines.append(f"from {metrics['source']}")
+    if metrics.get("validation"):
+        lines.append(f"report on {metrics['validation']}")
+    lines.append(
         f"data: {metrics['examples']:,} examples: {metrics['holdout']:,} holdout, "
         f"{metrics['fit']:,} fit, {metrics['dev']:,} dev"
-    ]
+    )
     for question_id, counts in (metrics.get("labels") or {}).items():
         listed = ", ".join(f"{label} {count:,}" for label, count in counts.items())
         lines.append(f"labels: {question_id}: {listed}")

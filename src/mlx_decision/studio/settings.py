@@ -1,5 +1,5 @@
 """The Studio's settings: the config file's seven keys, the values in use and
-changes made from the Settings page (CFG-4, D185).
+changes made from the Settings page (CFG-4).
 
 A change is written to the file (``config.write_key``: one line, the rest
 kept), the file is read again, and the running Studio takes what it can:
@@ -29,7 +29,7 @@ KEYS = ("models_dir", "models", "default_model", "memory_budget_gb", "host", "po
 # The keys the running Studio takes at once (unless a flag set them).
 LIVE = ("models_dir", "models", "default_model", "memory_budget_gb")
 # Shown, not changed from the page: the workspace moves with --workspace or
-# the config file edited by hand (D185).
+# the config file edited by hand.
 READ_ONLY = ("workspace",)
 FLAGS = {
     "models": "-m",

@@ -240,6 +240,8 @@ def studio_lifespan(
             def job_changed(job, event) -> None:
                 messages(job, event)
                 ended = event is None and job.state == "ended" and job.outcome == "done"
+                if ended and job.kind == "download" and job.output and rescans:
+                    rescans.catalog.add_download(job.output)  # listed even with web -m
                 if ended and job.kind in WRITES_MODELS and rescans is not None:
                     rescans.soon()
                 if ended and job.kind == "data":

@@ -1,4 +1,4 @@
-"""Rescans: the models catalog looked at again while the Studio runs (D135).
+"""Rescans: the models catalog looked at again while the Studio runs.
 
 A download, convert or fit that ends ``done`` writes a model; so may the CLI
 behind the Studio's back (the page asks for a rescan when it regains focus).

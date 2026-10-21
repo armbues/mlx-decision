@@ -8,7 +8,8 @@ import { openSheet } from "../components/sheet.js";
 import { plural, shellWord } from "../format.js";
 import { remembered } from "../store/prefs.js";
 import { models, status } from "../store/status.js";
-import { built, draft, edited, example, modelName, setName } from "./session.js";
+import {
+  datasetOfDocument, built, draft, edited, example, modelName, setName } from "./session.js";
 
 const TABS = [
   ["curl", "curl"],
@@ -69,6 +70,7 @@ function context() {
   const model = (models.value ?? []).find((item) => item.name === name);
   const examples = draft.value.examples;
   const index = examples.findIndex((item) => item.uid === draft.value.current);
+  const dataset = datasetOfDocument(setName.value);
   return {
     body: current.body,
     problems: current.problems,
@@ -78,10 +80,13 @@ function context() {
     api: served.api?.url ?? `${served.address}/v1/systemone`,
     keyRequired: !!served.api?.key_required,
     cliPath: served.cli_path ?? "mlx-decision",
-    file: `${served.sets_folder}/${setName.value}.json`,
+    file: dataset
+      ? `${served.data_folder}/${dataset}/dataset.json` // its questions; the state given inline
+      : `${served.sets_folder}/${setName.value}.json`,
     set: setName.value,
+    dataset,
     example: example.value,
-    first: index <= 0,
+    first: index <= 0 && !dataset,
     firstImages: examples[0]?.images ?? [],
     many: examples.length > 1,
   };
@@ -148,6 +153,10 @@ function Note({ c }) {
     }`;
   if (which === "python")
     return html`The Jev Python SDK (<code>pip install typesafe-sdk</code>) against this Studio's API; <code>model=</code> picks the model.`;
+  if (which === "cli" && c.dataset)
+    return html`Reads the questions from <code>data/${c.dataset}/dataset.json</code>; the state of the row <b>${c.example.name}</b> is given here.${
+      edited.value ? html` <span class="warn-text">The file does not have your edits yet: save first.</span>` : ""
+    }${" "}The command is in the Studio's environment: <code>${c.cliPath}</code>.`;
   if (which === "cli")
     return html`${
       c.first
@@ -194,7 +203,7 @@ export function openCode() {
   openSheet({
     title: "Use This Request Elsewhere",
     purpose: c
-      ? `${c.set} on ${c.model}: ${count} about ${c.many ? c.example.name : "the state"}.`
+      ? `${c.dataset ?? c.set} on ${c.model}: ${count} about ${c.many ? c.example.name : "the state"}.`
       : "",
     Body: CodeBody,
     note: "Snippets follow your current questions, example and model.",

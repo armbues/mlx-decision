@@ -237,3 +237,23 @@ def test_a_stopped_conversion_leaves_nothing(release, tmp_path, how):
     assert code == 130, errors
     assert rest[-1] == {"stage": "cancelled", "message": "nothing was written"}
     assert sorted(path.name for path in tmp_path.iterdir()) == ["tiny-clef"]
+
+
+def test_a_killed_studio_leaves_no_partial_download(tmp_path):
+    """The Studio killed: its pipes close, stdout and stderr too. The cancel
+    line cannot be written, and the partial folder still goes."""
+    env = {
+        "FAKE_HUB_SIZES": json.dumps({"model.safetensors": 20_000_000}),
+        "FAKE_HUB_DELAY": "0.1",
+        "HF_HUB_CACHE": str(tmp_path / "hub"),
+    }
+    job = process("download", fake_hub.REPO, "--local-dir", str(tmp_path / "models" / "fake"),
+                  "--events", env=env)  # fmt: skip
+    read_until(job, "download")
+    for pipe in (job.stdin, job.stdout, job.stderr):
+        pipe.close()
+    started = time.monotonic()
+    code = job.wait(timeout=15)
+    assert time.monotonic() - started < 5
+    assert code == 130
+    assert list((tmp_path / "models").iterdir()) == []

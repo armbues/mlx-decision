@@ -44,6 +44,30 @@ def is_dataset_folder(path: str | Path) -> bool:
     return (Path(path) / DATASET_FILE).is_file()
 
 
+def roles_by_name(names: list[str]) -> dict[str, str | None]:
+    """Each split's role by its name: the first named like train trains, one
+    like validation or dev reports, one like test evaluates when another
+    reports, else reports; the rest none."""
+    lower = {name: name.lower() for name in names}
+
+    def first(words: tuple[str, ...], taken: set[str]) -> str | None:
+        return next(
+            (n for n in names if n not in taken and any(w in lower[n] for w in words)), None
+        )
+
+    train = first(("train",), set())
+    report = first(("valid", "dev", "val"), {train})
+    test = first(("test",), {train, report})
+    roles: dict[str, str | None] = dict.fromkeys(names)
+    if train:
+        roles[train] = "train"
+    if report:
+        roles[report] = "report"
+    if test:
+        roles[test] = "evaluate" if report else "report"
+    return roles
+
+
 def raw_value(value: Any) -> str:
     """A value as ``values`` and the answers' maps hold it: text."""
     if isinstance(value, bool):
@@ -98,18 +122,40 @@ class Dataset:
             f"({listed}) as {self.path}/SPLIT{SPLIT_SUFFIX}"
         )
 
+    def first_line(self) -> dict[str, Any]:
+        """The first line of the first split file (an empty dict when there is
+        none or it does not parse): whether lines carry questions and labels."""
+        try:
+            with open(self.split_path(next(iter(self.splits))), encoding="utf-8") as file:
+                for line in file:
+                    if line.strip():
+                        loaded = json.loads(line)
+                        return loaded if isinstance(loaded, dict) else {}
+        except (OSError, ValueError, StopIteration):
+            pass
+        return {}
+
     def missing(self) -> list[str]:
-        """What a fit or an evaluation still needs: questions, and a map for
-        every value of the columns that answer them."""
-        if not self.folder or not self.columns:
-            return []  # labels in the lines
+        """What a fit or an evaluation still needs: questions (the dataset's or
+        every line's own), and for the values its lines keep, a map of every
+        value of the column that answers them."""
+        if not self.folder:
+            return []  # a plain file: questions and labels in the lines
+        line = self.first_line()
         if not self.questions:
-            return ["it has no questions yet"]
+            if self.columns or "questions" not in line:
+                return ["it has no questions yet"]
+            return []  # each line asks its own
         if not self.answers:
-            return ["no question is answered by one of its columns"]
+            if self.columns or ("values" in line and "labels" not in line):
+                return ["no question is answered by one of its columns"]
+            return []
         found = []
         for question_id, answer in self.answers.items():
             column = answer.get("column")
+            if self.columns and column not in self.columns:
+                found.append(f"{question_id}: answered by {column}, which has no values here")
+                continue
             values = (self.columns.get(column) or {}).get("values") or {}
             done = set(answer.get("map") or {}) | set(answer.get("left_out") or [])
             open_values = [value for value in values if value not in done]
@@ -152,10 +198,13 @@ class Dataset:
         if not isinstance(data, dict):
             raise DataError('a line must be an object: {"state": ..., "values": ...}', line)
         values = data.get("values")
-        if values is not None and (
-            not isinstance(values, dict) or not all(isinstance(v, str) for v in values.values())
-        ):
-            raise DataError("values must be an object from column to text", line, "values")
+        if values is not None:
+            scalar = (str, int, float, bool)
+            if not isinstance(values, dict) or not all(
+                v is None or isinstance(v, scalar) for v in values.values()
+            ):
+                raise DataError("values must be an object from column to a value", line, "values")
+            values = {k: raw_value(v) for k, v in values.items() if v is not None}
         body = {key: value for key, value in data.items() if key != "values"}
         if body.get("images"):
             raise DataError(
@@ -262,11 +311,27 @@ def read_description(folder: Path) -> Dataset:
         if loaded.get(key) is not None and not isinstance(loaded[key], kind):
             raise DecisionError(f"{path}: {key} must be an object")
     splits = loaded.get("splits") or {}
-    if not splits:
+    if not splits:  # roles by the files' names
         found = sorted(p.name.removesuffix(SPLIT_SUFFIX) for p in folder.glob(f"*{SPLIT_SUFFIX}"))
-        splits = {name: {} for name in found}
+        splits = {name: {"role": role} for name, role in roles_by_name(found).items()}
     if not splits:
         raise DecisionError(f"{folder} holds no split files (NAME{SPLIT_SUFFIX})")
+    for name, meta in splits.items():
+        if meta is not None and not isinstance(meta, dict):
+            raise DecisionError(f"{path}: splits.{name} must be an object")
+    for name, body in (loaded.get("columns") or {}).items():
+        values = body.get("values") if isinstance(body, dict) else None
+        if (
+            not isinstance(body, dict)
+            or not isinstance(values or {}, dict)
+            or not all(isinstance(info, dict) for info in (values or {}).values())
+        ):
+            raise DecisionError(
+                f'{path}: columns.{name} must be an object: {{"values": {{VALUE: {{"rows": N}}}}}}'
+            )
+    for question_id, question in (loaded.get("questions") or {}).items():
+        if not isinstance(question, dict):
+            raise DecisionError(f"{path}: questions.{question_id} must be an object")
     for name, meta in splits.items():
         role = (meta or {}).get("role")
         if role is not None and role not in ROLES:
@@ -340,7 +405,11 @@ def report_split(path: str | Path) -> Path | None:
     if not dataset.folder:
         return None
     report = dataset.with_role("report")
-    if report is None or report == (split or dataset.pick("train")):
+    try:
+        trained = split or dataset.pick("train")
+    except DecisionError:
+        return None  # no split to train on: the fit says so
+    if report is None or report == trained:
         return None
     return dataset.split_path(report)
 

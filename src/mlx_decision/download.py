@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
@@ -272,6 +272,31 @@ def download(
     target.parent.mkdir(parents=True, exist_ok=True)
     into.rename(target)
     return target
+
+
+# Beside a model downloaded into a folder: which repo (and commit) it holds,
+# so another repo of the same short name is not taken for it.
+SOURCE_FILE = ".download.json"
+
+
+def record_source(folder: Path, repo_id: str, revision: str | None) -> None:
+    """Note ``repo_id`` in ``folder`` (best effort: a model loads without it)."""
+    import json
+
+    body = json.dumps({"repo": repo_id, "revision": revision}) + "\n"
+    with suppress(OSError):
+        (folder / SOURCE_FILE).write_text(body)
+
+
+def recorded_repo(folder: Path) -> str | None:
+    """The repo a folder was downloaded from, as ``record_source`` noted it."""
+    import json
+
+    try:
+        repo = json.loads((folder / SOURCE_FILE).read_text()).get("repo")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return repo if isinstance(repo, str) else None
 
 
 def _partial_target(target: Path | None) -> Path | None:
