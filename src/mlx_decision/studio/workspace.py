@@ -83,7 +83,8 @@ README when it starts.
 - `sets/`: question sets. Each file is a request body (`state`,
   `questions`, `images` as data URLs):
   `mlx-decision run -q sets/NAME.json -m MODEL` answers it as the Studio does.
-- `history/`: the Playground's runs, one JSON-lines file per set, one line
+- `history/`: the Playground's runs, one JSON-lines file per set (a
+  dataset's questions tried in the Playground: `history/datasets/`), one line
   per run (request, model, answers, timings). Images are stored once in
   `history/images/`, named by their SHA-256, and the lines refer to them.
   Clearing a set's history in the Studio deletes its file.
@@ -304,18 +305,32 @@ class Workspace:
                 shutil.rmtree(path)
             else:
                 path.unlink()
+            history = self.history_path(f"{DATASET_DOCUMENT}{name}")
+            if history.exists():
+                history.unlink()
+                self._prune_images()
         self.changed("data", name, "deleted")
 
     def save_dataset_questions(
-        self, name: str, questions: dict[str, Any] | None, answers: dict[str, Any]
-    ) -> None:
+        self,
+        name: str,
+        questions: dict[str, Any] | None,
+        answers: dict[str, Any],
+        loaded: str | None = None,
+    ) -> str:
         """Write a dataset folder's questions and answers into its
-        ``dataset.json`` (checked by the caller), the rest as it is."""
+        ``dataset.json`` (checked by the caller), the rest as it is; returns
+        the file's new SHA-256. With ``loaded`` (the SHA-256 it was read with),
+        ``Conflict`` when it changed since."""
         with self.lock:
             folder = self.dataset_location(name)
             if not folder.is_dir():
                 raise WorkspaceError(f"{name} is a plain file: its lines hold their own questions")
             path = folder / DATASET_FILE
+            if loaded is not None and (current := _hash_of(path)) != loaded:
+                raise Conflict(
+                    f"{name}'s {DATASET_FILE} changed on disk since it was loaded", current
+                )
             body = json.loads(path.read_text(encoding="utf-8"))
             ordered: dict[str, Any] = {}
             if questions:
@@ -325,9 +340,10 @@ class Workspace:
             ordered.update(
                 {key: value for key, value in body.items() if key not in ("questions", "answers")}
             )
-            text = json.dumps(ordered, indent=2, ensure_ascii=False) + "\n"
-            self.write(path, text.encode("utf-8"))
+            data = (json.dumps(ordered, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+            self.write(path, data)
         self.changed("data", name, "saved")
+        return sha256(data)
 
     # Sets
 
@@ -335,7 +351,22 @@ class Workspace:
         return self.path("sets", name, SET_SUFFIX, "a set's name")
 
     def history_path(self, name: str) -> Path:
+        """A Playground document's history: a set's ``history/NAME.jsonl``; a
+        dataset opened in the Playground (``data:NAME``) has
+        ``history/datasets/NAME.jsonl``."""
+        dataset = dataset_document(name)
+        if dataset is not None:
+            folder = self.root / "history" / DATASET_HISTORY
+            folder.mkdir(exist_ok=True)
+            return self.inside(folder / f"{dataset}{HISTORY_SUFFIX}")
         return self.path("history", name, HISTORY_SUFFIX, "a set's name")
+
+    def document_exists(self, name: str) -> bool:
+        """Whether a Playground document is there: a set, or a dataset folder."""
+        dataset = dataset_document(name)
+        if dataset is not None:
+            return (self.dataset_folder(dataset) / DATASET_FILE).is_file()
+        return self.set_path(name).is_file()
 
     def list_sets(self) -> list[dict[str, Any]]:
         """The sets, by name (case ignored): name, size in bytes, modification time."""
@@ -437,7 +468,7 @@ class Workspace:
         path = self.history_path(name)
         entry = {"id": uuid.uuid4().hex, "time": now(), **run}
         with self.lock:
-            if not self.set_path(name).is_file():
+            if not self.document_exists(name):
                 return None
             if isinstance(request := entry.get("request"), dict):
                 entry["request"] = self._store_images(request)
@@ -509,8 +540,12 @@ class Workspace:
     def _prune_images(self) -> None:
         """Delete stored images that no history line refers to (under the lock)."""
         used = set()
-        for path in _entries(self.root / "history"):
-            if path.suffix != HISTORY_SUFFIX or path.name.startswith("."):
+        histories = [
+            *_entries(self.root / "history"),
+            *_entries(self.root / "history" / DATASET_HISTORY),
+        ]
+        for path in histories:
+            if path.suffix != HISTORY_SUFFIX or path.name.startswith(".") or not path.is_file():
                 continue
             for entry in _read_lines(path):
                 request = entry.get("request") if isinstance(entry, dict) else None
@@ -575,6 +610,20 @@ def check_body(body: Any) -> None:
             check_data_urls(part)
         except DecisionError as error:
             raise WorkspaceError(f"{where}{error.param}: {error.message}") from None
+
+
+# A dataset opened in the Playground goes by "data:NAME" where a set goes by
+# its name (no set's name holds a colon); its history is in history/datasets/.
+DATASET_DOCUMENT = "data:"
+DATASET_HISTORY = "datasets"
+
+
+def dataset_document(name: str) -> str | None:
+    """The dataset a Playground document's name stands for (checked), or None
+    for a set."""
+    if not isinstance(name, str) or not name.startswith(DATASET_DOCUMENT):
+        return None
+    return check_name(name[len(DATASET_DOCUMENT) :], "a dataset's name")
 
 
 def dataset_summary(path: Path) -> dict[str, Any]:

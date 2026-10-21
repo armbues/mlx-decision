@@ -1,4 +1,5 @@
-// The Playground: a question set, the model it runs on, its answers and history.
+// The Playground: a question set (or a dataset's questions, "data:NAME"), the
+// model it runs on, its answers and history.
 import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
@@ -10,6 +11,7 @@ import { href, navigate, route } from "../router.js";
 import { Answers, shownBatch } from "../playground/answers.js";
 import { CodeButton } from "../playground/code.js";
 import { shownCompare } from "../playground/compare.js";
+import { startFromSet } from "../playground/dataset.js";
 import { Editor } from "../playground/editor.js";
 import * as files from "../playground/files.js";
 import { History } from "../playground/history.js";
@@ -21,11 +23,15 @@ import {
   compareModels,
   compareWith,
   comparing,
+  dataset,
+  datasetOfDocument,
+  drafts,
   edited,
   editedNames,
   entry,
   example,
   fileProblems,
+  isDataset,
   justAnswered,
   lastRun,
   modelName,
@@ -47,9 +53,33 @@ const title = (name) => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
+// The datasets open in the Playground (the one shown, and any with edits).
+function DatasetsOpen() {
+  const shown = setName.value;
+  const open = Object.keys(drafts.value).filter((name) => isDataset(name) && (name === shown || editedNames.value.has(name)));
+  if (!open.length) return null;
+  return html`
+    <div class="sb-sec">
+      <h3>Dataset Questions</h3>
+      <ul class="sb-list">
+        ${open.map(
+          (name) => html`<li key=${name} class=${name === shown ? "open" : ""}>
+            <a class="sb-item" href=${href("playground", name)} aria-current=${name === shown ? "true" : undefined}
+               title=${`${datasetOfDocument(name)}'s questions, saved in its dataset.json`}>
+              <${icons.Datasets} /><span class="label">${datasetOfDocument(name)}</span>
+              ${editedNames.value.has(name) && html`<span class="edited" title="Edited, not saved"></span>`}
+            </a>
+          </li>`,
+        )}
+      </ul>
+    </div>
+  `;
+}
+
 function SetsList() {
   const list = sets.value;
   return html`
+    <${DatasetsOpen} />
     <div class="sb-sec">
       <h3>
         Question Sets
@@ -91,8 +121,10 @@ function Target() {
   const full = picked.length >= MAX_COMPARED - 1;
   return html`
     <div class="target" role="group" aria-label="What Run runs">
-      <${MenuButton} id="target-set" className="set" title="Question set"
-        label=${html`<${icons.File} className="" /><span>${name ?? "No set"}</span>`}
+      <${MenuButton} id="target-set" className="set" title=${isDataset(name) ? "A dataset's questions" : "Question set"}
+        label=${isDataset(name)
+          ? html`<${icons.Datasets} /><span>${datasetOfDocument(name)}</span>`
+          : html`<${icons.File} className="" /><span>${name ?? "No set"}</span>`}
         menuStyle="top:34px; left:0; width:280px">
         <${MenuHeader}>Question Sets<//>
         ${(sets.value ?? []).map(
@@ -297,6 +329,32 @@ function MoreMenu() {
   `;
 }
 
+function DatasetMenu() {
+  const name = dataset.value?.name;
+  return html`
+    <${MenuButton} id="set-more" className="btn" ariaLabel="More actions for this dataset"
+      label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
+      menuStyle="top:32px; right:0; width:280px">
+      <${MenuItem} sub="Its questions replace these; save to keep them" onSelect=${startFromSet}>Start from a Question Set…<//>
+      <${MenuItem} right=${SHORTCUTS.saveAs} sub="The questions and the rows shown, as a new set" onSelect=${files.saveAs}>Save as Question Set…<//>
+      <${MenuSeparator} />
+      <${MenuItem} onSelect=${() => navigate("datasets", name)}>Show in Datasets<//>
+      <${MenuItem} sub=${edited.value ? "Your edits go" : null} onSelect=${files.reloadFromDisk}>Reload<//>
+    <//>
+  `;
+}
+
+// What keeps the dataset from a fit, as the last save (or load) left it.
+function DatasetBanner() {
+  const missing = dataset.value?.missing ?? [];
+  if (!missing.length) return null;
+  return html`
+    <div class="notice ds-banner" role="status">
+      <span><b>Not ready for a fit:</b> ${missing.join("; ")}.</span>
+    </div>
+  `;
+}
+
 function DiskBanner() {
   const where = entry.value?.onDisk;
   if (!where) return null;
@@ -348,20 +406,22 @@ function Centre() {
     `;
   }
   if (!current) return html`<div class="centre-inner"></div>`;
+  const data = isDataset(setName.value);
+  const where = data ? `data/${datasetOfDocument(setName.value)}/dataset.json` : `sets/${setName.value}.json`;
   return html`
     <div class="centre-inner">
       <div class="pane-head">
         <div>
-          <h1>${title(setName.value)}</h1>
-          <p><code>sets/${setName.value}.json</code>${edited.value && html`<span class="edited-tag">· Edited</span>`}</p>
+          <h1 class=${data ? "mono" : ""}>${data ? datasetOfDocument(setName.value) : title(setName.value)}</h1>
+          <p>${data ? "The dataset's questions · " : ""}<code>${where}</code>${edited.value && html`<span class="edited-tag">· Edited</span>`}</p>
         </div>
         ${!current.error &&
         html`<div class="actions">
           <button class="btn" disabled=${!edited.value} title=${`Save (${SHORTCUTS.save})`} onClick=${files.save}>Save</button>
-          <${MoreMenu} />
+          ${data ? html`<${DatasetMenu} />` : html`<${MoreMenu} />`}
         </div>`}
       </div>
-      <${DiskBanner} />
+      ${data ? html`<${DatasetBanner} />` : html`<${DiskBanner} />`}
       ${current.error
         ? html`<div class="empty"><b>${current.error}</b>${
             current.status === 404 &&

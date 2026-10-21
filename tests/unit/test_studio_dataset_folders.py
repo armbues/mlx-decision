@@ -251,3 +251,50 @@ def test_a_folder_is_deleted_whole(studio):
     assert studio.request("DELETE", "/studio/api/data/tweets", json={}).status_code == 204
     assert list(studio.data.iterdir()) == []
     assert studio.get("/studio/api/data/tweets").status_code == 404
+
+
+def test_the_document_samples_rows_per_value(studio):
+    doc = studio.get("/studio/api/data/tweets/document").json()
+    assert (doc["split"], doc["column"], doc["total"]) == ("train", "label", 12)
+    assert doc["questions"] == {} and doc["missing"] == ["it has no questions yet"]
+    values = [row["values"]["label"] for row in doc["rows"]]
+    assert values == ["0", "0", "1", "1", "2", "2"]  # two per value, in the column's order
+    again = studio.get("/studio/api/data/tweets/document").json()
+    assert [r["id"] for r in again["rows"]] == [r["id"] for r in doc["rows"]]  # the seed repeats
+    other = studio.get("/studio/api/data/tweets/document", params={"seed": 5, "per": 4}).json()
+    assert len(other["rows"]) == 12
+    found = studio.get("/studio/api/data/tweets/document", params={"search": "train 1"}).json()
+    assert found["matched"] == 3 and [r["id"] for r in found["rows"]] == [
+        "train/1", "train/10", "train/11"]  # fmt: skip
+    test = studio.get("/studio/api/data/tweets/document", params={"split": "test"}).json()
+    assert test["split"] == "test" and len(test["rows"]) == 6
+    assert studio.get("/studio/api/data/tweets/document", params={"per": 0}).status_code == 400
+    plain = {"state": "s", "questions": {"topic": TOPIC}, "labels": {"topic": "fed"}}
+    (studio.data / "plain.jsonl").write_text(json.dumps(plain) + "\n")
+    assert studio.get("/studio/api/data/plain/document").status_code == 400
+
+
+def test_a_save_names_the_version_it_was_loaded_from(studio):
+    loaded = studio.get("/studio/api/data/tweets/document").json()["sha256"]
+    body = {"questions": {"topic": TOPIC}, "answers": ANSWERS, "loaded": loaded}
+    saved = questions(studio, body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["sha256"] == studio.get("/studio/api/data/tweets/document").json()["sha256"]
+    stale = questions(studio, body)  # loaded from the version before
+    assert stale.status_code == 409
+
+
+def test_runs_on_a_dataset_keep_their_own_history(studio):
+    request = {"state": "tweet", "questions": {"topic": TOPIC}}
+    body = {"request": request, "model": "fake", "set": "data:tweets", "example": "train/0"}
+    ran = studio.post("/studio/api/run", json=body)
+    assert ran.status_code == 200, ran.text
+    history = studio.app_state.workspace.root / "history" / "datasets" / "tweets.jsonl"
+    assert len(history.read_text().splitlines()) == 1
+    runs = studio.get("/studio/api/history/data:tweets").json()["runs"]
+    assert runs[0]["example"] == "train/0"
+    assert studio.post("/studio/api/run", json={"request": request, "model": "fake",
+                                                "set": "data:../x"}).status_code == 400  # fmt: skip
+    # Deleting the dataset deletes its history.
+    assert studio.request("DELETE", "/studio/api/data/tweets", json={}).status_code == 204
+    assert not history.exists()

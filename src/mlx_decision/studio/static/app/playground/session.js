@@ -31,7 +31,14 @@ export const model = computed(
   () => (models.value ?? []).find((entry) => entry.name === modelName.value) ?? null,
 );
 
-// The set shown: the address's, else the last one opened, else the first.
+// A dataset opened in the Playground goes by "data:NAME" where a set goes by
+// its name (no set's name holds a colon).
+export const DATASET_DOCUMENT = "data:";
+export const isDataset = (name) => typeof name === "string" && name.startsWith(DATASET_DOCUMENT);
+export const datasetOfDocument = (name) => (isDataset(name) ? name.slice(DATASET_DOCUMENT.length) : null);
+
+// The document shown: the address's (a set, or a dataset), else the last set
+// opened, else the first.
 export const setName = computed(() => {
   const item = route.value.page === "playground" ? route.value.item : null;
   if (item) return item;
@@ -46,8 +53,10 @@ export const setName = computed(() => {
 // draft (an unedited draft just loads the new file).
 export const drafts = signal({});
 
-// The file a draft writes: what "Edited" compares (switching examples is not an edit).
-const bodyText = (current) => JSON.stringify(toFile(current).body);
+// The file a draft writes: what "Edited" compares (switching examples is not an
+// edit; for a dataset only its questions count, its rows being a sample).
+export const bodyText = (current, dataset = false) =>
+  JSON.stringify(dataset ? toFile(current).body.questions : toFile(current).body);
 
 export function loadedEntry(loaded, modified = null) {
   const loadedDraft = fromBody(loaded.body);
@@ -69,8 +78,15 @@ export function setEntry(name, value) {
 
 const modifiedOf = (name) => (sets.peek() ?? []).find((item) => item.name === name)?.modified ?? null;
 
-// Load the set from disk, replacing any draft of it.
+// The dataset documents' loader (playground/dataset.js), set there.
+export const loaders = { dataset: null };
+
+// Load the set (or dataset) from disk, replacing any draft of it.
 export async function loadSet(name) {
+  if (isDataset(name)) {
+    if (!loaders.dataset) await import("./dataset.js"); // sets the loader
+    return loaders.dataset(name);
+  }
   try {
     const loaded = await api(`/sets/${encodeURIComponent(name)}`);
     setEntry(name, loadedEntry(loaded, modifiedOf(name)));
@@ -82,11 +98,11 @@ export async function loadSet(name) {
 effect(() => {
   const name = setName.value;
   if (name === null) return;
-  lastSet.value = name;
+  if (!isDataset(name)) lastSet.value = name;
   if (!drafts.peek()[name]) loadSet(name);
 });
 
-export const isEdited = (value) => !!value?.draft && bodyText(value.draft) !== value.baseline;
+export const isEdited = (value) => !!value?.draft && bodyText(value.draft, !!value.dataset) !== value.baseline;
 
 // When the sets list shows a file changed or gone (the CLI, an editor, another
 // tab): reload an unedited draft, mark an edited one.
@@ -95,7 +111,7 @@ effect(() => {
   if (!list) return;
   const onDisk = new Map(list.map((item) => [item.name, item.modified]));
   for (const [name, value] of Object.entries(drafts.peek())) {
-    if (!value.draft) continue;
+    if (!value.draft || value.dataset) continue; // a dataset's own changes come from Datasets
     if (!onDisk.has(name)) {
       if (value.modified === null) continue; // created here, not in this list yet
       if (isEdited(value)) setEntry(name, { ...value, onDisk: "deleted" });
@@ -117,6 +133,9 @@ effect(() => {
 });
 
 export const entry = computed(() => (setName.value ? (drafts.value[setName.value] ?? null) : null));
+// The dataset open (its document's facts: split, splits, columns, answers,
+// missing, …), or null for a set.
+export const dataset = computed(() => entry.value?.dataset ?? null);
 export const draft = computed(() => entry.value?.draft ?? null);
 export const edited = computed(() => isEdited(entry.value));
 export const editedNames = computed(

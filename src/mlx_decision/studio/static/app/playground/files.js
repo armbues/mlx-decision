@@ -11,10 +11,13 @@ import { reloadSets, sets } from "../store/sets.js";
 import { toast } from "../store/ui.js";
 import { TYPE_LABELS, toFile } from "./draft.js";
 import { plural } from "../format.js";
+import { saveDataset } from "./dataset.js";
 import {
+  datasetOfDocument,
   drafts,
   editedNames,
   forgetRuns,
+  isDataset,
   loadSet,
   loadedEntry,
   moveRuns,
@@ -133,6 +136,7 @@ function adopt(name, body, sha256, draft = null) {
 }
 
 export async function save() {
+  if (isDataset(setName.value)) return saveDataset();
   const name = setName.value;
   const value = drafts.value[name];
   const body = bodyToSave(name);
@@ -192,6 +196,7 @@ function conflict(name, current) {
 export function saveAs() {
   const from = setName.value;
   if (!drafts.value[from]?.draft) return;
+  if (isDataset(from)) return saveAsSet(from);
   askName({
     title: "Save As",
     purpose: "Save the questions and state as a new set. The open set stays as it was saved.",
@@ -205,6 +210,30 @@ export function saveAs() {
       adopt(name, body, sha256, draft);
       if (drafts.value[from]?.onDisk !== "deleted") loadSet(from); // drop the edits there
       else setEntry(from, null);
+      navigate("playground", name);
+      toast(`Saved ${fileOf(name)}`);
+    },
+  });
+}
+
+// Save as Question Set: a dataset's questions and the rows shown, as a new set.
+// The dataset keeps its edits.
+function saveAsSet(from) {
+  const dataset = datasetOfDocument(from);
+  askName({
+    title: "Save as Question Set",
+    purpose: `A new question set with ${dataset}'s questions and the rows shown as its examples, to try and change in the Playground. The dataset stays as it is.`,
+    initial: freeName(dataset),
+    action: "Save",
+    onName: async (name) => {
+      const { body, problems } = toFile(drafts.value[from].draft);
+      const own = problems.filter((problem) => !problem.where?.example);
+      if (own.length) {
+        toast(`${own[0].message}: fix it before saving`);
+        return;
+      }
+      const sha256 = await write(name, body, null);
+      adopt(name, body, sha256);
       navigate("playground", name);
       toast(`Saved ${fileOf(name)}`);
     },
@@ -412,7 +441,8 @@ export async function importFile(file) {
 export function reloadFromDisk() {
   const name = setName.value;
   loadSet(name);
-  toast(`Reloaded ${fileOf(name)}; your edits are gone`);
+  const where = isDataset(name) ? `data/${datasetOfDocument(name)}/dataset.json` : fileOf(name);
+  toast(`Reloaded ${where}; your edits are gone`);
 }
 
 export function exportSet() {

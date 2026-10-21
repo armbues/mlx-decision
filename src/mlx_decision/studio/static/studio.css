@@ -1219,10 +1219,23 @@ a.sb-item { color: var(--fg); }
 .ds-tabs button .num { color: var(--fg-3); }
 .ds-tabs button[aria-selected="true"] { background: var(--group); border-color: var(--sep-strong); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
 .ds-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ds-banner .btn { flex: none; align-self: center; }
 .ds-banner { display: flex; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--orange-fill); font-size: 12.5px; line-height: 1.45; }
 .ds-banner b { font-weight: 600; }
 .ds-q-text small code { font: 11.5px var(--mono); }
 .ex-labels .lab.value { background: transparent; border: 0.5px solid var(--sep-strong); }
+/* A dataset in the Playground: its rows in place of the examples */
+.rows-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.rows-bar .rows-search { font: inherit; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 3px 8px; width: 200px; }
+.rows-bar .rows-split { font: inherit; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 2px 6px; }
+.examples.rows { max-height: 92px; overflow-y: auto; }
+.examples.rows .ex-chip button { max-width: 220px; }
+.examples.rows .ex-chip button span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.examples.rows .row-num { color: var(--fg-3); margin-right: 5px; font-size: 11px; }
+.state-text[readonly] { background: var(--fill); }
+.row-values { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 2px 0; font-size: 12px; color: var(--fg-2); }
+.row-values i { font-style: normal; font-family: var(--mono); font-size: 11.5px; }
+.row-values code { font: 11.5px var(--mono); color: var(--fg); }
 /* A split cut into parts, in Download's table of splits */
 .sheet .st-parts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 2px 0 4px; font-size: 12px; color: var(--fg-2); }
 .sheet .st-parts label { display: inline-flex; align-items: center; gap: 6px; }

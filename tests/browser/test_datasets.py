@@ -390,14 +390,14 @@ def test_a_folder_without_questions(studio, page):
     inspector = page.locator(".inspector")
     expect(inspector.locator(".igroup", has_text="Values")).to_contain_text("Fed | Central Banks")
     expect(inspector.locator(".file-group")).to_contain_text("test.jsonl")
-    # Not ready: Fit on It… says why, and Open in Playground waits for questions.
-    expect(page.get_by_role("button", name="Open in Playground")).to_be_disabled()
+    # Not ready: Fit on It… says why and offers Write Questions.
+    expect(page.locator(".pane-head").get_by_role("button", name="Write Questions")).to_be_visible()
+    shot(page, "datasets-folder-not-ready")
     page.get_by_role("button", name="Fit on It…").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator("h2")).to_have_text("tweets is not ready for a fit")
-    sheet.get_by_role("button", name="OK").click()
-    expect(page).to_have_url(re.compile(r"#/datasets/tweets$"))
-    shot(page, "datasets-folder-not-ready")
+    sheet.get_by_role("button", name="Write Questions").click()
+    expect(page).to_have_url(re.compile(r"#/playground/data%3Atweets$"))
 
 
 def test_a_folder_with_an_unmapped_value(studio, page):

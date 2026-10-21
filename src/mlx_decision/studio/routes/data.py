@@ -239,14 +239,41 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         dataset, _ = await asyncio.to_thread(open_dataset, path)
         questions = body.get("questions", {})
         answers = body.get("answers", {})
+        loaded = field(body, "loaded", str, required=False)
         checked_questions, checked_answers = check_questions(dataset, questions, answers)
         try:
-            await asyncio.to_thread(
-                files.save_dataset_questions, name, checked_questions, checked_answers
+            digest = await asyncio.to_thread(
+                files.save_dataset_questions, name, checked_questions, checked_answers, loaded
             )
+        except Conflict:
+            raise
         except WorkspaceError as error:
             raise ApiError(error.status, error.message) from None
-        return await describe_data(name)
+        return {**(await describe_data(name)), "sha256": digest}
+
+    @router.get("/{name}/document")
+    async def document(
+        name: str,
+        split: str | None = None,
+        seed: int = 0,
+        per: int = 2,
+        search: str | None = None,
+    ):
+        """A dataset as the Playground opens it: ``questions``, ``answers``,
+        ``columns``, ``splits``, ``split``, ``missing``, ``sha256`` (of its
+        ``dataset.json``, for a save) and ``rows`` of the split: about ``per``
+        rows for each value of the column its questions are answered by (the
+        first label column without questions), drawn with ``seed``, or with
+        ``search`` the rows whose state holds it (``matched`` counts them).
+        Each row: ``index``, ``id``, ``state``, ``values``, ``labels``. 400 for a
+        plain file (its lines hold their own questions)."""
+        path, found = await read(name, split)
+        if not found.dataset.folder:
+            raise ApiError(400, f"{name} is a plain file: its lines hold their own questions")
+        if not 1 <= per <= 10:
+            raise ApiError(400, "per is 1 to 10", param="per")
+        digest = await asyncio.to_thread(file_hash, path / DATASET_FILE)
+        return {"name": name, "sha256": digest, **sample_rows(found, seed, per, search)}
 
     @router.post("/{name}/reveal", status_code=204)
     async def reveal_data(name: str, request: Request):
@@ -313,6 +340,84 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         return await describe_data(name)
 
     return router
+
+
+DOCUMENT_ROWS = 40  # the most rows the Playground shows of a dataset
+
+
+def file_hash(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def sample_rows(found: Read, seed: int, per: int, search: str | None) -> dict[str, Any]:
+    """What ``document`` answers besides the name and hash (see there)."""
+    import random
+
+    dataset, examples = found.dataset, found.examples
+    answered = [answer.get("column") for answer in dataset.answers.values()]
+    column = next((c for c in answered if c in dataset.columns), None)
+    column = column or next(iter(dataset.columns), None)
+    matched = None
+    if search and search.strip():
+        needle = search.strip().casefold()
+        hits = [i for i, text in enumerate(found.texts) if needle in text]
+        matched = len(hits)
+        picked = hits[:DOCUMENT_ROWS]
+    elif column is not None:
+        rng = random.Random(f"{seed}")
+        groups: dict[str, list[int]] = {}
+        for index, example in enumerate(examples):
+            value = (example.values or {}).get(column)
+            if value is not None:
+                groups.setdefault(value, []).append(index)
+        order = list((dataset.columns[column].get("values") or {}).keys())
+        order += [value for value in groups if value not in order]
+        picked = []
+        for value in order:
+            indices = groups.get(value, [])
+            picked += sorted(rng.sample(indices, min(per, len(indices))))
+        if len(picked) > DOCUMENT_ROWS:
+            picked = sorted(rng.sample(picked, DOCUMENT_ROWS), key=picked.index)
+    else:
+        rng = random.Random(f"{seed}")
+        picked = sorted(rng.sample(range(len(examples)), min(len(examples), per * 5)))
+    return {
+        "split": found.split,
+        "splits": describe_splits(dataset),
+        "questions": dataset.questions or {},
+        "answers": dataset.answers,
+        "columns": dataset.columns,
+        "missing": dataset.missing(),
+        "column": column,
+        "total": len(examples),
+        "matched": matched,
+        "rows": [
+            {
+                "index": index,
+                "id": examples[index].id,
+                "state": examples[index].request.get("state"),
+                "values": examples[index].values or {},
+                "labels": examples[index].labels,
+            }
+            for index in picked
+        ],
+    }
+
+
+def describe_splits(dataset: Dataset) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": name,
+            "role": meta.get("role"),
+            "examples": meta.get("examples"),
+            "split": meta.get("split"),
+            "sample": meta.get("sample"),
+            "part": meta.get("part"),
+        }
+        for name, meta in dataset.splits.items()
+    ]
 
 
 def upload_kind(body: dict) -> str:
@@ -473,17 +578,7 @@ def describe(found: Read) -> dict[str, Any]:
     return {
         "split": found.split,
         "kind": "folder" if dataset.folder else "file",
-        "splits": [
-            {
-                "name": name,
-                "role": meta.get("role"),
-                "examples": meta.get("examples"),
-                "split": meta.get("split"),
-                "sample": meta.get("sample"),
-                "part": meta.get("part"),
-            }
-            for name, meta in dataset.splits.items()
-        ],
+        "splits": describe_splits(dataset),
         "examples": len(examples),
         "questions": list(questions.values()),
         "values": values,

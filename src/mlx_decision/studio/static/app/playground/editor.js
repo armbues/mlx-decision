@@ -1,5 +1,7 @@
 // The Playground's centre: the state, one group per question, Add Question
-// and the live check, each problem shown at the field it is about.
+// and the live check, each problem shown at the field it is about. On a
+// dataset the state is a row of a split, read-only, picked among a sample of
+// its rows (Shuffle, a search, another split), with the row's label values.
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useRef, useState } from "preact/hooks";
@@ -10,10 +12,12 @@ import { closeSheet, openSheet } from "../components/sheet.js";
 import { megapixels, plural } from "../format.js";
 import { SHORTCUTS } from "../keys.js";
 import { toast } from "../store/ui.js";
+import { rowsLoading, showRows, shuffle } from "./dataset.js";
 import * as edit from "./draft.js";
 import {
   built,
   canRun,
+  dataset,
   draft,
   example,
   fileProblems,
@@ -267,6 +271,103 @@ function Examples() {
       <button class="ex-add" aria-label="Add an example" title="Add an example"
               onClick=${() => updateDraft((value) => edit.addExample(value))}><${icons.Plus} /></button>
     </div>
+  `;
+}
+
+// ---------- a dataset's rows ----------
+
+// A label column's value with its name when the dataset knows one.
+const valueWords = (columns, column, value) => {
+  const name = columns?.[column]?.values?.[value]?.name;
+  return name ? `${value} · ${name}` : value;
+};
+
+const rowSearch = signal("");
+
+function Rows() {
+  const current = draft.value;
+  const selected = example.value;
+  const facts = dataset.value;
+  const timer = useRef(null);
+  const column = facts.column;
+  const splits = facts.splits ?? [];
+  return html`
+    <div class="rows-bar">
+      ${splits.length > 1 &&
+      html`<select class="rows-split" aria-label="Split" value=${facts.split} onChange=${(event) => showRows({ split: event.target.value, search: "" })}>
+        ${splits.map((split) => html`<option value=${split.name}>${split.name}${split.role ? ` (${split.role})` : ""}</option>`)}
+      </select>`}
+      <input class="rows-search" type="search" placeholder="Search the rows" aria-label="Search the rows" spellcheck=${false}
+             value=${rowSearch.value}
+             onInput=${(event) => {
+               rowSearch.value = event.target.value;
+               clearTimeout(timer.current);
+               timer.current = setTimeout(() => showRows({ search: rowSearch.value }), 250);
+             }} />
+      <button class="btn sm" disabled=${rowsLoading.value} title="Draw other rows" onClick=${() => {
+        rowSearch.value = "";
+        shuffle();
+      }}>Shuffle</button>
+      <span class="dim num">${
+        facts.search
+          ? `${facts.matched?.toLocaleString("en") ?? 0} rows hold it${facts.matched > current.examples.length ? `, the first ${current.examples.length}` : ""}`
+          : `${plural(current.examples.length, "row")} of ${facts.total.toLocaleString("en")}${column ? `, about two per value of ${column}` : ""}`
+      }</span>
+    </div>
+    <div class="examples rows" role="tablist" aria-label="Rows">
+      ${current.examples.map((item) => {
+        if (item.row?.empty) return html`<span class="dim">No row ${facts.search ? "holds it" : "in this split"}</span>`;
+        const value = column ? item.row?.values?.[column] : null;
+        const words = value != null ? valueWords(facts.columns, column, value) : item.name;
+        return html`
+          <span class=${`ex-chip ${item.uid === selected.uid ? "on" : ""}`} key=${item.uid}>
+            <button role="tab" aria-selected=${item.uid === selected.uid ? "true" : "false"} title=${`${item.name}${value != null ? ` · ${column}: ${words}` : ""}`}
+                    onClick=${() => updateDraft((draftValue) => edit.selectExample(draftValue, item.uid))}>
+              <span class="row-num num">${(item.row?.index ?? 0) + 1}</span><span>${words}</span>
+            </button>
+          </span>`;
+      })}
+    </div>
+  `;
+}
+
+// The row's label values (named) and the labels they give.
+function RowValues({ item }) {
+  const facts = dataset.value;
+  const values = Object.entries(item.row?.values ?? {});
+  const labels = Object.entries(item.row?.labels ?? {});
+  if (!values.length && !labels.length) return null;
+  return html`
+    <div class="row-values">
+      ${values.map(([column, value]) => html`<span key=${column}><i>${column}</i> <code>${valueWords(facts.columns, column, value)}</code></span>`)}
+      ${labels.map(([question, label]) => html`<span key=${`l-${question}`}><i>${question}</i> expects <code>${label}</code></span>`)}
+    </div>
+  `;
+}
+
+function RowState() {
+  const current = example.value;
+  const json = current.stateMode === "json";
+  const run = lastRun.value;
+  return html`
+    <section class="gsec">
+      <div class="gsec-head">
+        <h2>State</h2>
+        <span class="tag">A row of the dataset, as the model reads it</span>
+      </div>
+      <${Rows} />
+      <div class="group">
+        <div class="state-box">
+          <textarea class=${`field state-text ${json ? "mono" : ""}`} aria-label="State of the row" readonly
+                    rows=${rowsFor(current.stateText)} value=${current.stateText}></textarea>
+          <${RowValues} item=${current} />
+          <div class="state-foot">
+            <span>${json ? "Sent as JSON; the model reads keys and values" : `${current.stateText.length.toLocaleString("en")} characters, plain text`} · read-only: a dataset's rows stay as they are</span>
+            ${run && html`<span class="num">Last run: ${run.input_tokens} input tokens${run.truncated ? ", the state was cut" : ""}</span>`}
+          </div>
+        </div>
+      </div>
+    </section>
   `;
 }
 
@@ -600,7 +701,7 @@ function CheckLine() {
 export function Editor() {
   const current = draft.value;
   return html`
-    <${State} />
+    ${dataset.value ? html`<${RowState} />` : html`<${State} />`}
     <div class="questions">
       ${current.questions.map(
         (question, index) =>

@@ -27,7 +27,7 @@ from ...model import check_request
 from ...registry import static_capabilities
 from ...server import Answered, answer
 from ..catalog import model_facts
-from ..workspace import Workspace, WorkspaceError, check_name
+from ..workspace import Workspace, WorkspaceError, check_name, dataset_document
 from . import ApiError, field, json_body
 
 logger = logging.getLogger(__name__)
@@ -246,7 +246,8 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
             raise ApiError(400, "a run is in a Run All or a Compare, not both", param="compare")
         if set_name is not None:
             try:
-                check_name(set_name, "a set's name")
+                if dataset_document(set_name) is None:  # a dataset's: checked there
+                    check_name(set_name, "a set's name")
             except WorkspaceError as error:
                 raise ApiError(400, error.message, param="set") from None
         check_data_urls(decision)

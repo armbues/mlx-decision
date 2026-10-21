@@ -153,12 +153,17 @@ function SplitTabs({ name, summary }) {
   `;
 }
 
+// The Playground on the dataset: its questions written or edited there.
+const writeQuestions = (name) => navigate("playground", `data:${name}`);
+
 // What keeps the dataset from a fit, with what to do about it.
-function NotReady({ summary }) {
+function NotReady({ name, summary }) {
   if (!summary.missing?.length) return null;
+  const folder = summary.kind === "folder";
   return html`
     <div class="notice ds-banner" role="status">
       <span><b>Not ready for a fit:</b> ${summary.missing.join("; ")}. A fit and an evaluation need questions, and for every label value the answer it stands for.</span>
+      ${folder && html`<button class="btn sm" onClick=${() => writeQuestions(name)}>${summary.questions.length ? "Edit Questions" : "Write Questions"}</button>`}
     </div>
   `;
 }
@@ -170,10 +175,23 @@ function onIt(name, run, what) {
     run(name);
     return;
   }
+  const asked = (item.questions ?? []).length > 0;
   openSheet({
     title: `${name} is not ready for ${what}`,
     purpose: `${item.missing.join("; ")}. ${what === "a fit" ? "A fit learns" : "An evaluation scores models"} on questions whose answers the dataset's label values give: its questions first, then for each value the answer it stands for.`,
-    actions: [{ label: "OK", primary: true, onSelect: closeSheet }],
+    actions:
+      item.kind === "folder"
+        ? [
+            {
+              label: asked ? "Edit Questions" : "Write Questions",
+              primary: true,
+              onSelect: () => {
+                closeSheet();
+                writeQuestions(name);
+              },
+            },
+          ]
+        : [{ label: "OK", primary: true, onSelect: closeSheet }],
   });
 }
 
@@ -208,8 +226,11 @@ function Picked({ name }) {
       <div class="actions">
         <button class="btn primary" onClick=${() => onIt(name, fitOn, "a fit")} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
         <button class="btn" onClick=${() => onIt(name, evalOn, "an evaluation")} title=${`Score a model on ${name}, on the Training page`}>Evaluate on It…</button>
-        <button class="btn" onClick=${() => openInPlayground(name, summary.split)} disabled=${!asked}
-                title=${asked ? `A new question set with ${name}'s questions and the first ${Math.min(summary.examples, 10)} examples of ${summary.split}, to try a model on` : `${name} has no questions yet`}>Open in Playground</button>
+        ${folder
+          ? html`<button class="btn" onClick=${() => writeQuestions(name)}
+                title=${`The Playground on ${name}: its questions, tried on its rows, saved in its dataset.json`}>${asked ? "Edit Questions" : "Write Questions"}</button>`
+          : html`<button class="btn" onClick=${() => openInPlayground(name, summary.split)} disabled=${!asked}
+                title=${asked ? `A new question set with ${name}'s questions and the first ${Math.min(summary.examples, 10)} examples, to try a model on` : `${name} has no questions yet`}>Open in Playground</button>`}
         <${MenuButton} id="data-more" className="btn" ariaLabel=${`More actions for ${name}`}
           label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
           menuStyle="top:32px; right:0; width:200px">
@@ -219,7 +240,7 @@ function Picked({ name }) {
         <//>
       </div>
     </div>
-    <${NotReady} summary=${summary} />
+    <${NotReady} name=${name} summary=${summary} />
     <${SplitTabs} name=${name} summary=${summary} />
     ${(summary.source || folder) && html`<${Source} summary=${summary} />`}
     <${Questions} summary=${summary} />
