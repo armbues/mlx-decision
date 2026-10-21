@@ -457,7 +457,7 @@ export function FitView({ id }) {
       ${running && job.state === "waiting" &&
       html`<div class="actions"><button class="btn" disabled=${job.stop_requested} onClick=${() => stopJob(job.id)}>${job.stop_requested ? "Stopping…" : "Stop"}</button></div>`}
     </div>
-    <div class="group run-group">
+    <div class="group fit-progress">
       ${evaluation ? html`<${EvalStepper} events=${events} job=${job} />` : html`<${Stepper} events=${events} job=${job} />`}
       ${running && html`<${StepLine} events=${events} />`}
       ${!running && !done && html`<p class="run-outcome warn-text">${OUTCOMES[job.outcome] ?? job.outcome}${job.message && job.outcome !== "cancelled" ? `: ${job.message.trim().split("\n").pop()}` : ""}</p>`}

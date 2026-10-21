@@ -28,6 +28,12 @@ export function parameters(count) {
   return `${billions < 10 ? billions.toFixed(1).replace(/\.0$/, "") : Math.round(billions)}B`;
 }
 
+// An image size in millions of pixels: "2.1 MP", "1 MP", "0.26 MP".
+export function megapixels(pixels) {
+  const value = pixels / 1e6;
+  return `${value >= 1 ? value.toFixed(1).replace(/\.0$/, "") : value.toFixed(2)} MP`;
+}
+
 export function plural(count, one, many = `${one}s`) {
   return `${count} ${count === 1 ? one : many}`;
 }

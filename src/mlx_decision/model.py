@@ -137,6 +137,12 @@ def check_supported(request: Request, capabilities: Capabilities, name: str) -> 
             param="images",
             code="unsupported_media",
         )
+    limit = capabilities.max_images
+    if limit is not None and request.images and len(request.images) > limit:
+        raise DecisionError(
+            f"{len(request.images)} images; this model reads at most {limit} per request",
+            param="images",
+        )
     for question_id, question in request.questions.items():
         where = f"questions.{question_id}"
         if question.type not in capabilities.question_types:

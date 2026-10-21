@@ -5,10 +5,10 @@
 ``_helpers/studio_fake.py``, which serves one to drive by hand.
 
 Models: ``fake`` (at most 4 options, 50 input tokens), ``fake-vision`` (reads
-images), ``fake-strict`` (needs instructions; choice and noul only). With
-``sizes`` they count made-up sizes against an 8 GB budget, and a fitted
-``fake-fit`` and an over-budget ``fake-big`` are added (the Models page's
-memory card); with ``slow`` also ``fake-slow`` (1.5 s an answer, other
+images: at most 4, shrunk to 2.1 MP), ``fake-strict`` (needs instructions;
+choice and noul only). With ``sizes`` they count made-up sizes against an
+8 GB budget, and a fitted ``fake-fit`` and an over-budget ``fake-big`` are
+added (the Models page's memory card); with ``slow`` also ``fake-slow`` (1.5 s an answer, other
 probabilities; Compare's Stop and its notes where models differ). With
 ``empty`` it serves no models at all (a first start); with ``convertible``
 also ``tiny-clef``, the tiny Clef of ``tests/tiny_models.py``, which
@@ -108,7 +108,13 @@ def write_studio(
     ``home/ws/sets`` (kept when there), and build the Studio for ``port``."""
     models = home / "fake-models"
     write_model(models / "fake", max_choice_options=4, max_input_tokens=50)
-    write_model(models / "fake-vision", supports_images=True, open_images=True)
+    write_model(
+        models / "fake-vision",
+        supports_images=True,
+        open_images=True,
+        max_image_pixels=2**21,
+        max_images=4,
+    )
     write_model(
         models / "fake-strict", requires_instructions=True, question_types=["choice", "noul"]
     )

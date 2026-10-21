@@ -43,7 +43,13 @@ def png(color=(255, 0, 0)) -> str:
 def models_folder(tmp_path):
     folder = tmp_path / "models"
     write_model(folder / "fake", max_choice_options=4)
-    write_model(folder / "seeing", supports_images=True, open_images=True)
+    write_model(
+        folder / "seeing",
+        supports_images=True,
+        open_images=True,
+        max_image_pixels=2**21,
+        max_images=4,
+    )
     write_fitted(folder / "fake-fit", folder / "fake")
     return folder
 
@@ -126,6 +132,10 @@ def test_models(studio):
     assert models["fake"]["capabilities"]["max_choice_options"] == 4
     assert models["fake"]["capabilities"]["supports_images"] is False
     assert models["seeing"]["capabilities"]["supports_images"] is True
+    # The image limits the drop area shows.
+    assert models["seeing"]["capabilities"]["max_image_pixels"] == 2**21
+    assert models["seeing"]["capabilities"]["max_images"] == 4
+    assert models["fake"]["capabilities"]["max_image_pixels"] is None
     assert models["fake-fit"]["fitted"] and models["fake-fit"]["base"] == "fake"
     assert models["fake-fit"]["capabilities"] == models["fake"]["capabilities"]
     assert not any(entry["loaded"] for entry in models.values())

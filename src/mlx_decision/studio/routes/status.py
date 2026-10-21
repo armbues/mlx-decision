@@ -66,7 +66,8 @@ def cli_path() -> str:
 
 
 def capabilities_info(capabilities: Capabilities) -> dict[str, Any]:
-    """The request limits of ``DecisionModel.info()``, from static capabilities."""
+    """The request limits of ``DecisionModel.info()``, from static capabilities,
+    and the image limits the Playground's drop area shows."""
     return {
         "max_input_tokens": capabilities.max_input_tokens,
         "truncates_input": capabilities.truncates_input,
@@ -76,6 +77,8 @@ def capabilities_info(capabilities: Capabilities) -> dict[str, Any]:
         "question_tokens": capabilities.question_tokens,
         "requires_instructions": capabilities.requires_instructions,
         "supports_images": capabilities.supports_images,
+        "max_image_pixels": capabilities.max_image_pixels,
+        "max_images": capabilities.max_images,
     }
 
 

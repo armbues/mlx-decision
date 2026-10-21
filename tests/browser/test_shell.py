@@ -1,5 +1,6 @@
 """The window around the pages: a job holding the GPU, shortcuts while a sheet
-is open, the theme switch and the inspector in a narrow window."""
+is open, Esc in the tooltips, the theme switch and the inspector in a narrow
+window."""
 
 import pytest
 from drive import answers_view, hold_gpu, open_studio, pick, pick_model, release_gpu
@@ -62,6 +63,39 @@ def test_page_shortcuts_do_not_reach_chrome_while_a_sheet_is_open(studio, page):
     assert page.evaluate("seen") == [["KeyS", True], ["KeyS", True], ["KeyO", True]]
     expect(page.locator(".sheet")).to_contain_text("Use This Request Elsewhere")  # still Get Code
     assert studio.set_file("ticket-triage") == saved  # nothing saved
+
+
+def test_esc_shows_in_the_tooltips_of_menus_and_sheets(studio, page):
+    open_studio(page, studio, "playground/ticket-triage")
+    # A menu's button says Esc closes it while it is open.
+    button = page.get_by_role("button", name="Appearance")
+    expect(button).to_have_attribute("title", "Appearance: follow the system, light or dark")
+    button.click()
+    expect(page.locator(".menu")).to_be_visible()
+    expect(button).to_have_attribute("title", "Close (Esc)")
+    page.keyboard.press("Escape")
+    expect(page.locator(".menu")).to_have_count(0)
+    expect(button).to_have_attribute("title", "Appearance: follow the system, light or dark")
+    # A sheet's Cancel, and the one button of a sheet that only shows something.
+    page.keyboard.press("Meta+Shift+s")
+    expect(page.locator(".sheet-foot .btn", has_text="Cancel")).to_have_attribute(
+        "title", "Cancel (Esc)"
+    )
+    page.keyboard.press("Escape")
+    expect(page.locator(".sheet")).to_have_count(0)
+    page.get_by_role("button", name="Get Code").first.click()
+    expect(page.locator(".sheet-foot .btn.primary")).to_have_attribute("title", "Done (Esc)")
+
+
+def test_stop_sits_beside_run_in_the_toolbar(studio, page):
+    """Another page's styles once stacked Stop under Run and pushed Run out."""
+    open_studio(page, studio, "playground/ticket-triage")
+    run = page.locator(".toolbar .run-btn").bounding_box()
+    stop = page.locator(".toolbar .stop-btn").bounding_box()
+    toolbar = page.locator(".toolbar").bounding_box()
+    assert toolbar["y"] <= run["y"] and run["y"] + run["height"] <= toolbar["y"] + toolbar["height"]
+    assert stop["x"] >= run["x"] + run["width"]
+    assert abs((stop["y"] + stop["height"] / 2) - (run["y"] + run["height"] / 2)) < 2
 
 
 def test_the_download_button_names_its_shortcut(studio, page):

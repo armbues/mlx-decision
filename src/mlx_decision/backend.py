@@ -19,6 +19,11 @@ class Capabilities:
     question_tokens: int | None = None
     requires_instructions: bool = False
     supports_images: bool = False
+    # For a model that reads images: larger ones are scaled down to this many
+    # pixels (keeping their shape); None when it does not read images.
+    max_image_pixels: int | None = None
+    # Images one request takes at most (None: no limit of the model's own).
+    max_images: int | None = None
     # False when inputs over max_input_tokens are refused instead of cut.
     truncates_input: bool = True
     # Tokens of state a prompt shows at most, when less than the input limit

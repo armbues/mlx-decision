@@ -7,7 +7,7 @@ import * as icons from "../components/icons.js";
 import { openPreview } from "../components/lightbox.js";
 import { MenuButton, MenuHeader, MenuItem, MenuSeparator } from "../components/menu.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
-import { plural } from "../format.js";
+import { megapixels, plural } from "../format.js";
 import { SHORTCUTS } from "../keys.js";
 import { toast } from "../store/ui.js";
 import * as edit from "./draft.js";
@@ -87,6 +87,25 @@ function updateExample(change) {
   });
 }
 
+// The types the page takes and the model's limits: how many images one
+// example may have, and the pixels larger ones are shrunk to.
+function ImageLimits({ capabilities }) {
+  const { max_image_pixels: pixels, max_images: count } = capabilities;
+  const parts = ["PNG, JPEG, WebP"];
+  const tips = [];
+  if (count) {
+    parts.push(`at most ${count}`);
+    tips.push(`${modelName.value ?? "This model"} reads at most ${plural(count, "image")} an example.`);
+  }
+  if (pixels) {
+    parts.push(`shrunk to ${megapixels(pixels)}`);
+    tips.push(`Larger images are shrunk to ${pixels.toLocaleString("en-US")} pixels, keeping their shape.`);
+  }
+  return html`<span class="dim limits" title=${tips.join(" ") || null}>
+    ${parts.map((part, index) => html`${index > 0 && " · "}<span class="nowrap">${part}</span>`)}
+  </span>`;
+}
+
 function Images() {
   const current = example.value;
   const reads = model.value?.capabilities?.supports_images ?? false;
@@ -130,7 +149,7 @@ function Images() {
       </svg>
       <span>
         ${reads
-          ? html`Drop or paste images here <span class="dim">· PNG, JPEG, WebP</span>`
+          ? html`Drop or paste images here <${ImageLimits} capabilities=${model.value.capabilities} />`
           : `${modelName.value ?? "This model"} reads text only. Pick a model that reads images to add them.`}
       </span>
       ${reads &&

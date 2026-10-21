@@ -45,6 +45,8 @@ CASES = [
     ("clef", {"max_input_tokens": 64, "prefix_cache_gb": 0}),
     ("clef-vision", {}),
     ("clef-vision", {"vision": True, "max_input_tokens": 64}),
+    ("clef-vision", {"max_image_pixels": 2048}),
+    ("clef-vision", {"max_image_pixels": None}),
     ("clef-8bit", {}),
     ("pplx", {}),
     ("pplx", {"max_input_tokens": 100, "vision": True}),
@@ -82,6 +84,26 @@ def test_options_change_the_static_capabilities(models):
     assert not static_capabilities(models["clef"]).supports_images
     fitted = static_capabilities(models["laya-fit"], max_input_tokens=32)
     assert fitted == static_capabilities(models["laya"], max_input_tokens=32)
+
+
+def test_image_limits(models):
+    """The pixels larger images are scaled down to, and the images a request takes."""
+
+    def limits(name, **options):
+        capabilities = static_capabilities(models[name], **options)
+        return capabilities.max_image_pixels, capabilities.max_images
+
+    # Clef: its default (2**21) or the option, never over the processor's 4,096.
+    assert limits("clef-vision") == (4096, None)
+    assert limits("clef-vision", max_image_pixels=2048) == (2048, None)
+    assert limits("clef-vision", max_image_pixels=None) == (4096, None)
+    assert limits("clef") == (None, None)
+    assert limits("pplx") == (262144, None)
+    assert limits("d3") == (1638400, None)
+    assert limits("d3", max_image_pixels=70000) == (70000, None)
+    # H2O: the serve config's image block.
+    assert limits("h2o") == (1048576, 4)
+    assert limits("d1") == limits("laya") == (None, None)
 
 
 def test_no_weights_are_read(models, monkeypatch):
@@ -140,6 +162,7 @@ REQUESTS = {
     "no questions": {"state": "x"},
     "videos": {"state": "x", "questions": {"q": NOUL}, "videos": ["data:video/mp4;base64,AA=="]},
     "images": {"state": "x", "questions": {"q": NOUL}, "images": [PNG]},
+    "5 images": {"state": "x", "questions": {"q": NOUL}, "images": [PNG] * 5},
     "image in state": {"state": {"photo": PNG}, "questions": {"q": NOUL}},
     "bad image in state": {"state": "data:image/png;base64,!!!", "questions": {"q": NOUL}},
     "21 options": {"state": "x", "questions": {"q": _choice(21)}},
@@ -156,6 +179,7 @@ STRICT = {
     "requires_instructions": True,
     "max_choice_options": 2,
     "max_score_levels": 3,
+    "max_images": 4,
 }
 CHECKED = [(name, {}) for name in dict.fromkeys(name for name, _ in CASES)] + [("fake", STRICT)]
 

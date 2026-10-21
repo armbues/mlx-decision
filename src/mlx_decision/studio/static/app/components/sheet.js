@@ -46,8 +46,8 @@ export function Sheet() {
       <div class="sheet-foot">
         ${Foot ? html`<${Foot} />` : note && html`<span class="note">${note}</span>`}
         ${done
-          ? html`<button class="btn primary" onClick=${closeSheet}>${done}</button>`
-          : html`<button class="btn" onClick=${closeSheet}>Cancel</button>`}
+          ? html`<button class="btn primary" title=${`${done} (Esc)`} onClick=${closeSheet}>${done}</button>`
+          : html`<button class="btn" title="Cancel (Esc)" onClick=${closeSheet}>Cancel</button>`}
         ${actions.map(
           (action) => html`<button class=${`btn${action.primary ? " primary" : ""}${action.danger ? " danger" : ""}`}
             disabled=${action.disabled} onClick=${action.onSelect}>${action.label}</button>`,

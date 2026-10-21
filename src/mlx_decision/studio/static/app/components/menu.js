@@ -1,4 +1,5 @@
-// Menus: a button that opens a solid popover; one open at a time.
+// Menus: a button that opens a solid popover; one open at a time. Esc or
+// the button again closes it (its tooltip says so while it is open).
 import { html } from "htm/preact";
 import { useEffect, useRef } from "preact/hooks";
 import { openMenu } from "../store/ui.js";
@@ -21,7 +22,7 @@ export function MenuButton({ id, label, className, title, menuStyle, ariaLabel, 
         aria-haspopup="menu"
         aria-expanded=${open}
         aria-label=${ariaLabel}
-        title=${title}
+        title=${open ? "Close (Esc)" : title}
         onClick=${toggle}
       >
         ${label}

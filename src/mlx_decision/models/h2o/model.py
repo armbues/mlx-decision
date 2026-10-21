@@ -35,6 +35,7 @@ from ..qwen import (
     image_config,
     image_features,
     image_inputs,
+    image_pixel_limit,
     open_images,
     precision,
     prepare,
@@ -161,9 +162,7 @@ class H2OBackend:
         )
         if backbone is not None:
             self.label_rows()
-        self.capabilities = _capabilities(
-            config, max_input_tokens, path is not None and has_vision_weights(path)
-        )
+        self.capabilities = _capabilities(config, max_input_tokens, path)
 
     def load_vision(self):
         """The vision tower, loaded on first use (it stays in its stored precision)."""
@@ -478,16 +477,20 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     return [(file, None) for file in sorted(path.glob("model*.safetensors"))]
 
 
-def _capabilities(config: ServeConfig, max_input_tokens: int, vision: bool) -> Capabilities:
-    """``vision``: the folder has vision weights (images also need the serve
-    config's image block)."""
+def _capabilities(config: ServeConfig, max_input_tokens: int, path: Path | None) -> Capabilities:
+    """Images need vision weights in ``path`` and the serve config's image block."""
+    images = config.image is not None and path is not None and has_vision_weights(path)
     return Capabilities(
         max_input_tokens=max_input_tokens,
         max_choice_options=len(config.labels),
         max_score_levels=len(config.labels),
         truncates_input=True,
         max_state_tokens=config.prompt.max_state_tokens,
-        supports_images=config.image is not None and vision,
+        supports_images=images,
+        max_image_pixels=image_pixel_limit(path, config.image.max_pixels or None)
+        if images
+        else None,
+        max_images=config.image.max_images if images else None,
     )
 
 
@@ -505,7 +508,7 @@ def _input_limit(max_input_tokens: int | None) -> int:
 def capabilities(path: Path, options: dict) -> Capabilities:
     """What ``load(path, **options)`` gives the backend, from the folder's config files."""
     limit = _input_limit(options.get("max_input_tokens"))
-    result = _capabilities(ServeConfig.read(path), limit, has_vision_weights(path))
+    result = _capabilities(ServeConfig.read(path), limit, path)
     if options.get("vision") and not result.supports_images:
         raise ValueError(f"{path} has no vision weights or image settings")
     return result

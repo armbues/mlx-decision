@@ -192,6 +192,14 @@ def test_a_json_state(studio, page):
 def test_images_on_a_model_that_reads_them(studio, page, tmp_path):
     open_studio(page, studio, "playground/ticket-triage")
     pick_model(page, "fake-vision")
+    # The drop area names the types and the model's limits.
+    limits = page.locator(".drop .limits")
+    expect(limits).to_have_text("PNG, JPEG, WebP · at most 4 · shrunk to 2.1 MP")
+    expect(limits).to_have_attribute(
+        "title",
+        "fake-vision reads at most 4 images an example. "
+        "Larger images are shrunk to 2,097,152 pixels, keeping their shape.",
+    )
     image = tmp_path / "a.png"
     image.write_bytes(png())
     page.locator(".drop input[type=file]").set_input_files(str(image))
@@ -207,6 +215,15 @@ def test_images_on_a_model_that_reads_them(studio, page, tmp_path):
     broken.write_bytes(base64.b64decode("AAAA"))
     page.locator(".drop input[type=file]").set_input_files(str(broken))
     expect(page.locator(".field-problem")).to_contain_text("image")
+    page.locator(".thumb .minus").last.click()
+    expect(page.locator(".field-problem")).to_have_count(0)
+
+    # More images than the model reads: the live check says so before Run.
+    page.locator(".drop input[type=file]").set_input_files([str(image)] * 4)
+    expect(page.locator(".thumb img")).to_have_count(5)
+    expect(page.locator(".field-problem")).to_contain_text(
+        "5 images; this model reads at most 4 per request"
+    )
     page.locator(".thumb .minus").last.click()
     expect(page.locator(".field-problem")).to_have_count(0)
 

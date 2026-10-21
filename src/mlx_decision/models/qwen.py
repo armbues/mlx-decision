@@ -59,6 +59,20 @@ def image_config(path, max_pixels: int | None):
     return config
 
 
+def image_pixel_limit(path, max_pixels: int | None) -> int:
+    """The pixels ``image_config(path, max_pixels)`` scales larger images down
+    to, read without the images extra (as ``ImageConfig.from_folder`` reads it)."""
+    path = Path(path)
+    if (file := path / "processor_config.json").exists():
+        settings = json.loads(file.read_text()).get("image_processor", {})
+    elif (file := path / "preprocessor_config.json").exists():
+        settings = json.loads(file.read_text())
+    else:
+        settings = {}
+    limit = settings.get("size", {}).get("longest_edge", 16777216)  # ImageConfig's default
+    return min(limit, max_pixels) if max_pixels is not None else limit
+
+
 def open_images(values) -> list[tuple[int, object]]:
     """Each image opened (header read, not decoded), with its index."""
     from ..images import open_image

@@ -12,7 +12,15 @@ from ...backbones.qwen3_5.tokenizer import load_tokenizer
 from ...backend import BackendOutput, Capabilities
 from ...types import Request
 from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
-from ..qwen import count_image_tokens, image_config, image_inputs, open_images, precision, prepare
+from ..qwen import (
+    count_image_tokens,
+    image_config,
+    image_inputs,
+    image_pixel_limit,
+    open_images,
+    precision,
+    prepare,
+)
 from .encode import DEFAULT_MAX_LENGTH, IMAGE_PAD, EncodedQuestion, encode_request
 from .head import JointSchemaHead
 
@@ -61,9 +69,7 @@ class ClefBackend:
         self.prefix_cache = (
             PrefixCache(round(prefix_cache_gb * 1e9)) if prefix_cache_gb > 0 else None
         )
-        self.capabilities = _capabilities(
-            max_input_tokens, path is not None and has_vision_weights(path)
-        )
+        self.capabilities = _capabilities(max_input_tokens, path, max_image_pixels)
 
     def load_vision(self):
         """The vision tower, loaded on first use (it stays in its stored precision)."""
@@ -182,20 +188,26 @@ class ClefBackend:
         return mx.concatenate([entry.hidden, rest[0]], axis=0)
 
 
-def _capabilities(max_input_tokens: int, images: bool) -> Capabilities:
+def _capabilities(
+    max_input_tokens: int, path: Path | None, max_image_pixels: int | None
+) -> Capabilities:
+    images = path is not None and has_vision_weights(path)
     return Capabilities(
         max_input_tokens=max_input_tokens,
         # The release documents no limits; these are the Jev API's.
         max_choice_options=255,
         max_score_levels=10,
         supports_images=images,
+        max_image_pixels=image_pixel_limit(path, max_image_pixels) if images else None,
     )
 
 
 def capabilities(path: Path, options: dict) -> Capabilities:
     """What ``load(path, **options)`` gives the backend, from the folder's files."""
     result = _capabilities(
-        options.get("max_input_tokens", DEFAULT_MAX_LENGTH), has_vision_weights(path)
+        options.get("max_input_tokens", DEFAULT_MAX_LENGTH),
+        path,
+        options.get("max_image_pixels", DEFAULT_MAX_IMAGE_PIXELS),
     )
     if options.get("vision") and not result.supports_images:
         raise ValueError(f"{path} has no vision weights")

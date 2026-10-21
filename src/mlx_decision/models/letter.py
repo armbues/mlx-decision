@@ -93,12 +93,14 @@ class LetterBackend:
         self.temperature = temperature
         self.preset = preset
         self.path = path
-        self.max_image_pixels = min(
-            preset.max_image_pixels, max_image_pixels or preset.max_image_pixels
-        )
+        self.max_image_pixels = _pixel_limit(preset, max_image_pixels)
         self.vision = None
         self.capabilities = _capabilities(
-            preset, codes, max_input_tokens, path is not None and has_vision_weights(path)
+            preset,
+            codes,
+            max_input_tokens,
+            path is not None and has_vision_weights(path),
+            self.max_image_pixels,
         )
 
     def load_vision(self):
@@ -267,14 +269,24 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     return [(file, None) for file in files if file.exists()]
 
 
+def _pixel_limit(preset: Preset, max_image_pixels: int | None) -> int:
+    """The preset's image maximum, lowered by ``max_image_pixels``."""
+    return min(preset.max_image_pixels, max_image_pixels or preset.max_image_pixels)
+
+
 def _capabilities(
-    preset: Preset, codes: list[str], max_input_tokens: int | None, images: bool
+    preset: Preset,
+    codes: list[str],
+    max_input_tokens: int | None,
+    images: bool,
+    max_image_pixels: int,
 ) -> Capabilities:
     return Capabilities(
         max_input_tokens=max_input_tokens or preset.max_input_tokens,
         max_choice_options=len(codes),
         max_score_levels=min(len(codes), preset.max_score_levels or len(codes)),
         supports_images=images,
+        max_image_pixels=max_image_pixels if images else None,
         truncates_input=False,
     )
 
@@ -291,7 +303,13 @@ def capabilities(path: Path, preset: Preset, options: dict) -> Capabilities:
     max_input_tokens = options.get("max_input_tokens")
     _check_input_limit(preset, max_input_tokens)
     codes, _, _ = read_decision_config(path)
-    result = _capabilities(preset, codes, max_input_tokens, has_vision_weights(path))
+    result = _capabilities(
+        preset,
+        codes,
+        max_input_tokens,
+        has_vision_weights(path),
+        _pixel_limit(preset, options.get("max_image_pixels")),
+    )
     if options.get("vision") and not result.supports_images:
         raise ValueError(f"{path} has no vision weights")
     return result
