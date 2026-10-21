@@ -140,7 +140,7 @@ def test_one_split_with_a_record_and_the_question_given(saved, tmp_path):
 @pytest.mark.parametrize(
     ("more", "message"),
     [
-        (["--split", "train", "--split", "test"], "put {split} in -o"),
+        (["--split", "train", "--split", "test"], "-o names a dataset folder"),
         (["--split", "train", "--split", "train"], "each split once"),
         (
             [
@@ -163,7 +163,7 @@ def test_one_split_with_a_record_and_the_question_given(saved, tmp_path):
     ],
 )
 def test_what_does_not_go_together(saved, tmp_path, more, message):
-    name = "x.jsonl" if message == "put {split} in -o" else "x-{split}.jsonl"
+    name = "x.jsonl" if message == "-o names a dataset folder" else "x-{split}.jsonl"
     output = str(tmp_path / name)
     for events_flag in ([], ["--events"]):
         result = CliRunner().invoke(app, command(saved, output, *more, *events_flag))
@@ -210,3 +210,25 @@ def test_a_stop_after_one_split_leaves_no_file(saved, tmp_path):
     assert process.returncode == 130
     assert events(rest)[-1] == {"stage": "cancelled", "message": "nothing was written"}
     assert list(out.iterdir()) == []  # neither the train file nor any partial
+
+
+def test_a_stop_after_one_split_leaves_no_folder(saved, tmp_path):
+    out = tmp_path / "data"
+    out.mkdir()
+    args = command(saved, str(out / "t"), "--split", "train", "--split", "test",
+                   "--roles", "train,report", "--events")  # fmt: skip
+    env = {**os.environ, "FAKE_SLOW_SPLIT": "test", WATCH_VARIABLE: "1"}
+    process = subprocess.Popen(
+        [sys.executable, "-c", LAUNCHER, *args],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+    )  # fmt: skip
+    for line in process.stdout:
+        event = json.loads(line)
+        if event["stage"] == "check" and event.get("step") == 2:
+            break
+    process.stdin.close()  # the Studio gone: the watchdog stops the run
+    process.wait(timeout=10)
+    rest = process.stdout.read()
+    assert process.returncode == 130
+    assert events(rest)[-1] == {"stage": "cancelled", "message": "nothing was written"}
+    assert list(out.iterdir()) == []  # neither the folder nor its partial

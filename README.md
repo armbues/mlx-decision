@@ -545,7 +545,7 @@ from you. Five benchmark datasets come as presets:
 pip install "mlx-decision[training]"
 mlx-decision data hf:dair-ai/emotion --config split --split train -o emotion.jsonl \
   --question "Which emotion does the text express most?"
-mlx-decision data --preset trec --split train --split test -o trec-{split}.jsonl
+mlx-decision data --preset trec --split train --split test -o trec   # a dataset folder
 mlx-decision data --preset anli-r3 --split train_r3 --sample 2000 -o anli-train.jsonl
 ```
 
@@ -553,10 +553,10 @@ One run per kind:
 
 ```bash
 # Laya, Julia: fine-tune the encoder and head (--head-only: the head alone)
-mlx-decision training fit -m SupersonicLabs/Julia-1 --data trec-train.jsonl -o julia-trec
+mlx-decision training fit -m SupersonicLabs/Julia-1 --data trec -o julia-trec
 
 # pplx, d3, H2O-Lightning, d1: retrain the option readout on the frozen network
-mlx-decision training fit -m LiquidAI/d1-3B --data trec-train.jsonl -o d1-trec
+mlx-decision training fit -m LiquidAI/d1-3B --data trec -o d1-trec
 
 # Clef: train the decision head on the frozen backbone (8-bit copy on a 24 GB Mac)
 mlx-decision training fit -m clef-flash-q8 --data anli-train.jsonl -o clef-anli
@@ -573,7 +573,7 @@ finds much easier than its real work, it makes the model overconfident.
 Then compare on data the fit has not seen, and use the result:
 
 ```bash
-mlx-decision training eval -m julia-trec --data trec-test.jsonl --compare SupersonicLabs/Julia-1
+mlx-decision training eval -m julia-trec --data trec --compare SupersonicLabs/Julia-1
 mlx-decision chat -m julia-trec
 ```
 

@@ -20,12 +20,15 @@ The workflow has four steps:
 ```bash
 pip install "mlx-decision[training]"     # `data` reading from the Hugging Face Hub
 
-mlx-decision data --preset trec --split train -o trec-train.jsonl
-mlx-decision data --preset trec --split test -o trec-test.jsonl
-mlx-decision training fit -m SupersonicLabs/Julia-1 --data trec-train.jsonl -o julia-trec
-mlx-decision training eval -m julia-trec --data trec-test.jsonl --compare SupersonicLabs/Julia-1
+mlx-decision data --preset trec --split train --split test -o trec
+mlx-decision training fit -m SupersonicLabs/Julia-1 --data trec -o julia-trec
+mlx-decision training eval -m julia-trec --data trec --compare SupersonicLabs/Julia-1
 mlx-decision run -m julia-trec -s "Who wrote Hamlet?" -q questions.json
 ```
+
+(`trec` is a [dataset folder](#dataset-folders) with one file per
+split: `training fit` trains on its train split and reports on its test
+split, `training eval` scores the test split.)
 
 (`questions.json` holds the question as the training file asks it, the
 `questions` object of any of its lines.)
@@ -112,11 +115,61 @@ Two rules decide what a fit can learn:
 - **The data must look like what the model will be asked.** See
   [Calibration](#calibration-needs-data-like-the-target).
 
+### Dataset folders
+
+A dataset folder keeps one dataset together: `dataset.json` and one
+JSON-lines file per split, named after the split (`train.jsonl`,
+`test.jsonl`). `data` writes one when `-o` has no `.jsonl`. Its lines
+hold the state and the raw values of the dataset's label column; the
+questions and what each value means live once, in `dataset.json`:
+
+```json
+{
+  "questions": {"topic": {"type": "choice", "instructions": "What is the tweet about?",
+                          "criteria": {"earnings": "Earnings", "fed": "Fed, central banks"}}},
+  "answers": {"topic": {"column": "label", "map": {"5": "earnings", "1": "fed"},
+                        "left_out": ["0", "2"]}},
+  "columns": {"label": {"values": {"0": {"rows": 1789}, "1": {"rows": 826}}}},
+  "splits": {"train": {"role": "train", "split": "train", "rows": 16990, "examples": 16990},
+             "validation": {"role": "report", "split": "validation", "rows": 4117, "examples": 4117}},
+  "source": {"source": "hf:zeroshot/twitter-financial-news-topic", "shape": "text"}
+}
+```
+
+```json
+{"id": "twitter-financial-news-topic:train/0", "state": "Here are Thursday's biggest analyst calls ...", "values": {"label": "0"}}
+```
+
+- `answers` maps each value of a column to an answer of a question: an
+  option id, `true` / `false` for a yes/no question, a level for a
+  score. Several values may map to one option. Values in `left_out`
+  are not trained on for that question. A value that is neither mapped
+  nor left out stops `training fit` and `training eval`, which name it.
+- Changing the wording, merging classes, leaving some out or asking a
+  yes/no question about some of them ("Is this about earnings?") only
+  changes `dataset.json`; the split files stay as they are.
+- A dataset may have no questions yet: `data` without `--question`
+  writes the rows and their values, and `training fit` says what is
+  missing until you add `questions` and `answers`.
+- A line may still carry its own `questions` and `labels`, where they
+  differ per row (OpenBookQA's options, a yes/no dataset's question);
+  they replace the dataset's for that line.
+- Each split has a `role`: `train` (what a fit learns from), `report`
+  (what a fit's report scores) or `evaluate` (what `training eval`
+  scores). `training fit --data FOLDER` trains on the train split and
+  reports on the report split (unless `--validation` or `--holdout` is
+  given); `training eval --data FOLDER` scores the evaluate split, else
+  the report split. Pass a split's file (`--data trec/test.jsonl`) to
+  pick another.
+- A plain JSON-lines file works everywhere a folder does, as a dataset
+  of one split.
+
 ### `data`: datasets to training files
 
 ```bash
-mlx-decision data SOURCE -o FILE.jsonl [options]
-mlx-decision data SOURCE --show 3        # preview: three lines and the label counts
+mlx-decision data SOURCE -o FOLDER [options]     # a dataset folder
+mlx-decision data SOURCE -o FILE.jsonl [options] # one file
+mlx-decision data SOURCE --show 3                # preview: three lines and the label counts
 ```
 
 SOURCE is `hf:ORG/NAME` (a Hugging Face dataset, with `--config`,
@@ -128,24 +181,33 @@ them. `--limit N` takes the first rows, `--sample N --seed S` draws rows
 at random (in the dataset's order). The same flags always write the same
 file.
 
-Several splits in one run: repeat `--split` and put `{split}` in `-o`,
-which stands for each split's name. `--sample` is then given once (for
-every split) or once per `--split`, in the same order; `0` takes a whole
-split. The files are written together: when one split fails, or the run
-is stopped, none of them is left.
+Several splits in one run: repeat `--split`; `-o` then names a dataset
+folder, with one file per split. `--sample` is given once (for every
+split) or once per `--split`, in the same order; `0` takes a whole
+split. The folder is written whole: when a split fails, or the run is
+stopped, nothing is left.
 
 ```bash
 mlx-decision data --preset sst5 --split train --split validation \
-  --sample 2000 --sample 0 -o sst5-{split}.jsonl
+  --sample 2000 --sample 0 -o sst5
 ```
 
-`--record` writes a small `NAME.source.json` beside each file, saying
-where it came from: the source, config, revision, split, the split's
-rows, the sample and seed, the question and label map when given, and
-the other files of the same run. `--roles train,report` (one per
-`--split`) adds what each file is for: `train`, `report` or `evaluate`.
-The Studio's Get a Dataset passes both, and its Datasets page reads the
-records.
+`--roles` says what each split is for, one entry per `--split`: `train`,
+`report` or `evaluate`. By default the names decide: `train` trains, a
+`validation` (or `dev`) split reports, `test` evaluates when another
+split reports and reports otherwise. A split can also be cut into
+parts, each a role with its share, joined by `+`; the parts are drawn
+with `--seed`, keep the labels' proportions and are written as split
+files of their own (`train`, `validation`, `test`):
+
+```bash
+# One file, cut three ways
+mlx-decision data tickets.csv --roles "train:0.8+report:0.1+evaluate:0.1" -o tickets \
+  --question "Which team handles this ticket?"
+# train and validation on the Hub, no test: half of validation evaluates
+mlx-decision data hf:zeroshot/twitter-financial-news-topic --split train \
+  --split validation --roles "train,report:0.5+evaluate:0.5" -o tweets
+```
 
 Each dataset row becomes one example with one question. The *shape*
 says how columns map onto it. It is guessed from the column names and
@@ -446,7 +508,7 @@ family keeps its input limits and checks.
 ## Evaluating
 
 ```bash
-mlx-decision training eval -m julia-trec --data trec-test.jsonl --compare SupersonicLabs/Julia-1
+mlx-decision training eval -m julia-trec --data trec --compare SupersonicLabs/Julia-1
 ```
 
 ```
@@ -484,7 +546,8 @@ stop = threading.Event()            # stop.set() from another thread cancels
 
 result = fit(
     "SupersonicLabs/Julia-1",
-    "trec-train.jsonl",            # or a list of data.format.Example
+    "trec",                        # a dataset folder (its train split), a file,
+                                   # or a list of data.format.Example
     output="julia-trec",
     method="auto",                 # calibrate, readout, head, finetune
     holdout=0.2,
@@ -495,7 +558,7 @@ result = fit(
 )
 print(result.metrics["answer_type"]["after"])
 
-report = evaluate("julia-trec", "trec-test.jsonl", compare="SupersonicLabs/Julia-1")
+report = evaluate("julia-trec", "trec", compare="SupersonicLabs/Julia-1")  # its test split
 print(report.as_json())
 ```
 

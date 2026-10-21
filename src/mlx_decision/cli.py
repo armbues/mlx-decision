@@ -1719,8 +1719,10 @@ DataOption = Annotated[
     Path | None,
     typer.Option(
         "--data",
-        help='Labelled examples as JSON lines: a request body plus "labels" per line, '
-        'e.g. {"state": "...", "questions": {...}, "labels": {"team": "billing"}}.',
+        help="Labelled examples: a dataset folder (training fit reads its train split, "
+        "training eval its evaluate split; or name a split's file in it), or JSON lines, a "
+        'request body plus "labels" per line, e.g. {"state": "...", "questions": {...}, '
+        '"labels": {"team": "billing"}}.',
     ),
 ]
 
@@ -1732,9 +1734,11 @@ def echo_event(event) -> None:
 
 
 def default_output(model: str, data: Path) -> Path:
-    """``<base>-<data name>`` in the current folder."""
+    """``<base>-<data name>`` in the current folder (a dataset folder's name)."""
+    from .data.dataset import dataset_name
+
     base = model.rstrip("/").rsplit("/", 1)[-1] if "/" in model else Path(model).name
-    return Path(f"{base or 'model'}-{data.stem}")
+    return Path(f"{base or 'model'}-{dataset_name(data)}")
 
 
 YesOption = Annotated[
@@ -1779,7 +1783,8 @@ def training_fit(
         Path | None,
         typer.Option(
             "--validation",
-            help="Labelled examples that score the report, instead of a holdout of --data.",
+            help="Labelled examples that score the report, instead of a holdout of --data. "
+            "Default with a dataset folder: its report split, if it has one.",
         ),
     ] = None,
     holdout: Annotated[
@@ -1924,13 +1929,13 @@ def watched(events: bool, cancel, leftovers=()):
     return watch_stdin(cancel, leftovers) if events else nullcontext()
 
 
-def data_events(plans, with_records: bool = False, roles=None) -> None:
+def data_events(plans, with_records: bool = False, roles=None, specs=None) -> None:
     """``data --events``: the plans made (nothing asked) and written whole,
     with the progress as event lines (``check``, ``read`` and ``write`` per
     split, counted in ``step`` of ``total``). The files go to ``.NAME.partial``
     beside their outputs and are renamed when all are complete; a stop
     (Ctrl-C, a closed stdin) leaves nothing of them."""
-    from .data.make import leftovers, write_made
+    from .data.make import leftovers, write_folder, write_made
     from .events import Cancelled, Event
     from .training.console import interrupt_cancels
     from .watchdog import in_thread, quit_now
@@ -1943,7 +1948,7 @@ def data_events(plans, with_records: bool = False, roles=None) -> None:
     if first.show is not None:
         stop("--show and --events do not go together")
     if first.output is None:
-        stop("pass -o FILE.jsonl")
+        stop("pass -o naming a dataset folder (or FILE.jsonl)")
     partials = leftovers(plans, with_records)
     total = len(plans)
     what = f"the {first.preset} preset" if first.preset else first.source or "no source"
@@ -1971,21 +1976,46 @@ def data_events(plans, with_records: bool = False, roles=None) -> None:
             made.append(one)
             if cancel.is_set():
                 cancelled()
-        outputs = [plan.output for plan in plans]
+        outputs = [first.output] if first.folder else [plan.output for plan in plans]
         echo_event(Event("write", message=f"writing {', '.join(outputs)}"))
 
         def check_stop() -> None:
             if cancel.is_set():
                 raise Cancelled()
 
+        outs = None
         try:
-            write_made(
-                plans, made, with_records=with_records, roles=roles, before_rename=check_stop
-            )
+            if first.folder:
+                outs = write_folder(plans, made, specs, before_rename=check_stop)
+            else:
+                write_made(
+                    plans, made, with_records=with_records, roles=roles, before_rename=check_stop
+                )
         except Cancelled:
             cancelled()
-        except OSError as error:
-            stop(f"cannot write {error.filename or outputs[0]}: {error.strerror or error}")
+        except FileExistsError:
+            stop(f"{first.output} exists")
+        except (OSError, ValueError, DecisionError) as error:
+            if isinstance(error, OSError):
+                stop(f"cannot write {error.filename or outputs[0]}: {error.strerror or error}")
+            stop(str(error))
+    if outs is not None:
+        folder = Path(first.output)
+        metrics = {
+            "path": str(folder),
+            "files": [
+                {
+                    "path": str(folder / f"{out.name}.jsonl"),
+                    "split": out.name,
+                    "role": out.meta.get("role"),
+                    "examples": len(out.examples),
+                }
+                for out in outs
+            ],
+        }
+        message = f"wrote {folder}: {folder_summary(outs)}"
+        echo_event(Event("done", metrics=metrics, message=message))
+        return
     if total == 1:
         metrics = {"path": str(outputs[0]), **read_metrics(made[0])}
     else:
@@ -1997,6 +2027,14 @@ def data_events(plans, with_records: bool = False, roles=None) -> None:
             ],
         }
     echo_event(Event("done", metrics=metrics, message=f"wrote {', '.join(outputs)}"))
+
+
+def folder_summary(outs) -> str:
+    """The split files of a dataset folder, as the data command reports them."""
+    return ", ".join(
+        f"{out.name} ({out.meta.get('role') or 'no role'}, {len(out.examples):,} examples)"
+        for out in outs
+    )
 
 
 def read_metrics(made) -> dict:
@@ -2139,7 +2177,12 @@ def question_from_file(path: Path) -> tuple[str, dict]:
 def show_made(made, count: int) -> None:
     """The first examples as JSON lines, then the label counts."""
     for example in made.examples[:count]:
-        typer.echo(json.dumps(example.to_json(), ensure_ascii=False))
+        line = example.to_json()
+        if example.values:
+            line["values"] = example.values
+            if not line["labels"]:
+                del line["labels"]
+        typer.echo(json.dumps(line, ensure_ascii=False))
     typer.echo("")
     typer.echo(summary_of_made(made))
 
@@ -2152,6 +2195,11 @@ def summary_of_made(made) -> str:
     for question_id, counts in made.label_counts().items():
         listed = ", ".join(f"{label} {count:,}" for label, count in counts.items())
         lines.append(f"labels: {question_id}: {listed}")
+    if not made.label_counts():
+        for column, body in made.columns().items():
+            values = body["values"].items()
+            listed = ", ".join(f"{value} {info['rows']:,}" for value, info in values)
+            lines.append(f"values: {column}: {listed}")
     for reason, count in made.skipped.items():
         lines.append(f"skipped {count:,} rows: {reason}")
     return "\n".join(lines)
@@ -2171,7 +2219,14 @@ def data_command(
         ),
     ] = None,
     output: Annotated[
-        Path | None, typer.Option("--output", "-o", help="The JSON lines file to write.")
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="A dataset folder to write (a path without .jsonl: dataset.json and one "
+            "file per split, the rows' label values mapped there; the question may be left "
+            "out and written later), or one JSON lines file.",
+        ),
     ] = None,
     preset: Annotated[
         str | None,
@@ -2184,8 +2239,8 @@ def data_command(
     split: Annotated[
         list[str] | None,
         typer.Option(
-            help="The dataset's split. More than once: one file per split, with {split} in "
-            "-o standing for its name (one download, every file written whole)."
+            help="The dataset's split. More than once: one file per split in the dataset "
+            "folder -o names (one download, written whole)."
         ),
     ] = None,
     revision: Annotated[str | None, typer.Option(help="A commit, branch or tag.")] = None,
@@ -2261,8 +2316,10 @@ def data_command(
     roles: Annotated[
         str | None,
         typer.Option(
-            help="With --record: each split's role, in --split's order: train, report or "
-            "evaluate ('train,report').",
+            help="Into a dataset folder: each split's role, in --split's order: train, "
+            "report or evaluate, or parts with their shares joined by + "
+            "('train,report:0.5+evaluate:0.5'; seeded, stratified by label). Default: by "
+            "the splits' names (train; validation reports; test evaluates).",
         ),
     ] = None,
     no_input: Annotated[
@@ -2290,7 +2347,7 @@ def data_command(
     printing the command that does the same without them.
     """
     from .data.format import write_examples
-    from .data.make import ROLES, DataPlan, split_plans, write_made
+    from .data.make import ROLES, DataPlan, parse_roles, split_plans, write_folder, write_made
     from .data.sources import SourceError
     from .flags import split_list
 
@@ -2336,11 +2393,22 @@ def data_command(
         if events:
             echo_event(stage_event("error", str(error)))
         fail(str(error))
-    role_list = split_list(roles) if roles else None
+    folder = plan.folder
+    if folder and record:
+        fail("a dataset folder says where it came from itself; drop --record")
+    role_list = split_list(roles) if roles and not folder else None
+    specs = None
+    if folder and roles:
+        try:
+            specs = parse_roles(roles, len(plans))
+        except SourceError as error:
+            if events:
+                echo_event(stage_event("error", str(error)))
+            fail(str(error))
     if role_list is not None:
         problem = None
         if not record:
-            problem = "--roles goes with --record"
+            problem = "--roles goes with --record (or -o naming a dataset folder)"
         elif len(role_list) != len(plans):
             problem = "--roles: one role per --split"
         elif any(role not in ROLES for role in role_list):
@@ -2350,11 +2418,30 @@ def data_command(
                 echo_event(stage_event("error", problem))
             fail(problem)
     if events:
-        data_events(plans, record, role_list)
+        data_events(plans, record, role_list, specs)
+        return
+    if folder and plan.show is None and (plan.source is not None or plan.preset is not None):
+        try:
+            made = [one.make() for one in plans]
+            outs = write_folder(plans, made, specs)
+        except FileExistsError:
+            fail(f"{plan.output} exists; remove it or pick another -o")
+        except (DecisionError, FileNotFoundError, ValueError, OSError) as error:
+            fail(str(error))
+        for one, made_one in zip(plans, made, strict=True):
+            prefix = f"{one.split}: " if len(plans) > 1 else ""
+            typer.echo(prefix + summary_of_made(made_one), err=True)
+        typer.echo(f"wrote {plan.output}: {folder_summary(outs)}", err=True)
+        if plans[0].raw:
+            typer.echo(
+                "no question yet: add questions and answers to its dataset.json (or write "
+                "them in the Studio) before training fit uses it",
+                err=True,
+            )
         return
     if len(plans) > 1:
         if plan.output is None:
-            fail("pass -o with {split} (one file per split)")
+            fail("pass -o naming a dataset folder (one file per split)")
         try:
             made = [one.make() for one in plans]
             write_made(plans, made, with_records=record, roles=role_list)
@@ -2368,7 +2455,7 @@ def data_command(
     open_steps = (
         (plan.source is None and plan.preset is None)
         or (plan.output is None and plan.show is None)
-        or not plan.has_wording()
+        or not (plan.has_wording() or plan.folder)
     )
     try:
         if open_steps and not no_input and terminal():
@@ -2381,7 +2468,12 @@ def data_command(
             if plan.show is not None:
                 typer.echo(same_without_menus(plan), err=True)
                 return
-            if record:
+            if plan.folder:
+                try:
+                    write_folder([plan], [made], specs)
+                except FileExistsError:
+                    fail(f"{plan.output} exists; remove it or pick another -o")
+            elif record:
                 write_made([plan], [made], with_records=True, roles=role_list)
             else:
                 write_examples(plan.output, made.examples)  # the summary was in the preview

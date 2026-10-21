@@ -245,8 +245,8 @@ def ask_data(plan: DataPlan, preview: int = 3) -> tuple[DataPlan, Made]:
         if plan.source.startswith(HUB_PREFIX):
             plan.split = table.split  # the only one, when none was picked: said in the command
         ask_shape_and_columns(plan, table)
-        if not plan.has_wording():
-            ask_question(plan, table)
+        if not plan.has_wording() and not plan.folder:
+            ask_question(plan, table)  # a dataset folder may get its question later
     if plan.output is None and plan.show is None:
         ask_output(plan, table)
     made = plan.make()

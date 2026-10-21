@@ -7,6 +7,9 @@ An optional ``id`` (a string, unique in the file) names the example; without
 one it is the line number. Questions without a label are asked but not
 trained on. Images are not supported.
 
+A dataset folder (``dataset``) holds such files, one per split, whose lines
+may take their questions and labels from the folder's ``dataset.json``.
+
 A file is checked as a whole before any model work: every request passes the
 checks every model makes, every label is an answer of its question; the first
 error names its line.
@@ -26,14 +29,17 @@ from ..types import Choice, Noul, Score, decode_json, parse_request
 
 
 class DataError(DecisionError):
-    """A line of a training data file that cannot be used; ``line`` counts from 1."""
+    """A line of a training data file that cannot be used; ``line`` counts from 1,
+    ``file`` names the split file of a dataset folder (None for a plain file)."""
 
-    def __init__(self, message: str, line: int, param: str | None = None):
+    def __init__(self, message: str, line: int, param: str | None = None, file: str | None = None):
         super().__init__(message, param=param)
         self.line = line
+        self.file = file
 
     def __str__(self) -> str:
-        return f"line {self.line}: {super().__str__()}"
+        where = f"{self.file} line {self.line}" if self.file else f"line {self.line}"
+        return f"{where}: {super().__str__()}"
 
 
 @dataclass(frozen=True)
@@ -45,10 +51,13 @@ class Example:
     id: str
     request: dict[str, Any]  # the request body as given: state, questions
     labels: dict[str, str]
+    # A dataset folder's raw values of the source's label columns (column ->
+    # value as text), from which ``dataset.json`` maps the labels; None elsewhere.
+    values: dict[str, str] | None = None
 
     def to_json(self) -> dict[str, Any]:
         """The line's object, with the labels in the file's form."""
-        questions = self.request["questions"]
+        questions = self.request.get("questions") or {}
         labels = {
             question_id: _label_to_json(questions[question_id], label)
             for question_id, label in self.labels.items()
@@ -117,8 +126,10 @@ def parse_example(data: Any, line: int) -> Example:
     return Example(example_id, body, labels)
 
 
-def parse_examples(lines: Iterable[str | bytes]) -> list[Example]:
-    """The examples of JSON lines (blank lines skipped), checked as a whole."""
+def parse_examples(lines: Iterable[str | bytes], parse=parse_example) -> list[Example]:
+    """The examples of JSON lines (blank lines skipped), checked as a whole;
+    ``parse`` turns one line's object into an example (a dataset folder's
+    lines take what they leave out from its ``dataset.json``)."""
     examples: list[Example] = []
     seen: dict[str, int] = {}
     for number, text in enumerate(lines, 1):
@@ -133,7 +144,7 @@ def parse_examples(lines: Iterable[str | bytes]) -> list[Example]:
             data = decode_json(text)
         except DecisionError as error:
             raise DataError(error.message, number) from None
-        example = parse_example(data, number)
+        example = parse(data, number)
         if example.id in seen:
             raise DataError(f"the same id as line {seen[example.id]}", number, "id")
         seen[example.id] = number
@@ -146,7 +157,7 @@ def parse_examples(lines: Iterable[str | bytes]) -> list[Example]:
 
 
 def check_examples(
-    lines: Iterable[str | bytes], limit: int = 20
+    lines: Iterable[str | bytes], limit: int = 20, parse=parse_example
 ) -> tuple[list[Example], list[DecisionError]]:
     """``parse_examples`` that goes on past a bad line: the examples of the
     good lines and the errors (each ``DataError`` names its line), at most
@@ -170,7 +181,7 @@ def check_examples(
                 data = decode_json(text)
             except DecisionError as error:
                 raise DataError(error.message, number) from None
-            example = parse_example(data, number)
+            example = parse(data, number)
             if example.id in seen:
                 raise DataError(f"the same id as line {seen[example.id]}", number, "id")
         except DataError as error:
@@ -215,10 +226,15 @@ DEV_SHARE = 0.1
 DEV_MINIMUM = 50
 
 
+def stratum(example: Example) -> tuple:
+    """What a split keeps in proportion: the labels, else the raw values."""
+    return tuple(sorted(example.labels.items())) or tuple(sorted((example.values or {}).items()))
+
+
 def split(
     examples: list[Example], share: float, seed: int | str = 0, minimum: int = 0
 ) -> tuple[list[Example], list[Example]]:
-    """The examples split in two, stratified by their labels: the rest and a part
+    """The examples split in two, stratified by their labels (``stratum``): the rest and a part
     of ``share`` of them (at least ``minimum``, at most all but one). Each keeps the
     examples' order; the same seed gives the same split."""
     count = len(examples)
@@ -227,7 +243,7 @@ def split(
         return list(examples), []
     strata: dict[tuple, list[int]] = defaultdict(list)
     for index, example in enumerate(examples):
-        strata[tuple(sorted(example.labels.items()))].append(index)
+        strata[stratum(example)].append(index)
     rng = random.Random(f"{seed}")
     keys = sorted(strata)
     for key in keys:

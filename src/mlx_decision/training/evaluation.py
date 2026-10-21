@@ -154,7 +154,7 @@ def evaluate(
         if on_event is not None:
             on_event(event)
 
-    source = read_data(data)
+    source = read_data(data, "evaluate")
     labelled = _labelled(source.examples)
     if not labelled:
         raise ValueError("the data has no labels to score against")

@@ -22,7 +22,8 @@ from typing import Any
 import mlx.core as mx
 
 from .. import __version__
-from ..data.format import Example, read_examples, training_splits
+from ..data.dataset import read_for
+from ..data.format import Example, training_splits
 from ..errors import DecisionError
 from ..fitted import (
     Fit,
@@ -69,18 +70,20 @@ class FitResult:
 
 @dataclass
 class Data:
-    """Examples with the SHA-256 of their JSON lines and the file they came from."""
+    """Examples with the SHA-256 of their data and where they came from (the
+    file, or the dataset folder and its split)."""
 
     examples: list[Example]
     sha256: str
     source: str | None
 
 
-def read_data(data: str | Path | list[Example]) -> Data:
-    """Examples from a file or as given, with their hash."""
+def read_data(data: str | Path | list[Example], purpose: str = "train") -> Data:
+    """Examples from a file, a dataset folder (its split for ``purpose``:
+    ``train``, ``report`` or ``evaluate``) or as given, with their hash."""
     if isinstance(data, (str, Path)):
-        raw = Path(data).read_bytes()
-        return Data(read_examples(data), hashlib.sha256(raw).hexdigest(), str(data))
+        read = read_for(data, purpose)
+        return Data(read.examples, read.sha256, read.description)
     examples = list(data)
     lines = "".join(json.dumps(e.to_json(), ensure_ascii=False) + "\n" for e in examples)
     return Data(examples, hashlib.sha256(lines.encode()).hexdigest(), None)
@@ -530,7 +533,7 @@ def prepare(
     """Read the data and find the base, as a fit's check stage does (no model loads)."""
     load_options = dict(load_options or {})
     source = read_data(data)
-    held = read_data(validation) if validation is not None else None
+    held = read_data(validation, "report") if validation is not None else None
     origin = _base(base)
     check_options(origin.family, load_options)
     splits = training_splits(

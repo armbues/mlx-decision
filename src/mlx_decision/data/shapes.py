@@ -15,7 +15,9 @@
 ``guess`` finds the shape and the columns from the kinds and common names,
 taking what the caller gives; a guess that is not clear stops with the
 columns listed. ``Wording`` holds the question's id, instructions, options
-and label map; ``build`` turns rows into examples.
+and label map; ``build`` turns rows into examples. The text, pair and rating
+shapes keep each row's raw label in the example's ``values`` (for a dataset
+folder); with ``raw`` they ask no question and keep only that.
 """
 
 import re
@@ -348,20 +350,61 @@ def _levels(table: Table, mapping: Mapping, wording: Wording) -> tuple[list[str]
     return raws, list(raws)
 
 
-def _example(table: Table, index: int, state, question_id: str, question: dict, label: str):
-    """The example of row ``index``: id from the table's name and split, one question."""
+def _example(
+    table: Table,
+    index: int,
+    state,
+    question_id: str,
+    question: dict | None,
+    label: str | None,
+    values: dict[str, str] | None = None,
+):
+    """The example of row ``index``: id from the table's name and split, one
+    question (none for a raw row: its ``values`` only)."""
     name = f"{table.name}:{table.split}/{index}" if table.split else f"{table.name}/{index}"
+    if question is None:
+        return Example(name, {"state": state}, {}, values)
     return Example(
-        name, {"state": state, "questions": {question_id: question}}, {question_id: label}
+        name, {"state": state, "questions": {question_id: question}}, {question_id: label}, values
     )
 
 
-def build(table: Table, mapping: Mapping, wording: Wording, indices: list[int]) -> Built:
-    """The examples of the rows at ``indices``; rows without a usable label are
-    left out and counted by reason."""
-    shape, columns = mapping.shape, mapping.columns
+def _state(shape: str, columns: dict, row: dict) -> Any:
+    if shape == "pair":
+        return {"premise": row[columns["premise"]], "hypothesis": row[columns["hypothesis"]]}
+    return row[columns["text"]]
+
+
+def _raw_rows(table: Table, mapping: Mapping, indices: list[int], rows: list[dict]) -> Built:
+    """Rows as examples without a question: the state and the label's raw value."""
     built = Built()
+    column_name = mapping.columns["label"]
+    label_column = table.columns[column_name]
+    for index, row in zip(indices, rows, strict=True):
+        name = class_of(label_column, row.get(column_name))
+        if name is None:
+            built.skipped["no label"] += 1
+            continue
+        state = _state(mapping.shape, mapping.columns, row)
+        built.examples.append(_example(table, index, state, "", None, None, {column_name: name}))
+    return built
+
+
+def build(
+    table: Table, mapping: Mapping, wording: Wording, indices: list[int], raw: bool = False
+) -> Built:
+    """The examples of the rows at ``indices``; rows without a usable label are
+    left out and counted by reason. ``raw``: no question (text, pair and rating
+    shapes), each row's state and label value only."""
+    shape, columns = mapping.shape, mapping.columns
     rows = table.rows(indices)
+    if raw:
+        if shape not in ("text", "pair", "rating"):
+            raise SourceError(
+                f"the {shape} shape needs its question's wording: pass --question TEXT (or -q FILE)"
+            )
+        return _raw_rows(table, mapping, indices, rows)
+    built = Built()
     if shape in ("text", "pair"):
         _require_instructions(wording, shape)
         question, ids = _class_question(table, mapping, wording)
@@ -380,14 +423,12 @@ def build(table: Table, mapping: Mapping, wording: Wording, indices: list[int]) 
                 )
             if question["type"] == "noul":
                 option = "true" if option == ids[0] else "false"
-            if shape == "pair":
-                state: Any = {
-                    "premise": row[columns["premise"]],
-                    "hypothesis": row[columns["hypothesis"]],
-                }
-            else:
-                state = row[columns["text"]]
-            built.examples.append(_example(table, index, state, wording.id, question, option))
+            state = _state(shape, columns, row)
+            built.examples.append(
+                _example(
+                    table, index, state, wording.id, question, option, {columns["label"]: name}
+                )
+            )
         return built
     if shape == "choice":
         _require_instructions(wording, shape)
@@ -435,13 +476,14 @@ def build(table: Table, mapping: Mapping, wording: Wording, indices: list[int]) 
             raise SourceError(f"-q: a rating question is a score with {len(raws)} levels")
     label_column = table.columns[columns["label"]]
     for index, row in zip(indices, rows, strict=True):
-        raw = class_of(label_column, row.get(columns["label"]))
-        if raw is None or raw not in raws:
+        value = class_of(label_column, row.get(columns["label"]))
+        if value is None or value not in raws:
             built.skipped["no label"] += 1
             continue
-        label = str(raws.index(raw))
+        label = str(raws.index(value))
+        values = {columns["label"]: value}
         built.examples.append(
-            _example(table, index, row[columns["text"]], wording.id, question, label)
+            _example(table, index, row[columns["text"]], wording.id, question, label, values)
         )
     return built
 

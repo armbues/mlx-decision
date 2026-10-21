@@ -76,6 +76,9 @@ class Preset:
     source: Source  # the evaluation split (the coverage suite's), at the pinned commit
     row_id: Callable[[dict, int], str]  # the split's own id of a row, or its index
     make: Callable[[dict], dict]  # row -> state, questions, gold
+    # The column whose raw values a dataset folder keeps (None: the answer is
+    # per row, as OpenBookQA's answer key).
+    value_column: str | None = None
 
 
 def _label(names: list[str], row: dict, column: str) -> str:
@@ -177,6 +180,7 @@ PRESETS: dict[str, Preset] = {
             ),
             _index,
             _trec,
+            "coarse_label",
         ),
         Preset(
             "offensive",
@@ -191,6 +195,7 @@ PRESETS: dict[str, Preset] = {
             ),
             _index,
             _offensive,
+            "label",
         ),
         Preset(
             "anli-r3",
@@ -205,6 +210,7 @@ PRESETS: dict[str, Preset] = {
             ),
             lambda row, index: row["uid"],
             _anli,
+            "label",
         ),
         Preset(
             "openbookqa",
@@ -233,6 +239,7 @@ PRESETS: dict[str, Preset] = {
             ),
             _index,
             _sst5,
+            "label",
         ),
     )
 }

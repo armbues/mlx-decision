@@ -57,10 +57,20 @@ class FitPlan:
             or self.output is None
         )
 
+    def report_split(self) -> str | None:
+        """The report split of a dataset folder given as the data, or None."""
+        from ..data.dataset import report_split
+
+        found = report_split(self.data) if self.data is not None else None
+        return str(found) if found is not None else None
+
     def with_defaults(self, default_output) -> "FitPlan":
-        """Open values filled with the defaults (``auto``, a 0.2 holdout, 3 epochs,
-        ``default_output(model, data)``); model and data stay as they are."""
+        """Open values filled with the defaults (``auto``, a dataset folder's
+        report split, else a 0.2 holdout, 3 epochs, ``default_output(model,
+        data)``); model and data stay as they are."""
         self.method = self.method or "auto"
+        if self.validation is None and self.holdout is None:
+            self.validation = self.report_split()
         if self.validation is None and self.holdout is None:
             self.holdout = DEFAULT_HOLDOUT
         self.epochs = self.epochs or DEFAULT_EPOCHS
@@ -123,7 +133,7 @@ def ask_model(message: str = "Model (folder or Hugging Face repo id): ") -> str:
     )
 
 
-def ask_data_file(message: str = "Labelled data (JSON lines): ") -> str:
+def ask_data_file(message: str = "Labelled data (a dataset folder or JSON lines): ") -> str:
     return _ask(message, completer=PathCompleter(expanduser=True), validator=_existing("file"))
 
 
@@ -160,6 +170,7 @@ def ask_fit(plan: FitPlan, default_output) -> FitPlan:
         plan.model = ask_model("Base model (folder, Hugging Face repo id, or a fitted model): ")
     if plan.data is None:
         plan.data = ask_data_file()
+    report = plan.report_split() if plan.validation is None and plan.holdout is None else None
     holdout = DEFAULT_HOLDOUT if plan.holdout is None else plan.holdout
     prepared = prepare(
         plan.model,
@@ -174,15 +185,17 @@ def ask_fit(plan: FitPlan, default_output) -> FitPlan:
         plan.method, plan.head_only = _pick("Method:", _choices(prepared))
     kinds = kinds_plan.resolve(prepared.family, plan.method)
     if plan.validation is None and plan.holdout is None:
-        how = _pick(
-            "Report on:",
-            [
-                ("holdout", f"a holdout of {DEFAULT_HOLDOUT:.0%} of the data (stratified)"),
-                ("share", "a holdout of another share..."),
-                ("file", "a validation file..."),
-            ],
-        )
-        if how == "file":
+        options = [
+            ("holdout", f"a holdout of {DEFAULT_HOLDOUT:.0%} of the data (stratified)"),
+            ("share", "a holdout of another share..."),
+            ("file", "a validation file..."),
+        ]
+        if report is not None:
+            options.insert(0, ("report", f"the dataset's report split ({Path(report).name})"))
+        how = _pick("Report on:", options)
+        if how == "report":
+            plan.validation = report
+        elif how == "file":
             plan.validation = ask_data_file("Validation data (JSON lines): ")
         elif how == "share":
             plan.holdout = float(_ask("Share (0.05 to 0.9): ", default="0.2", validator=_share()))

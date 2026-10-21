@@ -33,15 +33,22 @@ change the interface).
 - `data --events`: the progress as JSON lines (`check`, `read` with the
   examples and label counts, `write`, then `done` with the file); asks
   nothing, writes the file whole, and a stop leaves nothing.
-- `data` takes `--split` more than once: one file per split, with
-  `{split}` in `-o` standing for its name (`-o data/trec-{split}.jsonl`).
-  `--sample` is given once for every split or once per `--split` (`0`
-  takes a whole split). The files are written together: a failure or a
-  stop leaves none of them.
-- `data --record` writes `NAME.source.json` beside each file: the
-  source, config, revision, split, its rows, the sample and seed, the
-  question and label map when given, and the files written with it;
-  `--roles train,report,evaluate` names what each split is for.
+- Dataset folders: `data -o FOLDER` (a path without `.jsonl`) writes
+  `dataset.json` and one JSON-lines file per split. The lines keep the
+  raw values of the label column; the questions and a map from each
+  value to an answer are in `dataset.json` once, so rewording, merging
+  classes or a yes/no question about some of them changes only that
+  file. Without `--question` the folder has no questions yet, to be
+  added later. `data` takes `--split` more than once into a folder
+  (`--sample` once for every split or once per `--split`; written
+  whole, a stop leaves nothing), and `--roles` says what each split is
+  for (`train`, `report`, `evaluate`; by default from the split names)
+  or cuts one into seeded, stratified parts
+  (`--roles "train:0.8+report:0.1+evaluate:0.1"`).
+- `training fit --data FOLDER` trains on a dataset folder's train split
+  and reports on its report split (unless `--validation` or `--holdout`
+  is given); `training eval --data FOLDER` scores its evaluate split.
+  A split's own file works too, and plain JSON-lines files as before.
 - With `--events`, `MLX_DECISION_WATCH_STDIN=1` and a pipe on stdin,
   `training fit`, `training eval`, `download` and `convert` stop when
   the pipe closes (the program that started them is gone): at the next

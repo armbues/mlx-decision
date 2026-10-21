@@ -17,6 +17,15 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def data_sha256(path: Path) -> str:
+    """The SHA-256 a fit records for the data an evaluation reads at ``path``
+    (a plain file's bytes; a dataset folder's evaluate split with its questions)."""
+    from ..data.dataset import open_dataset
+
+    dataset, split = open_dataset(path)
+    return dataset.sha256(split or dataset.pick("evaluate"))
+
+
 def trained_on(pool: ModelPool, name: str) -> str | None:
     """The SHA-256 of the data a fitted model was fitted on, as its folder
     records it; None for a base or a fit that records none."""
@@ -36,7 +45,7 @@ def training_data_warnings(
     fitted = [(name, recorded) for name, recorded in fitted if recorded]
     if not fitted:
         return []
-    sha = file_sha256(data)
+    sha = data_sha256(data)
     return [
         f"{data_name} includes {name}'s training data: {name} was fitted on this very "
         "file (the same SHA-256), so its scores here count examples it learned from"
