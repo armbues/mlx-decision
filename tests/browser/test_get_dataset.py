@@ -14,7 +14,7 @@ pytestmark = pytest.mark.browser
 
 
 def open_sheet(page):
-    page.locator(".sidebar").get_by_role("button", name="Get a dataset").click()
+    page.locator(".sidebar").get_by_role("button", name="Download a dataset").click()
     return page.locator(".sheet")
 
 

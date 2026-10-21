@@ -1,4 +1,4 @@
-// Datasets as files: the sidebar's list with Get a Dataset… and Add… (upload a
+// Datasets as files: the sidebar's list with Download and Add (upload a
 // JSON-lines file, checked as training fit checks it), Delete and Show in Finder.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
@@ -208,10 +208,10 @@ export function DatasetList() {
       <h3>
         Datasets
         <span class="sb-actions">
-          <button aria-label="Get a dataset" title="Get a Dataset… (a public dataset from the Hugging Face Hub)" onClick=${openGetDataset}>
+          <button aria-label="Download a dataset" title="Download (a public dataset from the Hugging Face Hub)" onClick=${openGetDataset}>
             <${icons.Download} />
           </button>
-          <button aria-label="Add a dataset" title="Add… (a JSON-lines file of labelled examples)" onClick=${uploadData}>
+          <button aria-label="Add a dataset" title="Add (a JSON-lines file of labelled examples)" onClick=${uploadData}>
             <${icons.Plus} />
           </button>
         </span>

@@ -1,6 +1,6 @@
 // Datasets: the files of labelled examples in the workspace's data/ folder,
-// which fits and evaluations read. The sidebar lists them with Get a Dataset…
-// and Add…; the centre shows the one picked (its questions with their labels
+// which fits and evaluations read. The sidebar lists them with Download
+// and Add; the centre shows the one picked (its questions with their labels
 // and counts, its examples in a paged table) with Fit on It…, Evaluate, Open
 // in Playground, and Show in Finder and Delete in its "…" menu; the inspector
 // the example picked, whole, and the file.
@@ -26,13 +26,13 @@ const status = computed(() => {
   const name = pickedDataset();
   const summary = name ? described.value[name] : null;
   if (summary?.examples != null) return { text: html`<b>${name}</b> · ${plural(summary.examples, "example")}` };
-  if (list.length === 0) return { text: "No datasets yet · Get a Dataset… or Add…" };
+  if (list.length === 0) return { text: "No datasets yet" };
   return { text: html`<b>${plural(list.length, "dataset")}</b> in data/` };
 });
 
 const action = computed(() => ({
-  label: "Get a Dataset…",
-  title: "Get a Dataset… (a public dataset from the Hugging Face Hub)",
+  label: "Download",
+  title: "Download (a public dataset from the Hugging Face Hub)",
   icon: false,
   run: openGetDataset,
 }));
@@ -43,8 +43,8 @@ function Empty() {
       <b>No datasets yet</b>
       <span>A dataset is a file of labelled examples: each a state, the questions asked about it and the correct answers. Fits learn from one and evaluations score models on one. Get a public dataset from the Hugging Face Hub, or add a JSON-lines file of your own.</span>
       <span class="empty-actions">
-        <button class="btn primary" onClick=${openGetDataset}>Get a Dataset…</button>
-        <button class="btn" onClick=${uploadData}>Add…</button>
+        <button class="btn primary" onClick=${openGetDataset}>Download</button>
+        <button class="btn" onClick=${uploadData}>Add</button>
       </span>
     </div>
   `;

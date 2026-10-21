@@ -39,7 +39,7 @@ const status = computed(() => {
     return evalModel.value && data ? { text: html`Evaluate <b>${evalModel.value}</b> on <b>${data}</b>` } : null;
   }
   const data = fitData.value;
-  if (!data) return dataFiles.value ? { text: "No datasets yet · get or add one on the Datasets page" } : null;
+  if (!data) return dataFiles.value ? { text: "No datasets yet · download or add one on the Datasets page" } : null;
   const plan = planned.value;
   if (!plan || plan.data !== data) return { text: html`Fit on <b>${data}</b>` };
   return { text: html`Fit <b>${plan.base}</b> on <b>${data}</b> · ${plural(plan.splits.examples, "example")}` };
@@ -77,8 +77,8 @@ function Form() {
           <b>No datasets yet</b>
           <span>A fit learns from a dataset: labelled examples in the workspace's data/ folder. Get a public dataset or add a file of your own; both are on the <a href=${href("datasets")}>Datasets</a> page.</span>
           <span class="empty-actions">
-            <button class="btn" onClick=${openGetDataset}>Get a Dataset…</button>
-            <button class="btn" onClick=${uploadData}>Add…</button>
+            <button class="btn" onClick=${openGetDataset}>Download</button>
+            <button class="btn" onClick=${uploadData}>Add</button>
           </span>
         </div>`}
   `;
@@ -123,7 +123,7 @@ function FitList() {
     <div class="sb-sec">
       <ul class="sb-list new-list">
         <li><a class="sb-item" href=${href("training")} aria-current=${form === "fit" ? "true" : undefined}><${icons.Plus} /><span class="label">New Fit</span></a></li>
-        <li><a class="sb-item" href=${href("training", EVALUATE)} aria-current=${form === EVALUATE ? "true" : undefined}><${icons.Plus} /><span class="label">New Evaluation</span></a></li>
+        <li><a class="sb-item" href=${href("training", EVALUATE)} aria-current=${form === EVALUATE ? "true" : undefined}><${icons.Checklist} /><span class="label">New Evaluation</span></a></li>
       </ul>
     </div>
     <div class="sb-sec">

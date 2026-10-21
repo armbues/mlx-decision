@@ -1,4 +1,4 @@
-"""Public datasets for "Get a Dataset…" (TRS-6): the ``data`` command's
+"""Public datasets for Download on the Datasets page (TRS-6): the ``data`` command's
 presets, and any Hugging Face dataset previewed.
 
 ``GET /studio/api/datasets`` lists the presets: each with its title and

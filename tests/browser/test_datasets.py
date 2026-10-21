@@ -1,4 +1,4 @@
-"""The Datasets page: the sidebar's list, Add… (checked, errors by line, a
+"""The Datasets page: the sidebar's list, Add (checked, errors by line, a
 name taken) and delete; the picked dataset's questions with their labels,
 its examples in a paged table (a label filter, a search in the states), the
 example picked whole in the inspector, Fit on It…, Open in Playground and
@@ -260,11 +260,11 @@ def test_delete_the_picked_file(studio, page):
     expect(page.locator(".sidebar .sb-empty", has_text="No datasets yet")).to_be_visible()
     expect(page).to_have_url(re.compile(r"#/datasets$"))
     assert not (studio.workspace / "data" / "tickets.jsonl").exists()
-    # The empty state: what a dataset is, with Get a Dataset… and Add….
+    # The empty state: what a dataset is, with Download and Add.
     empty = page.locator(".centre .ds-empty")
     expect(empty).to_contain_text("A dataset is a file of labelled examples")
-    expect(empty.get_by_role("button", name="Get a Dataset…")).to_be_visible()
-    expect(empty.get_by_role("button", name="Add…")).to_be_visible()
+    expect(empty.get_by_role("button", name="Download")).to_be_visible()
+    expect(empty.get_by_role("button", name="Add")).to_be_visible()
     # Training says where datasets come from.
     page.goto(f"{studio.base}/#/training")
     expect(page.locator(".centre .empty")).to_contain_text("No datasets yet")
