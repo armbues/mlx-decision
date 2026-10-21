@@ -28,13 +28,12 @@ from ...data.presets import PRESETS, SPLITS, describe
 from ...data.shapes import class_names, class_of
 from ...data.sources import HUB_PREFIX, LABEL, TEXT, SourceError, Table
 from . import ApiError, field, json_body
-from .jobs import REPO_ID
+from .jobs import MAX_CLASSES, REPO_ID
 
 ROWS_SHOWN = 5
 CELL_CHARS = 160
-# A label column has at most this many classes, and repeats them (more, or
+# A label column has at most MAX_CLASSES classes, and repeats them (more, or
 # about one value a row, is free text or ids, not labels).
-MAX_CLASSES = 50
 
 # How the sheet names each preset, and what it is for.
 TITLES = {

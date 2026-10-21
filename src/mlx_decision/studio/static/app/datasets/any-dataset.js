@@ -1,17 +1,21 @@
 // Another dataset: any Hugging Face dataset, one split read as a preview, with
 // the column that becomes the state, the label column, a question set's
 // question the labels answer, and each class mapped to one of its options (or
-// left out); the columns and the map apply to every split in the table. It
-// runs `data` as a job with the question written for it.
+// left out), or a new question made from the classes (saved as a question set
+// when the Get starts); the columns and the map apply to every split in the
+// table. It runs `data` as a job with the question written for it.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { StatusIcon } from "../components/icons.js";
 import { plural } from "../format.js";
 import { sets } from "../store/sets.js";
-import { NameAndSeed, SplitTable, chosen, freeBase, knowRows, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
+import { NAME, NameAndSeed, SplitTable, chosen, freeBase, knowRows, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
 
 const LEAVE_OUT = "";
+// The question set picker's "New question from these classes" (no set's name
+// starts with ':').
+const NEW = ":new";
 
 export const source = signal("");
 const previewed = signal(null); // the preview route's answer
@@ -25,6 +29,8 @@ const setName = signal(null);
 const setQuestions = signal(null); // the set's questions
 const questionId = signal(null);
 const mapping = signal({}); // class -> option id or LEAVE_OUT
+const instructions = signal(""); // a new question's
+const newSetName = signal(""); // the new set's, as typed ("": the default)
 const table = splitState(); // every split's role and sample
 const seed = signal("0");
 const name = signal("");
@@ -45,6 +51,7 @@ export function resetAny(all = false) {
   textColumn.value = labelColumn.value = null;
   setName.value = setQuestions.value = questionId.value = null;
   mapping.value = {};
+  instructions.value = newSetName.value = "";
   seed.value = "0";
   name.value = "";
 }
@@ -94,6 +101,24 @@ export function check() {
   read({}, "Asking the Hub for its configs and splits…");
 }
 
+const making = computed(() => setName.value === NEW);
+const classes = computed(() => (labelInfo.value?.classes ?? []).map(([label]) => label));
+// The new set's name: as typed, else the dataset's (as the server makes it);
+// a taken one gets -2, -3, ...
+const newSetBase = computed(() => {
+  const typed = newSetName.value.trim();
+  if (typed) return typed;
+  const dataset = (previewed.value?.source ?? "").split("/").pop();
+  return dataset.toLowerCase().replace(/[^\p{L}\p{N}_.-]+/gu, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "question";
+});
+const newSet = computed(() => {
+  const taken = new Set((sets.value ?? []).map((item) => item.name));
+  const base = newSetBase.value;
+  let candidate = base;
+  for (let n = 2; taken.has(candidate); n += 1) candidate = `${base.slice(0, 76)}-${n}`;
+  return candidate;
+});
+
 const labelInfo = computed(() => previewed.value?.label_columns?.find((column) => column.name === labelColumn.value) ?? null);
 const question = computed(() => setQuestions.value?.[questionId.value] ?? null);
 const options = computed(() => {
@@ -124,7 +149,7 @@ async function pickSet(nameOfSet) {
   setName.value = nameOfSet;
   setQuestions.value = null;
   questionId.value = null;
-  if (!nameOfSet) return;
+  if (!nameOfSet || nameOfSet === NEW) return;
   try {
     const { body } = await api(`/sets/${encodeURIComponent(nameOfSet)}`);
     setQuestions.value = body.questions ?? {};
@@ -144,6 +169,12 @@ export const anyProblem = computed(() => {
   if (!labelColumn.value) return "Pick the label column";
   if (textColumn.value === labelColumn.value) return "The state and the label are different columns";
   if (!setName.value) return "Pick a question set";
+  if (making.value) {
+    if (classes.value.length < 2) return "A new question needs a label with at least two classes";
+    if (!instructions.value.trim()) return "Write the new question's instructions";
+    if (!NAME.test(newSet.value)) return "Name the question set: letters, digits, '.', '_' or '-'";
+    return splitsProblem(table, splits.value, base.value);
+  }
   if (!question.value) return "Pick the question the labels answer";
   if (question.value.type !== "choice" && question.value.type !== "noul") return "A choice or a yes/no question";
   if (!Object.values(mapping.value).some((option) => option !== LEAVE_OUT)) return "Map at least one class to an option";
@@ -158,11 +189,15 @@ export function anyJob() {
     splits: splitsBody(table, splits.value),
     text: textColumn.value,
     label: labelColumn.value,
-    set: setName.value,
-    question: questionId.value,
-    label_map: Object.fromEntries(Object.entries(mapping.value).filter(([, option]) => option !== LEAVE_OUT)),
     name: base.value,
   };
+  if (making.value) {
+    body.new_question = { instructions: instructions.value.trim(), classes: classes.value, set: newSet.value };
+  } else {
+    body.set = setName.value;
+    body.question = questionId.value;
+    body.label_map = Object.fromEntries(Object.entries(mapping.value).filter(([, option]) => option !== LEAVE_OUT));
+  }
   if (result.config) body.config = result.config;
   if (body.splits.some((entry) => entry.sample != null)) body.seed = Number(seed.value) || 0;
   return body;
@@ -238,8 +273,18 @@ function Wiring() {
       <label class="any-row"><span>Question set</span>
         <select aria-label="Question set" value=${setName.value ?? ""} onChange=${(event) => pickSet(event.target.value)}>
           <option value="">Pick one</option>
+          <option value=${NEW}>New question</option>
+          ${list.length > 0 && html`<option disabled>──────────</option>`}
           ${list.map((item) => html`<option value=${item.name}>${item.name}</option>`)}
-        </select></label>
+        </select>${making.value && html`<small>from the label's classes</small>`}</label>
+      ${making.value &&
+      html`<label class="any-row wide"><span>Instructions</span>
+          <input class="setting-input" aria-label="Instructions" placeholder="What the question asks, e.g. Which topic is this about?"
+                 value=${instructions.value} onInput=${(event) => (instructions.value = event.target.value)} /></label>
+        <label class="any-row"><span>Saved as</span>
+          <input class="setting-input mono" aria-label="New question set" placeholder=${newSet.value} spellcheck=${false}
+                 value=${newSetName.value} onInput=${(event) => (newSetName.value = event.target.value)} />
+          <small>${newSet.value !== newSetBase.value ? `${newSetBase.value} is taken` : "a new question set"}</small></label>`}
       ${setQuestions.value &&
       html`<label class="any-row"><span>Question</span>
         <select aria-label="Question" value=${questionId.value ?? ""} onChange=${(event) => {
@@ -253,8 +298,26 @@ function Wiring() {
   `;
 }
 
+// A new question's options: each class, its name as the option's text.
+function NewOptions({ info }) {
+  return html`
+    <div class="opts">
+      <h4>Classes to options</h4>
+      <div class="any-map">
+        ${info.classes.map(
+          ([label, count]) => html`<div class="any-row" key=${label}>
+            <code>${label}</code><span class="num">${count}</span><span class="dim">an option of its own</span>
+          </div>`,
+        )}
+      </div>
+      <small class="hint">The new question is a choice with every class as an option, named after it.</small>
+    </div>
+  `;
+}
+
 function Mapping() {
   const info = labelInfo.value;
+  if (info && making.value) return html`<${NewOptions} info=${info} />`;
   if (!info || !question.value) return null;
   return html`
     <div class="opts">
@@ -292,7 +355,7 @@ export function AnyDataset() {
   const result = previewed.value;
   const ready = result && result.rows != null;
   return html`
-    <p>Any dataset on the Hugging Face Hub: one column becomes the state, a question from one of your question sets is asked, and the label column's classes are its answers.</p>
+    <p>Any dataset on the Hugging Face Hub: one column becomes the state, a question from one of your question sets (or a new one made from the classes) is asked, and the label column's classes are its answers.</p>
     <${Source} />
     ${ready && html`<${Preview} /><${Wiring} /><${Mapping} /><${Output} />`}
     ${ready && anyProblem.value && html`<p class="warn-text">${anyProblem.value}</p>`}

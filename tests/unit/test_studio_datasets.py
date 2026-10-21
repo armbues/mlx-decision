@@ -324,3 +324,85 @@ def test_a_job_from_any_dataset_refuses(studio, hub):
         response = any_dataset(studio, **body)
         assert response.status_code == status, (body, response.text)
         assert response.json()["error"]["param"] == param, (body, response.text)
+
+
+# A new question made from the label's classes
+
+
+def new_question(studio, body=None, **made):
+    """A Get of org/reviews' train split with a question made from ``stars``;
+    ``made`` changes the question's fields, ``body`` the Get's."""
+    fields = {"source": "hf:org/reviews", "config": "en", "text": "review", "label": "stars",
+              "splits": [{"split": "train", "role": "train"}]}  # fmt: skip
+    question = {"instructions": "How many stars?", "classes": ["1", "2", "3", "4", "5"]}
+    return get(studio, **(fields | (body or {})), new_question=question | made)
+
+
+def test_a_new_question_from_the_classes_is_saved_as_a_set(studio, hub):
+    files = studio.app_state.workspace
+    started = new_question(studio)
+    assert started.status_code == 202, started.text
+    job = started.json()["job"]
+    stars = {"1": "1", "2": "2", "3": "3", "4": "4", "5": "5"}
+    question = {"type": "choice", "instructions": "How many stars?", "criteria": stars}
+    # Saved under the dataset's name, to try in the Playground.
+    assert files.load_set("reviews")[0] == {"state": "", "questions": {"reviews": question}}
+    details = job["details"]
+    assert (details["set"], details["question"], details["new_set"]) == ("reviews", "reviews", True)
+    folder = studio.app_state.jobs.jobs[job["id"]].folder
+    assert json.loads((folder / "question.json").read_text()) == {"reviews": question}
+    assert job["command"][1:12] == [
+        "data", "hf:org/reviews", "--config", "en", "--shape", "text",
+        "--text", "review", "--label", "stars", "-q",
+    ]  # fmt: skip
+    assert job["command"][13:15] == ["--label-map", "1=1,2=2,3=3,4=4,5=5"]
+    stop(studio, job)
+
+    # Ids made safe from the class names (their text), each once; a taken
+    # set name gets -2.
+    classes = ["Very good", "very-good", "Très bien!", "a,b", "?"]
+    again = new_question(studio, {"name": "other"}, classes=classes, set="reviews")
+    assert again.status_code == 202, again.text
+    job = again.json()["job"]
+    assert job["details"]["set"] == "reviews-2"
+    body = files.load_set("reviews-2")[0]
+    assert body["questions"]["reviews"]["criteria"] == {
+        "very_good": "Very good", "very-good": "very-good", "très_bien": "Très bien!",
+        "a_b": "a,b", "option": "?",
+    }  # fmt: skip
+    assert job["details"]["label_map"] == {
+        "Very good": "very_good", "very-good": "very-good", "Très bien!": "très_bien",
+        "a,b": "a_b", "?": "option",
+    }  # fmt: skip
+    assert "a\\,b=a_b" in job["command"][job["command"].index("--label-map") + 1]
+    stop(studio, job)
+
+
+def test_a_new_question_refuses_and_saves_nothing(studio, hub):
+    files = studio.app_state.workspace
+    for made, status in [
+        ({"instructions": " "}, 400),
+        ({"instructions": "x" * 2001}, 400),
+        ({"classes": ["only"]}, 400),
+        ({"classes": [str(n) for n in range(51)]}, 400),
+        ({"classes": ["a", "a"]}, 400),
+        ({"classes": ["a=b", "c"]}, 400),
+        ({"classes": ["a", 1]}, 400),
+        ({"set": "../x"}, 400),
+    ]:
+        response = new_question(studio, **made)
+        assert response.status_code == status, (made, response.text)
+        assert response.json()["error"]["param"] == "new_question", (made, response.text)
+    # The files' name taken: refused before the set is saved.
+    files.save_data("reviews-train", b"")
+    assert new_question(studio).status_code == 409
+    assert files.list_sets() == []
+
+
+def test_a_new_set_is_taken_back_when_the_job_does_not_start(studio, hub, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise RuntimeError("the Studio is stopping")
+
+    monkeypatch.setattr(studio.app_state.jobs, "submit", refuse)
+    assert new_question(studio).status_code == 503
+    assert studio.app_state.workspace.list_sets() == []

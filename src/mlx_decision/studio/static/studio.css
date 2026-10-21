@@ -1106,6 +1106,7 @@ a.sb-item { color: var(--fg); }
 .sheet .any-row { display: grid; grid-template-columns: 110px minmax(0, 220px) minmax(0, 1fr); gap: 10px; align-items: center; font-size: 12.5px; }
 .sheet .any-row > span:first-child { color: var(--fg-2); }
 .sheet .any-row small { color: var(--fg-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .any-row.wide .setting-input { grid-column: 2 / -1; font: 13px var(--font); }
 .sheet .any-row select { font: inherit; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 3px 6px; }
 .sheet .any-map .any-row { grid-template-columns: minmax(0, 160px) 50px minmax(0, 1fr); }
 .sheet .any-map code { font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; }

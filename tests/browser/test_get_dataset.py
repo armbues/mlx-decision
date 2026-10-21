@@ -202,6 +202,48 @@ def test_a_yes_no_question_maps_by_name(studio, page, hub):
     expect(sheet.get_by_label("Name")).to_have_value("reviews")
 
 
+def test_a_new_question_from_the_classes(studio, page, hub):
+    studio.app.state.workspace.save_set("reviews", {"state": "", "questions": {}})
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    sheet.locator(".fam[data-preset='any']").click()
+    field = sheet.get_by_label("Hugging Face dataset")
+    field.fill("org/reviews")
+    field.press("Enter")
+    sheet.get_by_label("Config").select_option("en")
+    sheet.get_by_label("Split to preview").select_option("train")
+    sheet.get_by_label("Question set").select_option("New question")
+    # Every class an option of its own; no map to fill in.
+    expect(sheet.locator(".any-map .any-row code")).to_have_text(["negative", "positive"])
+    expect(sheet.get_by_label("Option for negative")).to_have_count(0)
+    # The set's name: the dataset's, taken here, so -2.
+    expect(sheet.get_by_label("New question set")).to_have_attribute("placeholder", "reviews-2")
+    expect(sheet).to_contain_text("reviews is taken")
+    get = sheet.get_by_role("button", name="Get")
+    expect(sheet.locator(".fam-pane > .warn-text")).to_have_text(
+        "Write the new question's instructions"
+    )
+    expect(get).to_be_disabled()
+    sheet.get_by_label("Instructions").fill("Is the review positive or negative?")
+    expect(get).to_be_enabled()
+    shot(page, "get-new-question")
+    get.click()
+
+    expect(page.locator(".toast")).to_contain_text("saved as the set reviews-2")
+    job = next(iter(studio.app.state.jobs.jobs.values()))
+    question = {
+        "type": "choice",
+        "instructions": "Is the review positive or negative?",
+        "criteria": {"negative": "negative", "positive": "positive"},
+    }
+    assert studio.set_file("reviews-2") == {"state": "", "questions": {"reviews": question}}
+    assert job.details["label_map"] == {"negative": "negative", "positive": "positive"}
+    assert "negative=negative,positive=positive" in job.argv
+    # It opens in the Playground, to be tried.
+    page.goto(f"{studio.base}/#/playground/reviews-2")
+    expect(page.locator(".question[data-q='reviews']")).to_be_visible()
+
+
 def test_a_second_get_skips_the_names_a_running_get_writes(studio, page):
     open_studio(page, studio, "datasets")
     sheet = open_sheet(page)

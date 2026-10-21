@@ -68,7 +68,9 @@ async function start() {
     // The next Get starts afresh: "Another dataset…" empty, a preset's name free again.
     if (picked.value === ANY) resetAny(true);
     named.value = false;
-    toast(`${job.title}: ${body.splits.length > 1 ? "the files join" : "the file joins"} Datasets when the job is done`);
+    const files = body.splits.length > 1 ? "the files join" : "the file joins";
+    const saved = job.details?.new_set ? `; the question is saved as the set ${job.details.set}` : "";
+    toast(`${job.title}: ${files} Datasets when the job is done${saved}`);
   } catch (error) {
     toast(`Could not get the dataset: ${error.message}`);
   } finally {

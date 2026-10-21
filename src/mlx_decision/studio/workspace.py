@@ -347,6 +347,17 @@ class Workspace:
         self.changed("sets", name, "saved")
         return sha256(data)
 
+    def save_new_set(self, name: str, body: Any, tries: int = 100) -> tuple[str, str]:
+        """Save a new set under ``name`` or, when taken, the first free
+        ``name-2``, ``name-3``, ...; returns the name and the file's SHA-256."""
+        for attempt in range(1, tries + 1):
+            candidate = name if attempt == 1 else f"{name[:76]}-{attempt}"
+            try:
+                return candidate, self.save_set(candidate, body)
+            except Conflict:
+                continue
+        raise Conflict(f"no free name for {name!r}")
+
     def rename_set(self, name: str, new_name: str) -> None:
         """Rename the set and its history; the new name must be free."""
         source, target = self.set_path(name), self.set_path(new_name)

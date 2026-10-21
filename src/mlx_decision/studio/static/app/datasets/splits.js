@@ -14,7 +14,7 @@ export const ROLES = [
 ];
 export const ROLE_WORDS = Object.fromEntries(ROLES.map(([id, label, words]) => [id, { label, words }]));
 
-const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
+export const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
 
 // A sample's default: 1,000 rows, or all of a smaller split's.
 export const defaultSample = (rows) => String(rows > 0 ? Math.min(1000, rows) : 1000);

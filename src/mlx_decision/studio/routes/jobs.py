@@ -26,6 +26,7 @@ from ...config import Config
 from ...data.make import ROLES, SPLIT_FIELD, record_path
 from ...data.presets import PRESETS
 from ...data.presets import SPLITS as PRESETS_SPLITS
+from ...data.shapes import safe_id, safe_ids
 from ...fitted import REPORT_FILE
 from ...flags import join_pairs
 from ...gpu import Gpu
@@ -45,6 +46,9 @@ PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 # The question a data job's labels answer, written into its folder for -q.
 QUESTION_FILE = "question.json"
 MAX_SPLITS = 10  # splits one Get takes
+MAX_INSTRUCTIONS = 2000  # characters of a new question's instructions
+# A label column has at most this many classes (the preview lists no more).
+MAX_CLASSES = 50
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
 BITS = (8, 4)
 # What fit and eval take from a model's load options (the others do not apply).
@@ -69,11 +73,13 @@ class Plan:
         output: Path | None = None,
         inputs: dict[str, bytes] | None = None,
         also: list[Path] | None = None,
+        undo: Callable[[], None] | None = None,
     ):
         self.argv, self.holds_gpu, self.title, self.output = argv, holds_gpu, title, output
         self.details = details
         self.inputs = inputs  # files for the job's folder (FOLDER in argv)
         self.also = also or []  # more files it writes
+        self.undo = undo  # takes back what planning saved, when the job does not start
 
 
 def jobs_router(
@@ -287,7 +293,7 @@ def jobs_router(
         return base, outputs
 
     def get_plan(argv: list[str], body: dict, title: str, base: str, outputs: list[Path],
-                 splits: list[dict], details: dict, inputs=None) -> Plan:  # fmt: skip
+                 splits: list[dict], details: dict, inputs=None, undo=None) -> Plan:  # fmt: skip
         """``data`` with each split, its sample and the seed, one file per split
         with its record (and roles)."""
         seed = field(body, "seed", int, required=False)
@@ -309,7 +315,8 @@ def jobs_router(
                    "name": base, "files": names}  # fmt: skip
         also = outputs[1:] + [record_path(output) for output in outputs]
         return Plan(argv, holds_gpu=False, title=f"Get {title} {', '.join(parts)}",
-                    details=details, output=outputs[0], inputs=inputs, also=also)  # fmt: skip
+                    details=details, output=outputs[0], inputs=inputs, also=also,
+                    undo=undo)  # fmt: skip
 
     def dataset(body: dict) -> Plan:
         """A preset's splits, or any Hugging Face dataset's with a question set's
@@ -327,7 +334,9 @@ def jobs_router(
     def any_dataset(body: dict) -> Plan:
         """``hf:ORG/NAME``'s splits with ``text`` as the state and ``label`` as
         the answer to a question set's question; the label's classes mapped to
-        the question's options (``label_map``; classes left out are not used)."""
+        the question's options (``label_map``; classes left out are not used).
+        With ``new_question`` the question is made from the label's classes
+        and saved as a new set first (``new_question``)."""
         source = field(body, "source", str).strip()
         repo = source.removeprefix("hf:")
         if not source.startswith("hf:") or not REPO_ID.fullmatch(repo) or ".." in repo:
@@ -342,6 +351,41 @@ def jobs_router(
                 raise ApiError(400, f"name the {key} column", param=key)
         if text == label:
             raise ApiError(400, "the state and the label are different columns", param="label")
+        dataset_name = repo.rsplit("/", 1)[-1]
+        made = body.get("new_question") is not None
+        if made:
+            set_name, set_body, question_id, question, label_map = new_question(body, dataset_name)
+        else:
+            set_name, question_id, question, label_map = set_question(body)
+        base, outputs = get_files(body, dataset_name, splits)
+        undo = None
+        if made:
+            try:
+                set_name, _ = files.save_new_set(set_name, set_body)
+            except WorkspaceError as error:
+                raise ApiError(error.status, error.message, param="new_question") from None
+            undo = lambda: files.delete_set(set_name)  # noqa: E731
+        argv = ["data", source]
+        if config is not None:
+            argv += ["--config", config]
+        argv += ["--shape", "text", "--text", text, "--label", label]
+        argv += ["-q", f"{FOLDER}/{QUESTION_FILE}", "--label-map", join_pairs(label_map)]
+        details = {
+            "source": source, "config": config, "text": text, "label": label,
+            "set": set_name, "question": question_id, "label_map": label_map,
+            "new_set": made,
+        }  # fmt: skip
+        inputs = {QUESTION_FILE: json.dumps({question_id: question}, ensure_ascii=False).encode()}
+        return get_plan(argv, body, repo, base, outputs, splits, details, inputs, undo)
+
+    def map_key(raw: Any, key: str) -> str:
+        """A class as the label map can name it (``class=option`` pairs)."""
+        if not isinstance(raw, str) or "=" in raw or raw != raw.strip() or not raw:
+            raise ApiError(400, f"a class the map cannot name: {raw!r}", param=key)
+        return raw
+
+    def set_question(body: dict) -> tuple[str, str, dict, dict[str, str]]:
+        """``set``'s question ``question`` and ``label_map`` onto its options."""
         set_name = named(body, "set", "a set's name")
         try:
             questions = files.load_set(set_name)[0].get("questions") or {}
@@ -371,20 +415,41 @@ def jobs_router(
                 raise ApiError(
                     400, f"{raw}: {option!r} is none of {question_id}'s options", param="label_map"
                 )
-            if "=" in raw or raw != raw.strip() or not raw:
-                raise ApiError(400, f"a class the map cannot name: {raw!r}", param="label_map")
-        base, outputs = get_files(body, repo.rsplit("/", 1)[-1], splits)
-        argv = ["data", source]
-        if config is not None:
-            argv += ["--config", config]
-        argv += ["--shape", "text", "--text", text, "--label", label]
-        argv += ["-q", f"{FOLDER}/{QUESTION_FILE}", "--label-map", join_pairs(label_map)]
-        details = {
-            "source": source, "config": config, "text": text, "label": label,
-            "set": set_name, "question": question_id, "label_map": label_map,
-        }  # fmt: skip
-        inputs = {QUESTION_FILE: json.dumps({question_id: question}, ensure_ascii=False).encode()}
-        return get_plan(argv, body, repo, base, outputs, splits, details, inputs)
+            map_key(raw, "label_map")
+        return set_name, question_id, question, label_map
+
+    def new_question(body: dict, dataset_name: str) -> tuple[str, dict, str, dict, dict[str, str]]:
+        """``new_question``: ``instructions``, the label's ``classes`` (every one an
+        option: its id made safe, its name the text) and the set's name (``set``,
+        default the dataset's; a taken one gets -2). Returns the set's name and
+        body (no state yet), the question's id, the question and the map."""
+        made = field(body, "new_question", dict)
+        instructions = field(made, "instructions", str).strip()
+        if not instructions or len(instructions) > MAX_INSTRUCTIONS:
+            raise ApiError(
+                400, f"the question's instructions: 1 to {MAX_INSTRUCTIONS} characters",
+                param="new_question",
+            )  # fmt: skip
+        classes = made.get("classes")
+        if not isinstance(classes, list) or not 2 <= len(classes) <= MAX_CLASSES:
+            raise ApiError(400, f"a choice needs 2 to {MAX_CLASSES} classes", "new_question")
+        classes = [map_key(raw, "new_question") for raw in classes]
+        if len(set(classes)) != len(classes):
+            raise ApiError(400, "each class once", param="new_question")
+        name = made.get("set") or safe_id(dataset_name, "question")[:80]
+        try:
+            check_name(name, "a set's name")
+        except WorkspaceError as error:
+            raise ApiError(400, error.message, param="new_question") from None
+        ids = safe_ids(classes)
+        question_id = safe_id(dataset_name, "question")
+        question = {
+            "type": "choice",
+            "instructions": instructions,
+            "criteria": dict(zip(ids, classes, strict=True)),
+        }
+        set_body = {"state": "", "questions": {question_id: question}}
+        return name, set_body, question_id, question, dict(zip(classes, ids, strict=True))
 
     plans: dict[str, Callable[[dict], Plan]] = {
         "data": dataset,
@@ -432,9 +497,11 @@ def jobs_router(
                 inputs=plan.inputs,
                 also=plan.also,
             )
-        except JobConflict as error:
-            raise conflict(error) from None
-        except RuntimeError as error:
+        except (JobConflict, RuntimeError) as error:
+            if plan.undo is not None:
+                plan.undo()
+            if isinstance(error, JobConflict):
+                raise conflict(error) from None
             raise ApiError(503, str(error), kind="api_error") from None
         return {"job": job.summary()}
 

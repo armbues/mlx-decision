@@ -24,9 +24,6 @@ from ..templates import UnknownTemplate, list_templates, template_set
 from ..workspace import Conflict, NotFound, Workspace, check_name
 from . import ApiError, field, json_body
 
-# Import tries ``name``, then ``name-2``, ``name-3``, ...
-IMPORT_TRIES = 100
-
 
 def as_set(data: Any) -> dict[str, Any]:
     """A file's JSON as a set, as ``run -q`` reads it: a body with ``questions``
@@ -85,16 +82,10 @@ def sets_router(files: Workspace, max_body_bytes: int) -> APIRouter:
         except DecisionError as error:
             raise ApiError(400, error.message, param="text") from None
 
-        def save() -> tuple[str, str]:
-            for attempt in range(1, IMPORT_TRIES + 1):
-                candidate = name if attempt == 1 else f"{name[:76]}-{attempt}"
-                try:
-                    return candidate, files.save_set(candidate, body)
-                except Conflict:
-                    continue
-            raise ApiError(409, f"no free name for {name!r}", param="name")
-
-        saved, digest = await run(save)
+        try:
+            saved, digest = await run(files.save_new_set, name, body)
+        except Conflict as error:
+            raise ApiError(409, error.message, param="name") from None
         return {"name": saved, "sha256": digest, "body": body}
 
     @router.get("/templates")

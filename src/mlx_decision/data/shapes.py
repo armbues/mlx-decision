@@ -446,7 +446,25 @@ def build(table: Table, mapping: Mapping, wording: Wording, indices: list[int]) 
     return built
 
 
+def safe_id(text: str, fallback: str) -> str:
+    """``text`` as an id: lower case, each run of characters other than letters,
+    digits, '.' and '-' an underscore; ``fallback`` when nothing is left."""
+    return re.sub(r"[^\w.\-]+", "_", text).strip("_").lower() or fallback
+
+
+def safe_ids(names: list[str], fallback: str = "option") -> list[str]:
+    """Each name as an id (``safe_id``), distinct: a repeated one gets ``_2``,
+    ``_3``, ... as the Playground numbers a copy."""
+    ids: list[str] = []
+    for name in names:
+        base = safe_id(name, fallback)
+        candidate, n = base, 2
+        while candidate in ids:
+            candidate, n = f"{base}_{n}", n + 1
+        ids.append(candidate)
+    return ids
+
+
 def default_id(table: Table) -> str:
     """A question id from the dataset's or file's name."""
-    name = re.sub(r"[^\w.\-]+", "_", table.name).strip("_").lower()
-    return name or "question"
+    return safe_id(table.name, "question")
