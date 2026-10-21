@@ -49,7 +49,8 @@ def support(studio):
 def test_the_page_and_a_datasets_questions(studio, page):
     open_studio(page, studio, "datasets")
     nav = page.locator(".sidebar .sb-sec").first.locator(".sb-item .label")
-    expect(nav).to_have_text(["Playground", "Models", "Datasets", "Training", "Settings"])
+    pages = ["Playground", "Models", "Datasets", "Batches", "Training", "Settings"]
+    expect(nav).to_have_text(pages)
     items = page.locator(".sidebar .data-list .sb-item")
     expect(items).to_have_text(["tickets"])  # the fake Studio's file
     expect(page.locator(".centre .empty")).to_contain_text("Pick a dataset")
@@ -165,7 +166,7 @@ def test_open_in_playground(support, page):
     open_studio(page, support, "datasets/support")
     # Show in Finder and Delete… are in the "…" menu, so the actions fit at 1,100 px.
     page.get_by_role("button", name="More actions for support").click()
-    expect(page.locator(".menu .mi")).to_have_text(["Show in Finder", "Delete…"])
+    expect(page.locator(".menu .mi")).to_have_text(["Run as Batch…", "Show in Finder", "Delete…"])
     page.set_viewport_size({"width": 1100, "height": 800})
     shot(page, "datasets-actions")
     page.keyboard.press("Escape")

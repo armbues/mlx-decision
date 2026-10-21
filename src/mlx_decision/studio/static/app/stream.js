@@ -2,6 +2,7 @@
 // EventSource reconnects by itself and sends the last id, so the Studio
 // replays what was missed.
 import { batch, signal } from "@preact/signals";
+import { applyBatch, applyBatchProgress, applyBatchSnapshot } from "./store/batches.js";
 import { applyEvent, applyJob, applySnapshot } from "./store/jobs.js";
 import { applyStatus, connection, loadModels, loadStatus } from "./store/status.js";
 import { dataChanged } from "./store/data.js";
@@ -21,6 +22,7 @@ function apply(message) {
     case "snapshot":
       applyStatus(message.status);
       applySnapshot(message.jobs);
+      applyBatchSnapshot(message.batch);
       setsChanged();
       dataChanged();
       loadModels(); // catalog messages may have been missed
@@ -37,6 +39,12 @@ function apply(message) {
       break;
     case "event":
       applyEvent(message);
+      break;
+    case "batch":
+      applyBatch(message.batch);
+      break;
+    case "batch_progress":
+      applyBatchProgress(message);
       break;
     case "status": {
       const { type, ...fields } = message;

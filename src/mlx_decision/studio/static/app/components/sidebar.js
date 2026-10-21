@@ -2,6 +2,7 @@
 import { html } from "htm/preact";
 import { gigabytes, hostPort } from "../format.js";
 import { href } from "../router.js";
+import { batchProgressText, runningBatch, stopBatch } from "../store/batches.js";
 import { dismissJob, listed, progress, stopJob } from "../store/jobs.js";
 import { groupColour, groupLabel } from "../families.js";
 import { dataFiles } from "../store/data.js";
@@ -13,6 +14,7 @@ const PAGE_LINKS = [
   { id: "playground", label: "Playground", Icon: icons.Playground },
   { id: "models", label: "Models", Icon: icons.Models },
   { id: "datasets", label: "Datasets", Icon: icons.Datasets },
+  { id: "batches", label: "Batches", Icon: icons.Batches },
   { id: "training", label: "Training", Icon: icons.Training },
   { id: "settings", label: "Settings", Icon: icons.Settings },
 ];
@@ -61,14 +63,30 @@ function Job({ job }) {
   `;
 }
 
+// The running batch, listed with the jobs: its progress and Stop.
+function BatchJob({ batch }) {
+  const fraction = batch.total ? batch.answered / batch.total : 0;
+  return html`
+    <li class="job running batch-job" data-batch=${batch.name}>
+      <div class="job-top">
+        <${icons.Batches} /><a class="job-title" href=${href("batches", batch.name)} title=${`Batch ${batch.name}`}>Batch ${batch.name}</a>
+        <button aria-label=${`Stop the batch ${batch.name}`} title="Stop" onClick=${() => stopBatch(batch.name)}><${icons.Close} /></button>
+      </div>
+      <div class="bar"><i style=${`width:${(fraction * 100).toFixed(1)}%`}></i></div>
+      <small class="num">${batchProgressText(batch)}</small>
+    </li>
+  `;
+}
+
 function Jobs() {
   const shown = listed.value;
+  const batch = runningBatch.value;
   return html`
     <div class="sb-sec">
       <h3>Jobs</h3>
-      ${shown.length === 0
+      ${shown.length === 0 && !batch
         ? html`<p class="sb-empty">Nothing running</p>`
-        : html`<ul class="jobs">${shown.map((job) => html`<${Job} key=${job.id} job=${job} />`)}</ul>`}
+        : html`<ul class="jobs">${batch && html`<${BatchJob} batch=${batch} />`}${shown.map((job) => html`<${Job} key=${job.id} job=${job} />`)}</ul>`}
     </div>
   `;
 }

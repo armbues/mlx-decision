@@ -79,6 +79,7 @@ def batches_router(batches: Batches, files: Workspace, max_body_bytes: int) -> A
         unsure: float | None = None,
         search: str | None = None,
         errors: bool = False,
+        gold: str | None = None,
         row: int | None = None,
     ):
         """A page of the table (``Results.page``), or with ``row`` that row whole."""
@@ -86,7 +87,7 @@ def batches_router(batches: Batches, files: Workspace, max_body_bytes: int) -> A
         if row is not None:
             return {"row": await asyncio.to_thread(results.row, name, row)}
         return await asyncio.to_thread(
-            results.page, name, offset, limit, question, answer, wrong, unsure, search, errors
+            results.page, name, offset, limit, question, answer, wrong, unsure, search, errors, gold
         )
 
     @router.get("/{name}/export")

@@ -195,10 +195,12 @@ class Results:
         unsure: float | None = None,
         search: str | None = None,
         errors: bool = False,
+        gold: str | None = None,
     ) -> dict[str, Any]:
         """A page of the answered rows that pass the filters (``answer``,
-        ``wrong`` and ``unsure`` on ``question``, the first one by default;
-        ``search`` in the state, ignoring case), with the number that pass."""
+        ``gold`` (the expected answer), ``wrong`` and ``unsure`` on
+        ``question``, the first one by default; ``search`` in the state,
+        ignoring case), with the number that pass."""
         questions, entries = self.load(name)
         if question is None:
             question = next(iter(questions), None)
@@ -214,9 +216,11 @@ class Results:
             picked = entry.picked.get(question) if question else None
             if answer is not None and (picked is None or picked[0] != answer):
                 continue
+            if gold is not None and entry.labels.get(question) != gold:
+                continue
             if wrong:
-                gold = entry.labels.get(question)
-                if gold is None or (picked is not None and picked[0] == gold):
+                expected = entry.labels.get(question)
+                if expected is None or (picked is not None and picked[0] == expected):
                     continue
             if unsure is not None and (picked is None or picked[1] >= unsure):
                 continue

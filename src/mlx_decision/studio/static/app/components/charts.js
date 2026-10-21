@@ -80,7 +80,7 @@ export function Reliability({ bins, name = "" }) {
         <line class="ideal" x1=${x(0)} y1=${y(0)} x2=${x(1)} y2=${y(1)} />
         ${bins.map((bin, index) =>
           bin.n > 0
-            ? html`<rect key=${index} class=${`bar${hover === index ? " on" : ""}`}
+            ? html`<rect key=${index} class=${`rel-bar${hover === index ? " on" : ""}`}
                 x=${x(bin.low) + 1} width=${Math.max(1, x(bin.high) - x(bin.low) - 2)}
                 y=${y(bin.accuracy)} height=${Math.max(0.5, y(0) - y(bin.accuracy))}
                 onPointerEnter=${() => setHover(index)} onPointerLeave=${() => setHover(null)} />`

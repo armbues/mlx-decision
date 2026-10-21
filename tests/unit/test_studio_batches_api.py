@@ -107,6 +107,8 @@ def test_the_table_is_paged_and_filtered_on_the_server(studio):
     wrong = studio.get(f"{API}/{name}/rows", params={"wrong": True}).json()
     assert wrong["matching"] == analysed["wrong"]
     assert all(r["answers"]["topic"]["answer"] != r["labels"]["topic"] for r in wrong["rows"])
+    expected = studio.get(f"{API}/{name}/rows", params={"gold": "fed"}).json()
+    assert expected["matching"] == 4 and {r["labels"]["topic"] for r in expected["rows"]} == {"fed"}
     everything = studio.get(f"{API}/{name}/rows", params={"unsure": 1.01}).json()
     assert everything["matching"] == 12
     none = studio.get(f"{API}/{name}/rows", params={"unsure": 0}).json()

@@ -1378,8 +1378,78 @@ a.btn.primary { color: var(--accent-fg); }
 .reliability .grid { stroke: var(--sep); stroke-width: 1; }
 .reliability .tick { font: 10px var(--font); fill: var(--fg-2); }
 .reliability .ideal { stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 3 3; }
-.reliability .bar { fill: var(--series-1); opacity: 0.85; }
-.reliability .bar.on { opacity: 1; }
+.reliability .rel-bar { fill: var(--series-1); opacity: 0.85; }
+.reliability .rel-bar.on { opacity: 1; }
 .reliability .rel-note { font-size: 11px; color: var(--fg-2); min-height: 2.6em; margin-top: 2px; }
 .reliability .rel-note b { color: var(--fg); font-weight: 600; }
 .new-list { margin-bottom: -6px; }
+
+/* Batches: the list, a batch's progress, its answers and metrics, its rows, the sheets */
+button.sb-item { border: 0; background: transparent; width: 100%; text-align: left; font: inherit; color: inherit; }
+.batch-list .sb-item .ic { width: 14px; height: 14px; flex: none; }
+.batch-list .sb-item .ic.ok { color: var(--green); }
+.batch-list .sb-item .ic.warn { color: var(--orange); }
+.batch-list .sb-item .ic.spin { color: var(--accent); animation: spin 1s linear infinite; }
+.batch-progress { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; font-size: 12px; color: var(--fg-2); }
+.batch-progress .bar { flex: 1 1 200px; max-width: 360px; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.batch-progress .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.25s; }
+.batch-progress.done .bar i { background: var(--green); }
+.batch-progress.stopped .bar i, .batch-progress.failed .bar i { background: var(--orange); }
+.batch-progress .warn-text { color: var(--orange); }
+.batch-cli .code-line { margin: 0; padding: 10px 12px; font: 11.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
+.bq-group { display: grid; gap: 12px; padding: 12px; }
+.bq-answers { display: grid; gap: 4px; max-width: 560px; }
+.bq-answer { display: grid; grid-template-columns: minmax(70px, 160px) minmax(0, 1fr) 56px; gap: 10px; align-items: center; border: 0; background: transparent; color: var(--fg); padding: 2px 6px; border-radius: 6px; text-align: left; font: inherit; font-size: 12px; }
+.bq-answer:not(:disabled):hover { background: var(--fill); }
+.bq-answer.on { background: var(--selection); }
+.bq-answer:disabled { color: var(--fg-3); }
+.bq-answer code { font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bq-answer .num { text-align: right; }
+.bq-bar { display: block; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.bq-bar i { display: block; height: 100%; background: var(--series-1); }
+.bq-counts { display: flex; gap: 8px; flex-wrap: wrap; }
+.bq-metrics { display: grid; gap: 12px; }
+.metric-row { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; }
+.metric-row .metric dt { font-size: 11px; color: var(--fg-2); }
+.metric-row .metric dd { margin: 0; font: 600 17px var(--font-display); }
+.bq-charts { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+.bq-charts .confusion { overflow-x: auto; max-width: 100%; }
+.bq-note { margin: 0; color: var(--fg-2); font-size: 12px; }
+.batch-head, .batch-row { grid-template-columns: minmax(48px, 120px) minmax(0, 1fr) minmax(90px, 180px); }
+.batch-head.labelled, .batch-row.labelled { grid-template-columns: minmax(48px, 120px) minmax(0, 1fr) minmax(90px, 180px) minmax(70px, 140px); }
+.batch-answer, .batch-expected { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.batch-answer .lab { font: 11.5px var(--mono); background: var(--fill); border-radius: 4px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.batch-answer .lab.unsure { background: var(--orange-fill); color: var(--orange); }
+.batch-answer .lab.err { background: color-mix(in srgb, var(--red) 13%, transparent); color: var(--red); font-family: var(--font); }
+.batch-answer small { color: var(--fg-2); }
+.batch-expected code { font: 11.5px var(--mono); }
+.batch-expected.wrong { color: var(--red); }
+.batch-expected.right { color: var(--green); }
+.batch-expected .no-label, .batch-inspector .no-label { color: var(--fg-3); }
+.batch-rows .ex-tools select { font: inherit; font-size: 12px; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 3px 8px; max-width: 180px; }
+.batch-rows .ex-tools .chip { display: inline-flex; align-items: center; gap: 4px; }
+.batch-rows .ex-tools .chip button { border: 0; background: transparent; color: inherit; padding: 0 2px; font: inherit; }
+.batch-inspector .idet-head { grid-template-columns: minmax(0, 1fr); }
+.batch-inspector .probs { display: grid; gap: 4px; padding: 6px 12px 10px; }
+.batch-inspector .prob { display: grid; grid-template-columns: minmax(60px, 110px) minmax(0, 1fr) 48px; gap: 8px; align-items: center; font-size: 11.5px; }
+.batch-inspector .prob code { font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-inspector .prob .num { text-align: right; color: var(--fg-2); }
+.batch-inspector small.right { color: var(--green); }
+.batch-inspector small.wrong { color: var(--red); }
+.batch-form { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 14px; align-items: center; }
+.batch-form > label, .batch-form > .label { color: var(--fg-2); font-size: 12.5px; }
+.batch-form select, .batch-form input[type="text"], .batch-form input[type="number"] {
+  font: inherit; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 3px 8px; min-width: 0;
+}
+.batch-form select, .batch-form input[type="text"] { max-width: 360px; width: 100%; }
+.batch-form input[type="number"] { width: 72px; }
+.batch-form .radio-col { display: grid; gap: 6px; font-size: 12.5px; }
+.batch-form .radio-col label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.batch-form .hint { display: block; color: var(--fg-2); font-size: 11.5px; margin-top: 4px; }
+.batch-form .hint a { color: var(--accent); }
+.sheet .batch-why { margin: 2px 0 0; font-size: 12px; }
+@media (max-width: 700px) {
+  .batch-form { grid-template-columns: minmax(0, 1fr); }
+  .batch-head.labelled, .batch-row.labelled { grid-template-columns: minmax(40px, 70px) minmax(0, 1fr) minmax(70px, 120px) minmax(56px, 90px); }
+}
+a.job-title { color: inherit; text-decoration: none; }

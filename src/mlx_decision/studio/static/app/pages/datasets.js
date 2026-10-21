@@ -3,7 +3,7 @@
 // its splits as tabs (each with its role and count), what keeps it from a fit,
 // where it came from, the split's questions with their labels and its label
 // values with their counts, and its examples in a paged table; with Fit on It…,
-// Evaluate on It…, Open in Playground, and Show in Finder and Delete in its "…"
+// Evaluate on It…, Run as Batch…, Open in Playground, and Show in Finder and Delete in its "…"
 // menu. The inspector shows the example picked, whole, and the files.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
@@ -12,6 +12,7 @@ import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { ExampleInspector, ExampleTable, filterLabel, filterValue, query, showDataset } from "../datasets/examples.js";
 import { DatasetList, deleteData, pickedDataset, revealData, uploadData } from "../datasets/files.js";
+import { openNewBatch } from "../batches/start.js";
 import { openGetDataset } from "../datasets/get.js";
 import { Labels, Values, useSummary } from "../datasets/summary.js";
 import { ROLE_WORDS } from "../datasets/splits.js";
@@ -234,6 +235,8 @@ function Picked({ name }) {
         <${MenuButton} id="data-more" className="btn" ariaLabel=${`More actions for ${name}`}
           label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
           menuStyle="top:32px; right:0; width:200px">
+          <${MenuItem} onSelect=${() => openNewBatch({ dataset: name, split: summary.split })}>Run as Batch…<//>
+          <${MenuSeparator} />
           <${MenuItem} onSelect=${() => revealData(name)}>Show in Finder<//>
           <${MenuSeparator} />
           <${MenuItem} onSelect=${() => deleteData(name)}>Delete…<//>

@@ -56,6 +56,12 @@ export const Settings = () => html`
   </svg>
 `;
 
+export const Batches = () => html`
+  <svg viewBox="0 0 16 16" ...${stroke()} aria-hidden="true">
+    <path d="M2 3.5h7.5M2 8h7.5M2 12.5h7.5" /><path d="M11.8 5.6 14.6 8l-2.8 2.4z" />
+  </svg>
+`;
+
 export const Download = () => html`
   <svg viewBox="0 0 16 16" ...${stroke(1.4)} aria-hidden="true">
     <circle cx="8" cy="8" r="6.5" /><path d="M8 4.5v6M5.5 8.2 8 10.7l2.5-2.5" />
