@@ -1385,6 +1385,8 @@ a.btn.primary { color: var(--accent-fg); }
 .new-list { margin-bottom: -6px; }
 
 /* Batches: the list, a batch's progress, its answers and metrics, its rows, the sheets */
+.page-batches .centre-inner { max-width: 980px; width: 100%; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+.page-batches .pane-head .actions { flex-wrap: wrap; justify-content: flex-end; }
 button.sb-item { border: 0; background: transparent; width: 100%; text-align: left; font: inherit; color: inherit; }
 .batch-list .sb-item .ic { width: 14px; height: 14px; flex: none; }
 .batch-list .sb-item .ic.ok { color: var(--green); }

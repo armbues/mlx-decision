@@ -190,8 +190,8 @@ function Terminal({ batch }) {
   const workspace = status.value?.workspace;
   return html`
     <section class="gsec batch-cli"><div class="gsec-head"><h2>From a terminal</h2>
-        <span class="tag">${workspace ? html`In <code>${workspace}</code>` : "In the workspace"}</span></div>
-      <div class="group"><pre class="code-line">${command(batch)}</pre></div>
+        <span class="tag">The same rows, questions and model</span></div>
+      <div class="group"><pre class="code-line">${workspace ? `cd ${shellWord(workspace)}\n` : ""}${command(batch)}</pre></div>
     </section>
   `;
 }
