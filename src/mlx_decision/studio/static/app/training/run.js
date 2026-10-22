@@ -15,6 +15,7 @@ import { DATASET_DOCUMENT, chooseModel, compareOnly } from "../playground/sessio
 import { href } from "../router.js";
 import { fitById, opened, openFit } from "../store/fits.js";
 import { confirmDeleteRun } from "./delete.js";
+import { evalFitted } from "./evaluate.js";
 import { stopJob } from "../store/jobs.js";
 import { dataFiles } from "../store/data.js";
 import { models } from "../store/status.js";
@@ -245,6 +246,8 @@ function Log({ events, job }) {
 
 // ---------- the report ----------
 
+const fittedBase = (name) => (models.value ?? []).find((model) => model.name === name)?.base ?? null;
+
 // The fitted model in the Playground: on the dataset it learned from (a
 // dataset folder, its rows and questions) with its base in Compare, so the
 // next Run compares them; else on the open set.
@@ -346,6 +349,9 @@ function Report({ job }) {
     </section>
     <div class="start-bar">
       <${OpenFitted} job=${job} name=${name} listed=${listed} />
+      ${listed && fittedBase(name) &&
+      html`<button class="btn" onClick=${() => evalFitted(name, fittedBase(name), job.details?.data)}
+        title=${`Both models on ${job.details?.data ?? "a dataset"}'s evaluate split`}>Evaluate Against ${fittedBase(name)}…</button>`}
       <a class="btn" href=${href("models", name)}>Show in Models</a>
     </div>
   `;

@@ -34,7 +34,7 @@ const tokens = (count) => (count >= 1024 ? `${Math.round(count / 1024)}k` : `${c
 function reads(model) {
   const caps = model.capabilities;
   if (!caps) return "";
-  const limit = caps.max_input_tokens ? tokens(caps.max_input_tokens) : "no limit";
+  const limit = caps.max_input_tokens ? `${tokens(caps.max_input_tokens)} tokens` : "any length";
   // Every row keeps the icon's slot, so the limits line up.
   return html`${limit}<span class="pic-slot">${caps.supports_images && html`<${Picture} />`}</span>`;
 }
@@ -492,7 +492,7 @@ function Centre() {
         : html`
             <${MemoryCard} />
             <section class="group mlist" aria-label="Models">
-              <div class="mhead"><span>Model</span><span class="r c-size" title="Its files on disk">Size</span><span class="r" title="Estimates: the weights plus 10%, as the memory check counts them">Memory, est.</span><span class="r c-reads">Reads</span><span class="r c-speed" title="The median time of an answer here, measured">Speed</span><span class="r">Status</span></div>
+              <div class="mhead"><span>Model</span><span class="r c-size" title="Its files on disk">Size</span><span class="r" title="Estimates: the weights plus 10%, as the memory check counts them">Memory, est.</span><span class="r c-reads" title="The longest state it reads, in tokens; the picture: it reads images">Reads</span><span class="r c-speed" title="The median time of an answer here, measured">Speed</span><span class="r">Status</span></div>
               <div role="listbox" aria-label="Models"><${Listed} /></div>
             </section>
             <${Places} />

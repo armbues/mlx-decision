@@ -857,6 +857,7 @@ a.sb-item { color: var(--fg); }
   padding: 1px 4px; margin-left: -4px; border-radius: 5px; outline: none; min-width: 4ch;
 }
 .page-playground .qid-input:hover { background: var(--fill); }
+.page-playground .qid-input.unnamed { background: var(--field); box-shadow: inset 0 0 0 0.5px var(--field-border); }
 .page-playground .qid-input:focus-visible { background: var(--field); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
 .page-playground .bad { color: var(--red) !important; box-shadow: inset 0 -1.5px 0 var(--red); }
 .page-playground .tag.bad { box-shadow: none; background: color-mix(in srgb, var(--red) 13%, transparent); }
@@ -1503,3 +1504,5 @@ a.job-title { color: inherit; text-decoration: none; }
 
 .mem-link { color: inherit; text-decoration: none; }
 .mem-link:hover { text-decoration: underline; }
+a.job-title:hover { text-decoration: underline; }
+.page-settings .folder-actions { display: inline-flex; gap: 6px; }

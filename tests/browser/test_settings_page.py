@@ -202,7 +202,8 @@ def test_the_workspace_folders_and_clear(studio, page):
     )
     sets = group.locator(".kv.folder[data-folder='sets']")
     expect(sets.locator("small")).to_contain_text("2 sets")
-    expect(group.locator(".kv.folder[data-folder='batches'] button")).to_be_disabled()  # empty
+    batches = group.locator(".kv.folder[data-folder='batches']")
+    expect(batches.get_by_role("button", name="Clear…")).to_be_disabled()  # empty
 
     sets.get_by_role("button", name="Clear…").click()
     sheet = page.locator(".sheet")

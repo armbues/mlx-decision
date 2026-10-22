@@ -179,7 +179,7 @@ def test_open_in_playground(support, page):
     open_studio(page, support, "datasets/support")
     # Show in Finder and Delete… are in the "…" menu, so the actions fit at 1,100 px.
     page.get_by_role("button", name="More actions for support").click()
-    expect(page.locator(".menu .mi")).to_have_text(["Run as Batch…", "Show in Finder", "Delete…"])
+    expect(page.locator(".menu .mi")).to_have_text(["Evaluate on It…", "Show in Finder", "Delete…"])
     page.set_viewport_size({"width": 1100, "height": 800})
     shot(page, "datasets-actions")
     page.keyboard.press("Escape")
@@ -307,6 +307,7 @@ def test_the_page_light_and_dark(support, page, theme, width):
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     centre = page.locator(".centre")
     assert centre.evaluate("e => e.scrollWidth <= e.clientWidth")
+    expect(page.locator(".ex-pager")).to_contain_text(" of ")  # laid out with its count
     pager = page.locator(".ex-pager").bounding_box()
     tools = page.locator(".ex-tools").bounding_box()
     assert pager["x"] + pager["width"] <= tools["x"] + tools["width"] + 1

@@ -76,7 +76,8 @@ def test_options_from_the_cards_names(tweets, page):
     expect(question.locator(".am-open")).to_have_count(0)
     shot(page, "dataset-answers-options")
     page.keyboard.press("Meta+s")
-    expect(page.locator(".toast")).to_contain_text("Saved data/tweets/dataset.json")
+    # It was missing its answers; now it is ready, and says so.
+    expect(page.locator(".toast")).to_contain_text("Saved: tweets is ready for a fit")
     saved = described(tweets)
     assert saved["answers"]["choice"]["map"]["13"] == "m_a_investments"
     assert len(saved["questions"]["choice"]["criteria"]) == 20
@@ -225,7 +226,7 @@ def test_a_save_while_a_job_reads_the_dataset_says_so(tweets, page):
     jobs["fit"] = SimpleNamespace(state="running", details={"data": "tweets"}, title="Fit x")
     try:
         page.keyboard.press("Meta+s")
-        expect(page.locator(".toast")).to_contain_text("Fit x reads tweets")
+        expect(page.locator(".toast").last).to_contain_text("Fit x reads tweets")
         expect(page.locator(".sheet")).to_have_count(0)  # no "changed on disk" sheet
     finally:
         del jobs["fit"]

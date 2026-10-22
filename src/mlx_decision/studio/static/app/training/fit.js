@@ -16,6 +16,7 @@ import { remembered } from "../store/prefs.js";
 import { href, navigate } from "../router.js";
 import { dataFiles, datasetOf, splitFor } from "../store/data.js";
 import { NO_MODELS, NoModels } from "../components/no-models.js";
+import { batches } from "../store/batches.js";
 import { loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
@@ -38,10 +39,15 @@ const planError = signal(null);
 const key = (method) => (method.head_only ? `${method.method}+head` : method.method);
 const picked = computed(() => planned.value?.methods.find((method) => key(method) === choice.value) ?? null);
 
-// The base: the remembered one while it is listed, else the default, else the first.
+// The base: the remembered one while it is listed, else the model of the
+// newest batch on the dataset, else a loaded one, else the default, else the first.
 const baseName = computed(() => {
   const list = (models.value ?? []).map((model) => model.name);
   if (base.value && list.includes(base.value)) return base.value;
+  const batched = (batches.value ?? []).find((batch) => batch.dataset === fitData.value)?.model;
+  if (batched && list.includes(batched)) return batched;
+  const loaded = list.find((name) => loadedNames.value.has(name));
+  if (loaded) return loaded;
   return status.value?.default_model && list.includes(status.value.default_model) ? status.value.default_model : (list[0] ?? null);
 });
 

@@ -231,8 +231,9 @@ function Picked({ name }) {
         <p>${folder ? "" : `${plural(summary.examples, "row")} · `}${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
       </div>
       <div class="actions">
-        <button class="btn primary" onClick=${() => onIt(name, fitOn, "a fit")} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
-        <button class="btn" onClick=${() => onIt(name, evalOn, "an evaluation")} title=${`Score a model on ${name}, on the Training page`}>Evaluate on It…</button>
+        <button class="btn primary" onClick=${() => openNewBatch({ dataset: name, split: splitOf(name) })}
+                title=${`Answer ${name}'s rows with a model, and with labels see how often it is right`}>Run as Batch…</button>
+        <button class="btn" onClick=${() => onIt(name, fitOn, "a fit")} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
         ${folder
           ? html`<button class="btn" onClick=${() => writeQuestions(name)}
                 title=${`The Playground on ${name}: its questions, tried on its rows, saved in its dataset.json`}>${asked ? "Edit Questions" : "Write Questions"}</button>`
@@ -241,7 +242,7 @@ function Picked({ name }) {
         <${MenuButton} id="data-more" className="btn" ariaLabel=${`More actions for ${name}`}
           label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
           menuStyle="top:32px; right:0; width:200px">
-          <${MenuItem} onSelect=${() => openNewBatch({ dataset: name, split: splitOf(name) })}>Run as Batch…<//>
+          <${MenuItem} onSelect=${() => onIt(name, evalOn, "an evaluation")}>Evaluate on It…<//>
           <${MenuSeparator} />
           <${MenuItem} disabled=${!onThisMac} sub=${onThisMac ? null : NOT_THIS_MAC} onSelect=${() => revealData(name)}>Show in Finder<//>
           <${MenuSeparator} />

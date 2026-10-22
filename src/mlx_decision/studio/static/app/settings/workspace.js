@@ -9,6 +9,7 @@ import { fileSize, plural } from "../format.js";
 import { runningBatch } from "../store/batches.js";
 import { jobs } from "../store/jobs.js";
 import { toast } from "../store/ui.js";
+import { reveal } from "./places.js";
 
 const listed = signal(null); // {folders, editable}
 
@@ -88,9 +89,13 @@ export function WorkspaceFolders() {
             <div class="kv folder" data-folder=${folder.folder}>
               <dt><code>${folder.folder}/</code></dt>
               <dd>${folder.what}<small class="num">${count(folder)} · ${fileSize(folder.bytes)}</small></dd>
+              <span class="folder-actions">
+              <button class="btn sm" disabled=${!editable} title=${editable ? `Show ${folder.display} in Finder` : "Only from a browser on this Mac"}
+                      onClick=${() => reveal(`folder:${folder.folder}`)}>Show in Finder</button>
               <button class="btn sm" disabled=${!editable || folder.count === 0 || Boolean(busyWith(folder.folder))}
                       title=${!editable ? "Only from a browser on this Mac" : folder.count === 0 ? "Nothing in it" : (busyWith(folder.folder) ?? `Delete everything in ${folder.display}`)}
                       onClick=${() => confirmClear(folder)}>Clear…</button>
+              </span>
             </div>
           `,
         )}

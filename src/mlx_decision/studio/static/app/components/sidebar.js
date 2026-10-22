@@ -41,8 +41,24 @@ function Pages({ current }) {
 
 const JOB_ICONS = { download: icons.Download, convert: icons.Models, data: icons.Datasets, fit: icons.Training, eval: icons.Training };
 
+// Where a job's row leads: a fit or an evaluation to its page; once done, a
+// download or a conversion to the model it made, a dataset download to the
+// dataset; else nowhere.
+function jobTarget(job) {
+  if (job.kind === "fit" || job.kind === "eval") return href("training", job.id);
+  if (job.state !== "ended" || job.outcome !== "done") return null;
+  if (job.kind === "data" && job.details?.name) return href("datasets", job.details.name);
+  if (job.kind === "convert" && job.details?.name) return href("models", job.details.name);
+  if (job.kind === "download") {
+    const made = (models.value ?? []).find((model) => job.output && model.path === job.output);
+    return made ? href("models", made.name) : href("models");
+  }
+  return null;
+}
+
 function Job({ job }) {
   const Icon = JOB_ICONS[job.kind] ?? icons.Training;
+  const target = jobTarget(job);
   const { fraction, text } = progress(job);
   const ended = job.state === "ended";
   const action = ended ? `Clear ${job.title}` : `Stop ${job.title}`;
@@ -50,7 +66,9 @@ function Job({ job }) {
   return html`
     <li class=${`job ${ended ? `ended ${job.outcome}` : job.state}`} data-job=${job.id}>
       <div class="job-top">
-        <${Icon} /><span class="job-title" title=${job.title}>${job.title}</span>
+        <${Icon} />${target
+          ? html`<a class="job-title" href=${target} title=${job.title}>${job.title}</a>`
+          : html`<span class="job-title" title=${job.title}>${job.title}</span>`}
         <button aria-label=${action} title=${ended ? "Clear" : "Stop"}
                 disabled=${!ended && job.stop_requested}
                 onClick=${() => (ended ? dismissJob(job.id) : stopJob(job.id))}>

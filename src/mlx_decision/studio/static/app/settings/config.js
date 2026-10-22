@@ -57,7 +57,11 @@ export function tilde(path) {
 
 // A setting's value as the page shows it.
 export function shown(key, value, source = null) {
-  if (key === "models_dir") return value ? tilde(value) : "not set: the Hugging Face cache";
+  if (key === "models_dir") {
+    if (value) return tilde(value);
+    const cache = listed.value?.places?.find((place) => place.kind === "cache");
+    return html`the Hugging Face cache${cache ? html`, <code>${cache.display ?? tilde(cache.path)}</code>` : ""} (not set) · <a href="#/models">Where models live</a>`;
+  }
   if (key === "memory_budget_gb") return `${value} GB${source === "default" ? " (the GPU's working set)" : ""}`;
   if (key === "models") return value?.length ? value.map(tilde).join(", ") : "none";
   if (value == null) return "none";

@@ -45,7 +45,8 @@ def test_download_a_preset(studio, page):
     expect(sheet.locator(".ds-options li")).to_have_count(6)
     expect(sheet.locator(".st-row[data-split='train']")).to_contain_text("5,452")
     test = sheet.locator(".st-row[data-split='test']")
-    expect(test).to_contain_text("the coverage suite evaluates on it")
+    expect(test).not_to_contain_text("coverage suite")
+    expect(sheet.locator(".role-words")).to_contain_text("Report: what the fit's report scores")
     assert roles(sheet) == ["train", "report"]  # no validation split: test reports
     name = sheet.get_by_label("Name")
     expect(name).to_have_value("trec")

@@ -83,6 +83,15 @@ export function evalOn(name) {
   navigate("training", "evaluate");
 }
 
+// New Evaluation on a fitted model against its base, on the dataset it learned
+// from (the fit report's Evaluate Against …).
+export function evalFitted(model, base, data) {
+  chosenModel.value = model;
+  compareChoice.value = { model, compare: base };
+  if (data) chosenData.value = data;
+  navigate("training", "evaluate");
+}
+
 let timer = null;
 let asked = 0;
 effect(() => {

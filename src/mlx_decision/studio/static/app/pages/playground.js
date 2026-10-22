@@ -5,7 +5,9 @@ import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { MenuButton, MenuHeader, MenuItem, MenuNote, MenuSeparator } from "../components/menu.js";
+import { openNewBatch } from "../batches/start.js";
 import { openDownload } from "../models/download.js";
+import { fitOn } from "../training/fit.js";
 import { NOT_THIS_MAC, clock, duration, onThisMac, plural } from "../format.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
@@ -363,6 +365,15 @@ function DatasetBanner() {
       </div>
     `;
   const missing = dataset.value?.missing ?? [];
+  const name = datasetOfDocument(setName.value);
+  if (!missing.length && dataset.value?.ready)
+    return html`
+      <div class="notice ds-banner ready" role="status">
+        <span><b>Ready for a fit and a batch.</b></span>
+        <button class="btn sm primary" onClick=${() => openNewBatch({ dataset: name })}>Run as Batch…</button>
+        <button class="btn sm" onClick=${() => fitOn(name)}>Fit on It…</button>
+      </div>
+    `;
   if (!missing.length) return null;
   return html`
     <div class="notice ds-banner" role="status">

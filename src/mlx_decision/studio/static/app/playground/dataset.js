@@ -109,14 +109,16 @@ export async function saveDataset() {
       body: { questions: body.questions, answers: answersFor(value.draft), loaded: value.sha256 },
     });
     const current = drafts.value[documentName];
+    // Ready now, after something was missing: the banner offers what comes next.
+    const ready = (current.dataset?.missing ?? []).length > 0 && result.missing.length === 0;
     setEntry(documentName, {
       ...current,
       sha256: result.sha256,
       baseline: bodyText(current.draft, true),
-      dataset: { ...current.dataset, missing: result.missing },
+      dataset: { ...current.dataset, missing: result.missing, ready: ready || current.dataset?.ready },
     });
     dataChanged();
-    toast(`Saved data/${name}/dataset.json`);
+    toast(ready ? `Saved: ${name} is ready for a fit` : `Saved data/${name}/dataset.json`);
   } catch (error) {
     if (error.status === 409 && error.current) changedOnDisk(documentName, name);
     else if (error.status === 404) setEntry(documentName, { ...drafts.peek()[documentName], onDisk: "deleted" }); // the banner says it

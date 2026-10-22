@@ -8,7 +8,7 @@ import re
 import shutil
 
 import pytest
-from drive import inspector_tab, menu_item, open_studio, pick, pick_model, put_set, start_job
+from drive import inspector_tab, open_studio, pick, pick_model, put_set, start_job
 from fake_studio import fake_jobs
 from test_datasets import write_tweets
 
@@ -68,8 +68,7 @@ def test_with_no_models_each_picker_points_at_download(make_studio, page):
 def test_run_as_batch_reads_the_evaluate_split_unless_a_tab_is_picked(studio, page):
     write_tweets(studio, questions=True)
     open_studio(page, studio, "datasets/tweets")
-    page.get_by_role("button", name="More actions for tweets").click()
-    menu_item(page, "Run as Batch…").click()
+    page.locator(".centre .pane-head").get_by_role("button", name="Run as Batch…").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator("#batch-split")).to_have_value("test")  # the evaluate split
     expect(sheet.locator(".split-hint")).to_have_count(0)

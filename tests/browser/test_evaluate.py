@@ -9,7 +9,7 @@ import json
 import re
 
 import pytest
-from drive import open_studio, shot
+from drive import menu_item, open_studio, shot
 from fake_studio import fake_jobs
 
 from mlx_decision.fitted import MARKER_FILE
@@ -37,7 +37,8 @@ def studio(make_studio):
 
 def test_evaluate_a_fitted_model_against_its_base(studio, page):
     open_studio(page, studio, "datasets/tickets")
-    page.get_by_role("button", name="Evaluate on It…").click()
+    page.get_by_role("button", name=re.compile("^More actions for ")).click()
+    menu_item(page, "Evaluate on It…").click()
     expect(page).to_have_url(f"{studio.base}/#/training/evaluate")
     form = page.locator(".eval-form")
     expect(form.locator("#eval-data")).to_have_value("tickets")
@@ -128,7 +129,8 @@ def test_evaluate_on_a_folders_evaluate_split(studio, page):
     }  # fmt: skip
     (folder / "dataset.json").write_text(json.dumps(body))
     open_studio(page, studio, "datasets/help")
-    page.get_by_role("button", name="Evaluate on It…").click()
+    page.get_by_role("button", name=re.compile("^More actions for ")).click()
+    menu_item(page, "Evaluate on It…").click()
     form = page.locator(".eval-form")
     expect(form.locator("#eval-data")).to_have_value("help")
     split = form.locator("#eval-split")

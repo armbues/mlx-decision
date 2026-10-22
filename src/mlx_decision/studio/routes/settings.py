@@ -25,6 +25,7 @@ from ...config import ConfigError
 from ...gpu import Gpu
 from ...memory import working_set
 from ..catalog import Catalog
+from ..clearing import FOLDERS as CLEARABLE
 from ..clearing import Clearing
 from ..removal import RemovalError
 from ..security import is_loopback
@@ -93,6 +94,10 @@ def settings_router(
             return files.root
         if place_id == "data":  # the datasets' folder
             return files.root / "data"
+        if place_id.startswith("folder:"):  # a workspace folder, as Settings lists them
+            folder = place_id.removeprefix("folder:")
+            if folder in CLEARABLE:
+                return files.root / folder
         for place in places():
             if place["id"] == place_id:
                 return Path(place["path"])

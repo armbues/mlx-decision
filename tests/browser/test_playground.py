@@ -142,7 +142,9 @@ def test_editing_questions(studio, page):
 
     # Add Question focuses the new one; its card says the run did not ask it.
     pick(page, ".add-bar .btn", "Score")
-    expect(question(page, "score").locator(".ins")).to_be_focused()
+    id_field = question(page, "score").locator(".qid-input")
+    expect(id_field).to_be_focused()  # the id first, selected: the answer's key
+    assert id_field.evaluate("e => e.selectionEnd - e.selectionStart") == len("score")
     expect(page.locator(".acard[data-q='score']")).to_contain_text("Not in this run")
 
 

@@ -179,6 +179,7 @@ export function SplitTable({ state, splits }) {
         </div>`;
       })}
     </div>
+    <small class="hint role-words">Train: what a fit learns from · Report: what the fit's report scores · Evaluate: kept for New Evaluation, which compares models.</small>
   `;
 }
 

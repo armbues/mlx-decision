@@ -159,8 +159,7 @@ def test_the_rows_filter_by_wrong_answer_cell_and_search(tweets, page):
 def test_run_as_batch_from_the_datasets_page(tweets, page):
     open_studio(page, tweets, "datasets/tweets")
     page.locator(".ds-tabs [role=tab][data-split=test]").click()
-    page.get_by_role("button", name="More actions for tweets").click()
-    menu_item(page, "Run as Batch…").click()
+    page.locator(".centre .pane-head").get_by_role("button", name="Run as Batch…").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator("#batch-data")).to_have_value("tweets")
     expect(sheet.locator("#batch-split")).to_have_value("test")

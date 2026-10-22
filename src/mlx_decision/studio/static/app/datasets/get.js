@@ -30,7 +30,6 @@ const splits = computed(() =>
   (preset.value?.splits ?? []).map((split) => ({
     name: split.name,
     rows: split.rows,
-    note: split.evaluation ? "the coverage suite evaluates on it" : null,
   })),
 );
 const suggested = computed(() => (preset.value ? freeBase(preset.value.name) : ""));

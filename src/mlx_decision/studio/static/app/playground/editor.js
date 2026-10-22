@@ -45,13 +45,18 @@ const Problem = ({ problem }) =>
   problem && html`<div class="field-problem" role="alert">${problem.message}</div>`;
 
 // Focus a field once the next render has drawn it.
-export function focusLater(selector) {
+export function focusLater(selector, select = false) {
   requestAnimationFrame(() => {
     const element = document.querySelector(selector);
     element?.focus();
+    if (select) element?.select?.();
     element?.scrollIntoView({ block: "center", behavior: "smooth" });
   });
 }
+
+// An id still as Add Question named it (its type, numbered): shown as a field
+// to fill in, since it is the answer's key in the API.
+const TYPE_ID = /^(choice|score|noul)(_\d+)?$/;
 
 const Minus = ({ label, onClick }) => html`
   <button class="minus" aria-label=${label} title=${label} onClick=${onClick}>
@@ -621,7 +626,8 @@ function Question({ question, index, count }) {
     >
       <div class="gsec-head">
         <h2>
-          <input class=${`qid-input mono ${at(question.uid, "id") ? "bad" : ""}`} aria-label="Question id"
+          <input class=${`qid-input mono ${at(question.uid, "id") ? "bad" : ""} ${TYPE_ID.test(question.id) ? "unnamed" : ""}`} aria-label="Question id"
+                 title="Question id: the key of its answer in the API"
                  spellcheck=${false} size=${Math.max(4, question.id.length + 1)} value=${question.id}
                  onInput=${(event) => updateDraft((value) => edit.editQuestion(value, question.uid, { id: event.target.value }))} />
         </h2>
@@ -801,7 +807,7 @@ function AddQuestion() {
       }
       return next;
     });
-    focusLater(`#q-${question.uid} .ins`);
+    focusLater(`#q-${question.uid} .qid-input`, true); // the id first: the answer's key
   };
   return html`
     <${MenuButton}
