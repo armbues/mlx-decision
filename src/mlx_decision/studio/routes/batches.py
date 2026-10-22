@@ -25,9 +25,11 @@ from . import ApiError, field, json_body
 MAX_NAME = 80
 
 
-def batches_router(batches: Batches, files: Workspace, max_body_bytes: int) -> APIRouter:
+def batches_router(
+    batches: Batches, files: Workspace, max_body_bytes: int, results: Results | None = None
+) -> APIRouter:
     router = APIRouter(prefix="/studio/api/batches")
-    results = Results(batches.root)
+    results = results if results is not None else Results(batches.root)
 
     @router.get("")
     async def listed():

@@ -23,8 +23,10 @@ from ..gpu import Gpu
 from ..pool import ModelPool
 from ..server import MAX_BODY_BYTES, add_jev_api
 from . import routes, security
+from .batch_results import Results
 from .batches import BatchError, Batches
 from .catalog import Catalog
+from .clearing import Clearing
 from .jobs import Jobs
 from .page import Page, watch
 from .removal import ModelRemoval
@@ -171,7 +173,9 @@ def create_studio(
     app.include_router(training_router(gpu, files, max_body_bytes))
     app.include_router(datasets_router(max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
-    app.include_router(batches_router(batches, files, max_body_bytes))
+    results = Results(batches.root)
+    clearing = Clearing(files, jobs, batches, removal, results)
+    app.include_router(batches_router(batches, files, max_body_bytes, results))
     app.include_router(models_router(gpu, max_body_bytes, rescans, removal))
     app.include_router(jobs_router(jobs, gpu, files, current, max_body_bytes, removal))
     app.include_router(
@@ -183,7 +187,7 @@ def create_studio(
             catalog=catalog,
         )
     )
-    app.include_router(settings_router(gpu, files, catalog, settings, max_body_bytes))
+    app.include_router(settings_router(gpu, files, catalog, settings, max_body_bytes, clearing))
     app.include_router(stream_router(hub))
     return app
 

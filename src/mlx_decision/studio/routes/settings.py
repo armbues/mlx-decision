@@ -25,6 +25,8 @@ from ...config import ConfigError
 from ...gpu import Gpu
 from ...memory import working_set
 from ..catalog import Catalog
+from ..clearing import Clearing
+from ..removal import RemovalError
 from ..security import is_loopback
 from ..settings import KEYS, READ_ONLY, Settings
 from ..workspace import Workspace
@@ -33,7 +35,12 @@ from .sets import reveal
 
 
 def settings_router(
-    gpu: Gpu, files: Workspace, catalog: Catalog, settings: Settings, max_body_bytes: int
+    gpu: Gpu,
+    files: Workspace,
+    catalog: Catalog,
+    settings: Settings,
+    max_body_bytes: int,
+    clearing: Clearing | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/studio/api")
     pool = gpu.pool
@@ -135,6 +142,32 @@ def settings_router(
         if sys.platform == "darwin":
             await asyncio.to_thread(reveal, path)
         return Response(status_code=204)
+
+    @router.get("/workspace/folders")
+    async def workspace_folders(request: Request):
+        """``{folders, editable}``: the workspace's folders (``Clearing.folders``)
+        and whether this browser may clear them (it is on this Mac)."""
+        listed = await asyncio.to_thread(clearing.folders) if clearing is not None else []
+        for entry in listed:
+            entry["display"] = tilde(entry["path"])
+        return {"folders": listed, "editable": on_this_mac(request)}
+
+    @router.post("/workspace/folders/{folder}/clear")
+    async def clear_folder(folder: str, request: Request):
+        """``{folder, cleared, kept}``: everything in it deleted, as deleting each
+        entry would (``Clearing.clear``). 404 for another folder, 409 while
+        something in it is in use (nothing cleared), 403 off this Mac."""
+        only_on_this_mac(request, "The workspace's folders are cleared")
+        if clearing is None:
+            raise ApiError(404, f"no folder {folder} to clear", param="folder")
+        try:
+            return await clearing.clear(folder)
+        except KeyError:
+            raise ApiError(
+                404, f"{folder} is not one of the workspace's folders", param="folder"
+            ) from None
+        except RemovalError as error:
+            raise ApiError(error.status, str(error), param="folder") from None
 
     @router.put("/settings/{key}")
     async def change(key: str, request: Request):

@@ -1,4 +1,5 @@
-// Settings: the config file, which the page changes (CFG-4). Loaded again
+// Settings: the config file, which the page changes (CFG-4), and the
+// workspace's folders, each with Clear…. Loaded again
 // when the models or the file change, in any tab. Where models live is on
 // the Models page.
 import { computed } from "@preact/signals";
@@ -6,9 +7,10 @@ import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import { ConfigFile } from "../settings/config.js";
 import { listed, loadPlaces } from "../settings/places.js";
+import { WorkspaceFolders, loadFolders } from "../settings/workspace.js";
 import { models } from "../store/status.js";
 import { inspectorMode } from "../store/ui.js";
-import { settingsChange } from "../stream.js";
+import { settingsChange, workspaceChange } from "../stream.js";
 
 const status = computed(() => {
   const current = listed.value;
@@ -22,6 +24,10 @@ function Centre() {
   useEffect(() => {
     loadPlaces();
   }, [models.value, settingsChange.value]);
+  // The folders' sizes again when the workspace or the models change.
+  useEffect(() => {
+    loadFolders();
+  }, [models.value, workspaceChange.value]);
   return html`
     <div class="centre-inner">
       <div class="pane-head">
@@ -31,6 +37,7 @@ function Centre() {
         </div>
       </div>
       <${ConfigFile} />
+      <${WorkspaceFolders} />
     </div>
   `;
 }

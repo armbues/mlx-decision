@@ -544,6 +544,42 @@ class Workspace:
         self.changed("history", name, "deleted", ids=deleted)
         return deleted
 
+    def clear_all_history(self) -> list[str]:
+        """Delete every history (sets' and datasets') and every stored image;
+        returns the documents whose history went (``data:NAME`` for a
+        dataset's)."""
+        cleared = []
+        with self.lock:
+            places = [
+                (self.root / "history", ""),
+                (self.root / "history" / DATASET_HISTORY, DATASET_DOCUMENT),
+            ]
+            for folder, prefix in places:
+                for path in _entries(folder):
+                    if (
+                        path.is_file()
+                        and path.suffix == HISTORY_SUFFIX
+                        and not path.name.startswith(".")
+                    ):
+                        path.unlink(missing_ok=True)
+                        cleared.append(prefix + path.name.removesuffix(HISTORY_SUFFIX))
+            for path in _entries(self.root / "history" / IMAGES):
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+        for name in cleared:
+            self.changed("history", name, "cleared")
+        return cleared
+
+    def clear_speed(self) -> int:
+        """Delete every speed record; returns how many files went."""
+        count = 0
+        with self.lock:
+            for path in _entries(self.root / "speed"):
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+                    count += 1
+        return count
+
     def restore_images(self, request: dict[str, Any]) -> dict[str, Any]:
         """A history line's request with its images as data URLs again; an image
         whose file is gone stays a reference."""

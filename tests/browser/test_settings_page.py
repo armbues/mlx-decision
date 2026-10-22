@@ -1,6 +1,6 @@
 """Where models live (with Show in Finder) on the Models page, and the
 Settings page's config file, changed through its sheets and written one line
-at a time."""
+at a time, and the workspace's folders with Clear."""
 
 import time
 from pathlib import Path
@@ -179,3 +179,28 @@ def test_the_host_choices_and_the_api_key(studio, page):
     expect(sheet.get_by_role("radio", name="Every network interface")).to_be_checked()
     sheet.get_by_label("host").fill("192.168.1.20")
     expect(sheet.get_by_role("radio", name="Another address")).to_be_checked()
+
+
+def test_the_workspace_folders_and_clear(studio, page):
+    open_studio(page, studio, "settings")
+    group = page.locator(".workspace-group")
+    expect(group.locator(".kv.folder dt")).to_have_text(
+        ["sets/", "history/", "data/", "batches/", "models/", "jobs/", "speed/"]
+    )
+    sets = group.locator(".kv.folder[data-folder='sets']")
+    expect(sets.locator("small")).to_contain_text("2 sets")
+    expect(group.locator(".kv.folder[data-folder='batches'] button")).to_be_disabled()  # empty
+
+    sets.get_by_role("button", name="Clear…").click()
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text("Clear sets/?")
+    expect(sheet).to_contain_text("2 sets")
+    expect(sheet).to_contain_text("question sets, with their history")
+    sheet.get_by_role("button", name="Clear", exact=True).click()
+    expect(page.locator(".toast")).to_contain_text("Cleared sets/: 2 sets deleted")
+    expect(sets.locator("small")).to_contain_text("0 sets")
+    expect(sets.get_by_role("button", name="Clear…")).to_be_disabled()
+    assert list(studio.sets.glob("*.json")) == []
+    # The Playground's list follows.
+    page.goto(f"{studio.base}/#/playground")
+    expect(page.locator(".sidebar .sb-empty", has_text="No sets yet")).to_be_visible()

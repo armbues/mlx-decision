@@ -1007,7 +1007,7 @@ a.sb-item { color: var(--fg); }
 .page-settings .centre-inner { max-width: 980px; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
 .page-settings .pane-head p { margin: 4px 0 0; color: var(--fg-2); }
 .page-models .places .kv, .page-settings .config-group .kv { grid-template-columns: 132px minmax(0, 1fr) auto; align-items: center; }
-.page-settings .config-group .kv.setting dt code { font: 11.5px var(--mono); color: var(--fg-2); }
+.page-settings .config-group :is(.kv.setting, .kv.folder) dt code { font: 11.5px var(--mono); color: var(--fg-2); }
 .page-models .places .muted { color: var(--fg-2); }
 .page-settings .config-group .warn-text, .page-settings .config-group .note { margin: 4px 12px 10px; }
 .about-settings { display: grid; gap: 10px; font-size: 12.5px; color: var(--fg-2); }
