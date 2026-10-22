@@ -1021,6 +1021,7 @@ a.sb-item { color: var(--fg); }
 .page-settings .pane-head p { margin: 4px 0 0; color: var(--fg-2); }
 .page-models .places .kv, .page-settings .config-group .kv { grid-template-columns: 132px minmax(0, 1fr) auto; align-items: center; }
 .page-settings .config-group :is(.kv.setting, .kv.folder) dt code { font: 11.5px var(--mono); color: var(--fg-2); }
+.page-settings .config-group .kv.setting dt code { display: block; font-size: 11px; color: var(--fg-3); }
 .page-models .places .muted { color: var(--fg-2); }
 .page-settings .config-group .warn-text, .page-settings .config-group .note { margin: 4px 12px 10px; }
 .about-settings { display: grid; gap: 10px; font-size: 12.5px; color: var(--fg-2); }
@@ -1427,6 +1428,10 @@ button.sb-item { border: 0; background: transparent; width: 100%; text-align: le
 .batch-progress.done .bar i { background: var(--green); }
 .batch-progress.stopped .bar i, .batch-progress.failed .bar i { background: var(--orange); }
 .batch-progress .warn-text { color: var(--orange); }
+.batch-cli > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+.batch-cli > summary::before { content: "›"; color: var(--fg-3); transition: transform 0.15s; }
+.batch-cli[open] > summary::before { transform: rotate(90deg); }
+.batch-cli > summary::-webkit-details-marker { display: none; }
 .batch-cli .code-line { margin: 0; padding: 10px 12px; font: 11.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
 .bq-group { display: grid; gap: 12px; padding: 12px; }
 .bq-answers { display: grid; gap: 4px; max-width: 560px; }
@@ -1495,3 +1500,6 @@ a.job-title { color: inherit; text-decoration: none; }
 .batch-list .sb-item .label small { font-size: 10.5px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .batch-list .sb-item[aria-current] .label small { color: inherit; opacity: 0.8; }
 .no-models { display: inline-flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: 12.5px; }
+
+.mem-link { color: inherit; text-decoration: none; }
+.mem-link:hover { text-decoration: underline; }

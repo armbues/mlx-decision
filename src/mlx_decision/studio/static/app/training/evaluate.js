@@ -166,7 +166,7 @@ export function EvalForm() {
   const questions = result ? Object.entries(result.questions) : [];
   return html`
     <div class="fit-form eval-form">
-      <section class="gsec"><div class="gsec-head"><h2>Models</h2><span class="tag">Scored one after the other on the same rows</span></div>
+      <section class="gsec"><div class="gsec-head"><h2>Models</h2></div>
         <div class="group form">
           <div class="row"><label for="eval-model">Model</label><div class="line">
             ${list.length === 0
@@ -181,11 +181,11 @@ export function EvalForm() {
               <option value="">No comparison</option>
               ${list.filter((item) => item.name !== model).map((item) => html`<option value=${item.name}>${label(item)}</option>`)}
             </select>
-            <span class="hint">${list.find((item) => item.name === model)?.fitted && evalCompare.value ? "its base, to see what the fit changed" : "a second model, scored after the first"}</span>
+            ${list.find((item) => item.name === model)?.fitted && evalCompare.value && html`<span class="hint">its base, to see what the fit changed</span>`}
           </div></div>
         </div></section>
 
-      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled rows to score them on</span></div>
+      <section class="gsec"><div class="gsec-head"><h2>Data</h2></div>
         <div class="group form">
           <div class="row"><label for="eval-data">Dataset</label><div class="line">
             <select id="eval-data" value=${data ?? ""} onChange=${(event) => (chosenData.value = event.target.value)}>

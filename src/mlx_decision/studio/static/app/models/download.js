@@ -131,7 +131,7 @@ function Models() {
   const shown = family.value;
   if (!shown) return null;
   return html`
-    <p>${shown.title}: ${shown.summary}. By ${shown.maker}.</p>
+    <p>${shown.summary}.</p>
     <div class="cat" role="radiogroup" aria-label=${`${shown.title} models`}>
       ${shown.models.map(
         (model) => html`

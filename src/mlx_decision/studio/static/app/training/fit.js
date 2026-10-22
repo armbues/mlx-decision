@@ -287,13 +287,12 @@ function MethodCard({ method }) {
   return html`
     <button class="method" role="radio" aria-checked=${checked ? "true" : "false"} data-method=${key(method)}
             onClick=${() => (choice.value = key(method))}>
-      <span class="mt"><b>${title}</b>${method.auto && html`<span class="pill-tag">auto</span>`}</span>
+      <span class="mt"><b>${title}</b>${method.auto && html`<span class="pill-tag">Recommended</span>`}</span>
       <p>${method.description}</p>
       <span class="est num">
         <span>Memory at the peak <b>about ${size(method.peak_bytes)}</b></span>
         ${method.disk_bytes > 0 && html`<span>On disk while it runs <b>about ${size(method.disk_bytes)}</b></span>`}
         <span class=${`fit ${method.fits ? "ok" : "no"}`}>${method.fits ? "Fits this Mac" : "More than this Mac's GPU working set"}</span>
-        <span class="est-note">Estimated from the model and the data</span>
       </span>
     </button>
   `;
@@ -302,7 +301,7 @@ function MethodCard({ method }) {
 function gpuNote() {
   const loaded = [...loadedNames.value];
   const unloaded = loaded.length ? `${loaded.join(", ")} ${loaded.length === 1 ? "is" : "are"} unloaded, and ` : "";
-  return `While it runs, the fit has the GPU to itself: ${unloaded}the Playground and the API answer busy. Downloads keep going.`;
+  return `While it runs, the fit has the GPU to itself: ${unloaded}the Playground and the API answer busy. `;
 }
 
 export function FitForm() {
@@ -314,7 +313,7 @@ export function FitForm() {
   const method = picked.value;
   return html`
     <div class="fit-form">
-      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled rows to learn from</span></div>
+      <section class="gsec"><div class="gsec-head"><h2>Data</h2></div>
         <div class="group form">
           <div class="row"><label for="fit-data">Dataset</label><div class="line">
             <select id="fit-data" value=${data ?? ""} onChange=${(event) => (chosenData.value = event.target.value)}>
@@ -334,12 +333,11 @@ export function FitForm() {
             <select id="fit-split" value=${trainSplit.value ?? ""} onChange=${(event) => (trainChoice.value = { data, split: event.target.value })}>
               ${dataItem.value.splits.map((split) => html`<option value=${split.name}>${splitOption(split)}</option>`)}
             </select>
-            <span class="hint">the split the fit learns from</span>
           </div></div>`}
           ${data && !notReadyData.value && html`<${ReportOn} data=${data} />`}
           ${result && html`<div class="row"><label>Split</label><${Split} splits=${result.splits}
             report=${result.report == null ? null : result.report === result.data ? `${result.report_split}` : result.report} /></div>`}
-          ${result && html`<div class="row"><label>Labels</label><div><${Labels} labels=${result.labels} summary=${summary?.name === data ? summary : null} /><span class="hint">to train on and to tune</span></div></div>`}
+          ${result && html`<div class="row"><label>Labels</label><div><${Labels} labels=${result.labels} summary=${summary?.name === data ? summary : null} /></div></div>`}
           ${result?.warnings.map((warning) => html`<p class="warn-text">${warning}</p>`)}
           ${planError.value && html`<p class="warn-text">${planError.value}</p>`}
         </div></section>
@@ -360,7 +358,7 @@ export function FitForm() {
       html`<section class="gsec"><div class="gsec-head"><h2>Method</h2><span class="tag">What ${result.base} can learn</span></div>
         <div class="group">
           <div class="methods" role="radiogroup" aria-label="Method">${result.methods.map((m) => html`<${MethodCard} key=${key(m)} method=${m} />`)}</div>
-          <p class="method-foot">Memory is an estimate, checked against this Mac before the fit starts. How long it takes shows once it runs, measured on its first steps.</p>
+          <p class="method-foot">Memory is an estimate, checked before the fit starts; the time shows once it runs.</p>
         </div></section>`}
 
       <section class="gsec"><div class="gsec-head"><h2>Result</h2></div>

@@ -2,6 +2,7 @@
 Settings page's config file, changed through its sheets and written one line
 at a time, and the workspace's folders with Clear."""
 
+import re
 import time
 from pathlib import Path
 
@@ -54,10 +55,22 @@ def test_where_models_live(studio, page, monkeypatch):
     assert _eventually(lambda: shown[-1] == studio.home)  # its folder until it exists
 
 
+# Each key's name in words, as the rows and the sheets title them.
+TITLES = {
+    "models_dir": "Where Models Go",
+    "models": "Other Models",
+    "default_model": "Default Model",
+    "memory_budget_gb": "Memory Budget",
+    "host": "Address",
+    "port": "Port",
+}
+
+
 def change(page, key):
     page.locator(f".kv.setting[data-key='{key}']").get_by_role("button", name="Change…").click()
     sheet = page.locator(".sheet")
-    expect(sheet.locator("h2")).to_have_text(f"Change {key}")
+    expect(sheet.locator("h2")).to_have_text(f"Change the {TITLES[key]}")
+    expect(sheet).to_contain_text(f"as {key}.")  # the note names the key
     return sheet
 
 
@@ -160,7 +173,7 @@ def test_the_host_choices_and_the_api_key(studio, page):
     open_studio(page, studio, "settings")
     sheet = change(page, "host")
     expect(sheet.get_by_role("radio", name="This Mac only")).to_be_checked()
-    expect(sheet).to_contain_text("0.0.0.0 for every network interface")
+    expect(sheet).to_contain_text("0.0.0.0: other machines on your network reach the Studio")
     note = sheet.locator(".setting-editor p").first
     expect(note).to_contain_text("--api-key KEY")
     expect(note).to_contain_text("MLX_DECISION_API_KEY")
@@ -204,3 +217,14 @@ def test_the_workspace_folders_and_clear(studio, page):
     # The Playground's list follows.
     page.goto(f"{studio.base}/#/playground")
     expect(page.locator(".sidebar .sb-empty", has_text="No question sets yet")).to_be_visible()
+
+
+def test_settings_name_each_key_in_words_and_the_sidebar_opens_the_budget(studio, page):
+    open_studio(page, studio, "settings")
+    row = page.locator(".kv.setting[data-key='memory_budget_gb'] dt")
+    expect(row).to_contain_text("Memory budget")
+    expect(row.locator("code")).to_have_text("memory_budget_gb")
+    page.goto(f"{studio.base}/#/playground")
+    page.locator(".sidebar .mem-link").click()
+    expect(page.locator(".sheet h2")).to_have_text("Change the Memory Budget")
+    expect(page).to_have_url(re.compile(r"#/settings$"))

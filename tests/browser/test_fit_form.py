@@ -45,11 +45,10 @@ def test_the_form_and_start_fit(studio, page):
     expect(cards.locator(".mt b")).to_have_text(["Head", "Calibrate"])
     head = form.locator(".method[data-method='head']")
     expect(head).to_have_attribute("aria-checked", "true")  # auto's pick
-    expect(head.locator(".pill-tag")).to_have_text("auto")
+    expect(head.locator(".pill-tag")).to_have_text("Recommended")
     expect(head).to_contain_text(re.compile(r"Memory at the peak\s*about [\d.]+ (MB|GB)"))
     expect(head).to_contain_text("On disk while it runs")  # Clef's stored states
     expect(head.locator(".fit")).to_have_text("Fits this Mac")
-    expect(head).to_contain_text("Estimated from the model and the data")
     legend = form.locator(".split-legend")
     expect(legend).to_contain_text("12 kept aside for the report")
     # The labels in the question's own order (billing, tech, sales), not by name.

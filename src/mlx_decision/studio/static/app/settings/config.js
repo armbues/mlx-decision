@@ -10,29 +10,37 @@ import { models } from "../store/status.js";
 import { toast } from "../store/ui.js";
 import { listed, loadPlaces, reveal } from "./places.js";
 
-// What each key does, the flag that overrides it, and when a change applies.
+// What each key is called (a row's label, a sheet's title), what it does,
+// the flag that overrides it (D204: the key itself shows under its name).
 export const KEYS = {
   models_dir: {
+    label: "Where models go",
+    title: "Where Models Go",
     help: "Where downloads go, and a folder of models the Studio lists: the Hugging Face cache, or a folder of your own.",
   },
   models: {
+    label: "Other models",
+    title: "Other Models",
     help: "Models the Studio lists besides models_dir: folders (a model, or a folder of models) or Hugging Face repo ids, as -m takes them.",
     flag: "-m",
   },
   default_model: {
+    label: "Default model",
+    title: "Default Model",
     help: "The model a request gets when it names none; run and chat use it without -m.",
     flag: "--default-model",
   },
   memory_budget_gb: {
-    help: "How much memory the loaded models may take, in GB. Built in: this Mac's GPU working set.",
+    label: "Memory budget",
+    title: "Memory Budget",
+    help: "How much memory the loaded models may take.",
     flag: "--memory-budget",
   },
-  host: {
-    help: "The address the Studio and its API listen on: 127.0.0.1 for this Mac only (built in), or 0.0.0.0 for every network interface.",
-    flag: "--host",
-  },
-  port: { help: "The port the Studio listens on.", flag: "--port" },
+  host: { label: "Address", title: "Address", help: "The address the Studio and its API listen on.", flag: "--host" },
+  port: { label: "Port", title: "Port", help: "The port the Studio listens on.", flag: "--port" },
   workspace: {
+    label: "Workspace",
+    title: "Workspace",
     help: "The folder of question sets, history, training data, the Studio's models and jobs.",
     flag: "--workspace",
   },
@@ -164,7 +172,7 @@ function Editor({ item }) {
                value=${value} placeholder=${max} onInput=${(event) => set(event.target.value)} />
         <span>GB</span>
       </div>
-      <small class="hint">Up to ${max} GB, this Mac's GPU working set, which is also the built-in default. Empty takes it out of the file.</small>`;
+      <small class="hint">Up to ${max} GB, this Mac's GPU working set; empty uses that.</small>`;
   } else if (key === "host") {
     const choose = (choice) => set({ ...value, choice });
     const outside = value.choice !== "local";
@@ -211,10 +219,10 @@ export function openChange(item) {
   problem.value = null;
   const key = item.key;
   openSheet({
-    title: `Change ${key}`,
+    title: `Change the ${KEYS[key].title}`,
     purpose: KEYS[key].help,
     Body: () => html`<${Editor} item=${item} />`,
-    note: `Written to ${listed.value?.config.display ?? "the config file"}.`,
+    note: `Written to ${listed.value?.config.display ?? "the config file"} as ${key}.`,
     actions: () => [
       ...(item.in_file != null
         ? [{ label: "Take Out of the File", danger: true, disabled: saving.value, onSelect: () => save(key, null) }]
@@ -230,7 +238,7 @@ function Setting({ item, editable }) {
   const differs = item.in_file != null && JSON.stringify(item.in_file) !== JSON.stringify(item.value);
   return html`
     <div class="kv setting" data-key=${item.key}>
-      <dt><code>${item.key}</code></dt>
+      <dt>${KEYS[item.key].label}<code>${item.key}</code></dt>
       <dd>
         ${shown(item.key, item.value, item.source)}
         <small>

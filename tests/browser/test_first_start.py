@@ -44,9 +44,7 @@ def test_an_empty_studio_asks_where_models_go_then_offers_three(empty, page):
 
     expect(card.locator("h2")).to_have_text("Download your first model")
     config = empty.home / "config.toml"
-    expect(card.locator(".saved")).to_contain_text(
-        f'Saved models_dir = "~/Models/Decision" in {config}'
-    )
+    expect(card.locator(".saved")).to_have_text("Saved; change it in Settings.")
     assert config.read_text() == 'models_dir = "~/Models/Decision"\n'
     assert (empty.user_home / "Models" / "Decision").is_dir()
 
@@ -74,7 +72,7 @@ def test_the_hugging_face_cache_is_the_default_answer(empty, page):
     open_studio(page, empty)
     card = page.locator(".first-card")
     card.get_by_role("button", name="Continue").click()
-    expect(card.locator(".saved")).to_contain_text('Saved models_dir = "hf-cache"')
+    expect(card.locator(".saved")).to_have_text("Saved; change it in Settings.")
     assert (empty.home / "config.toml").read_text() == 'models_dir = "hf-cache"\n'
     # Asked once: a reload goes straight to the picks.
     page.reload()

@@ -165,9 +165,8 @@ function Note({ c }) {
     }${edited.value ? html` <span class="warn-text">The file does not have your edits yet: save first.</span>` : ""}${" "}The
       command is in the Studio's environment: <code>${c.cliPath}</code>.`;
   const words = [c.cliPath, "mcp", ...c.cli.full].map(shellWord).join(" ");
-  return html`For Claude Desktop's <code>claude_desktop_config.json</code>: an agent gets a <code>decide</code> tool on this
-    model, in a process of its own with its own copy of the model (needs the <code>mcp</code> extra). Claude
-    Code:${" "}<code>claude mcp add decision -- ${words}</code>`;
+  return html`For Claude Desktop's <code>claude_desktop_config.json</code> (needs the <code>mcp</code> extra); it runs its own
+    copy of the model. Claude Code:${" "}<code>claude mcp add decision -- ${words}</code>`;
 }
 
 function CodeBody() {
@@ -206,7 +205,6 @@ export function openCode() {
       ? `${c.dataset ?? c.set} on ${c.model}: ${count} about ${c.many ? c.example.name : "the state"}.`
       : "",
     Body: CodeBody,
-    note: "Snippets follow your current questions, example and model.",
     done: "Done",
     wide: true,
   });

@@ -352,7 +352,7 @@ function MemoryCard() {
   const share = (bytes) => `${Math.min(100, (bytes / scale) * 100).toFixed(2)}%`;
   let note;
   if (plan?.over)
-    note = html`<b>${plan.model.name}</b> needs about <b>${gigabytes(plan.needs)}</b>, more than the budget: it cannot load. Change the budget in Settings (<code>memory_budget_gb</code>) or with <code>--memory-budget</code>.`;
+    note = html`<b>${plan.model.name}</b> needs about <b>${gigabytes(plan.needs)}</b>, more than the budget: it cannot load.`;
   else if (plan)
     note = html`Loading <b>${plan.model.name}</b> (about ${gigabytes(plan.needs)})${
       plan.leaving.length
@@ -360,15 +360,14 @@ function MemoryCard() {
         : " fits beside what is loaded."
     }`;
   else if (groups.length === 0) note = "Nothing loaded. Models load on their first request, or with Load.";
-  else note = html`${gigabytes(Math.max(0, memory.budget - memory.used))} free in the budget. Point at a model to see what loading it takes.`;
+  else note = html`${gigabytes(Math.max(0, memory.budget - memory.used))} free. Point at a model to preview its load.`;
   return html`
     <section class="group memcard" aria-label="Memory">
       <div class="memcard-head">
         <h2>Memory</h2>
         <span class="figure num">${gigabytes(memory.used)}<small>in use of ${gigabytes(memory.budget)} budget</small></span>
-        <a class="memcard-link" href=${href("settings")} title="memory_budget_gb in the config file, or --memory-budget">Change the budget</a>
-        ${memory.working_set &&
-        html`<span class="memcard-sub">This Mac's GPU working set is ${gigabytes(memory.working_set)}: the most a budget can use.</span>`}
+        <a class="memcard-link" href=${href("settings", "memory_budget_gb")}
+           title=${`memory_budget_gb in the config file, or --memory-budget${memory.working_set ? `; at most ${gigabytes(memory.working_set)}, this Mac's GPU working set` : ""}`}>Change the budget</a>
       </div>
       <div class="membig">
         <div class="segs">
@@ -546,7 +545,6 @@ function Details() {
           ${model.fitted && memory.added < memory.bytes &&
           html`<small>With its base; ${gigabytes(memory.added)} more when ${memory.group} is loaded.</small>`}
           ${memory.over_budget && html`<small class="warn-text">More than the budget: it cannot load.</small>`}
-          <small>An estimate: the weights plus 10%, as the memory check counts them.</small>
         <//>
         <${Kv} label="Now">${loaded ? `In memory · ${usedWords(status.value?.used?.[model.name])}` : "Not loaded"}<//>
       </dl></section>`}
@@ -557,7 +555,7 @@ function Details() {
               <b class="num">${duration(model.speed.median_ms)}</b> an answer
               <small>${plural(model.speed.count, "answer")}${model.speed.tokens_min == null ? "" : `, ${tokensText(model.speed)}`}${model.speed.chip ? `, on ${model.speed.chip}` : ""}</small>
             <//>`
-          : html`<${Kv} label="Median">Not measured yet<small>Run it in the Playground or call the API: every answer here is timed.</small><//>`}
+          : html`<${Kv} label="Median">Not measured yet<//>`}
       </dl></section>
 
       ${caps &&
@@ -565,7 +563,7 @@ function Details() {
         <${Kv} label="Input">
           ${caps.max_input_tokens ? `${caps.max_input_tokens.toLocaleString("en")} tokens` : "Any length"}
           ${caps.max_input_tokens &&
-          html`<small>${caps.truncates_input ? "Longer states are cut to fit, and the answer says so." : "Longer states are refused."}</small>`}
+          html`<small>${caps.truncates_input ? "Longer states are cut to fit." : "Longer states are refused."}</small>`}
         <//>
         <${Kv} label="Images">${yesNo(caps.supports_images)}<//>
         <${Kv} label="Questions">${caps.question_types.join(", ")}<//>

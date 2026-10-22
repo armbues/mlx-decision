@@ -43,7 +43,7 @@ def test_pick_a_model_and_download_it(studio, page, hub):
     expect(sheet.locator(".fam b")).to_have_text(FAMILIES)
 
     sheet.locator(".fam[data-family='d3']").click()
-    expect(sheet.locator(".fam-pane > p")).to_contain_text("d3: ")
+    expect(sheet.locator(".fam-pane > p")).to_contain_text("pplx's design")  # the summary alone
     sheet.locator(".crow[data-repo='vllm-sr/d3-edge']").click()
     options = sheet.locator(".qopt")
     expect(options.locator("b")).to_have_text(["Original", "8-bit", "4-bit"])

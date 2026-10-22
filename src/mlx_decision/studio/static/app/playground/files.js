@@ -134,7 +134,6 @@ function askName({ title, purpose, initial, action, onName, Extra = null }) {
     title,
     purpose,
     Body: Extra ? () => html`<${NameField} /><${Extra} />` : NameField,
-    note: "Sets live in the workspace's sets/ folder.",
     actions: [{ label: action, primary: true, onSelect: submit }],
   });
 }
@@ -233,7 +232,7 @@ export function saveAs() {
   if (isDataset(from)) return saveAsSet(from);
   askName({
     title: "Save As",
-    purpose: "Save the questions and state as a new set. The open set stays as it was saved.",
+    purpose: "The open set stays as it was saved.",
     initial: freeName(`${from}-copy`),
     action: "Save",
     onName: async (name) => {
@@ -256,7 +255,7 @@ function saveAsSet(from) {
   const dataset = datasetOfDocument(from);
   askName({
     title: "Save as Question Set",
-    purpose: `A new question set with ${dataset}'s questions and the rows shown as its examples, to try and change in the Playground. The dataset stays as it is.`,
+    purpose: `A new set with ${dataset}'s questions and the rows shown as its examples. The dataset stays as it is.`,
     initial: freeName(dataset),
     action: "Save",
     onName: async (name) => {
@@ -359,7 +358,7 @@ export function newSet() {
       .catch(() => (templates.value = []));
   askName({
     title: "New Question Set",
-    purpose: "Start with an empty set, or from a template that shows what decision models can do.",
+    purpose: "Start empty or from a template.",
     initial: suggested,
     action: "Create",
     Extra: TemplateList,
@@ -386,7 +385,7 @@ export function renameSet() {
   if (!from) return;
   askName({
     title: "Rename Question Set",
-    purpose: `A new name for ${from}. Its history moves with it; unsaved edits stay unsaved.`,
+    purpose: "Its history moves with it; unsaved edits stay unsaved.",
     initial: from,
     action: "Rename",
     onName: async (name) => {

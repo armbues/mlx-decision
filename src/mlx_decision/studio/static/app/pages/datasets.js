@@ -38,7 +38,7 @@ const status = computed(() => {
     return { text: html`<b>${name}</b>${split} · ${plural(summary.examples, "row")}` };
   }
   if (list.length === 0) return { text: "No datasets yet" };
-  return { text: html`<b>${plural(list.length, "dataset")}</b> in data/` };
+  return { text: html`<b>${plural(list.length, "dataset")}</b>` };
 });
 
 const action = computed(() => ({
@@ -93,9 +93,9 @@ function ValuesSection({ summary }) {
   if (columns.length === 0) return null;
   const current = query.value;
   return html`
-    <section class="gsec"><div class="gsec-head"><h2>Label values</h2><span class="tag">${
-      summary.questions.length ? "What the answers are mapped from" : "Pick a value to see its rows"
-    }</span></div>
+    <section class="gsec"><div class="gsec-head"><h2>Label values</h2>${
+      !summary.questions.length && html`<span class="tag">Pick a value to see its rows</span>`
+    }</div>
       <div class="group ds-questions">
         ${columns.map(
           (column) => html`<div class="ds-question" key=${column}>
@@ -123,7 +123,6 @@ function Source({ summary }) {
   let taken = meta.examples != null ? plural(meta.examples, "row") : "";
   if (meta.part) taken = html`${Math.round(meta.part * 100)}% of ${meta.split ? html`<code>${meta.split}</code>` : "the rows"}, drawn by label`;
   else if (meta.sample) taken = `a random sample of ${meta.sample.toLocaleString("en")} rows (seed ${meta.seed ?? 0})`;
-  const role = meta.role ? ROLE_WORDS[meta.role] : null;
   return html`
     <section class="gsec ds-source"><div class="gsec-head"><h2>Where it came from</h2>${summary.created && html`<span class="tag">Downloaded ${day(summary.created)}</span>`}</div>
       <div class="group"><dl>
@@ -132,8 +131,8 @@ function Source({ summary }) {
           ${source.preset && html`The <b>${source.preset}</b> preset: `}${source.source === "upload" ? "A file you added" : html`<code>${repo}</code>`}${hub ? " on the Hugging Face Hub" : ""}${source.config ? html`, config <code>${source.config}</code>` : ""}
           ${source.revision && html`<small>At commit <code>${source.revision.slice(0, 7)}</code></small>`}
         </dd></div>`}
-        <div class="kv"><dt>This split</dt><dd><code>${summary.split}</code>${meta.split && meta.split !== summary.split ? html` from <code>${meta.split}</code>` : ""}${taken ? html`: ${taken}` : ""}</dd></div>
-        ${role && html`<div class="kv"><dt>Role</dt><dd>${role.label}<small>${role.words}</small></dd></div>`}
+        ${(meta.part || meta.sample) &&
+        html`<div class="kv"><dt>This split</dt><dd><code>${summary.split}</code>${meta.split && meta.split !== summary.split ? html` from <code>${meta.split}</code>` : ""}: ${taken}</dd></div>`}
       </dl></div>
     </section>
   `;
@@ -162,11 +161,9 @@ const writeQuestions = (name) => navigate("playground", `data:${name}`);
 // What keeps the dataset from a fit, with what to do about it.
 function NotReady({ name, summary }) {
   if (!summary.missing?.length) return null;
-  const folder = summary.kind === "folder";
   return html`
     <div class="notice ds-banner" role="status">
-      <span><b>Not ready for a fit:</b> ${summary.missing.join("; ")}. A fit and an evaluation need questions, and for every label value the answer it stands for.</span>
-      ${folder && html`<button class="btn sm" onClick=${() => writeQuestions(name)}>${summary.questions.length ? "Edit Questions" : "Write Questions"}</button>`}
+      <span><b>Not ready for a fit:</b> ${summary.missing.join("; ")}.</span>
     </div>
   `;
 }
@@ -231,7 +228,7 @@ function Picked({ name }) {
     <div class="pane-head">
       <div>
         <h1 class="mono">${name}</h1>
-        <p>${folder ? `${plural(summary.splits.length, "split")} · ` : ""}${plural(summary.examples, "row")}${folder ? ` in ${summary.split}` : ""} · ${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
+        <p>${folder ? "" : `${plural(summary.examples, "row")} · `}${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
       </div>
       <div class="actions">
         <button class="btn primary" onClick=${() => onIt(name, fitOn, "a fit")} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
@@ -271,8 +268,8 @@ function Centre() {
   else if (list.length === 0) body = html`<${Empty} />`;
   else if (!name)
     body = html`
-      <div class="pane-head"><div><h1>Datasets</h1><p>${plural(list.length, "dataset")} in the workspace's data/ folder</p></div></div>
-      <div class="empty"><b>Pick a dataset</b><span>Pick one on the left to see its questions, labels and rows.</span></div>`;
+      <div class="pane-head"><div><h1>Datasets</h1></div></div>
+      <div class="empty"><b>Pick a dataset</b><span>Pick one on the left.</span></div>`;
   else if (!list.some((item) => item.name === name))
     body = html`<div class="empty"><b>No dataset named ${name}</b><span>It may have been deleted. Pick another on the left.</span></div>`;
   else body = html`<${Picked} key=${name} name=${name} />`;

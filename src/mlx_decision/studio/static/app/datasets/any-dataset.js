@@ -298,7 +298,7 @@ function LabelValues() {
           </div>`,
         )}
       </div>
-      <small class="hint">${info.names ? "Names from the dataset card. " : ""}The dataset arrives without questions: you write them afterwards, and say what each value means.</small>
+      ${info.names && html`<small class="hint">Names from the dataset card.</small>`}
     </div>
   `;
 }
@@ -308,7 +308,7 @@ function Output() {
     <div class="opts">
       <h4>Splits</h4>
       <${SplitTable} state=${table} splits=${splits.value} />
-      <small class="hint">The preview reads ${split.value}; the columns apply to every split downloaded.</small>
+      <small class="hint">The columns apply to every split.</small>
     </div>
     <${NameAndSeed} name=${name} named=${named} suggested=${suggested.value} seed=${seed} sampled=${seeded(table, splits.value)} />
   `;
@@ -318,7 +318,7 @@ export function AnyDataset() {
   const result = previewed.value;
   const ready = result && result.rows != null;
   return html`
-    <p>Any dataset on the Hugging Face Hub. Its rows keep their label's values and get their questions afterwards, in the Studio; multiple choice asks its question here.</p>
+    <p>Any dataset on the Hugging Face Hub. You write its questions afterwards; multiple choice asks its question here.</p>
     <${Source} />
     ${ready && html`<${Preview} /><${Wiring} />${shape.value !== "choice" && html`<${LabelValues} />`}<${Output} />`}
     ${ready && anyProblem.value && html`<p class="warn-text">${anyProblem.value}</p>`}

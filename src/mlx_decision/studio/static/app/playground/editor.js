@@ -139,7 +139,7 @@ function Images() {
         `,
       )}
     </div>`}
-    <div
+    ${(reads || current.images.length > 0) && html`<div
       class=${`drop ${over ? "over" : ""} ${reads ? "" : "off"}`}
       onDragOver=${(event) => {
         event.preventDefault();
@@ -155,7 +155,7 @@ function Images() {
       <span>
         ${reads
           ? html`Drop or paste images here <${ImageLimits} capabilities=${model.value.capabilities} />`
-          : `${modelName.value ?? "This model"} reads text only. Pick a model that reads images to add them.`}
+          : `${modelName.value ?? "This model"} reads text only.`}
       </span>
       ${reads &&
       html`<button class="btn" onClick=${() => picker.current.click()}>Add Image…</button>
@@ -170,7 +170,7 @@ function Images() {
             event.target.value = "";
           }}
         />`}
-    </div>
+    </div>`}
     <${Problem} problem=${problem} />
   `;
 }
@@ -353,7 +353,6 @@ function RowState() {
     <section class="gsec">
       <div class="gsec-head">
         <h2>State</h2>
-        <span class="tag">A row of the dataset, as the model reads it</span>
       </div>
       <${Rows} />
       <div class="group">
@@ -362,7 +361,7 @@ function RowState() {
                     rows=${rowsFor(current.stateText)} value=${current.stateText}></textarea>
           <${RowValues} item=${current} />
           <div class="state-foot">
-            <span>${json ? "Sent as JSON; the model reads keys and values" : `${current.stateText.length.toLocaleString("en")} characters, plain text`} · read-only: a dataset's rows stay as they are</span>
+            <span>${json ? "Sent as JSON; the model reads keys and values" : `${current.stateText.length.toLocaleString("en")} characters, plain text`} · read-only</span>
             ${run && html`<span class="num">Last run: ${run.input_tokens} input tokens${run.truncated ? ", the state was cut" : ""}</span>`}
           </div>
         </div>
@@ -388,7 +387,6 @@ function State() {
     <section class="gsec">
       <div class="gsec-head">
         <h2>State</h2>
-        <span class="tag">What the model reads, one example at a time</span>
         <div class="right">
           <div class="seg small" role="group" aria-label="State format">
             <button aria-pressed=${!json} onClick=${() => setMode("text")}>Text</button>
@@ -835,7 +833,6 @@ function CheckLine() {
   return html`
     <div class="check">
       <span class="ok"><${icons.StatusIcon} kind="ok" />${plural(count, "question")}, within ${modelName.value}'s limits</span>
-      <span class="info"><${icons.StatusIcon} kind="info" />Input length is checked when it runs</span>
     </div>
   `;
 }

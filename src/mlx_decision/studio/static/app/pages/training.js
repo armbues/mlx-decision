@@ -70,7 +70,7 @@ function Form() {
   useEffect(() => onKey("run", () => startFit()), []);
   const list = dataFiles.value;
   return html`
-    <div class="pane-head"><div><h1>New Fit</h1><p>Teach a model your task from labelled rows. The result is a new model next to its base.</p></div></div>
+    <div class="pane-head"><div><h1>New Fit</h1><p>Teach a model your task from labelled rows.</p></div></div>
     ${list?.length
       ? html`<${FitForm} />`
       : list &&
@@ -88,7 +88,7 @@ function Form() {
 function Evaluate() {
   useEffect(() => onKey("run", () => startEval()), []);
   return html`
-    <div class="pane-head"><div><h1>New Evaluation</h1><p>Score a model on labelled rows, and another beside it: a fitted model against its base, or two bases.</p></div></div>
+    <div class="pane-head"><div><h1>New Evaluation</h1><p>Score a model on labelled rows, alone or against another.</p></div></div>
     ${dataFiles.value?.length
       ? html`<${EvalForm} />`
       : dataFiles.value &&

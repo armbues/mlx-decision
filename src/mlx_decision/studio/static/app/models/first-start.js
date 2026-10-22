@@ -48,7 +48,7 @@ function WhereModelsGo() {
   return html`
     <form class="first-card where" onSubmit=${answer}>
       <h2>Where should models go?</h2>
-      <p>Asked once: the answer goes into the config file as <code>models_dir</code>, which <code>mlx-decision download</code> uses too.</p>
+      <p>Asked once; Settings can change it later.</p>
       <div class="choices" role="radiogroup" aria-label="Where models go">
         <label class="choice">
           <input type="radio" name="place" value="hf-cache" checked=${place.value === "hf-cache"}
@@ -58,7 +58,7 @@ function WhereModelsGo() {
         <label class="choice">
           <input type="radio" name="place" value="folder" checked=${place.value === "folder"}
                  onChange=${() => (place.value = "folder")} />
-          <span><b>A folder</b><small>Under your home folder, each model in a folder of its own; <code>-m</code> takes their names.</small>
+          <span><b>A folder</b><small>Under your home folder, each model in a folder of its own.</small>
             <input class="folder-path mono" aria-label="Folder" value=${folder.value} spellcheck=${false}
                    aria-invalid=${folderError.value ? "true" : undefined} aria-describedby=${folderError.value ? "folder-error" : undefined}
                    onFocus=${() => (place.value = "folder")}
@@ -99,10 +99,10 @@ function Picks() {
       <h2>Download your first model</h2>
       ${saved.value &&
       html`<p class="saved">
-        <${StatusIcon} kind="ok" /><span>Saved <code>${saved.value.line}</code> in <code>${saved.value.config_path}</code>; change it there.</span>
+        <${StatusIcon} kind="ok" /><span>Saved; change it in Settings.</span>
       </p>`}
       <p>${picks.length
-        ? "Three that fit this Mac's memory, a small, a medium and a large one; each opens Download a Model with its check and terms first."
+        ? "Three that fit this Mac's memory; a pick opens Download a Model first."
         : "None of the models the Studio knows fits this Mac's memory budget at full size; Download a Model offers them quantized."}</p>
       <div class="first-picks">${picks.map((pick) => html`<${Pick} key=${pick.repo} pick=${pick} />`)}</div>
       <div class="first-actions">

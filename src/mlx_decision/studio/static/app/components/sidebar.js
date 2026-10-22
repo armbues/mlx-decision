@@ -107,7 +107,7 @@ function Memory() {
   return html`
     <div class="mem" title="What the loaded models count against the memory budget (the memory check's estimates; --memory-budget sets it)">
       <div class="mem-head">
-        <span>Memory budget</span>
+        <a class="mem-link" href=${href("settings", "memory_budget_gb")} title="Change the memory budget">Memory budget</a>
         <span><b class="num">${gigabytes(memory.used)}</b> of ${gigabytes(memory.budget)}</span>
       </div>
       <div class="membar">

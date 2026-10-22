@@ -157,7 +157,7 @@ export function startFromSet() {
   startFrom.value = list[0].name;
   openSheet({
     title: "Start from a Question Set",
-    purpose: "The set's questions replace the dataset's here; its examples stay where they are. Nothing is saved until you save.",
+    purpose: "Its questions replace the dataset's here; save to keep them.",
     Body: () => html`
       <label class="any-row"><span>Question set</span>
         <select aria-label="Question set" value=${startFrom.value} onChange=${(event) => (startFrom.value = event.target.value)}>

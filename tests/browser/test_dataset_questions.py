@@ -51,7 +51,7 @@ def described(folder):
 def test_write_questions_on_a_dataset(studio, page):
     folder = write_tweets(studio)
     open_studio(page, studio, "datasets/tweets")
-    page.locator(".ds-banner").get_by_role("button", name="Write Questions").click()
+    page.locator(".centre .pane-head").get_by_role("button", name="Write Questions").click()
     expect(page).to_have_url(re.compile(r"#/playground/data%3Atweets$"))
     centre = page.locator(".centre")
     expect(centre.locator(".pane-head h1")).to_have_text("tweets")
@@ -93,7 +93,9 @@ def test_write_questions_on_a_dataset(studio, page):
     )
     page.goto(f"{studio.base}/#/datasets/tweets")
     expect(page.locator(".ds-question", has_text="noul")).to_be_visible()
-    expect(page.locator(".ds-banner").get_by_role("button")).to_have_text("Edit Questions")
+    expect(
+        page.locator(".centre .pane-head").get_by_role("button", name="Edit Questions")
+    ).to_be_visible()
 
 
 def test_rows_shuffle_search_and_split(studio, page):

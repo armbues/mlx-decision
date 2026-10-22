@@ -104,7 +104,7 @@ async function askColumns(file, text, format) {
   };
   openSheet({
     title: "Add a Dataset",
-    purpose: `${file.name}, ${plural(found.rows, "row")}: one column becomes the state, another holds the labels. The dataset arrives without questions: you write them afterwards, and say what each label value means.`,
+    purpose: `${file.name}, ${plural(found.rows, "row")}. You write the questions afterwards.`,
     Body: () => {
       const info = described.value;
       const values = info.label_columns.find((column) => column.name === valueColumn.value);
@@ -129,7 +129,6 @@ async function askColumns(file, text, format) {
         </div>`;
     },
     wide: true,
-    note: "Datasets live in the workspace's data/ folder.",
     actions: () => [
       {
         label: "Add",
@@ -160,7 +159,6 @@ function askName(file, name, text, message, columns = null) {
                onInput=${(event) => (newName.value = event.target.value)} />
         <span class="suffix">${columns ? "/" : ".jsonl"}</span>
       </label>`,
-    note: "Datasets live in the workspace's data/ folder.",
     actions: () => [{ label: "Add", primary: true, disabled: !ok(), onSelect: () => send(file, newName.value.trim(), text, columns) }],
   });
 }
@@ -170,7 +168,7 @@ function askName(file, name, text, message, columns = null) {
 function showErrors(file, text, errors) {
   openSheet({
     title: `${file.name} is not training data`,
-    purpose: "Training data is JSON lines: each a request body (state, questions) plus labels, an object from question id to the correct answer. Fix these lines and add the file again, or add its lines as rows of columns: a column for the state, one for the labels, the questions written afterwards.",
+    purpose: "Each line must be a request body (state, questions) plus labels: question id to the correct answer. Fix these lines, or add the file as rows of columns.",
     Body: () => html`
       <ul class="data-errors">
         ${errors.map(
@@ -202,8 +200,8 @@ function tooLarge(file, upload = null) {
   openSheet({
     title: `${file.name} is too large to add here`,
     purpose: csv
-      ? `${size}; the Studio takes up to ${limit ? fileSize(limit) : "its upload limit"} this way. Make it a dataset in a terminal instead, in the file's folder: the command asks for its columns, and the dataset joins Datasets.`
-      : `${size}; the Studio takes up to ${limit ? fileSize(limit) : "its upload limit"} this way. Copy it into the workspace's data folder instead, as ${dataName(file.name)}.jsonl (training data: JSON lines with questions and labels): it joins Datasets under that name, and it is checked when it is read.`,
+      ? `${size}; the Studio takes up to ${limit ? fileSize(limit) : "its upload limit"} this way. Make it a dataset in a terminal instead, in the file's folder (the command asks for its columns).`
+      : `${size}; the Studio takes up to ${limit ? fileSize(limit) : "its upload limit"} this way. Copy it into the data folder as ${dataName(file.name)}.jsonl (training data as JSON lines) instead: it is listed under that name.`,
     Body: () =>
       csv
         ? html`<div class="name-field too-large">

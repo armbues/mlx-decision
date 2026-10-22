@@ -242,13 +242,11 @@ export function CompareView() {
   const list = compareModels.value;
   const exampleName = example.value?.name;
   const many = current.examples.length > 1;
-  const about = many ? html` about <b>${exampleName}</b>` : "";
   if (list.length < 2)
     return html`
       <div class="empty">
         <b>Compare models side by side</b>
-        <span>Pick one or two models to ask the same questions${about} beside <b>${modelName.value}</b>.
-          Compare (${SHORTCUTS.run}) asks each in turn.</span>
+        <span>Pick one or two models to ask beside <b>${modelName.value}</b>.</span>
         <${ComparePicks} />
       </div>
     `;
@@ -260,8 +258,6 @@ export function CompareView() {
         ${flight?.compare
           ? html`<b>Asking ${flight.model}…</b>`
           : html`<b>No Compare${many ? ` of ${exampleName}` : ""} yet</b>`}
-        <span>Compare asks ${names(list)}${about}, one after another. Models that do not fit
-          the memory budget together load in turn.</span>
         <${ComparePicks} />
         <div class="empty-actions">
           <button class="btn primary" disabled=${!canCompare.value} onClick=${() => compare()}>Compare</button>
@@ -289,8 +285,7 @@ export function CompareView() {
       <button class="btn primary" disabled=${!canCompare.value} onClick=${() => compare()}>Compare</button>
     </div>`}
     <${CompareTable} shown=${shown} questions=${questions} changed=${changed} />
-    <p class="note">The same request on each model, one after another. Models that do not fit the memory
-      budget together load in turn. Pick the models in the model menu or here:</p>
+    <p class="note">Compare with:</p>
     <${ComparePicks} />
   `;
 }

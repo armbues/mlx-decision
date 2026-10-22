@@ -126,7 +126,7 @@ export function openNewBatch({ dataset = null, split = null } = {}) {
   if (first) choose(first, split);
   openSheet({
     title: dataset ? "Run as Batch" : "New Batch",
-    purpose: "Answer a dataset's rows with a model: all of them or a sample, with the dataset's questions or a question set's. With labels you also see how often the model is right.",
+    purpose: "Answer a dataset's rows with a model.",
     Body: NewBatch,
     wide: true,
     actions: () => [{ label: busy.value ? "Starting…" : "Start", primary: true, disabled: Boolean(whyNot()) || busy.value, onSelect: start }],
@@ -279,7 +279,7 @@ export function openSaveDataset(batch) {
   error.value = null;
   openSheet({
     title: "Save Answers as a Dataset",
-    purpose: `${batch.model}'s answers to ${plural(batch.answered, "row")} of ${batch.dataset} become the labels of a new dataset, ready for a fit: another model learns them.`,
+    purpose: `${batch.model}'s answers to ${plural(batch.answered, "row")} of ${batch.dataset} become the labels of a new dataset.`,
     Body: SaveDataset,
     actions: () => [{ label: busy.value ? "Saving…" : "Save", primary: true, disabled: Boolean(saveWhyNot()) || busy.value, onSelect: save }],
   });

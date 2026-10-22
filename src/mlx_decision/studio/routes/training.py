@@ -36,13 +36,16 @@ from . import ApiError, field, json_body
 from .jobs import HOLDOUT_MAX, HOLDOUT_MIN, TRAINING_OPTIONS, short
 from .picks import pick_split
 
+# What each method gives the user (the fit form's cards; D204).
 DESCRIPTIONS = {
-    "head": "Trains Clef's joint-schema head on your labels, then calibrates.",
-    "readout": "Fits a readout on the model's features per question, then calibrates.",
-    "finetune": "Fine-tunes the encoder and its marker head, then calibrates.",
-    "finetune-head": "Trains the marker head alone, the encoder as it is: less memory. "
-    "Then calibrates.",
-    "calibrate": "Adjusts how confident the answers are; the answers themselves stay.",
+    "head": "Learns your labels on top of the model; the model itself stays. The usual choice.",
+    "readout": "Learns your labels from what the model reads, a question at a time. Quick.",
+    "finetune": "Changes the model itself to your labels: the most it can learn, and the most "
+    "memory and time.",
+    "finetune-head": "Learns your labels in the model's last part only: less memory than a "
+    "full fine-tune.",
+    "calibrate": "Only makes the confidence match how often it is right; the answers stay "
+    "the same.",
 }
 
 

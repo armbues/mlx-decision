@@ -132,7 +132,7 @@ export async function openGetDataset() {
   pick(known ? picked.value : presets.value[0].name, true);
   openSheet({
     title: "Download a Dataset",
-    purpose: "A public dataset from the Hugging Face Hub, as a dataset in the workspace's data/ folder: its splits, each with its role. A preset brings its question; another dataset brings its rows and label values, and you write its questions afterwards (multiple choice asks its question here). It downloads as a job.",
+    purpose: "A public dataset from the Hugging Face Hub, with a role for each split.",
     Body,
     wide: true,
     note: "In a terminal, mlx-decision data does the same.",

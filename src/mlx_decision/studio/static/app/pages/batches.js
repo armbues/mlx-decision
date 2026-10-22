@@ -26,7 +26,7 @@ const status = computed(() => {
   const list = batches.value;
   if (!list) return null;
   if (list.length === 0) return { text: "No batches yet" };
-  return { text: html`<b>${plural(list.length, "batch", "batches")}</b> in batches/` };
+  return { text: html`<b>${plural(list.length, "batch", "batches")}</b>` };
 });
 
 const action = computed(() => ({
@@ -65,8 +65,8 @@ function Centre() {
   else if (list.length === 0) body = html`<${Empty} />`;
   else
     body = html`
-      <div class="pane-head"><div><h1>Batches</h1><p>${plural(list.length, "batch", "batches")} in the workspace's batches/ folder</p></div></div>
-      <div class="empty"><b>Pick a batch</b><span>Pick one on the left to see its answers, or start a new one.</span></div>`;
+      <div class="pane-head"><div><h1>Batches</h1></div></div>
+      <div class="empty"><b>Pick a batch</b><span>Pick one on the left, or start a new one.</span></div>`;
   return html`<div class="centre-inner">${body}</div>`;
 }
 

@@ -207,8 +207,7 @@ export function ExampleTable({ summary }) {
     }
   };
   return html`
-    <section class="gsec ex-sec"><div class="gsec-head"><h2>Rows</h2>
-        <span class="tag num">${plural(summary.examples, "row")}</span></div>
+    <section class="gsec ex-sec"><div class="gsec-head"><h2>Rows</h2></div>
       <div class="group ex-group">
         <div class="ex-tools"><${Search} /><${Filter} summary=${summary} />${result && html`<${Pager} result=${result} />`}</div>
         ${pageError.value && html`<p class="warn-text">${pageError.value}</p>`}

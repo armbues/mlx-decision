@@ -36,7 +36,7 @@ def test_training_and_settings_have_none(studio, page):
         open_studio(page, studio, route)
         expect(page.locator(".app")).to_have_class(CLOSED)
         expect(page.locator(".tb-right .icon-btn[aria-label*='Inspector']")).to_have_count(0)
-    expect(page.locator(".pane-head p")).to_contain_text("a flag on the command line wins over it")
+    expect(page.locator(".config-group .kv.place")).to_contain_text("a change creates it")
 
 
 def test_a_batch_row_opens_it_and_over_the_table_below_1280(studio, page):

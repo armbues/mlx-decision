@@ -511,7 +511,7 @@ export function History() {
     return html`
       <div class="empty">
         <b>No runs of this ${isDataset(setName.value) ? "dataset's questions" : "set"} yet</b>
-        <span>Every run is kept in the workspace's <code>history/</code> folder until you clear it.</span>
+        <span>Every run is kept until you clear it.</span>
       </div>
     `;
   const shown = selected.value;

@@ -5,7 +5,8 @@
 import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
-import { ConfigFile } from "../settings/config.js";
+import { navigate, route } from "../router.js";
+import { ConfigFile, openChange } from "../settings/config.js";
 import { listed, loadPlaces } from "../settings/places.js";
 import { WorkspaceFolders, loadFolders } from "../settings/workspace.js";
 import { models } from "../store/status.js";
@@ -24,6 +25,15 @@ function Centre() {
   useEffect(() => {
     loadPlaces();
   }, [models.value, settingsChange.value]);
+  // #/settings/KEY opens that key's sheet (the memory budget, from the
+  // sidebar or the Models page), once the file has been read.
+  useEffect(() => {
+    const key = route.value.item;
+    const item = listed.value?.config.settings.find((setting) => setting.key === key);
+    if (!item) return;
+    navigate("settings");
+    if (item.editable && listed.value.editable) openChange(item);
+  }, [route.value.item, listed.value]);
   // The folders' sizes again when the workspace or the models change.
   useEffect(() => {
     loadFolders();
@@ -33,7 +43,6 @@ function Centre() {
       <div class="pane-head">
         <div>
           <h1>Settings</h1>
-          <p>The config file the Studio and the CLI read; a flag on the command line wins over it. A change is written at once; the models and the budget apply now, the rest at the next start.</p>
         </div>
       </div>
       <${ConfigFile} />

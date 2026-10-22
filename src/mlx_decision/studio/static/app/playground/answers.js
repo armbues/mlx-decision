@@ -7,7 +7,7 @@ import { ChoiceBars, NoulBar, ScoreColumns, two } from "../charts/answers.js";
 import * as icons from "../components/icons.js";
 import { clock, duration } from "../format.js";
 import { openDownload } from "../models/download.js";
-import { loadedNames, models } from "../store/status.js";
+import { models } from "../store/status.js";
 import { SHORTCUTS } from "../keys.js";
 import { answerValue } from "./changes.js";
 import { TYPE_LABELS, changedSince, expectedAnswer, toBody } from "./draft.js";
@@ -186,7 +186,7 @@ function AllExamples() {
     return html`
       <div class="empty">
         <b>No Run All on ${name} yet</b>
-        <span>Run All (${SHORTCUTS.run}) asks each example in turn and shows the answers here, an example a row.</span>
+        <span>Run All (${SHORTCUTS.run}) answers every example here, a row each.</span>
         <div class="empty-actions"><button class="btn primary" disabled=${!canRunAll.value} onClick=${() => runAll()}>Run All</button></div>
       </div>
     `;
@@ -243,15 +243,14 @@ function OneExample() {
       return html`<div class="empty"><b>Asking ${flight.model}…</b>${
         flight.loads ? html`<span>It loads first; that can take a while the first time.</span>` : null
       }</div>`;
-    const loads = !loadedNames.value.has(name);
     return html`
       <div class="empty">
         <b>No answers from ${name}${exampleName ? ` for ${exampleName}` : ""} yet</b>
         <span>${
           several.value
-            ? `Run This Example (${SHORTCUTS.runExample}) answers its questions here, one card per question; Run All (${SHORTCUTS.run}) asks every example.`
-            : `Run (${SHORTCUTS.run}) answers this set's questions here, one card per question.`
-        }${loads ? " It loads the model first." : ""}</span>
+            ? `Run This Example (${SHORTCUTS.runExample}) answers here; Run All (${SHORTCUTS.run}) asks every example.`
+            : `Run (${SHORTCUTS.run}) answers here, a card per question.`
+        }</span>
       </div>
     `;
   }

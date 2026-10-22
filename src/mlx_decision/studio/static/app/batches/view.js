@@ -233,10 +233,9 @@ function Progress({ batch }) {
 function Terminal({ batch }) {
   const workspace = status.value?.workspace;
   return html`
-    <section class="gsec batch-cli"><div class="gsec-head"><h2>From a terminal</h2>
-        <span class="tag">The same rows, questions and model</span></div>
+    <details class="gsec batch-cli"><summary class="gsec-head"><h2>From a terminal</h2></summary>
       <div class="group"><pre class="code-line">${workspace ? `cd ${shellWord(workspace)}\n` : ""}${command(batch)}</pre></div>
-    </section>
+    </details>
   `;
 }
 
@@ -278,7 +277,7 @@ function Question({ id, item, batch }) {
             <${Reliability} bins=${item.reliability} />
           </div>
         </div>`}
-        ${!item.labelled && html`<p class="bq-note">No labels for this question: its answers only. A dataset whose labels answer it gives accuracy and the rest.</p>`}
+        ${!item.labelled && html`<p class="bq-note">No labels for this question: answers only.</p>`}
       </div>
     </section>
   `;
@@ -361,8 +360,7 @@ function Rows({ batch, results }) {
     }
   };
   return html`
-    <section class="gsec ex-sec batch-rows"><div class="gsec-head"><h2>Rows</h2>
-        <span class="tag num">${plural(batch.answered, "row")} answered</span></div>
+    <section class="gsec ex-sec batch-rows"><div class="gsec-head"><h2>Rows</h2></div>
       <div class="group ex-group">
         <div class="ex-tools">
           <${Search} />

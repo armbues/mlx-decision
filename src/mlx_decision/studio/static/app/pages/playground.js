@@ -166,7 +166,7 @@ function Target() {
                 right=${loaded.has(item.name) ? "Loaded" : item.family}
                 onSelect=${() => toggleCompared(item.name)}><span class="mono">${item.name}</span><//>`,
             )}
-          <${MenuNote}>Up to two more models. Compare asks the same questions on each in turn.<//>`}
+          <${MenuNote}>Up to two more models.<//>`}
       <//>
     </div>
   `;
@@ -343,8 +343,8 @@ function DatasetMenu() {
     <${MenuButton} id="set-more" className="btn" ariaLabel="More actions for this dataset"
       label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
       menuStyle="top:32px; right:0; width:280px">
-      <${MenuItem} sub="Its questions replace these; save to keep them" onSelect=${startFromSet}>Start from a Question Set…<//>
-      <${MenuItem} right=${SHORTCUTS.saveAs} sub="The questions and the rows shown, as a new set" onSelect=${files.saveAs}>Save as Question Set…<//>
+      <${MenuItem} onSelect=${startFromSet}>Start from a Question Set…<//>
+      <${MenuItem} right=${SHORTCUTS.saveAs} onSelect=${files.saveAs}>Save as Question Set…<//>
       <${MenuSeparator} />
       <${MenuItem} onSelect=${() => navigate("datasets", name)}>Show in Datasets<//>
       <${MenuItem} sub=${edited.value ? "Your edits go" : null} onSelect=${files.reloadFromDisk}>Reload<//>

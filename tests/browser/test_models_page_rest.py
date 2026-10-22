@@ -69,12 +69,14 @@ def test_speed_is_measured_only(sized, page):
 def test_the_memory_card_and_the_estimates(sized, page):
     open_studio(page, sized, "models/fake")
     card = page.locator(".memcard")
-    expect(card.locator(".memcard-sub")).to_contain_text("This Mac's GPU working set is")
+    link = card.get_by_role("link", name="Change the budget")
+    expect(link).to_have_attribute("title", re.compile("this Mac's GPU working set"))
     expect(page.locator(".mhead")).to_contain_text("Memory, est.")
     expect(page.locator(".idet")).to_contain_text("about 1.8 GB")
-    expect(page.locator(".idet")).to_contain_text("An estimate: the weights plus 10%")
-    card.get_by_role("link", name="Change the budget").click()
+    link.click()
+    # Settings, with the budget's sheet open.
     expect(page.locator(".centre h1")).to_have_text("Settings")
+    expect(page.locator(".sheet h2")).to_have_text("Change the Memory Budget")
 
 
 @pytest.mark.parametrize("width", [1440, 1100])

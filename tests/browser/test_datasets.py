@@ -391,9 +391,7 @@ def test_a_folder_without_questions(studio, page):
     expect(tabs.first).to_contain_text("train")
     expect(tabs.first).to_contain_text("Train")
     expect(tabs.first).to_have_attribute("aria-selected", "true")
-    expect(centre.locator(".pane-head p")).to_contain_text(
-        "2 splits · 6 rows in train · 0 questions"
-    )
+    expect(centre.locator(".pane-head p")).to_contain_text("0 questions · 414 bytes")
     expect(centre.locator(".ds-source")).to_contain_text("zeroshot/tweets on the Hugging Face Hub")
     # Its label values with their names; one picked filters the table.
     values = centre.locator(".ds-question", has_text="label")
