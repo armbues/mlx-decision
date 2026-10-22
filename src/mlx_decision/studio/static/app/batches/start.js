@@ -2,6 +2,7 @@
 // Datasets page) and saving a batch's answers as a dataset: two sheets.
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
+import { splitOption } from "../datasets/splits.js";
 import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { plural } from "../format.js";
@@ -124,7 +125,7 @@ export function openNewBatch({ dataset = null, split = null } = {}) {
   busy.value = false;
   if (first) choose(first, split);
   openSheet({
-    title: "New Batch",
+    title: dataset ? "Run as Batch" : "New Batch",
     purpose: "Answer a dataset's rows with a model: all of them or a sample, with the dataset's questions or a question set's. With labels you also see how often the model is right.",
     Body: NewBatch,
     wide: true,
@@ -212,7 +213,7 @@ function NewBatch() {
       <label for="batch-split">Split</label>
       <select id="batch-split" value=${current.split ?? ""} onChange=${(event) => set({ split: event.target.value })}>
         ${(item?.splits ?? []).map(
-          (split) => html`<option value=${split.name}>${split.name}${split.examples != null ? ` (${split.examples.toLocaleString("en")})` : ""}${split.role ? ` · ${split.role}` : ""}</option>`,
+          (split) => html`<option value=${split.name}>${splitOption(split)}</option>`,
         )}
       </select>
       ${(item?.splits ?? []).find((split) => split.name === current.split)?.role === "train" &&
@@ -246,7 +247,7 @@ function NewBatch() {
       ${models.value && models.value.length === 0
         ? html`<${NoModels} />`
         : html`<select id="batch-model" value=${current.model ?? ""} onChange=${(event) => set({ model: event.target.value })}>
-            ${(models.value ?? []).map((entry) => html`<option value=${entry.name}>${entry.name}</option>`)}
+            ${(models.value ?? []).map((entry) => html`<option value=${entry.name}>${entry.name}${entry.fitted ? ` (fitted on ${entry.base})` : ""}</option>`)}
           </select>`}
 
       <label for="batch-name">Name</label>
@@ -295,7 +296,7 @@ async function save() {
     const { dataset } = await api(`/batches/${encodeURIComponent(current.batch.name)}/dataset`, { method: "POST", body });
     closeSheet();
     dataChanged();
-    toast(`Saved ${plural(dataset.examples, "example")} as ${dataset.name}${dataset.left_out ? `; ${plural(dataset.left_out, "row")} left out` : ""}`);
+    toast(`Saved ${plural(dataset.examples, "row")} as ${dataset.name}${dataset.left_out ? `; ${plural(dataset.left_out, "row")} left out` : ""}`);
     navigate("datasets", dataset.name);
   } catch (failure) {
     error.value = failure.message;

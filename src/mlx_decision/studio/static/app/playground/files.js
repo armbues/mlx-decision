@@ -385,7 +385,7 @@ export function renameSet() {
   const from = setName.value;
   if (!from) return;
   askName({
-    title: "Rename",
+    title: "Rename Question Set",
     purpose: `A new name for ${from}. Its history moves with it; unsaved edits stay unsaved.`,
     initial: from,
     action: "Rename",
@@ -414,7 +414,7 @@ export async function deleteSet(name = setName.value) {
   }
   const edits = editedNames.value.has(name) ? " Your unsaved edits go too." : "";
   openSheet({
-    title: `Delete ${name}?`,
+    title: `Delete the question set ${name}?`,
     purpose: count
       ? `The set's file and its history (${plural(count, "run")}) are deleted. This cannot be undone.${edits}`
       : `The set's file is deleted. This cannot be undone.${edits}`,
@@ -440,7 +440,7 @@ export async function deleteSet(name = setName.value) {
             const next = (sets.value ?? []).find((item) => item.name !== name)?.name ?? null;
             navigate("playground", next ?? undefined);
           }
-          toast(`Deleted ${fileOf(name)}`);
+          toast(`Deleted the question set ${name}`);
         },
       },
     ],
@@ -493,7 +493,7 @@ export async function reveal() {
   try {
     await api(`/sets/${encodeURIComponent(setName.value)}/reveal`, { method: "POST" });
   } catch (error) {
-    toast(error.message);
+    toast(`Could not show it in Finder: ${error.message}`);
   }
 }
 

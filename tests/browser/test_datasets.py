@@ -57,17 +57,17 @@ def test_the_page_and_a_datasets_questions(studio, page):
     items.first.click()
     expect(page).to_have_url(f"{studio.base}/#/datasets/tickets")
     centre = page.locator(".centre")
-    expect(centre.locator(".pane-head p")).to_contain_text("1 example · 3 questions")
+    expect(centre.locator(".pane-head p")).to_contain_text("1 row · 3 questions")
     department = centre.locator(".ds-question", has_text="department")
     expect(department).to_contain_text("Which team should handle this")
     expect(department.locator(".label-counts li")).to_have_count(3)  # every option, counted or not
     expect(
         department.locator(".label-counts li", has_text="technical").locator(".num")
     ).to_have_text("1")
-    expect(department).to_contain_text("1 of 1 example labelled")
+    expect(department).to_contain_text("1 of 1 row labelled")
     # Several questions: each label with its question in the table.
     expect(centre.locator(".ex-row .lab")).to_have_text(["departmenttechnical", "is_urgenttrue"])
-    expect(page.locator(".toolbar .activity")).to_contain_text("tickets · 1 example")
+    expect(page.locator(".toolbar .activity")).to_contain_text("tickets · 1 row")
 
 
 def test_the_table_pages_filters_and_searches(support, page):
@@ -93,7 +93,7 @@ def test_the_table_pages_filters_and_searches(support, page):
 
     # The label filter, from the menu: back to the first page.
     page.get_by_label("Label", exact=True).select_option(label="billing (30)")
-    expect(pager).to_contain_text("1–30 of 30 (of 120 examples)")
+    expect(pager).to_contain_text("1–30 of 30 (of 120 rows)")
     expect(rows).to_have_count(30)
     expect(rows.locator(".lab")).to_have_text(["billing"] * 30)
     # A label picked in Questions does the same; picked again, it shows all.
@@ -113,7 +113,7 @@ def test_the_table_pages_filters_and_searches(support, page):
     expect(rows).to_have_count(1)
     expect(rows.first.locator(".ex-id")).to_have_text("t7")
     page.get_by_label("Label", exact=True).select_option(label="tech (70)")
-    expect(page.locator(".ex-none")).to_have_text("No example holds “REFUND” with the label tech.")
+    expect(page.locator(".ex-none")).to_have_text("No row holds “REFUND” with the label tech.")
     page.get_by_label("Label", exact=True).select_option("")
     search.fill("")
     expect(pager).to_contain_text("1–50 of 120")
@@ -131,7 +131,7 @@ def test_the_example_whole_in_the_inspector(support, page):
     page.locator(".ex-row", has_text="My card was charged twice").click()
     expect(page.locator(".app")).to_have_class(re.compile(r"\binspector-open\b"))
     expect(inspector.locator(".idet-head h2")).to_have_text("t7")
-    expect(inspector.locator(".idet-head p")).to_have_text("Example 8 of 120")
+    expect(inspector.locator(".idet-head p")).to_have_text("Row 8 of 120")
     whole = inspector.locator(".ex-whole")
     expect(whole).to_contain_text("Please refund one of them.")
     assert "\n\nPlease refund" in whole.inner_text()  # the state as it is, its lines kept
@@ -150,7 +150,7 @@ def test_the_example_whole_in_the_inspector(support, page):
     expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))
     expect(page.locator(".ex-row[aria-selected='true']")).to_have_count(0)
     page.locator(".ex-row", has_text="My card was charged twice").click()
-    inspector.get_by_role("button", name="Close the Example").click()
+    inspector.get_by_role("button", name="Close the Row").click()
     expect(page.locator(".app")).to_have_class(re.compile(r"\bno-inspector\b"))
     # Another dataset: nothing picked, its first page.
     page.locator(".ex-row", has_text="My card was charged twice").click()
@@ -183,7 +183,7 @@ def test_open_in_playground(support, page):
     page.set_viewport_size({"width": 1100, "height": 800})
     shot(page, "datasets-actions")
     page.keyboard.press("Escape")
-    page.get_by_role("button", name="Open in Playground").click()
+    page.get_by_role("button", name="New Question Set from It").click()
     # A new set named after the file, its first ten examples named by id and label.
     expect(page).to_have_url(f"{support.base}/#/playground/support")
     expect(page.locator(".toast")).to_contain_text(
@@ -204,7 +204,7 @@ def test_open_in_playground(support, page):
     assert saved["questions"] == {"team": TEAM} and len(saved["examples"]) == 10
     # Once more: the name is taken, so -2.
     page.goto(f"{support.base}/#/datasets/support")
-    page.get_by_role("button", name="Open in Playground").click()
+    page.get_by_role("button", name="New Question Set from It").click()
     expect(page).to_have_url(f"{support.base}/#/playground/support-2")
 
 
@@ -216,7 +216,7 @@ def test_add_a_file_errors_by_line_and_a_name_taken(studio, page, tmp_path):
     )
     add(page, good)
     expect(page.locator(".toast")).to_contain_text(
-        "Added support tickets.jsonl as data/support-tickets.jsonl · 5 examples"
+        "Added support tickets.jsonl as data/support-tickets.jsonl · 5 rows"
     )
     expect(page).to_have_url(f"{studio.base}/#/datasets/support-tickets")
     expect(page.locator(".sidebar .sb-item[aria-current='true']")).to_have_text("support-tickets")
@@ -270,14 +270,14 @@ def test_delete_the_picked_file(studio, page):
     sheet = page.locator(".sheet")
     expect(sheet).to_contain_text("The dataset data/tickets.jsonl is deleted")
     sheet.get_by_role("button", name="Delete").click()
-    expect(page.locator(".toast")).to_contain_text("Deleted data/tickets.jsonl")
+    expect(page.locator(".toast")).to_contain_text("Deleted the dataset tickets")
     expect(page.locator(".sidebar .data-list .sb-item")).to_have_count(0)
     expect(page.locator(".sidebar .sb-empty", has_text="No datasets yet")).to_be_visible()
     expect(page).to_have_url(re.compile(r"#/datasets$"))
     assert not (studio.workspace / "data" / "tickets.jsonl").exists()
     # The empty state: what a dataset is, with Download and Add.
     empty = page.locator(".centre .ds-empty")
-    expect(empty).to_contain_text("A dataset holds examples")
+    expect(empty).to_contain_text("Labelled rows for fits, evaluations and batches")
     expect(empty.get_by_role("button", name="Download a Dataset…")).to_be_visible()
     expect(empty.get_by_role("button", name="Add a Dataset…")).to_be_visible()
     # Training says where datasets come from.
@@ -377,7 +377,7 @@ def test_a_folder_without_questions(studio, page):
     write_tweets(studio)
     open_studio(page, studio, "datasets/tweets")
     row = page.locator(".sidebar .data-list li", has_text="tweets")
-    expect(row.locator(".mark")).to_have_count(1)  # not ready for a fit
+    expect(row.locator(".mark-warn")).to_have_count(1)  # not ready for a fit
     expect(row.locator(".sb-item")).to_have_attribute(
         "title", "Not ready for a fit: it has no questions yet"
     )
@@ -392,7 +392,7 @@ def test_a_folder_without_questions(studio, page):
     expect(tabs.first).to_contain_text("Train")
     expect(tabs.first).to_have_attribute("aria-selected", "true")
     expect(centre.locator(".pane-head p")).to_contain_text(
-        "2 splits · 6 examples in train · 0 questions"
+        "2 splits · 6 rows in train · 0 questions"
     )
     expect(centre.locator(".ds-source")).to_contain_text("zeroshot/tweets on the Hugging Face Hub")
     # Its label values with their names; one picked filters the table.
@@ -421,6 +421,9 @@ def test_a_folder_without_questions(studio, page):
     page.get_by_role("button", name="Fit on It…").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator("h2")).to_have_text("tweets is not ready for a fit")
+    expect(sheet.locator(".sheet-head p")).to_have_text(
+        re.compile(r"^Missing: it has no questions yet")
+    )
     sheet.get_by_role("button", name="Write Questions").click()
     expect(page).to_have_url(re.compile(r"#/playground/data%3Atweets$"))
 
@@ -442,13 +445,13 @@ def test_add_rows_of_columns(studio, page, tmp_path):
     rows.write_text("text,topic\nrates rise,fed\nbuy apple,analyst\nfed holds,fed\n")
     add(page, rows)
     sheet = page.locator(".sheet")
-    expect(sheet.locator("h2")).to_have_text("Add topics.csv")
+    expect(sheet.locator("h2")).to_have_text("Add a Dataset")
     expect(sheet.get_by_label("State column")).to_have_value("text")
     expect(sheet.get_by_label("Label column")).to_have_value("topic")
     expect(sheet.get_by_label("Name")).to_have_value("topics")
     sheet.get_by_role("button", name="Add").click()
     expect(page.locator(".toast")).to_contain_text(
-        "Added topics.csv as data/topics/ · 3 examples · no questions yet"
+        "Added topics.csv as data/topics/ · 3 rows · no questions yet"
     )
     expect(page).to_have_url(f"{studio.base}/#/datasets/topics")
     expect(page.locator(".ds-banner")).to_contain_text("it has no questions yet")
@@ -459,7 +462,7 @@ def test_add_rows_of_columns(studio, page, tmp_path):
     add(page, jsonl)
     expect(sheet.locator("h2")).to_have_text("plain.jsonl is not training data")
     sheet.get_by_role("button", name="Add as Rows…").click()
-    expect(sheet.locator("h2")).to_have_text("Add plain.jsonl")
+    expect(sheet.locator("h2")).to_have_text("Add a Dataset")
     sheet.get_by_role("button", name="Add").click()
     expect(page).to_have_url(f"{studio.base}/#/datasets/plain")
 

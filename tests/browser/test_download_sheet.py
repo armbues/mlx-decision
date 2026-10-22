@@ -62,7 +62,7 @@ def test_pick_a_model_and_download_it(studio, page, hub):
     expect(download).to_be_enabled()
     download.click()
     expect(sheet).to_have_count(0)
-    expect(page.locator(".toast")).to_contain_text("Downloading vllm-sr/d3-edge")
+    expect(page.locator(".toast")).to_contain_text("Started Download vllm-sr/d3-edge")
     row = page.locator(".mrow.mjob")
     expect(row).to_contain_text("d3-edge")
     expect(row).to_contain_text("vllm-sr/d3-edge · 8-bit")

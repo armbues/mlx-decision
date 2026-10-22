@@ -357,7 +357,7 @@ export async function run() {
   } catch (error) {
     if (error.name === "AbortError") return;
     if (error.status === 422) refused.value = { key, errors: [error] };
-    else if (error.status === 503) toast(error.message);
+    else if (error.status === 503) toast(`Not run: ${error.message}`);
     else toast(`The run failed: ${error.message}`);
   } finally {
     running.value = null;
@@ -437,7 +437,7 @@ export async function runAll() {
       } catch (error) {
         if (error.name === "AbortError") break;
         if (error.status === 503) {
-          toast(error.message);
+          toast(`Run All stopped: ${error.message}`, { error: true });
           break;
         }
         value.results = { ...value.results, [item.name]: { error: error.message, param: error.param } };
@@ -535,7 +535,7 @@ export async function compare() {
           break;
         }
         if (error.status === 503) {
-          toast(error.message);
+          toast(`Compare stopped: ${error.message}`, { error: true });
           break;
         }
         value.results = { ...value.results, [name]: { error: error.message, param: error.param } };

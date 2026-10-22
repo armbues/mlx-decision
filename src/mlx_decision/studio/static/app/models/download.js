@@ -85,7 +85,7 @@ async function start() {
   try {
     await api("/jobs", { method: "POST", body: { kind: "download", repo, bits } });
     closeSheet();
-    toast(`Downloading ${repo}. It shows up in Models when it is done.`);
+    toast(`Started Download ${repo}: it shows up in Models when it is done`);
   } catch (error) {
     toast(`Could not start the download: ${error.message}`);
   } finally {
@@ -243,11 +243,9 @@ function Foot() {
 }
 
 function purpose(destination) {
-  const where =
-    destination.kind === "folder"
-      ? `Into ${destination.path} (models_dir in the config file)`
-      : `Into the Hugging Face cache (${destination.path}), where other tools can use it too`;
-  return `${where}. It shows up in Models and the Playground when it is done; Stop is in the Jobs list.`;
+  return destination.kind === "folder"
+    ? `Into ${destination.path}.`
+    : `Into the Hugging Face cache, ${destination.path}.`;
 }
 
 // ``preselect``: {family, repo} to open on (the first start's picks).

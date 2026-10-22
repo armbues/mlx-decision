@@ -30,7 +30,7 @@ def test_a_fit_turns_runs_off_shows_its_progress_and_stops(studio, page):
     expect(row).to_contain_text("Fit fake-tickets")
     expect(row.locator("small")).to_have_text(re.compile(r"^work · \d+%"))
     banner = page.locator(".banner")
-    expect(banner).to_contain_text("Fit fake-tickets has the GPU. Run is off until it is done")
+    expect(banner).to_contain_text("Run is off until Fit fake-tickets is done.")
     expect(page.locator(".sidebar .serving")).to_contain_text("API busy")
     expect(run).to_be_disabled()
     expect(run).to_have_attribute(
@@ -41,7 +41,7 @@ def test_a_fit_turns_runs_off_shows_its_progress_and_stops(studio, page):
     )
     # The Models page: the same banner with what it means there, Load off.
     page.goto(f"{studio.base}/#/models")
-    expect(banner).to_contain_text("Load and Unload are off until it is done")
+    expect(banner).to_contain_text("Load and Unload are off until Fit fake-tickets is done.")
 
     banner.get_by_role("button", name="Stop").click()
     expect(row.locator("small")).to_have_text("Stopped")
@@ -50,7 +50,7 @@ def test_a_fit_turns_runs_off_shows_its_progress_and_stops(studio, page):
     expect(page.locator(".sidebar .serving")).not_to_contain_text("API busy")
     assert not (studio.workspace / "models" / "fake-tickets").exists()
     # An ended job stays listed until it is closed.
-    row.get_by_role("button", name="Close Fit fake-tickets").click()
+    row.get_by_role("button", name="Clear Fit fake-tickets").click()
     expect(row).to_have_count(0)
     expect(page.locator(".sidebar")).to_contain_text("Nothing running")
     page.goto(f"{studio.base}/#/playground/ticket-triage")
@@ -99,7 +99,7 @@ def test_a_reload_and_a_second_tab_show_the_job_so_far(studio, page):
     page.wait_for_selector(".app")
     # Straight from the snapshot: the job, its latest progress, the banner.
     expect(row.locator("small")).to_have_text(re.compile(r"^work · [1-9]\d*%"))
-    expect(page.locator(".banner")).to_contain_text("Fit fake-tickets has the GPU")
+    expect(page.locator(".toolbar .activity")).to_contain_text("Fit fake-tickets has the GPU")
     expect(page.locator(".run-btn")).to_be_disabled()
 
     other = page.context.new_page()

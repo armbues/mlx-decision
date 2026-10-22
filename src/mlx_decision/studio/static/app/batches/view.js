@@ -6,10 +6,11 @@ import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect, useRef } from "preact/hooks";
 import { api } from "../api.js";
-import { Confusion, Reliability } from "../components/charts.js";
+import { Confusion, METRICS, Reliability } from "../components/charts.js";
+import { TYPE_LABELS } from "../playground/draft.js";
 import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
 import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
-import { plural, shellWord } from "../format.js";
+import { NOT_THIS_MAC, onThisMac, plural, shellWord } from "../format.js";
 import { href } from "../router.js";
 import {
   batchByName,
@@ -28,12 +29,6 @@ export const PAGE = 100;
 const UNSURE = 0.6;
 // An answer's probability as the Playground's cards show it.
 const probability = (value) => `${Math.round((value ?? 0) * 100)}%`;
-const METRICS = [
-  ["accuracy", "Accuracy", true],
-  ["macro_f1", "Macro-F1", true],
-  ["ece", "Calibration error", false],
-  ["mae", "Mean error (levels)", false],
-];
 
 // The open batch's results ({name, batch, results}), read again as it runs.
 const opened = signal(null);
@@ -147,6 +142,7 @@ function Head({ batch }) {
           menuStyle="top:32px; right:0; width:240px">
           <${MenuItem} disabled=${running || batch.answered === 0} onSelect=${() => openSaveDataset(batch)}>Save Answers as a Dataset…<//>
           <${MenuItem} onSelect=${() => copyCommand(batch)}>Copy Command<//>
+          <${MenuItem} disabled=${!onThisMac} sub=${onThisMac ? null : NOT_THIS_MAC} onSelect=${() => revealBatch(batch.name)}>Show in Finder<//>
           <${MenuSeparator} />
           <${MenuItem} disabled=${running} onSelect=${() => confirmDelete(batch)}>Delete…<//>
         <//>
@@ -175,10 +171,18 @@ async function exportFile(name, format) {
   }
 }
 
+async function revealBatch(name) {
+  try {
+    await api(`/batches/${encoded(name)}/reveal`, { method: "POST" });
+  } catch (error) {
+    toast(`Could not show it in Finder: ${error.message}`);
+  }
+}
+
 export function confirmDelete(batch) {
   openSheet({
     title: `Delete the batch ${batch.name}?`,
-    purpose: `Its folder batches/${batch.name}/ goes, with its ${plural(batch.answered, "answer")}. The dataset stays.`,
+    purpose: `Its folder batches/${batch.name}/ is deleted, with its ${plural(batch.answered, "answer")}. This cannot be undone; the dataset stays.`,
     actions: [
       {
         label: "Delete",
@@ -244,7 +248,7 @@ function Question({ id, item, batch }) {
   const show = (fields) => filter({ question: id, answer: null, gold: null, show: "all", ...fields });
   return html`
     <section class="gsec batch-q" data-q=${id}>
-      <div class="gsec-head"><h2 class="mono">${id}</h2><span class="tag">${item.type}${item.labelled ? " · with labels" : ""}</span></div>
+      <div class="gsec-head"><h2 class="mono">${id}</h2><span class="tag">${TYPE_LABELS[item.type] ?? item.type}${item.labelled ? " · with labels" : ""}</span></div>
       <div class="group bq-group">
         <div class="bq-answers" role="group" aria-label=${`Answers to ${id}`}>
           ${Object.entries(item.answers).map(

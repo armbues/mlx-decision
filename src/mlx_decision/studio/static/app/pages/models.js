@@ -114,7 +114,7 @@ function convertWhyNot(model) {
   if (!model) return "No model";
   if (!model.convertible) return `${model.name} cannot be converted: ${model.convert_reason}`;
   const job = gpuJob.value;
-  if (job) return `${job.title} is running; one job at a time can use the GPU`;
+  if (job) return `${job.title} has the GPU: Convert is off until it is done`;
   return null;
 }
 
@@ -164,7 +164,7 @@ function StatePill({ model }) {
   } else if (model.error) [kind, text, why] = ["over", "Can't read", model.error];
   else [kind, text] = ["off", "Not loaded"];
   if (doing) why = text;
-  else if (busy.value) why = `A job holds the GPU (${busy.value}): models load again when it is done`;
+  else if (busy.value) why = `${busy.value} has the GPU: Load and Unload are off until it is done`;
   const action = loaded ? "Unload" : "Load";
   const act = (event) => {
     event.stopPropagation();
@@ -393,7 +393,7 @@ function MemoryCard() {
             <s style=${`background:${colour}`}></s><span class="mono">${groupLabel(group)}</span>
             <span class="num">${gigabytes(group.bytes)}</span>
             <button class="mem-x" disabled=${Boolean(doing || busy.value)} aria-label=${`Unload ${groupLabel(group)}`}
-                    title=${busy.value ? `A job holds the GPU (${busy.value})` : `Unload ${groupLabel(group)}`}
+                    title=${busy.value ? `${busy.value} has the GPU` : `Unload ${groupLabel(group)}`}
                     onClick=${() => unloadModel(name)}>
               <svg viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" /></svg>
             </button>
@@ -443,8 +443,9 @@ const status_ = computed(() => {
   if (!list) return null;
   if (list.length === 0)
     return { text: html`No models yet · Download a Model… (${SHORTCUTS.download})` };
+  const fitted = list.filter((model) => model.fitted).length;
   return {
-    text: html`<b>${plural(list.length, "model")}</b> · ${loadedNames.value.size} loaded`,
+    text: html`<b>${plural(list.length - fitted, "model")}</b>${fitted ? ` and ${fitted} fitted` : ""} · ${loadedNames.value.size} loaded`,
   };
 });
 
@@ -479,13 +480,11 @@ function Centre() {
   );
   const list = models.value;
   if (!list) return html`<div class="centre-inner"></div>`;
-  const fitted = list.filter((model) => model.fitted).length;
   return html`
     <div class="centre-inner">
       <div class="pane-head">
         <div>
           <h1>Models</h1>
-          <p>${plural(list.length - fitted, "model")}${fitted ? ` and ${plural(fitted, "fitted model")}` : ""}, ${loadedNames.value.size} loaded</p>
         </div>
         ${list.length > 0 && html`<div class="actions"><${Filters} /></div>`}
       </div>
@@ -513,7 +512,9 @@ function Kv({ label, children }) {
 function Details() {
   const model = selected.value;
   if (!model)
-    return html`<div class="empty"><b>No model selected</b><span>Pick one to see what it needs and reads.</span></div>`;
+    return (models.value ?? []).length === 0
+      ? html`<div class="empty"><b>No models yet</b><span>A first model's size and terms show before it downloads.</span></div>`
+      : html`<div class="empty"><b>No model picked</b><span>Pick one to see what it needs and reads.</span></div>`;
   const caps = model.capabilities;
   const memory = model.memory;
   const budget = status.value?.memory?.budget;

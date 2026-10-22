@@ -58,10 +58,10 @@ def test_the_studios_own_models_and_not_downloaded_ones(made, page):
     page.locator(".mrow", has_text="conv-fit").first.click(button="right")
     menu_item(page, "Delete…").click()
     sheet = page.locator(".sheet")
-    expect(sheet.locator("h2")).to_have_text("Delete conv-fit?")
+    expect(sheet.locator("h2")).to_have_text("Delete the model conv-fit?")
     expect(sheet).to_contain_text(str(folder / "conv-fit"))
     sheet.get_by_role("button", name="Delete").click()
-    expect(page.locator(".toast")).to_contain_text("Deleted conv-fit")
+    expect(page.locator(".toast")).to_contain_text("Deleted the model conv-fit")
     expect(page.locator(".mrow", has_text="conv-fit")).to_have_count(0)
     assert not (folder / "conv-fit").exists()
 
@@ -95,7 +95,9 @@ def test_a_fit_with_its_model_and_an_evaluation(studio, page):
     row.hover()
     row.locator(".sb-delete").click()
     sheet = page.locator(".sheet")
-    expect(sheet.locator("h2")).to_have_text(f"Delete {evaluation['title']}?")
+    expect(sheet.locator("h2")).to_have_text(
+        "Delete the evaluation of " + evaluation["title"].removeprefix("Evaluate ") + "?"
+    )
     expect(sheet.locator("input[type=checkbox]")).to_have_count(0)
     sheet.get_by_role("button", name="Delete").click()
     expect(entries).to_have_count(1)
@@ -109,7 +111,7 @@ def test_a_fit_with_its_model_and_an_evaluation(studio, page):
     expect(sheet).to_contain_text("Also delete its model mine")
     sheet.get_by_role("checkbox").check()
     sheet.get_by_role("button", name="Delete").click()
-    expect(page.locator(".toast").last).to_contain_text(f"Deleted {fit['title']} and mine")
+    expect(page.locator(".toast").last).to_contain_text("Deleted the fit mine and the model mine")
     expect(entries).to_have_count(0)
     expect(page).to_have_url(re.compile(r"#/training$"))
     assert not model.exists()

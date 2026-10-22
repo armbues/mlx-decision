@@ -67,7 +67,7 @@ def test_a_fit_from_start_to_report(studio, page):
     row = page.locator(".sidebar .fit-list .fit-row").first
     expect(row.locator(".label")).to_have_text("support-head")
     expect(row.locator(".count")).to_have_text(re.compile(r"\d+%"))
-    expect(page.locator(".banner")).to_contain_text("Fit support-head has the GPU")
+    expect(page.locator(".toolbar .activity")).to_contain_text("Fit support-head has the GPU")
     shot(page, "fit-running")
 
     # Done: the report.
@@ -78,7 +78,7 @@ def test_a_fit_from_start_to_report(studio, page):
     expect(accuracy.locator(".change")).to_have_class(re.compile("better"))
     ece = report.locator("tr", has_text="Calibration error")
     expect(ece.locator(".change")).to_have_class(re.compile("better"))  # lower is better
-    expect(page.locator(".q-report h3")).to_have_text("team · 12 examples kept aside")
+    expect(page.locator(".q-report h3")).to_have_text("team · 12 rows kept aside")
     expect(page.locator(".report-note")).to_have_text("Kept epoch 2 of 3.")
     expect(page.locator(".epochs tr.kept td").first).to_have_text("2")
     expect(page.locator(".loss-chart .kept")).to_have_text("kept")

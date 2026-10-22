@@ -21,7 +21,7 @@ function fieldContent(page) {
     const fraction = job ? progress(job).fraction : null;
     return {
       icon: "warn",
-      text: html`<b>${busy.value}</b> has the GPU · nothing else runs until it is done`,
+      text: html`<b>${busy.value}</b> has the GPU`,
       progress: fraction,
     };
   }

@@ -83,7 +83,7 @@ const STAGES = {
   download: "Downloading",
   convert: "Converting",
   before: "Scoring before",
-  features: "Reading the examples",
+  features: "Reading the rows",
   train: "Training",
   calibrate: "Calibrating",
   after: "Scoring after",

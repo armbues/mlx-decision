@@ -6,6 +6,7 @@
 // Evaluation runs `training eval` as a job, which holds the GPU like a fit.
 import { computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
+import { splitOption } from "../datasets/splits.js";
 import { LabelLine } from "../datasets/summary.js";
 import { api } from "../api.js";
 import { plural } from "../format.js";
@@ -113,7 +114,7 @@ async function plan(model, compare, data, split) {
 
 export const evalNotReady = computed(() => {
   const job = gpuJob.value;
-  if (job) return `${job.title} is running; one job at a time can use the GPU`;
+  if (job) return `${job.title} has the GPU: Start Evaluation is off until it is done`;
   if (models.value && models.value.length === 0) return NO_MODELS;
   if (!evalModel.value) return "No model to evaluate";
   if (!evalData.value) return "Download or add a dataset first, on the Datasets page";
@@ -165,7 +166,7 @@ export function EvalForm() {
   const questions = result ? Object.entries(result.questions) : [];
   return html`
     <div class="fit-form eval-form">
-      <section class="gsec"><div class="gsec-head"><h2>Models</h2><span class="tag">Scored one after the other on the same examples</span></div>
+      <section class="gsec"><div class="gsec-head"><h2>Models</h2><span class="tag">Scored one after the other on the same rows</span></div>
         <div class="group form">
           <div class="row"><label for="eval-model">Model</label><div class="line">
             ${list.length === 0
@@ -184,7 +185,7 @@ export function EvalForm() {
           </div></div>
         </div></section>
 
-      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled examples to score them on</span></div>
+      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled rows to score them on</span></div>
         <div class="group form">
           <div class="row"><label for="eval-data">Dataset</label><div class="line">
             <select id="eval-data" value=${data ?? ""} onChange=${(event) => (chosenData.value = event.target.value)}>
@@ -195,11 +196,11 @@ export function EvalForm() {
           ${item?.kind === "folder" &&
           html`<div class="row"><label for="eval-split">Split</label><div class="line">
             <select id="eval-split" value=${evalSplit.value ?? ""} onChange=${(event) => (splitChoice.value = { data, split: event.target.value })}>
-              ${item.splits.map((split) => html`<option value=${split.name}>${split.name}${split.role ? ` (${split.role})` : ""}</option>`)}
+              ${item.splits.map((split) => html`<option value=${split.name}>${splitOption(split)}</option>`)}
             </select>
-            ${result && result.data === data && html`<span class="hint num">${plural(result.examples, "example")}</span>`}
+            ${result && result.data === data && html`<span class="hint num">${plural(result.examples, "row")}</span>`}
           </div></div>`}
-          ${item?.kind !== "folder" && result && result.data === data && html`<div class="row"><label></label><span class="hint num">${plural(result.examples, "example")}</span></div>`}
+          ${item?.kind !== "folder" && result && result.data === data && html`<div class="row"><label></label><span class="hint num">${plural(result.examples, "row")}</span></div>`}
           ${data && !notReadyData.value && html`<div class="row"><label>Labels</label><div class="line"><${LabelLine} name=${data} split=${evalSplit.value} /></div></div>`}
           ${notReadyData.value &&
           html`<p class="warn-text">${notReadyData.value}${

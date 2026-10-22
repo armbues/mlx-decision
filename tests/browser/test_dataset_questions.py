@@ -119,9 +119,7 @@ def test_run_all_on_the_rows_keeps_a_history(studio, page):
     expect(page.locator(".run-btn")).to_have_text("Run All")
     page.locator(".run-btn").click()
     expect(page.locator(".ex-grid tbody tr")).to_have_count(8, timeout=15_000)
-    expect(page.locator(".toolbar .activity")).to_contain_text(
-        "answered 8 examples", timeout=15_000
-    )
+    expect(page.locator(".toolbar .activity")).to_contain_text("answered 8 rows", timeout=15_000)
     history = studio.workspace / "history" / "datasets" / "tweets.jsonl"
     lines = history.read_text().splitlines()
     assert len(lines) == 8 and json.loads(lines[0])["request"]["state"] == "tweet train 0"

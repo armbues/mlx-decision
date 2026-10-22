@@ -51,7 +51,7 @@ def test_evaluate_a_fitted_model_against_its_base(studio, page):
         "(the same SHA-256), so its scores here count examples it learned from"
     )
     expect(page.locator(".sidebar .new-list .sb-item[aria-current='true']")).to_have_text(
-        "New Evaluation"
+        "New Evaluation…"
     )
     shot(page, "evaluate-form")
     # Another file: no warning.
@@ -134,11 +134,11 @@ def test_evaluate_on_a_folders_evaluate_split(studio, page):
     split = form.locator("#eval-split")
     expect(split).to_have_value("test")  # its evaluate split
     expect(split.locator("option")).to_have_text(
-        ["train (train)", "validation (report)", "test (evaluate)"]
+        ["train · Train", "validation · Report", "test · Evaluate"]
     )
-    expect(form).to_contain_text("2 examples")
+    expect(form).to_contain_text("2 rows")
     split.select_option("validation")
-    expect(form).to_contain_text("3 examples")
+    expect(form).to_contain_text("3 rows")
     page.keyboard.press("Meta+Enter")
     expect(page.locator(".centre .pane-head p")).to_contain_text("on help (validation)")
     job = next(iter(studio.app.state.jobs.jobs.values()))

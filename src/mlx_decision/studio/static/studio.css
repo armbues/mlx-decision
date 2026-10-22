@@ -12,6 +12,7 @@
 
   --window: #f2f2f4;
   --group: #ffffff;
+  --button: #ffffff; /* a button's face, on a card or not */
   --sidebar: rgba(235, 235, 239, 0.97);
   --toolbar: rgba(250, 250, 251, 0.98);
   --inspector: #f8f8fa;
@@ -51,6 +52,7 @@
   :root:not([data-theme="light"]) {
     --window: #1e1e20;
     --group: #2b2b2e;
+    --button: #3a3a3d;
     --sidebar: rgba(40, 40, 44, 0.98);
     --toolbar: rgba(38, 38, 41, 0.98);
     --inspector: #232326;
@@ -90,6 +92,7 @@
 :root[data-theme="dark"] {
   --window: #1e1e20;
   --group: #2b2b2e;
+  --button: #3a3a3d;
   --sidebar: rgba(40, 40, 44, 0.98);
   --toolbar: rgba(38, 38, 41, 0.98);
   --inspector: #232326;
@@ -207,7 +210,9 @@ button { cursor: default; }
 .sb-list li:hover .sb-delete, .sb-delete:focus-visible, .hrow-wrap:hover .row-delete, .row-delete:focus-visible { opacity: 1; }
 .sb-delete:hover, .row-delete:hover { background: color-mix(in srgb, var(--red) 13%, transparent); color: var(--red); }
 .sb-list li:has(.sb-delete):is(:hover, :focus-within) .sb-item { padding-right: 30px; }
-.sb-list li:has(.sb-delete):is(:hover, :focus-within) .sb-item :is(.edited, .count, .mark, .state) { visibility: hidden; }
+.sb-list li:has(.sb-delete):is(:hover, :focus-within) .sb-item :is(.edited, .count, .mark-warn, .state) { visibility: hidden; }
+.sb-item .mark-warn { margin-left: auto; display: inline-flex; flex: none; }
+.sb-item .mark-warn .ic { width: 12px; height: 12px; color: var(--orange); }
 .row-delete { top: 50%; right: 8px; transform: translateY(-50%); }
 .job {
   margin: 2px 2px 0; padding: 8px 10px; border-radius: 8px; background: var(--fill);
@@ -321,10 +326,10 @@ ul.jobs .job { min-width: 0; grid-template-columns: minmax(0, 1fr); }
 .tb-right { flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .btn {
   height: 26px; padding: 0 11px; border-radius: 6px; border: 0;
-  background: var(--group); box-shadow: var(--shadow); white-space: nowrap;
+  background: var(--button); box-shadow: var(--shadow); white-space: nowrap;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.btn:hover { background: color-mix(in srgb, var(--group) 92%, var(--fg)); }
+.btn:hover { background: color-mix(in srgb, var(--button) 92%, var(--fg)); }
 .btn svg { width: 13px; height: 13px; }
 .btn.primary { background: var(--accent); color: var(--accent-fg); box-shadow: none; font-weight: 500; }
 .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, black); }

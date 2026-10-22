@@ -7,6 +7,7 @@
 // the Studio builds its command line.
 import { computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
+import { splitOption } from "../datasets/splits.js";
 import { api } from "../api.js";
 import { useSummary } from "../datasets/summary.js";
 import { plural, size } from "../format.js";
@@ -165,7 +166,7 @@ async function plan(model, data, split, report, share, order) {
 // Why Start Fit is off, or null.
 export const notReady = computed(() => {
   const job = gpuJob.value;
-  if (job) return `${job.title} is running; one job at a time can use the GPU`;
+  if (job) return `${job.title} has the GPU: Start Fit is off until it is done`;
   if (models.value && models.value.length === 0) return NO_MODELS;
   if (!fitData.value) return "Download or add a dataset first, on the Datasets page";
   if (notReadyData.value) return notReadyData.value;
@@ -241,13 +242,13 @@ function ReportOn({ data }) {
   const splits = reportSplits.value;
   const others = reportData.value;
   const current = reportValue.value;
-  const roleOf = (name) => dataItem.value?.splits?.find((split) => split.name === name)?.role;
+  const splitOf = (name) => dataItem.value?.splits?.find((split) => split.name === name) ?? { name };
   return html`
     <div class="row"><label for="fit-report">Report on</label><div class="line">
       <select id="fit-report" value=${current} onChange=${(event) => (reportChoice.value = { data, value: event.target.value })}>
         ${splits.length > 0 &&
         html`<optgroup label=${`A split of ${data}`}>
-          ${splits.map((name) => html`<option value=${`split:${name}`}>${name}${roleOf(name) ? ` (${roleOf(name)})` : ""}</option>`)}
+          ${splits.map((name) => html`<option value=${`split:${name}`}>${splitOption(splitOf(name))}</option>`)}
         </optgroup>`}
         <option value="">A share of ${trainSplit.value && dataItem.value?.kind === "folder" ? `its ${trainSplit.value} split` : "this dataset"}</option>
         ${others.length > 0 &&
@@ -313,13 +314,13 @@ export function FitForm() {
   const method = picked.value;
   return html`
     <div class="fit-form">
-      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled examples to learn from</span></div>
+      <section class="gsec"><div class="gsec-head"><h2>Data</h2><span class="tag">Labelled rows to learn from</span></div>
         <div class="group form">
           <div class="row"><label for="fit-data">Dataset</label><div class="line">
             <select id="fit-data" value=${data ?? ""} onChange=${(event) => (chosenData.value = event.target.value)}>
               ${files.map((item) => html`<option value=${item.name}>${item.name}${item.missing?.length || item.error ? " (not ready)" : ""}</option>`)}
             </select>
-            ${result && result.data === data && html`<span class="hint num">${dataItem.value?.kind === "folder" ? `its ${result.split} split: ` : ""}${plural(result.splits.examples, "example")}</span>`}
+            ${result && result.data === data && html`<span class="hint num">${dataItem.value?.kind === "folder" ? `its ${result.split} split: ` : ""}${plural(result.splits.examples, "row")}</span>`}
             ${data && html`<a class="hint-link" href=${href("datasets", data)}>Show in Datasets</a>`}
           </div></div>
           ${notReadyData.value &&
@@ -331,7 +332,7 @@ export function FitForm() {
           ${data && !notReadyData.value && dataItem.value?.kind === "folder" && dataItem.value.splits.length > 1 &&
           html`<div class="row"><label for="fit-split">Train on</label><div class="line">
             <select id="fit-split" value=${trainSplit.value ?? ""} onChange=${(event) => (trainChoice.value = { data, split: event.target.value })}>
-              ${dataItem.value.splits.map((split) => html`<option value=${split.name}>${split.name}${split.role ? ` (${split.role})` : ""}</option>`)}
+              ${dataItem.value.splits.map((split) => html`<option value=${split.name}>${splitOption(split)}</option>`)}
             </select>
             <span class="hint">the split the fit learns from</span>
           </div></div>`}
@@ -376,7 +377,7 @@ export function FitForm() {
             ${method?.epochs &&
             html`<div class="row"><label for="fit-epochs">Epochs</label><div class="line">
               <input id="fit-epochs" type="number" min="1" value=${epochs.value} onInput=${(event) => (epochs.value = event.target.value)} />
-              <label class="check"><input type="checkbox" checked=${earlyStop.value} onChange=${(event) => (earlyStop.value = event.target.checked)} /> stop early when the tuning examples get worse</label>
+              <label class="check"><input type="checkbox" checked=${earlyStop.value} onChange=${(event) => (earlyStop.value = event.target.checked)} /> stop early when the tuning rows get worse</label>
               <span class="hint">the best epoch is kept</span>
             </div></div>`}
             <div class="row"><label for="fit-seed">Seed</label><div class="line">

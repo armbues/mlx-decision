@@ -4,10 +4,10 @@ import { gpuJob, stopJob } from "../store/jobs.js";
 import { busy } from "../store/status.js";
 import { StatusIcon } from "./icons.js";
 
-// What the job means for each page.
+// What the job means for each page (the status field names the job).
 const MEANS = {
-  playground: "Run is off until it is done",
-  models: "Load and Unload are off until it is done",
+  playground: "Run is off until",
+  models: "Load and Unload are off until",
 };
 
 export function BusyBanner({ page }) {
@@ -18,10 +18,7 @@ export function BusyBanner({ page }) {
   return html`
     <div class="banner" role="status">
       <${StatusIcon} kind="warn" />
-      <span>
-        <b>${holder}</b> has the GPU. ${MEANS[page] ?? "Nothing runs on it until it is done"},
-        and the API answers 503 busy meanwhile.
-      </span>
+      <span>${MEANS[page] ?? "Nothing else runs on the GPU until"} <b>${holder}</b> is done.</span>
       ${job &&
       html`<button class="btn" disabled=${job.stop_requested} onClick=${() => stopJob(job.id)}>
         ${job.stop_requested ? "Stopping…" : "Stop"}

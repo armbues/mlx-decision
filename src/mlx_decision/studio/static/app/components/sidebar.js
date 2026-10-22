@@ -45,16 +45,16 @@ function Job({ job }) {
   const Icon = JOB_ICONS[job.kind] ?? icons.Training;
   const { fraction, text } = progress(job);
   const ended = job.state === "ended";
-  const action = ended ? `Close ${job.title}` : `Stop ${job.title}`;
+  const action = ended ? `Clear ${job.title}` : `Stop ${job.title}`;
   const failed = ended && job.outcome !== "done" && job.outcome !== "cancelled";
   return html`
     <li class=${`job ${ended ? `ended ${job.outcome}` : job.state}`} data-job=${job.id}>
       <div class="job-top">
         <${Icon} /><span class="job-title" title=${job.title}>${job.title}</span>
-        <button aria-label=${action} title=${ended ? "Close" : "Stop"}
+        <button aria-label=${action} title=${ended ? "Clear" : "Stop"}
                 disabled=${!ended && job.stop_requested}
                 onClick=${() => (ended ? dismissJob(job.id) : stopJob(job.id))}>
-          <${icons.Close} />
+          ${ended ? html`<${icons.Close} />` : html`<${icons.Stop} />`}
         </button>
       </div>
       ${!ended && html`<div class="bar"><i style=${`width:${((fraction ?? 0) * 100).toFixed(1)}%`}></i></div>`}
@@ -70,7 +70,7 @@ function BatchJob({ batch }) {
     <li class="job running batch-job" data-batch=${batch.name}>
       <div class="job-top">
         <${icons.Batches} /><a class="job-title" href=${href("batches", batch.name)} title=${`Batch ${batch.name}`}>Batch ${batch.name}</a>
-        <button aria-label=${`Stop the batch ${batch.name}`} title="Stop" disabled=${batch.stop_requested} onClick=${() => stopBatch(batch.name)}><${icons.Close} /></button>
+        <button aria-label=${`Stop the batch ${batch.name}`} title="Stop" disabled=${batch.stop_requested} onClick=${() => stopBatch(batch.name)}><${icons.Stop} /></button>
       </div>
       <div class="bar"><i style=${`width:${(fraction * 100).toFixed(1)}%`}></i></div>
       <small class="num">${batch.stop_requested ? "Stopping…" : batchProgressText(batch)}</small>
@@ -133,7 +133,7 @@ function Serving() {
   const state = offline.value ? "lost" : busy.value ? "busy" : "ready";
   const title = {
     ready: "The Jev-compatible API answers here, from the same models",
-    busy: `A job holds the GPU: the API answers 503 until it is done`,
+    busy: `${busy.value} has the GPU: the API answers 503 until it is done`,
     lost: "The page lost its connection to the Studio",
   }[state];
   return html`

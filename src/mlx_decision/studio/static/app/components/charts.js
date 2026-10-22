@@ -5,6 +5,15 @@
 import { html } from "htm/preact";
 import { useState } from "preact/hooks";
 
+// The metrics as a batch, a fit's report and an evaluation name them: key,
+// name, whether higher is better.
+export const METRICS = [
+  ["accuracy", "Accuracy", true],
+  ["macro_f1", "Macro-F1", true],
+  ["ece", "Calibration error (ECE)", false],
+  ["mae", "Mean error (MAE, levels)", false],
+];
+
 // Round tick values from low to high, about five of them.
 export function ticks(low, high) {
   const span = high - low || 1;
@@ -39,8 +48,8 @@ export function Confusion({ question, name, names = {}, onCell = null }) {
   return html`
     <div class="confusion">
       ${name && html`<h4>${name}</h4>`}
-      <table class="confusion-table" aria-label=${`${name ? `${name}: ` : ""}gold label by row, predicted by column`}>
-        <thead><tr><th>gold ↓ predicted →</th>${columns.map((label) => html`<th class="r"><code>${shown(label)}</code></th>`)}</tr></thead>
+      <table class="confusion-table" aria-label=${`${name ? `${name}: ` : ""}expected answer by row, the model's answer by column`}>
+        <thead><tr><th>expected ↓ answered →</th>${columns.map((label) => html`<th class="r"><code>${shown(label)}</code></th>`)}</tr></thead>
         <tbody>${labels.map(
           (gold) => html`<tr key=${gold}><th><code>${shown(gold)}</code></th>${columns.map((predicted) => cell(gold, predicted))}</tr>`,
         )}</tbody>

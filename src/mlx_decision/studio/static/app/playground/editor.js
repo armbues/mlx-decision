@@ -4,6 +4,7 @@
 // its rows (Shuffle, a search, another split), with the row's label values.
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
+import { splitOption } from "../datasets/splits.js";
 import { useRef, useState } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { openPreview } from "../components/lightbox.js";
@@ -243,7 +244,7 @@ function ExampleMenu({ item, index, count }) {
       <${MenuItem} disabled=${index === count - 1} onSelect=${() => updateDraft((value) => edit.moveExample(value, item.uid, 1))}>Move Right<//>
       <${MenuSeparator} />
       <${MenuItem} disabled=${count < 2} sub=${count < 2 ? "A set keeps at least one example" : null}
-        onSelect=${change(edit.removeExample)}>Remove<//>
+        onSelect=${change(edit.removeExample)}>Remove Example<//>
     <//>
   `;
 }
@@ -268,7 +269,7 @@ function Examples() {
           </span>
         `,
       )}
-      <button class="ex-add" aria-label="Add an example" title="Add an example"
+      <button class="ex-add" aria-label="Add Example" title="Add Example"
               onClick=${() => updateDraft((value) => edit.addExample(value))}><${icons.Plus} /></button>
     </div>
   `;
@@ -294,7 +295,7 @@ function Rows() {
     <div class="rows-bar">
       ${splits.length > 1 &&
       html`<select class="rows-split" aria-label="Split" value=${facts.split} onChange=${(event) => showRows({ split: event.target.value, search: "" })}>
-        ${splits.map((split) => html`<option value=${split.name}>${split.name}${split.role ? ` (${split.role})` : ""}</option>`)}
+        ${splits.map((split) => html`<option value=${split.name}>${splitOption(split)}</option>`)}
       </select>`}
       <input class="rows-search" type="search" placeholder="Search the rows" aria-label="Search the rows" spellcheck=${false}
              value=${rowSearch.value}
@@ -500,7 +501,7 @@ function ChoiceRows({ question }) {
         </div>
       `,
     )}
-    <div class="add-row"><button class="btn plain" onClick=${add}>+ Add Option</button></div>
+    <div class="add-row"><button class="btn plain" onClick=${add}><${icons.Plus} /> Add Option</button></div>
   `;
 }
 
@@ -541,7 +542,7 @@ function ScoreRows({ question }) {
         </div>
       `,
     )}
-    <div class="add-row"><button class="btn plain" onClick=${add}>+ Add Level</button></div>
+    <div class="add-row"><button class="btn plain" onClick=${add}><${icons.Plus} /> Add Level</button></div>
   `;
 }
 
@@ -703,8 +704,8 @@ const pasted = signal("");
 function pasteNames(question, column, values) {
   pasted.value = "";
   openSheet({
-    title: `Names for ${column}'s values`,
-    purpose: `One name a line in the values' order (${values.slice(0, 4).join(", ")}${values.length > 4 ? ", …" : ""}), or pairs such as 0: Analyst Update or "LABEL_0": "Analyst Update" as a dataset card lists them. They become the options: ids made from the names, the names as descriptions.`,
+    title: "Paste Names",
+    purpose: `Names for ${column}'s values: one name a line in the values' order (${values.slice(0, 4).join(", ")}${values.length > 4 ? ", …" : ""}), or pairs such as 0: Analyst Update or "LABEL_0": "Analyst Update" as a dataset card lists them. They become the options: ids made from the names, the names as descriptions.`,
     Body: () => html`<textarea class="field mono paste-names" aria-label="Names" rows="10" spellcheck=${false}
       value=${pasted.value} onInput=${(event) => (pasted.value = event.target.value)}></textarea>`,
     actions: () => [

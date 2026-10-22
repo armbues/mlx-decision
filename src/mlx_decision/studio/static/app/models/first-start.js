@@ -38,7 +38,7 @@ async function answer(event) {
     first.value = { ...first.value, models_dir_set: true };
   } catch (error) {
     if (error.param === "path") folderError.value = error.message;
-    else toast(error.message);
+    else toast(`Not saved: ${error.message}`);
   } finally {
     saving.value = false;
   }
@@ -106,7 +106,7 @@ function Picks() {
         : "None of the models the Studio knows fits this Mac's memory budget at full size; Download a Model offers them quantized."}</p>
       <div class="first-picks">${picks.map((pick) => html`<${Pick} key=${pick.repo} pick=${pick} />`)}</div>
       <div class="first-actions">
-        <button class="btn" onClick=${() => openDownload()}>Download Another Model…</button>
+        <button class="btn" onClick=${() => openDownload()}>Download a Model…</button>
       </div>
     </div>
   `;

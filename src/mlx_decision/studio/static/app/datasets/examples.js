@@ -173,7 +173,7 @@ function Pager({ result }) {
   return html`
     <div class="ex-pager">
       <span class="num">${matched ? `${first.toLocaleString("en")}–${last.toLocaleString("en")} of ${matched.toLocaleString("en")}` : "None"}${
-        filtered ? ` (of ${plural(result.total, "example")})` : ""
+        filtered ? ` (of ${plural(result.total, "row")})` : ""
       }</span>
       <button class="btn sm" aria-label="Previous page" disabled=${offset === 0}
               onClick=${() => (query.value = { ...query.value, offset: Math.max(0, offset - PAGE) })}>Previous</button>
@@ -207,15 +207,15 @@ export function ExampleTable({ summary }) {
     }
   };
   return html`
-    <section class="gsec ex-sec"><div class="gsec-head"><h2>Examples</h2>
-        <span class="tag num">${plural(summary.examples, "example")}</span></div>
+    <section class="gsec ex-sec"><div class="gsec-head"><h2>Rows</h2>
+        <span class="tag num">${plural(summary.examples, "row")}</span></div>
       <div class="group ex-group">
         <div class="ex-tools"><${Search} /><${Filter} summary=${summary} />${result && html`<${Pager} result=${result} />`}</div>
         ${pageError.value && html`<p class="warn-text">${pageError.value}</p>`}
         <div class="ex-head" aria-hidden="true"><span>Id</span><span>State</span><span>${
           summary.questions.length === 0 ? (Object.keys(summary.values ?? {})[0] ?? "Values") : many ? "Labels" : summary.questions[0].id
         }</span></div>
-        <div class="ex-rows" role="listbox" aria-label="Examples" onKeyDown=${onKeyDown}>
+        <div class="ex-rows" role="listbox" aria-label="Rows" onKeyDown=${onKeyDown}>
           ${result?.examples.map(
             (row) => html`<div class="ex-row" key=${row.index} role="option" tabindex=${row.index === picked || (picked == null && row === result.examples[0]) ? "0" : "-1"}
                  data-index=${row.index} aria-selected=${row.index === picked ? "true" : "false"}
@@ -226,7 +226,7 @@ export function ExampleTable({ summary }) {
             </div>`,
           )}
           ${result && result.matched === 0 &&
-          html`<div class="ex-none">No example ${current.search.trim() ? html`holds “${current.search.trim()}”` : ""}${
+          html`<div class="ex-none">No row ${current.search.trim() ? html`holds “${current.search.trim()}”` : ""}${
             current.question != null ? html`${current.search.trim() ? " with" : " has"} the label <code>${current.label}</code>` : ""
           }${current.column != null ? html`${current.search.trim() ? " with" : " has"} the value <code>${current.value}</code>` : ""}.</div>`}
         </div>
@@ -261,11 +261,11 @@ export function ExampleInspector({ name, split = null, shown = null }) {
   return html`
     <div class="idet data-inspector">
       ${!picked
-        ? html`<div class="empty"><b>No example picked</b><span>Pick one in the table to see it whole.</span></div>`
+        ? html`<div class="empty"><b>No row picked</b><span>Pick one in the table to see it whole.</span></div>`
         : example?.error
           ? html`<p class="warn-text">${example.error}</p>`
           : example &&
-            html`<div class="idet-head"><div><h2 class="mono">${example.id}</h2><p>Example ${(example.index + 1).toLocaleString("en")}${summary?.examples ? ` of ${summary.examples.toLocaleString("en")}` : ""}</p></div></div>
+            html`<div class="idet-head"><div><h2 class="mono">${example.id}</h2><p>Row ${(example.index + 1).toLocaleString("en")}${summary?.examples ? ` of ${summary.examples.toLocaleString("en")}` : ""}</p></div></div>
               <section class="igroup"><h4>State</h4><pre class=${`ex-whole${typeof example.state === "string" ? "" : " json"}`}>${stateText(example.state)}</pre></section>
               ${Object.keys(example.values ?? {}).length > 0 &&
               html`<section class="igroup"><h4>Values</h4><dl>

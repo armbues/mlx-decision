@@ -107,7 +107,7 @@ def test_a_batch_shows_its_answers_metrics_and_rows(tweets, page):
     expect(head).to_contain_text("30 rows")
     expect(head).to_contain_text("its own questions")
     question = page.locator(".batch-q[data-q=topic]")
-    expect(question.locator(".tag")).to_have_text("choice · with labels")
+    expect(question.locator(".tag")).to_have_text("Choice · with labels")
     expect(question.locator(".metric", has_text="Accuracy")).to_be_visible()
     expect(question.locator(".confusion-table")).to_be_visible()
     expect(question.locator(".reliability svg .rel-bar").first).to_be_visible()
@@ -233,7 +233,7 @@ def test_export_save_answers_and_delete(tweets, page):
     sheet.get_by_role("button", name="Save").click()
     expect(page).to_have_url(re.compile(r"#/datasets/tweets-by-fake$"))
     saved = page.locator(".toast", has_text="Saved")
-    expect(saved).to_contain_text("Saved 9 examples as tweets-by-fake")
+    expect(saved).to_contain_text("Saved 9 rows as tweets-by-fake")
     dataset, _ = open_dataset(tweets.workspace / "data" / "tweets-by-fake")
     assert dataset.missing() == [] and dataset.source["batch"] == "tweets-fake"
     # Delete.
@@ -371,7 +371,7 @@ def test_delete_a_batch_from_the_sidebar(tweets, page):
     entry.hover()
     entry.get_by_role("button", name="Delete tweets-fake…").click()
     sheet = page.locator(".sheet")
-    expect(sheet).to_contain_text("Its folder batches/tweets-fake/ goes, with its 5 answers")
+    expect(sheet).to_contain_text("Its folder batches/tweets-fake/ is deleted, with its 5 answers")
     sheet.get_by_role("button", name="Delete").click()
     expect(page.locator(".sidebar .batch-list li")).to_have_count(1)
     expect(page).to_have_url(re.compile(r"#/batches/tweets-fake-2$"))

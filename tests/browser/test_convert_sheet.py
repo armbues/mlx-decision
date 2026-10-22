@@ -56,7 +56,7 @@ def test_convert_a_model_then_stop_it(studio, page):
     expect(page.locator(".toast")).to_contain_text("Convert my-copy: the copy shows up in Models")
     row = page.locator(".mrow.mjob")
     expect(row).to_contain_text("8-bit copy of tiny-clef")
-    expect(page.locator(".banner")).to_contain_text("Convert my-copy has the GPU")
+    expect(page.locator(".toolbar .activity")).to_contain_text("Convert my-copy has the GPU")
     expect(inspector_convert(page)).to_be_disabled()  # one GPU job at a time
     job = next(iter(studio.app.state.jobs.jobs.values()))
     output = (studio.workspace / "models" / "my-copy").resolve()

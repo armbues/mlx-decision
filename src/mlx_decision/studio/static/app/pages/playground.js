@@ -6,7 +6,7 @@ import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { MenuButton, MenuHeader, MenuItem, MenuNote, MenuSeparator } from "../components/menu.js";
 import { openDownload } from "../models/download.js";
-import { clock, duration, plural } from "../format.js";
+import { NOT_THIS_MAC, clock, duration, onThisMac, plural } from "../format.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
 import { Answers, shownBatch } from "../playground/answers.js";
@@ -86,11 +86,11 @@ function SetsList() {
     <div class="sb-sec">
       <h3>
         Question Sets
-        <button aria-label="New question set" title=${`New Question Set (${SHORTCUTS.newSet})`} onClick=${files.newSet}>
+        <button aria-label="New question set" title=${`New Question Set… (${SHORTCUTS.newSet})`} onClick=${files.newSet}>
           <${icons.Plus} />
         </button>
       </h3>
-      ${list && list.length === 0 && html`<p class="sb-empty">No sets yet</p>`}
+      ${list && list.length === 0 && html`<p class="sb-empty">No question sets yet</p>`}
       <ul class="sb-list">
         ${(list ?? []).map(
           (item) => {
@@ -184,8 +184,8 @@ function exampleProblem(problem) {
 
 const status = computed(() => {
   if (models.value && models.value.length === 0)
-    return { text: html`No models yet · Download one in Models (${SHORTCUTS.download})` };
-  if (sets.value && setName.value === null) return { text: "No question set yet" };
+    return { text: html`No models yet · Download a Model… (${SHORTCUTS.download})` };
+  if (sets.value && setName.value === null) return { text: "No question sets yet" };
   if (entry.value?.error) return { icon: "warn", text: entry.value.error };
   if (!built.value || !modelName.value) return null;
   const flight = running.value;
@@ -215,17 +215,19 @@ const status = computed(() => {
     if (batch?.done) {
       const answered = batch.rows.filter((row) => row.run);
       const total = answered.reduce((sum, row) => sum + (row.run.latency_ms ?? 0), 0);
+      const unit = isDataset(setName.value) ? "row" : "example";
       const count = answered.length === batch.rows.length
-        ? plural(answered.length, "example")
-        : `${answered.length} of ${plural(batch.rows.length, "example")}`;
+        ? plural(answered.length, unit)
+        : `${answered.length} of ${plural(batch.rows.length, unit)}`;
       return {
         icon: justAnswered.value ? "ok" : null,
         text: html`<b>${modelName.value}</b> answered ${count} in ${duration(total)} · ${clock(batch.shown.time)}`,
       };
     }
     const count = entry.value.draft.examples.length;
+    const unit = isDataset(setName.value) ? "row" : "example";
     return {
-      text: html`Run All sends <b>${plural(questionCount.value, "question")}</b> about <b>${count} examples</b> to <b>${modelName.value}</b>${loads}`,
+      text: html`Run All sends <b>${plural(questionCount.value, "question")}</b> about <b>${plural(count, unit)}</b> to <b>${modelName.value}</b>${loads}`,
     };
   }
   const result = lastRun.value;
@@ -328,7 +330,7 @@ function MoreMenu() {
       <${MenuItem} right=${SHORTCUTS.import} sub="A -q questions file or a whole request body" onSelect=${files.importSet}>Import Questions…<//>
       <${MenuSeparator} />
       <${MenuItem} sub=${edited.value ? "The saved file, without your edits" : null} onSelect=${files.exportSet}>Export<//>
-      <${MenuItem} onSelect=${files.reveal}>Show in Workspace Folder<//>
+      <${MenuItem} disabled=${!onThisMac} sub=${onThisMac ? null : NOT_THIS_MAC} onSelect=${files.reveal}>Show in Finder<//>
       <${MenuSeparator} />
       <${MenuItem} onSelect=${() => files.deleteSet()}>Delete…<//>
     <//>
@@ -442,7 +444,7 @@ function Centre() {
               ? html`<div class="empty-actions"><button class="btn" onClick=${files.newSet}>New Question Set…</button></div>`
               : !data && current.status
                 ? html`<div class="empty-actions">
-                    <button class="btn" onClick=${files.reveal}>Show in Finder</button>
+                    <button class="btn" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${files.reveal}>Show in Finder</button>
                     <button class="btn" onClick=${() => files.deleteSet()}>Delete…</button>
                   </div>`
                 : null

@@ -246,7 +246,7 @@ def test_delete_asks_naming_the_runs_then_removes_the_file_and_history(studio, p
     run_set(page, studio, "ticket-triage")
     pick(page, MORE, "Delete…")
     sheet = page.locator(".sheet")
-    expect(sheet).to_contain_text("Delete ticket-triage?")
+    expect(sheet).to_contain_text("Delete the question set ticket-triage?")
     expect(sheet).to_contain_text("1 run")
     sheet.locator(".btn.danger").click()
     expect(sheet).to_have_count(0)
@@ -281,7 +281,7 @@ def test_every_sets_row_has_a_delete_button_shown_on_hover(studio, page):
 
     # A set that is not open: deleted, the open one stays open.
     delete.click()
-    expect(page.locator(".sheet")).to_contain_text("Delete ticket-triage?")
+    expect(page.locator(".sheet")).to_contain_text("Delete the question set ticket-triage?")
     page.locator(".sheet .btn.danger").click()
     expect(page.locator(".sheet")).to_have_count(0)
     expect(sidebar_item(page, "ticket-triage")).to_have_count(0)

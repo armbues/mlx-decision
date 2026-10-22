@@ -23,7 +23,7 @@ export function deleteWhyNot(model) {
 export function confirmDeleteModel(model) {
   const size = model.disk_bytes != null ? ` (${gigabytes(model.disk_bytes)})` : "";
   openSheet({
-    title: `Delete ${model.name}?`,
+    title: `Delete the model ${model.name}?`,
     purpose: html`Its folder <code>${model.path}</code>${size} is deleted, after it is unloaded. This cannot be undone.`,
     actions: [
       {
@@ -38,7 +38,7 @@ export function confirmDeleteModel(model) {
             return;
           }
           closeSheet();
-          toast(`Deleted ${model.name}`);
+          toast(`Deleted the model ${model.name}`);
           if (route.value.page === "models" && route.value.item === model.name) navigate("models");
           loadModels();
         },

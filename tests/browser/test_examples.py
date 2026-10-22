@@ -192,12 +192,12 @@ def test_a_problem_the_live_check_finds_blocks_run_all(studio, page):
 def test_removing_examples_keeps_one(studio, page):
     open_two_examples(page, studio)
     chip(page, "Refund ask").click()
-    example_menu(page, "Remove")
+    example_menu(page, "Remove Example")
     expect(chips(page)).to_have_text(["Example"])
     expect(page.locator(".run-btn")).to_have_text("Run")
 
     page.locator(".ex-chip.on .ex-more").click()
-    expect(menu_item(page, "Remove")).to_be_disabled()
+    expect(menu_item(page, "Remove Example")).to_be_disabled()
     page.keyboard.press("Escape")
     expect(page.locator(".menu")).to_have_count(0)
 
@@ -207,7 +207,7 @@ def test_a_reload_brings_back_the_examples_and_their_answers(studio, page):
     run_all(page)
     # An unsaved edit, so the page asks before it goes.
     chip(page, "Refund ask").click()
-    example_menu(page, "Remove")
+    example_menu(page, "Remove Example")
     expect(chips(page)).to_have_count(1)
     page.on("dialog", lambda dialog: dialog.accept())
     page.reload()

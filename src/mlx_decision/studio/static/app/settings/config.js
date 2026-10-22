@@ -214,7 +214,7 @@ export function openChange(item) {
     title: `Change ${key}`,
     purpose: KEYS[key].help,
     Body: () => html`<${Editor} item=${item} />`,
-    note: `Written to ${listed.value?.config.display ?? "the config file"}`,
+    note: `Written to ${listed.value?.config.display ?? "the config file"}.`,
     actions: () => [
       ...(item.in_file != null
         ? [{ label: "Take Out of the File", danger: true, disabled: saving.value, onSelect: () => save(key, null) }]

@@ -32,7 +32,7 @@ const nameProblem = computed(() => {
 
 const blocked = computed(() => {
   const job = gpuJob.value;
-  return job ? `${job.title} is running; one job at a time can use the GPU` : null;
+  return job ? `${job.title} has the GPU: Convert is off until it is done` : null;
 });
 
 function setBits(width) {
@@ -50,9 +50,9 @@ async function start() {
       body: { kind: "convert", model, bits: bits.value, name: name.value.trim() },
     });
     closeSheet();
-    toast(`${job.title}: the copy shows up in Models when it is done`);
+    toast(`Started ${job.title}: the copy shows up in Models when it is done`);
   } catch (error) {
-    toast(`Could not convert ${model}: ${error.message}`);
+    toast(`Could not start the conversion: ${error.message}`);
   } finally {
     starting.value = false;
   }
@@ -124,9 +124,9 @@ export async function openConvert(model) {
   setBits(8);
   openSheet({
     title: `Convert ${model}`,
-    purpose: "A quantized copy that loads and runs with less memory, as mlx-decision convert -q makes it. It goes into the workspace's models/ folder and shows up in Models when it is done.",
+    purpose: "A quantized copy that needs less memory.",
     Body,
-    note: "Stop is in the Jobs list.",
+    note: "Goes into the workspace's models/ folder. In a terminal, mlx-decision convert -q does the same.",
     actions: () => [
       {
         label: "Convert",

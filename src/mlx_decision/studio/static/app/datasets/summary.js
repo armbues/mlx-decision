@@ -3,7 +3,7 @@
 // inspector, for the dataset the fit form has picked.
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
-import { fileSize, plural, shellWord } from "../format.js";
+import { NOT_THIS_MAC, fileSize, onThisMac, plural, shellWord } from "../format.js";
 import { described, describe, modifiedOf, summaryKey } from "../store/data.js";
 import { revealData } from "./files.js";
 
@@ -37,7 +37,7 @@ export function Values({ summary, column, onPick = null, active = null }) {
         const classes = [count ? "" : "none", value === active ? "on" : ""].filter(Boolean).join(" ");
         return html`<li key=${value} class=${classes}>${onPick
           ? html`<button aria-pressed=${value === active ? "true" : "false"} disabled=${!count}
-              title=${count ? `Show the examples whose ${column} is ${value}` : "No example has this value"}
+              title=${count ? `Show the rows whose ${column} is ${value}` : "No row has this value"}
               onClick=${() => onPick(value)}>${inner}</button>`
           : inner}</li>`;
       })}
@@ -61,14 +61,14 @@ export function Labels({ question, total, onPick = null, active = null }) {
     return html`<li key=${label} class=${classes}>
       ${onPick
         ? html`<button aria-pressed=${label === active ? "true" : "false"} disabled=${!count}
-            title=${count ? `Show the examples labelled ${label}` : "No example has this label"}
+            title=${count ? `Show the rows labelled ${label}` : "No row has this label"}
             onClick=${() => onPick(label)}>${inner}</button>`
         : inner}
     </li>`;
   };
   return html`
     <ul class=${`label-counts${onPick ? " can-pick" : ""}`}>${options.map(row)}</ul>
-    <small>${question.labelled.toLocaleString("en")} of ${plural(total, "example")} labelled</small>
+    <small>${question.labelled.toLocaleString("en")} of ${plural(total, "row")} labelled</small>
   `;
 }
 
@@ -80,7 +80,7 @@ export function DatasetSummary({ name, split = null }) {
   if (summary.error) return html`<p class="warn-text">${summary.error}</p>`;
   return html`
     <div class="idet data-inspector">
-      <div class="idet-head"><div><h2 class="mono">${name}</h2><p>${summary.kind === "folder" ? `${summary.split} split · ` : ""}${plural(summary.examples, "example")} · ${plural(summary.questions.length, "question")}</p></div></div>
+      <div class="idet-head"><div><h2 class="mono">${name}</h2><p>${summary.kind === "folder" ? `${summary.split} split · ` : ""}${plural(summary.examples, "row")} · ${plural(summary.questions.length, "question")}</p></div></div>
       ${summary.missing?.length > 0 && html`<p class="warn-text">Not ready for a fit: ${summary.missing.join("; ")}</p>`}
       ${summary.questions.map(
         (question) => html`<section class="igroup" key=${question.id}><h4>${question.id} · ${question.type}</h4><dl>
@@ -117,7 +117,7 @@ export function FileGroup({ summary }) {
   return html`
     <section class="igroup file-group"><h4>${folder ? "Folder" : "File"}</h4><dl>
       <div class="kv"><dt>Path</dt><dd><code title=${summary.path}>${summary.display}${folder ? "/" : ""}</code>
-        <button class="btn sm" onClick=${() => revealData(summary.name)}>Show in Finder</button></dd></div>
+        <button class="btn sm" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => revealData(summary.name)}>Show in Finder</button></dd></div>
       ${folder && html`<div class="kv"><dt>Split</dt><dd><code>${summary.split}.jsonl</code></dd></div>`}
       <div class="kv"><dt>Size</dt><dd>${fileSize(summary.bytes)}</dd></div>
       <div class="kv"><dt>Used by</dt><dd>

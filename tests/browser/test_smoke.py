@@ -11,7 +11,7 @@ pytestmark = pytest.mark.browser
 
 def test_edit_a_question_run_it_and_see_the_answer(fake_web, page):
     page.goto(fake_web.url)
-    expect(page.get_by_text("No question sets yet")).to_be_visible()
+    expect(page.locator(".centre .empty").get_by_text("No question sets yet")).to_be_visible()
 
     # A new set, named in the sheet.
     page.get_by_role("button", name="New Question Set…").first.click()

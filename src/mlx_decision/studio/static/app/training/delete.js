@@ -18,13 +18,18 @@ const withModel = signal(false);
 const modelOf = (job) =>
   job.kind === "fit" && job.outcome === "done" && job.output ? ((models.value ?? []).find((model) => model.path === job.output) ?? null) : null;
 
+// "fit mine" or "evaluation of fake against fake-2", as a sheet or toast names it.
+const kindName = (job) =>
+  job.kind === "eval" ? `evaluation of ${job.title.replace(/^Evaluate /, "")}` : `fit ${job.details?.name ?? job.title.replace(/^Fit /, "")}`;
+
 export function confirmDeleteRun(job) {
   const model = modelOf(job);
   withModel.value = false;
   const what = job.kind === "eval" ? "evaluation" : "fit";
+  const named = kindName(job);
   openSheet({
-    title: `Delete ${job.title}?`,
-    purpose: `The ${what}'s entry goes from the History, with its progress and report.${model ? "" : " What it wrote stays."}`,
+    title: `Delete the ${named}?`,
+    purpose: `The ${what}'s entry is deleted from Training's History, with its progress and report. This cannot be undone.${model ? "" : " What it wrote stays."}`,
     Body: model
       ? () => html`<label class="check">
           <input type="checkbox" checked=${withModel.value} onChange=${(event) => (withModel.value = event.target.checked)} />
@@ -48,7 +53,7 @@ export function confirmDeleteRun(job) {
           forgetJob(job.id);
           if (route.value.page === "training" && route.value.item === job.id) navigate("training");
           loadFits();
-          toast(both ? `Deleted ${job.title} and ${model.name}` : `Deleted ${job.title}`);
+          toast(both ? `Deleted the ${named} and the model ${model.name}` : `Deleted the ${named}`);
         },
       },
     ],

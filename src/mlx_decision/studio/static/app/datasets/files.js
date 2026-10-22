@@ -8,7 +8,7 @@ import { api } from "../api.js";
 import * as icons from "../components/icons.js";
 import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
 import { stopJob } from "../store/jobs.js";
-import { fileSize, plural, shellWord } from "../format.js";
+import { NOT_THIS_MAC, fileSize, onThisMac, plural, shellWord } from "../format.js";
 import { href, navigate, route } from "../router.js";
 import { reveal } from "../settings/places.js";
 import { dataFiles, dataFolder, datasetOf, forget, nameTaken, readerOf, reloadData } from "../store/data.js";
@@ -64,7 +64,7 @@ async function send(file, name, text, columns = null) {
     navigate("datasets", result.name);
     const where = result.kind === "folder" ? `data/${result.name}/` : `data/${result.name}.jsonl`;
     const more = result.missing?.length ? " · no questions yet" : "";
-    toast(`Added ${file.name} as ${where} · ${plural(result.examples, "example")}${more}`);
+    toast(`Added ${file.name} as ${where} · ${plural(result.examples, "row")}${more}`);
   } catch (error) {
     if (error.status === 409) askName(file, name, text, error.message, columns);
     else if (error.status === 413) tooLarge(file);
@@ -85,7 +85,7 @@ async function askColumns(file, text, format) {
   try {
     found = await api("/data/columns", { method: "POST", body: { text, format } });
   } catch (error) {
-    toast(`Cannot read ${file.name}: ${error.message}`);
+    toast(`Could not read ${file.name}: ${error.message}`);
     return;
   }
   described.value = found;
@@ -103,8 +103,8 @@ async function askColumns(file, text, format) {
     return nameTaken(value);
   };
   openSheet({
-    title: `Add ${file.name}`,
-    purpose: `${plural(found.rows, "row")}: one column becomes the state, another holds the labels. The dataset arrives without questions: you write them afterwards, and say what each label value means.`,
+    title: "Add a Dataset",
+    purpose: `${file.name}, ${plural(found.rows, "row")}: one column becomes the state, another holds the labels. The dataset arrives without questions: you write them afterwards, and say what each label value means.`,
     Body: () => {
       const info = described.value;
       const values = info.label_columns.find((column) => column.name === valueColumn.value);
@@ -214,7 +214,7 @@ function tooLarge(file, upload = null) {
         : html`<div class="name-field too-large">
             <span>Folder</span>
             <code class="mono" title=${folder?.folder ?? ""}>${folder?.display ?? "data/"}</code>
-            <button class="btn sm" onClick=${() => reveal("data")}>Show in Finder</button>
+            <button class="btn sm" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => reveal("data")}>Show in Finder</button>
           </div>`,
     done: "OK",
   });
@@ -229,7 +229,7 @@ export function deleteData(name) {
   const where = folder ? `data/${name}/` : `data/${name}.jsonl`;
   const splits = folder ? ` (${plural(item.splits.length, "split")})` : "";
   openSheet({
-    title: `Delete ${name}?`,
+    title: `Delete the dataset ${name}?`,
     // A fit or an evaluation that reads it: why Delete is off, with its Stop.
     Body: () => {
       const reader = readerOf(name);
@@ -258,7 +258,7 @@ export function deleteData(name) {
           forget(name);
           dataFiles.value = (dataFiles.value ?? []).filter((item) => item.name !== name);
           if (pickedDataset() === name) navigate("datasets");
-          toast(`Deleted ${where}`);
+          toast(`Deleted the dataset ${name}`);
         },
       },
     ],
@@ -290,7 +290,7 @@ function Row({ item, picked }) {
          title=${[problem ?? (splits > 1 ? `${item.name}: ${item.splits.map((split) => split.name).join(", ")}` : item.name), hiddenText(item)].filter(Boolean).join(" · ")}>
         <${icons.File} /><span class="label">${item.name}</span>
         ${problem
-          ? html`<span class="mark" aria-label="Not ready for a fit"></span>`
+          ? html`<span class="mark-warn" role="img" aria-label="Not ready for a fit"><${icons.StatusIcon} kind="warn" /></span>`
           : splits > 1 && html`<span class="count">${splits}</span>`}
       </a>
       <button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"

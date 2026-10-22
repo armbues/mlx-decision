@@ -16,7 +16,7 @@ import { clock, duration, plural } from "../format.js";
 import { workspaceChange } from "../stream.js";
 import { toast } from "../store/ui.js";
 import { answerMax, answerValue, requestChanges, shownValue, summary, touched, valueLabel, wordDiff } from "./changes.js";
-import { FIRST_EXAMPLE, exampleByName, replaceQuestions, selectExample } from "./draft.js";
+import { FIRST_EXAMPLE, TYPE_LABELS, exampleByName, replaceQuestions, selectExample } from "./draft.js";
 import { CompareTable } from "./compare.js";
 import { Grid } from "./grid.js";
 import {
@@ -277,7 +277,7 @@ function FirstQuestions({ request }) {
   return Object.entries(request.questions ?? {}).map(
     ([id, question]) => html`
       <div class="dline" key=${id}>
-        <span class="where">${id} · ${question.type}</span>
+        <span class="where">${id} · ${TYPE_LABELS[question.type] ?? question.type}</span>
         <span class="txt">${typeof question.instructions === "string" ? question.instructions : "(no instructions)"}</span>
       </div>
     `,
@@ -441,7 +441,7 @@ function deleteEntry(entry, what) {
   const runsText = entry.lines.length > 1 ? ` and its ${entry.lines.length} runs` : "";
   openSheet({
     title: `Delete run #${entry.number}?`,
-    purpose: `${what}, ${clock(entry.lines[0].time)}${runsText}: taken out of ${historyFile(set)}. The numbers of later runs go down by one.`,
+    purpose: `${what}, ${clock(entry.lines[0].time)}${runsText}: deleted from ${historyFile(set)}. This cannot be undone; the numbers of later runs go down by one.`,
     actions: [
       {
         label: "Delete",
@@ -476,11 +476,12 @@ function clearHistory() {
   const count = lines.value?.length ?? 0;
   openSheet({
     title: `Clear the history of ${datasetOfDocument(set) ?? set}?`,
-    purpose: `Deletes ${historyFile(set)} (${plural(count, "run")}) and the images no other history uses. The ${isDataset(set) ? "dataset" : "set"} itself stays.`,
+    purpose: `Deletes ${historyFile(set)} (${plural(count, "run")}) and the images no other history uses. This cannot be undone; the ${isDataset(set) ? "dataset" : "set"} itself stays.`,
     actions: [
       {
         label: "Clear History",
         primary: true,
+        danger: true,
         onSelect: async () => {
           try {
             await api(`/history/${encodeURIComponent(set)}`, { method: "DELETE" });

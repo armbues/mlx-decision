@@ -40,15 +40,15 @@ const status = computed(() => {
     return evalModel.value && data ? { text: html`Evaluate <b>${evalModel.value}</b> on <b>${data}</b>` } : null;
   }
   const data = fitData.value;
-  if (!data) return dataFiles.value ? { text: "No datasets yet · download or add one on the Datasets page" } : null;
+  if (!data) return dataFiles.value ? { text: "No datasets yet" } : null;
   const plan = planned.value;
   if (!plan || plan.data !== data) return { text: html`Fit on <b>${data}</b>` };
-  return { text: html`Fit <b>${plan.base}</b> on <b>${data}</b> · ${plural(plan.splits.examples, "example")}` };
+  return { text: html`Fit <b>${plan.base}</b> on <b>${data}</b> · ${plural(plan.splits.examples, "row")}` };
 });
 
 const action = computed(() =>
   shown()
-    ? { label: "New Fit", icon: false, title: "A new fit: the form", run: () => navigate("training") }
+    ? { label: "New Fit…", icon: false, title: "A new fit: the form", run: () => navigate("training") }
     : evaluating()
       ? {
           label: "Start Evaluation",
@@ -70,15 +70,15 @@ function Form() {
   useEffect(() => onKey("run", () => startFit()), []);
   const list = dataFiles.value;
   return html`
-    <div class="pane-head"><div><h1>New Fit</h1><p>Teach a model your task from labelled examples. The result is a new model next to its base.</p></div></div>
+    <div class="pane-head"><div><h1>New Fit</h1><p>Teach a model your task from labelled rows. The result is a new model next to its base.</p></div></div>
     ${list?.length
       ? html`<${FitForm} />`
       : list &&
         html`<div class="empty">
           <b>No datasets yet</b>
-          <span>A fit learns from a dataset: labelled examples in the workspace's data/ folder. Get a public dataset or add a file of your own; both are on the <a href=${href("datasets")}>Datasets</a> page.</span>
+          <span>A fit learns from a dataset. Download one or add a file of your own.</span>
           <span class="empty-actions">
-            <button class="btn" onClick=${openGetDataset}>Download a Dataset…</button>
+            <button class="btn primary" onClick=${openGetDataset}>Download a Dataset…</button>
             <button class="btn" onClick=${uploadData}>Add a Dataset…</button>
           </span>
         </div>`}
@@ -88,11 +88,18 @@ function Form() {
 function Evaluate() {
   useEffect(() => onKey("run", () => startEval()), []);
   return html`
-    <div class="pane-head"><div><h1>New Evaluation</h1><p>Score a model on labelled examples, and another beside it: a fitted model against its base, or two bases.</p></div></div>
+    <div class="pane-head"><div><h1>New Evaluation</h1><p>Score a model on labelled rows, and another beside it: a fitted model against its base, or two bases.</p></div></div>
     ${dataFiles.value?.length
       ? html`<${EvalForm} />`
       : dataFiles.value &&
-        html`<div class="empty"><b>No datasets yet</b><span>An evaluation scores models on a dataset; get one or add a file of your own on the <a href=${href("datasets")}>Datasets</a> page.</span></div>`}
+        html`<div class="empty">
+          <b>No datasets yet</b>
+          <span>An evaluation scores models on a dataset. Download one or add a file of your own.</span>
+          <span class="empty-actions">
+            <button class="btn primary" onClick=${openGetDataset}>Download a Dataset…</button>
+            <button class="btn" onClick=${uploadData}>Add a Dataset…</button>
+          </span>
+        </div>`}
   `;
 }
 
@@ -108,7 +115,7 @@ function Centre() {
 function rowText(job) {
   if (job.state !== "ended") {
     const { fraction } = progress(job);
-    return job.stop_requested ? "Stopping" : fraction == null ? "Running" : `${Math.floor(fraction * 100)}%`;
+    return job.stop_requested ? "Stopping…" : fraction == null ? "Running" : `${Math.floor(fraction * 100)}%`;
   }
   return { done: "", cancelled: "Stopped", interrupted: "Interrupted" }[job.outcome] ?? "Failed";
 }
@@ -123,8 +130,8 @@ function FitList() {
   return html`
     <div class="sb-sec">
       <ul class="sb-list new-list">
-        <li><a class="sb-item" href=${href("training")} aria-current=${form === "fit" ? "true" : undefined}><${icons.Plus} /><span class="label">New Fit</span></a></li>
-        <li><a class="sb-item" href=${href("training", EVALUATE)} aria-current=${form === EVALUATE ? "true" : undefined}><${icons.Checklist} /><span class="label">New Evaluation</span></a></li>
+        <li><a class="sb-item" href=${href("training")} aria-current=${form === "fit" ? "true" : undefined}><${icons.Plus} /><span class="label">New Fit…</span></a></li>
+        <li><a class="sb-item" href=${href("training", EVALUATE)} aria-current=${form === EVALUATE ? "true" : undefined}><${icons.Checklist} /><span class="label">New Evaluation…</span></a></li>
       </ul>
     </div>
     <div class="sb-sec">

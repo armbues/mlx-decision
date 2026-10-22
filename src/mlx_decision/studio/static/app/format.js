@@ -1,5 +1,10 @@
 // Numbers and words as the Studio shows them.
 
+// Whether this browser runs on the Studio's Mac: only then does Finder open
+// (the Studio refuses it otherwise). Show in Finder is off elsewhere.
+export const onThisMac = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(location.hostname);
+export const NOT_THIS_MAC = "Finder opens only for a browser on this Mac";
+
 export function gigabytes(bytes) {
   if (bytes == null) return "";
   const value = bytes / 1e9;

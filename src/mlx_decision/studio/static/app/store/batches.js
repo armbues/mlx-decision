@@ -70,9 +70,9 @@ export function applyBatchProgress({ type, name, ...fields }) {
 }
 
 function endedText(batch) {
-  if (batch.state === "done") return `The batch ${batch.name} is done`;
-  if (batch.state === "stopped") return `The batch ${batch.name} stopped${batch.message ? `: ${batch.message}` : ""}`;
-  return `The batch ${batch.name} failed${batch.message ? `: ${batch.message}` : ""}`;
+  if (batch.state === "done") return `Batch ${batch.name} is done`;
+  if (batch.state === "stopped") return `Batch ${batch.name} stopped${batch.message ? `: ${batch.message}` : ""}`;
+  return `Batch ${batch.name} failed${batch.message ? `: ${batch.message}` : ""}`;
 }
 
 // What a batch's row in a list says: how far it got.

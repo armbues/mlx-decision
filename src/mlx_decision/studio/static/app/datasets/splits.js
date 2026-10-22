@@ -16,6 +16,13 @@ export const ROLES = [
   [PARTS, "Cut into parts", "a share for each role, drawn by label"],
 ];
 export const ROLE_WORDS = Object.fromEntries(ROLES.map(([id, label, words]) => [id, { label, words }]));
+
+// A split as the pickers list it: "train · 30 · Train" (its rows when known,
+// its role's label).
+export const splitOption = (split) =>
+  [split.name, split.examples != null ? split.examples.toLocaleString("en") : null, split.role ? (ROLE_WORDS[split.role]?.label ?? split.role) : null]
+    .filter(Boolean)
+    .join(" · ");
 const PART_ROLES = ["train", "report", "evaluate"];
 const DEFAULT_PARTS = { train: "80", report: "10", evaluate: "10" };
 

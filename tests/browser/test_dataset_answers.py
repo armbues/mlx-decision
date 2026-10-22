@@ -148,9 +148,7 @@ def test_run_all_shows_the_expected_answers_and_agreement(tweets, page):
     page.locator(".run-btn").click()
     grid = page.locator(".ex-grid")
     expect(grid.locator("tbody tr")).to_have_count(40, timeout=20_000)
-    expect(page.locator(".toolbar .activity")).to_contain_text(
-        "answered 40 examples", timeout=20_000
-    )
+    expect(page.locator(".toolbar .activity")).to_contain_text("answered 40 rows", timeout=20_000)
     expect(grid.locator("thead small.agree")).to_contain_text(" of 40 agree")
     expect(grid.locator("tbody tr").first.locator("td .x")).to_have_text("expects no")
     expect(grid.locator("tbody tr", has_text="t1").first.locator("td .x")).to_have_text(
@@ -196,9 +194,7 @@ def test_set_the_rest_and_restore_keeps_the_map(tweets, page):
     pick_model(page, "fake")
     question = mapped_yes_no(page)
     page.locator(".run-btn").click()
-    expect(page.locator(".toolbar .activity")).to_contain_text(
-        "answered 40 examples", timeout=20_000
-    )
+    expect(page.locator(".toolbar .activity")).to_contain_text("answered 40 rows", timeout=20_000)
     question.locator(".ins").fill("Is it about central banks?")
     page.locator(".inspector").get_by_role("tab", name="History").click()
     page.locator(".hist-list .hrow").first.click()

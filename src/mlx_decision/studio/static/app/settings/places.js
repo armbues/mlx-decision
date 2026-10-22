@@ -22,7 +22,7 @@ export async function reveal(place) {
   try {
     await api("/places/reveal", { method: "POST", body: { place } });
   } catch (error) {
-    toast(error.message);
+    toast(`Could not show it in Finder: ${error.message}`);
   }
 }
 

@@ -39,9 +39,10 @@ const action = computed(() => ({
 function Empty() {
   const none = dataFiles.value && dataFiles.value.length === 0;
   return html`
+    <div class="pane-head"><div><h1>Batches</h1></div></div>
     <div class="empty batch-empty">
       <b>No batches yet</b>
-      <span>A batch answers a dataset's rows with a model, one after another, while the Playground and the API go on answering. You see each row's answers, export them, and with labels how often the model is right. Its answers can become a new dataset another model learns from.</span>
+      <span>A batch answers a dataset's rows with a model and, with labels, shows how often it is right.</span>
       <span class="empty-actions">${
         none
           ? html`<button class="btn primary" onClick=${openGetDataset}>Download a Dataset…</button>

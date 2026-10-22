@@ -9,8 +9,8 @@
 import { html } from "htm/preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api.js";
-import { Confusion, ticks } from "../components/charts.js";
-import { plural, shellWord } from "../format.js";
+import { Confusion, METRICS, ticks } from "../components/charts.js";
+import { NOT_THIS_MAC, onThisMac, plural, shellWord } from "../format.js";
 import { DATASET_DOCUMENT, chooseModel, compareOnly } from "../playground/session.js";
 import { href } from "../router.js";
 import { fitById, opened, openFit } from "../store/fits.js";
@@ -29,12 +29,6 @@ const STEPS = [
   ["write", "Write"],
 ];
 const LABELS = { ...Object.fromEntries(STEPS), load: "Load", score: "Score" };
-const METRICS = [
-  ["accuracy", "Accuracy", true],
-  ["macro_f1", "Macro-F1", true],
-  ["ece", "Calibration error (ECE)", false],
-  ["mae", "Mean error (MAE, levels)", false],
-];
 
 // "42 s", "3 min 5 s", "1 h 12 min", as the CLI writes it.
 export function seconds(value) {
@@ -85,7 +79,7 @@ function StepLine({ events }) {
   const last = [...events].reverse().find((event) => event && event.step != null && event.total);
   if (!last) return html`<p class="step-line">Starting…</p>`;
   const fraction = Math.min(1, last.step / last.total);
-  const label = last.stage === "features" ? "Reading the examples" : (LABELS[last.stage] ?? last.stage);
+  const label = last.stage === "features" ? "Reading the rows" : (LABELS[last.stage] ?? last.stage);
   const parts = [
     `${last.step.toLocaleString("en")} of ${last.total.toLocaleString("en")}`,
     `${Math.floor(fraction * 100)}%`,
@@ -284,7 +278,7 @@ function QuestionReport({ id, entry, where }) {
   const keys = METRICS.filter(([key]) => entry.before[key] != null || entry.after[key] != null);
   return html`
     <div class="q-report" key=${id}>
-      <h3><code>${id}</code> · ${plural(entry.before.n, "example")} ${where}</h3>
+      <h3><code>${id}</code> · ${plural(entry.before.n, "row")} ${where}</h3>
       <table class="report-table">
         <thead><tr><th></th><th class="r">Before</th><th class="r">After</th><th class="r">Change</th></tr></thead>
         <tbody>${keys.map(
@@ -334,7 +328,7 @@ function Report({ job }) {
   const training = report.training ?? {};
   const command = (job.command ?? []).map(shellWord).join(" ");
   return html`
-    <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">scored ${where}, before and after the fit</span></div>
+    <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">scored ${where === "kept aside" ? "on the rows kept aside" : where.replace(/^in /, "on ")}, before and after the fit</span></div>
       <div class="group report-group">
         ${Object.entries(report.questions ?? {}).map(([id, entry]) => html`<${QuestionReport} id=${id} entry=${entry} where=${where} />`)}
         ${training.best_epoch != null &&
@@ -346,7 +340,7 @@ function Report({ job }) {
       <div class="group"><dl>
         <div class="kv"><dt>Name</dt><dd><code>${name}</code>${report.seconds?.total != null && html`<small>Took ${seconds(report.seconds.total)}</small>`}</dd></div>
         <div class="kv"><dt>Saved in</dt><dd><code class="path" title=${path}>${path}</code>
-          <button class="btn sm" onClick=${() => revealFit(job.id)}>Show in Finder</button></dd></div>
+          <button class="btn sm" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => revealFit(job.id)}>Show in Finder</button></dd></div>
         <div class="kv"><dt>Same in a terminal</dt><dd><code class="command">${command}</code></dd></div>
       </dl></div>
     </section>
@@ -380,14 +374,14 @@ function EvalReport({ job }) {
   const ids = [...new Set(scored.flatMap((model) => Object.keys(model.questions)))];
   const command = (job.command ?? []).map(shellWord).join(" ");
   return html`
-    <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">${plural(data.examples, "example")} in ${job.details?.data}</span></div>
+    <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">${plural(data.examples, "row")} in ${job.details?.data}</span></div>
       <div class="group report-group">
         ${ids.map((id) => {
           const a = first.questions[id];
           const b = second?.questions[id];
           const keys = METRICS.filter(([key]) => a?.[key] != null || b?.[key] != null);
           return html`<div class="q-report" key=${id}>
-            <h3><code>${id}</code> · ${plural((a ?? b).n, "example")} labelled</h3>
+            <h3><code>${id}</code> · ${plural((a ?? b).n, "row")} labelled</h3>
             <table class="report-table eval-table">
               <thead><tr><th></th><th class="r"><code>${first.name}</code></th>${second && html`<th class="r"><code>${second.name}</code></th><th class="r">Difference</th>`}</tr></thead>
               <tbody>
@@ -436,7 +430,7 @@ export function FitView({ id }) {
     openFit(id);
   }, [id]);
   const job = fitById(id);
-  if (!job) return html`<div class="empty"><b>Nothing named ${id}</b><span>It may be from another workspace. Pick a fit or an evaluation on the left.</span></div>`;
+  if (!job) return html`<div class="empty"><b>No fit or evaluation named ${id}</b><span>It may have been deleted, or be from another workspace. Pick another on the left.</span></div>`;
   const evaluation = job.kind === "eval";
   const current = opened.value.id === id ? opened.value : { events: [] };
   const events = current.events.filter(Boolean);

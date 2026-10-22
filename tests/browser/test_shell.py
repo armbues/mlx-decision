@@ -17,9 +17,11 @@ def test_a_job_holding_the_gpu_turns_runs_off_and_says_so(studio, page):
 
     hold_gpu(studio, "fit-7")
     banner = page.locator(".banner")
-    expect(banner).to_contain_text("fit-7 has the GPU. Run is off until it is done")
-    expect(banner).to_contain_text("the API answers 503 busy")
-    expect(page.locator(".activity")).to_contain_text("nothing else runs until it is done")
+    expect(banner).to_contain_text("Run is off until fit-7 is done.")
+    expect(page.locator(".activity")).to_contain_text("fit-7 has the GPU")
+    expect(page.locator(".sidebar .serving")).to_have_attribute(
+        "title", "fit-7 has the GPU: the API answers 503 until it is done"
+    )
     expect(page.locator(".sidebar")).to_contain_text("API busy")
     expect(run).to_be_disabled()
     expect(run).to_have_attribute("title", "fit-7 has the GPU: Run is off until it is done")
@@ -34,7 +36,7 @@ def test_a_job_holding_the_gpu_turns_runs_off_and_says_so(studio, page):
 
     # The Models page says what it means there.
     page.goto(f"{studio.base}/#/models")
-    expect(banner).to_contain_text("Load and Unload are off until it is done")
+    expect(banner).to_contain_text("Load and Unload are off until fit-7 is done.")
 
     release_gpu(studio, "fit-7")
     expect(banner).to_have_count(0)
@@ -61,7 +63,7 @@ def test_page_shortcuts_do_not_reach_chrome_while_a_sheet_is_open(studio, page):
     page.keyboard.press("Meta+Shift+s")
     page.keyboard.press("Meta+o")
     assert page.evaluate("seen") == [["KeyS", True], ["KeyS", True], ["KeyO", True]]
-    expect(page.locator(".sheet")).to_contain_text("Use This Request Elsewhere")  # still Get Code
+    expect(page.locator(".sheet")).to_contain_text("Get Code")  # still Get Code
     assert studio.set_file("ticket-triage") == saved  # nothing saved
 
 

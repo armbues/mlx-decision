@@ -201,7 +201,7 @@ export function openCode() {
   const c = context();
   const count = c ? plural(Object.keys(c.body.questions).length, "question") : "";
   openSheet({
-    title: "Use This Request Elsewhere",
+    title: "Get Code",
     purpose: c
       ? `${c.dataset ?? c.set} on ${c.model}: ${count} about ${c.many ? c.example.name : "the state"}.`
       : "",

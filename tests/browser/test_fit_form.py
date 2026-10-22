@@ -32,7 +32,9 @@ def test_the_form_and_start_fit(studio, page):
     data = form.locator("#fit-data")
     expect(data.locator("option")).to_have_text(["support", "tickets"])
     expect(data).to_have_value("support")  # the first, until one is picked
-    expect(page.locator(".sidebar .new-list .sb-item")).to_have_text(["New Fit", "New Evaluation"])
+    expect(page.locator(".sidebar .new-list .sb-item")).to_have_text(
+        ["New Fit…", "New Evaluation…"]
+    )
     expect(page.locator(".sidebar .sb-empty", has_text="fits")).to_have_text(
         "No fits or evaluations yet"
     )
@@ -78,7 +80,7 @@ def test_the_form_and_start_fit(studio, page):
     assert job.argv[job.argv.index("--method") + 1] == "calibrate"
     # One GPU job at a time.
     page.locator(".run-btn", has_text="New Fit").click()
-    expect(run).to_have_attribute("title", re.compile("Fit support-calibrated is running"))
+    expect(run).to_have_attribute("title", re.compile("Fit support-calibrated has the GPU"))
     page.locator(".sidebar .job").get_by_role("button", name=re.compile("^Stop ")).click()
     expect(page.locator(".sidebar .job small")).to_have_text("Stopped")
 
@@ -129,14 +131,14 @@ def test_report_on_the_datasets_report_split(studio, page):
     # The dataset's report split, preselected; its evaluate split is not offered.
     expect(report).to_have_value("split:test")
     options = report.locator("option")
-    expect(options).to_have_text(["test (report)", "A share of its train split", "support",
+    expect(options).to_have_text(["test · 12 · Report", "A share of its train split", "support",
                                   "tickets"])  # fmt: skip
     expect(form).to_contain_text("its report split")
     expect(form.locator("#fit-holdout")).to_have_count(0)
     legend = form.locator(".split-legend")
     expect(legend).to_contain_text("12 in test for the report")
     expect(form.locator(".split")).to_have_class(re.compile("other-file"))
-    expect(form).to_contain_text("its train split: 60 examples")
+    expect(form).to_contain_text("its train split: 60 rows")
     shot(page, "fit-report-on")
     expect(form.locator(".fit-labels .line span").first).to_contain_text("20")  # all 60 train
     # Another dataset with other questions: refused, with the reason.

@@ -8,6 +8,7 @@
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
+import { TYPE_LABELS } from "../playground/draft.js";
 import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { ExampleInspector, ExampleTable, filterLabel, filterValue, pickedExample, query, showDataset } from "../datasets/examples.js";
@@ -16,7 +17,7 @@ import { openNewBatch } from "../batches/start.js";
 import { openGetDataset } from "../datasets/get.js";
 import { FileGroup, Labels, Values, useSummary } from "../datasets/summary.js";
 import { ROLE_WORDS } from "../datasets/splits.js";
-import { fileSize, plural } from "../format.js";
+import { NOT_THIS_MAC, fileSize, onThisMac, plural } from "../format.js";
 import { navigate } from "../router.js";
 import { dataFiles, datasetOf, described, summaryKey } from "../store/data.js";
 import { inspectorMode, toast } from "../store/ui.js";
@@ -34,7 +35,7 @@ const status = computed(() => {
   const summary = name ? described.value[summaryKey(name, splitOf(name))] : null;
   if (summary?.examples != null) {
     const split = summary.kind === "folder" ? html` · ${summary.split}` : "";
-    return { text: html`<b>${name}</b>${split} · ${plural(summary.examples, "example")}` };
+    return { text: html`<b>${name}</b>${split} · ${plural(summary.examples, "row")}` };
   }
   if (list.length === 0) return { text: "No datasets yet" };
   return { text: html`<b>${plural(list.length, "dataset")}</b> in data/` };
@@ -49,9 +50,10 @@ const action = computed(() => ({
 
 function Empty() {
   return html`
+    <div class="pane-head"><div><h1>Datasets</h1></div></div>
     <div class="empty ds-empty">
       <b>No datasets yet</b>
-      <span>A dataset holds examples: each a state and its label, split into the examples a fit learns from, those its report is scored on and those kept for an evaluation. Download a public dataset from the Hugging Face Hub, or add a file of your own (training data as JSON lines, or rows of columns).</span>
+      <span>Labelled rows for fits, evaluations and batches. Download a public dataset or add a file of your own.</span>
       <span class="empty-actions">
         <button class="btn primary" onClick=${openGetDataset}>Download a Dataset…</button>
         <button class="btn" onClick=${uploadData}>Add a Dataset…</button>
@@ -64,12 +66,12 @@ function Questions({ summary }) {
   const current = query.value;
   if (summary.questions.length === 0) return null;
   return html`
-    <section class="gsec"><div class="gsec-head"><h2>Questions</h2><span class="tag">Pick a label to see its examples</span></div>
+    <section class="gsec"><div class="gsec-head"><h2>Questions</h2><span class="tag">Pick a label to see its rows</span></div>
       <div class="group ds-questions">
         ${summary.questions.map(
           (question) => html`<div class="ds-question" key=${question.id}>
             <div class="ds-q-text">
-              <b class="mono">${question.id}</b><span class="ds-q-type">${question.type}</span>
+              <b class="mono">${question.id}</b><span class="ds-q-type">${TYPE_LABELS[question.type] ?? question.type}</span>
               ${question.instructions && html`<p>${question.instructions}</p>`}
               ${question.answered_by && html`<small>Answered by the values of <code>${question.answered_by}</code></small>`}
             </div>
@@ -92,7 +94,7 @@ function ValuesSection({ summary }) {
   const current = query.value;
   return html`
     <section class="gsec"><div class="gsec-head"><h2>Label values</h2><span class="tag">${
-      summary.questions.length ? "What the answers are mapped from" : "Pick a value to see its examples"
+      summary.questions.length ? "What the answers are mapped from" : "Pick a value to see its rows"
     }</span></div>
       <div class="group ds-questions">
         ${columns.map(
@@ -118,7 +120,7 @@ function Source({ summary }) {
   const meta = summary.splits.find((split) => split.name === summary.split) ?? {};
   const hub = source.source?.startsWith("hf:");
   const repo = hub ? source.source.slice(3) : source.source;
-  let taken = meta.examples != null ? plural(meta.examples, "example") : "";
+  let taken = meta.examples != null ? plural(meta.examples, "row") : "";
   if (meta.part) taken = html`${Math.round(meta.part * 100)}% of ${meta.split ? html`<code>${meta.split}</code>` : "the rows"}, drawn by label`;
   else if (meta.sample) taken = `a random sample of ${meta.sample.toLocaleString("en")} rows (seed ${meta.seed ?? 0})`;
   const role = meta.role ? ROLE_WORDS[meta.role] : null;
@@ -179,10 +181,10 @@ function onIt(name, run, what) {
   const asked = (item.questions ?? []).length > 0;
   openSheet({
     title: `${name} is not ready for ${what}`,
-    purpose: `${item.missing.join("; ")}. ${what === "a fit" ? "A fit learns" : "An evaluation scores models"} on questions whose answers the dataset's label values give: its questions first, then for each value the answer it stands for.`,
-    actions:
-      item.kind === "folder"
-        ? [
+    purpose: `Missing: ${item.missing.join("; ")}. Write the questions first, then the answer each label value stands for.`,
+    ...(item.kind === "folder"
+      ? {
+          actions: [
             {
               label: asked ? "Edit Questions" : "Write Questions",
               primary: true,
@@ -191,8 +193,9 @@ function onIt(name, run, what) {
                 writeQuestions(name);
               },
             },
-          ]
-        : [{ label: "OK", primary: true, onSelect: closeSheet }],
+          ],
+        }
+      : { done: "OK" }),
   });
 }
 
@@ -219,7 +222,7 @@ function Picked({ name }) {
       <p class="warn-text">${summary.error}</p>
       ${!summary.unreachable &&
       html`<div class="empty-actions error-actions">
-        <button class="btn" onClick=${() => revealData(name)}>Show in Finder</button>
+        <button class="btn" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => revealData(name)}>Show in Finder</button>
         <button class="btn" onClick=${() => deleteData(name)}>Delete…</button>
       </div>`}`;
   const folder = summary.kind === "folder";
@@ -228,7 +231,7 @@ function Picked({ name }) {
     <div class="pane-head">
       <div>
         <h1 class="mono">${name}</h1>
-        <p>${folder ? `${plural(summary.splits.length, "split")} · ` : ""}${plural(summary.examples, "example")}${folder ? ` in ${summary.split}` : ""} · ${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
+        <p>${folder ? `${plural(summary.splits.length, "split")} · ` : ""}${plural(summary.examples, "row")}${folder ? ` in ${summary.split}` : ""} · ${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
       </div>
       <div class="actions">
         <button class="btn primary" onClick=${() => onIt(name, fitOn, "a fit")} title=${`A new fit on ${name}, on the Training page`}>Fit on It…</button>
@@ -237,13 +240,13 @@ function Picked({ name }) {
           ? html`<button class="btn" onClick=${() => writeQuestions(name)}
                 title=${`The Playground on ${name}: its questions, tried on its rows, saved in its dataset.json`}>${asked ? "Edit Questions" : "Write Questions"}</button>`
           : html`<button class="btn" onClick=${() => openInPlayground(name, summary.split)} disabled=${!asked}
-                title=${asked ? `A new question set with ${name}'s questions and the first ${Math.min(summary.examples, 10)} examples, to try a model on` : `${name} has no questions yet`}>Open in Playground</button>`}
+                title=${asked ? `A new question set with ${name}'s questions and the first ${Math.min(summary.examples, 10)} examples, to try a model on` : `${name} has no questions yet`}>New Question Set from It</button>`}
         <${MenuButton} id="data-more" className="btn" ariaLabel=${`More actions for ${name}`}
           label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
           menuStyle="top:32px; right:0; width:200px">
           <${MenuItem} onSelect=${() => openNewBatch({ dataset: name, split: splitOf(name) })}>Run as Batch…<//>
           <${MenuSeparator} />
-          <${MenuItem} onSelect=${() => revealData(name)}>Show in Finder<//>
+          <${MenuItem} disabled=${!onThisMac} sub=${onThisMac ? null : NOT_THIS_MAC} onSelect=${() => revealData(name)}>Show in Finder<//>
           <${MenuSeparator} />
           <${MenuItem} onSelect=${() => deleteData(name)}>Delete…<//>
         <//>
@@ -269,7 +272,7 @@ function Centre() {
   else if (!name)
     body = html`
       <div class="pane-head"><div><h1>Datasets</h1><p>${plural(list.length, "dataset")} in the workspace's data/ folder</p></div></div>
-      <div class="empty"><b>Pick a dataset</b><span>Pick one on the left to see its questions, labels and examples.</span></div>`;
+      <div class="empty"><b>Pick a dataset</b><span>Pick one on the left to see its questions, labels and rows.</span></div>`;
   else if (!list.some((item) => item.name === name))
     body = html`<div class="empty"><b>No dataset named ${name}</b><span>It may have been deleted. Pick another on the left.</span></div>`;
   else body = html`<${Picked} key=${name} name=${name} />`;
@@ -296,5 +299,5 @@ export default {
   status,
   Centre,
   SidebarList: DatasetList,
-  tabs: [{ id: "example", label: "Example", Body: Inspector }],
+  tabs: [{ id: "example", label: "Row", Body: Inspector }],
 };

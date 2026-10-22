@@ -10,6 +10,7 @@ pages, filtered here; ``.../export`` the results as CSV or JSON lines;
 """
 
 import asyncio
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -18,8 +19,10 @@ from fastapi.responses import Response
 
 from ..batch_results import PAGE, UNSURE, Results
 from ..batches import Batch, Batches
+from ..security import is_loopback
 from ..workspace import Workspace, check_name
 from . import ApiError, field, json_body
+from .sets import reveal
 
 # The longest a batch's or dataset's name may be when given.
 MAX_NAME = 80
@@ -104,6 +107,21 @@ def batches_router(
             raise ApiError(400, "format is csv or jsonl", param="format")
         headers = {"Content-Disposition": f'attachment; filename="{name}.{format}"'}
         return Response(text.encode("utf-8"), media_type=f"{kind}; charset=utf-8", headers=headers)
+
+    @router.post("/{name}/reveal", status_code=204)
+    async def reveal_batch(name: str, request: Request):
+        """Show the batch's folder in Finder (only for a browser on this Mac)."""
+        client = request.client.host if request.client else None
+        if not is_loopback(client):
+            raise ApiError(
+                403, "Finder opens only for a browser on this Mac", kind="permission_error"
+            )
+        folder = batches.folder(name)
+        if not folder.is_dir():
+            raise ApiError(404, f"no batch named {name!r}")
+        if sys.platform == "darwin":
+            await asyncio.to_thread(reveal, folder)
+        return Response(status_code=204)
 
     @router.post("/{name}/stop")
     async def stop(name: str):

@@ -244,7 +244,7 @@ function Wiring() {
   const result = previewed.value;
   return html`
     <div class="opts">
-      <h4>Examples</h4>
+      <h4>Shape</h4>
       <div class="choices any-shapes" role="radiogroup" aria-label="Shape">
         ${SHAPES.map(
           ([value, title, text]) => html`<label class="choice" key=${value}>

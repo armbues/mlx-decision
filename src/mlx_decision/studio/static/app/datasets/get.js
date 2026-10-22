@@ -67,9 +67,9 @@ async function start() {
     // The next Get starts afresh: "Another dataset…" empty, a preset's name free again.
     if (picked.value === ANY) resetAny(true);
     named.value = false;
-    toast(`${job.title}: ${job.details?.name ?? "the dataset"} joins Datasets when the job is done`);
+    toast(`Started ${job.title}: ${job.details?.name ?? "the dataset"} shows up in Datasets when it is done`);
   } catch (error) {
-    toast(`Could not download the dataset: ${error.message}`);
+    toast(`Could not start the download: ${error.message}`);
   } finally {
     starting.value = false;
   }

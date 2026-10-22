@@ -203,4 +203,4 @@ def test_the_workspace_folders_and_clear(studio, page):
     assert list(studio.sets.glob("*.json")) == []
     # The Playground's list follows.
     page.goto(f"{studio.base}/#/playground")
-    expect(page.locator(".sidebar .sb-empty", has_text="No sets yet")).to_be_visible()
+    expect(page.locator(".sidebar .sb-empty", has_text="No question sets yet")).to_be_visible()
