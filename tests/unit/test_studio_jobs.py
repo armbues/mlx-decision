@@ -295,7 +295,9 @@ def test_shutdown_stops_the_jobs_first(jobs, gpu):
         job = await fit(jobs, "--steps", "500")
         await until(lambda: len(job.events) >= 2)
         await jobs.shutdown()
-        assert job.outcome == "cancelled" and gpu.holder is None
+        # Stopped by the shutdown, not by a Stop pressed: interrupted, and says so.
+        assert job.outcome == "interrupted" and gpu.holder is None
+        assert job.message == "the Studio stopped while it ran"
         with pytest.raises(RuntimeError, match="stopping"):
             await fit(jobs)
 
@@ -322,8 +324,8 @@ def test_the_studio_shutdown_stops_its_jobs(tmp_path, workspace):
         while len(job.events) < 2:
             assert time.monotonic() < deadline
             time.sleep(0.01)
-    assert job.outcome == "cancelled"
-    assert json.loads((job.folder / "job.json").read_text())["outcome"] == "cancelled"
+    assert job.outcome == "interrupted"
+    assert json.loads((job.folder / "job.json").read_text())["outcome"] == "interrupted"
 
 
 @pytest.mark.parametrize("every", ["0.05", "30"])  # stops at its next step / stuck in one

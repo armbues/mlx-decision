@@ -787,8 +787,19 @@ function AddQuestion() {
   const add = (type) => {
     let question;
     updateDraft((value) => {
-      const [next, added] = edit.addQuestion(value, type);
+      let [next, added] = edit.addQuestion(value, type);
       question = added;
+      // On a dataset: answered by a value column at once (the first no
+      // question answers from yet, else its only one), a choice's options
+      // from its values; "No column" stays a pick away.
+      const columns = Object.entries(dataset.value?.columns ?? {});
+      const used = new Set(Object.values(value.answers ?? {}).map((answer) => answer.column));
+      const [column, info] = columns.find(([name]) => !used.has(name)) ?? (columns.length === 1 ? columns[0] : []);
+      if (column) {
+        next = edit.setAnswerColumn(next, added.uid, column);
+        if (type === "choice")
+          next = edit.optionsFromValues(next, added.uid, Object.entries(info.values ?? {}).map(([item, facts]) => [item, facts.name ?? null]));
+      }
       return next;
     });
     focusLater(`#q-${question.uid} .ins`);

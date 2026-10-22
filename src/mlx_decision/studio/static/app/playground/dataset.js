@@ -119,6 +119,7 @@ export async function saveDataset() {
     toast(`Saved data/${name}/dataset.json`);
   } catch (error) {
     if (error.status === 409 && error.current) changedOnDisk(documentName, name);
+    else if (error.status === 404) setEntry(documentName, { ...drafts.peek()[documentName], onDisk: "deleted" }); // the banner says it
     else toast(`Not saved: ${error.message}`); // e.g. a fit or an evaluation reads it
   }
 }

@@ -5,6 +5,7 @@ import { computed, effect, signal } from "@preact/signals";
 import { api } from "../api.js";
 import { workspaceChange } from "../stream.js";
 import { forgetJob, jobs, onJobEvent } from "./jobs.js";
+import { connection } from "./status.js";
 
 const KINDS = new Set(["fit", "eval"]);
 const listed = signal([]); // GET /jobs, filtered
@@ -31,8 +32,9 @@ export const fits = computed(() => {
 export const fitById = (id) => fits.value.find((job) => job.id === id) ?? null;
 
 // A fit that ends (or starts) in this run: the list again, so earlier runs'
-// summaries stay as the stream left them.
-let known = "";
+// summaries stay as the stream left them. Also once at the start (null), so
+// the fits of earlier runs are listed before any job of this one.
+let known = null;
 effect(() => {
   const now = jobs.value
     .filter((job) => KINDS.has(job.kind))
@@ -42,6 +44,11 @@ effect(() => {
     known = now;
     loadFits();
   }
+});
+
+// Again whenever the stream (re)opens: the Studio may have restarted.
+effect(() => {
+  if (connection.value === "open") loadFits();
 });
 
 // A fit or evaluation deleted in another tab.

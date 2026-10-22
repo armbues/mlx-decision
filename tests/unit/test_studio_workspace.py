@@ -573,3 +573,13 @@ def test_a_failing_change_callback_does_not_fail_the_change(space):
     space.on_change = broken
     space.save_set("tickets", BODY)
     assert space.load_set("tickets")[0] == BODY
+
+
+def test_a_json_file_that_is_not_a_set_does_not_open(tmp_path):
+    from mlx_decision.studio.workspace import Workspace, WorkspaceError
+
+    files = Workspace(tmp_path / "ws")
+    files.open()
+    (tmp_path / "ws" / "sets" / "notaset.json").write_text("[1, 2, 3]")
+    with pytest.raises(WorkspaceError, match="notaset.json is not a question set"):
+        files.load_set("notaset")

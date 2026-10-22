@@ -397,6 +397,11 @@ class Workspace:
             body = json.loads(data)
         except ValueError as error:
             raise WorkspaceError(f"{path.name} is not valid JSON: {error}") from None
+        if not isinstance(body, dict):
+            # Opened as an empty set, it would be saved over (a set is a JSON object).
+            raise WorkspaceError(
+                f"{path.name} is not a question set: a set is a JSON object with questions"
+            )
         return body, sha256(data)
 
     def save_set(self, name: str, body: Any, loaded: str | None = None) -> str:

@@ -10,6 +10,7 @@ import { batches, loadBatches, runningBatch } from "../store/batches.js";
 import { dataChanged, dataFiles, datasetOf, describe, described, freeName, nameTaken, summaryKey } from "../store/data.js";
 import { gpuJob } from "../store/jobs.js";
 import { reloadSets, sets } from "../store/sets.js";
+import { NO_MODELS, NoModels } from "../components/no-models.js";
 import { models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
@@ -141,6 +142,7 @@ function whyNot() {
   if (!item) return "Pick a dataset";
   if (!current.split) return "Pick a split";
   if (current.questions === OWN && !asks(item)) return `${item.name} has no questions: pick a question set, or write them in the Playground`;
+  if (models.value && models.value.length === 0) return NO_MODELS;
   if (!current.model) return "Pick a model";
   if (current.sample && !(current.size >= 1)) return "A sample is at least one row";
   if (current.name && !NAME.test(current.name)) return "A name is letters, digits, dots, dashes and underscores";
@@ -203,6 +205,8 @@ function NewBatch() {
           (split) => html`<option value=${split.name}>${split.name}${split.examples != null ? ` (${split.examples.toLocaleString("en")})` : ""}${split.role ? ` · ${split.role}` : ""}</option>`,
         )}
       </select>
+      ${(item?.splits ?? []).find((split) => split.name === current.split)?.role === "train" &&
+      html`<span></span><small class="hint split-hint">A fit learns from these rows: score a fitted model on another split.</small>`}
 
       <span class="label">Rows</span>
       <div class="radio-col" role="radiogroup" aria-label="Rows">
@@ -229,9 +233,11 @@ function NewBatch() {
       </div>
 
       <label for="batch-model">Model</label>
-      <select id="batch-model" value=${current.model ?? ""} onChange=${(event) => set({ model: event.target.value })}>
-        ${(models.value ?? []).map((entry) => html`<option value=${entry.name}>${entry.name}</option>`)}
-      </select>
+      ${models.value && models.value.length === 0
+        ? html`<${NoModels} />`
+        : html`<select id="batch-model" value=${current.model ?? ""} onChange=${(event) => set({ model: event.target.value })}>
+            ${(models.value ?? []).map((entry) => html`<option value=${entry.name}>${entry.name}</option>`)}
+          </select>`}
 
       <label for="batch-name">Name</label>
       <input id="batch-name" type="text" spellcheck=${false} placeholder=${placeholder} value=${current.name}
@@ -252,13 +258,13 @@ function saveWhyNot() {
   if (!name) return "Name the dataset";
   if (!NAME.test(name)) return "A name is letters, digits, dots, dashes and underscores";
   if (nameTaken(name)) return nameTaken(name);
-  if (current.keep && !(current.threshold >= 0 && current.threshold <= 100)) return "The confidence is between 0 and 100%";
+  if (current.keep && !(current.threshold >= 0 && current.threshold <= 1)) return "A confidence is between 0 and 1";
   return null;
 }
 
 export function openSaveDataset(batch) {
   const base = `${batch.dataset}-by-${batch.model}`.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 70);
-  saving.value = { batch, name: freeName(base), keep: false, threshold: 80 };
+  saving.value = { batch, name: freeName(base), keep: false, threshold: 0.8 };
   error.value = null;
   openSheet({
     title: "Save Answers as a Dataset",
@@ -275,7 +281,7 @@ async function save() {
   error.value = null;
   try {
     const name = current.name.trim();
-    const body = { name, threshold: current.keep ? current.threshold / 100 : null };
+    const body = { name, threshold: current.keep ? current.threshold : null };
     const { dataset } = await api(`/batches/${encodeURIComponent(current.batch.name)}/dataset`, { method: "POST", body });
     closeSheet();
     dataChanged();
@@ -300,9 +306,9 @@ function SaveDataset() {
       <span class="label">Labels</span>
       <div class="radio-col">
         <label><input type="checkbox" checked=${current.keep} onChange=${(event) => set({ keep: event.target.checked })} />
-          Only answers at least
-          <input id="save-threshold" type="number" min="0" max="100" aria-label="Confidence in percent" value=${current.threshold}
-            onInput=${(event) => set({ keep: true, threshold: event.target.valueAsNumber })} />% sure</label>
+          Only answers with a confidence of at least
+          <input id="save-threshold" type="number" min="0" max="1" step="0.05" aria-label="Lowest confidence" value=${current.threshold}
+            onInput=${(event) => set({ keep: true, threshold: event.target.valueAsNumber })} /></label>
         <small class="hint">A row with no answer kept is left out. One split, <code>${current.batch.split}</code>, with the role train.</small>
       </div>
     </div>

@@ -11,10 +11,12 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api.js";
 import { Confusion, ticks } from "../components/charts.js";
 import { plural, shellWord } from "../format.js";
-import { chooseModel } from "../playground/session.js";
+import { DATASET_DOCUMENT, chooseModel, compareOnly } from "../playground/session.js";
 import { href } from "../router.js";
 import { fitById, opened, openFit } from "../store/fits.js";
+import { confirmDeleteRun } from "./delete.js";
 import { stopJob } from "../store/jobs.js";
+import { dataFiles } from "../store/data.js";
 import { models } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
@@ -249,6 +251,26 @@ function Log({ events, job }) {
 
 // ---------- the report ----------
 
+// The fitted model in the Playground: on the dataset it learned from (a
+// dataset folder, its rows and questions) with its base in Compare, so the
+// next Run compares them; else on the open set.
+function OpenFitted({ job, name, listed }) {
+  const base = (models.value ?? []).find((model) => model.name === name)?.base ?? null;
+  const data = job.details?.data;
+  const folder = (dataFiles.value ?? []).some((item) => item.name === data && item.kind === "folder");
+  const target = folder ? href("playground", `${DATASET_DOCUMENT}${data}`) : href("playground");
+  const label = folder && base ? `Compare with ${base} in the Playground` : "Open in Playground";
+  const open = () => {
+    if (!listed) return;
+    chooseModel(name);
+    if (folder && base) compareOnly([base]);
+  };
+  return html`<a class=${`btn primary${listed ? "" : " off"}`} href=${listed ? target : undefined}
+    aria-disabled=${listed ? undefined : "true"}
+    title=${listed ? (folder ? `${name} on ${data}'s rows${base ? `, beside ${base}` : ""}` : `Ask ${name} in the Playground`) : `${name} is not in the list yet`}
+    onClick=${open}>${label}</a>`;
+}
+
 function Change({ before, after, up }) {
   if (before == null || after == null) return html`<span></span>`;
   const delta = (after - before) * 100;
@@ -293,14 +315,17 @@ function Report({ job }) {
     let live = true;
     api(`/jobs/${encodeURIComponent(job.id)}/report`).then(
       (answer) => live && setState(answer),
-      (error) => live && setState({ error: error.message }),
+      (error) => live && setState({ error: error.message, code: error.code }),
     );
     return () => {
       live = false;
     };
   }, [job.id]);
   if (!state) return null;
-  if (state.error) return html`<p class="warn-text">${state.error}</p>`;
+  if (state.error)
+    return html`<p class="warn-text">${state.error}</p>
+      ${state.code === "model_gone" &&
+      html`<div class="start-bar"><button class="btn" onClick=${() => confirmDeleteRun(job)}>Delete Entry…</button></div>`}`;
   const { report, path } = state;
   const name = job.details?.name;
   const listed = (models.value ?? []).some((model) => model.name === name);
@@ -326,9 +351,7 @@ function Report({ job }) {
       </dl></div>
     </section>
     <div class="start-bar">
-      <a class=${`btn primary${listed ? "" : " off"}`} href=${listed ? href("playground") : undefined}
-         aria-disabled=${listed ? undefined : "true"} title=${listed ? `Ask ${name} in the Playground` : `${name} is not in the list yet`}
-         onClick=${() => listed && chooseModel(name)}>Open in Playground</a>
+      <${OpenFitted} job=${job} name=${name} listed=${listed} />
       <a class="btn" href=${href("models", name)}>Show in Models</a>
     </div>
   `;

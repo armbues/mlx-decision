@@ -154,3 +154,23 @@ def test_a_job_that_has_not_ended_stays(studio):
     response = studio.delete("/studio/api/jobs/j2", headers=JSON)
     assert response.status_code == 409 and "has not ended" in response.json()["error"]["message"]
     del jobs.jobs[job.id]
+
+
+def test_a_fit_whose_model_was_deleted_on_disk_says_so(studio):
+    import shutil
+
+    from test_studio_jobs_api import write_data
+
+    write_data(studio.made.parent / "data" / "tickets.jsonl")
+    jobs = studio.app_state.jobs
+    jobs.command = [sys.executable, str(TESTS / "fake_job.py"), "--steps", "2", "--fit-events"]
+    body = {"kind": "fit", "model": "conv", "data": "tickets", "name": "gone"}
+    response = studio.post("/studio/api/jobs", json=body)
+    job = wait_for(studio, response.json()["job"]["id"])
+    assert studio.get(f"/studio/api/jobs/{job['id']}/report").status_code == 200
+    shutil.rmtree(studio.made / "gone")  # in Finder, say
+    report = studio.get(f"/studio/api/jobs/{job['id']}/report")
+    assert report.status_code == 404
+    error = report.json()["error"]
+    assert error["code"] == "model_gone"
+    assert error["message"] == "The fitted model gone was deleted; its report went with it."

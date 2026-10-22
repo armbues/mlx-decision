@@ -2,7 +2,7 @@
 // Save, Save As, Rename, Delete, Import, Export, Show in Finder. A save names the version it was loaded
 // from, so a file changed on disk since is never overwritten: the Studio
 // says so and offers Reload or Save As.
-import { signal } from "@preact/signals";
+import { effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { closeSheet, openSheet, sheet } from "../components/sheet.js";
@@ -12,12 +12,14 @@ import { toast } from "../store/ui.js";
 import { TYPE_LABELS, toFile } from "./draft.js";
 import { plural } from "../format.js";
 import { saveDataset } from "./dataset.js";
+import { workspaceChange } from "../stream.js";
 import {
   datasetOfDocument,
   drafts,
   editedNames,
   forgetRuns,
   isDataset,
+  isEdited,
   loadSet,
   loadedEntry,
   moveRuns,
@@ -26,6 +28,38 @@ import {
 } from "./session.js";
 
 const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
+
+// Changes from another tab (or the CLI): a set renamed there moves here too,
+// edits and all; a dataset deleted while its questions are edited here says
+// so, with Save as Question Set to keep them.
+effect(() => {
+  const change = workspaceChange.value;
+  // Out of the effect: what follows reads and writes the drafts.
+  if (change) queueMicrotask(() => followChange(change));
+});
+
+function followChange(change) {
+  const all = drafts.peek();
+  if (change.folder === "sets" && change.action === "renamed" && change.old_name) {
+    const from = change.old_name;
+    const value = all[from];
+    if (!value || all[change.name]) return; // renamed here, or nothing open under the old name
+    moveRuns(from, change.name);
+    setEntry(change.name, { ...value, onDisk: null });
+    setEntry(from, null);
+    if (setName.peek() === from) {
+      navigate("playground", change.name);
+      toast(`Renamed to ${change.name} in another tab`);
+    }
+  }
+  if (change.folder === "data" && change.action === "deleted") {
+    const document = `data:${change.name}`;
+    const value = all[document];
+    if (!value?.draft) return;
+    if (isEdited(value)) setEntry(document, { ...value, onDisk: "deleted" });
+    else loadSet(document); // shows that it is gone
+  }
+}
 const EMPTY_SET = { state: "", questions: {} };
 
 const takenNames = () => new Set((sets.value ?? []).map((item) => item.name));

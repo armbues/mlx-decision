@@ -11,6 +11,15 @@ export const loadError = signal(null);
 export const loadedNames = computed(() => new Set(status.value?.loaded ?? []));
 export const busy = computed(() => status.value?.busy ?? null);
 
+// Why a model cannot load (more than the memory budget), or null.
+export function overBudget(name) {
+  const model = (models.value ?? []).find((item) => item.name === name);
+  if (!model?.memory?.over_budget || loadedNames.value.has(name)) return null;
+  const budget = status.value?.memory?.budget;
+  const needs = `about ${(model.memory.bytes / 1e9).toFixed(1)} GB`;
+  return `${name} needs ${needs}, more than the ${budget ? `${(budget / 1e9).toFixed(1)} GB ` : ""}budget: raise it in Settings`;
+}
+
 export function applyStatus(fields) {
   status.value = { ...(status.value ?? {}), ...fields };
 }

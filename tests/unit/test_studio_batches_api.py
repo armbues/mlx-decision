@@ -97,7 +97,13 @@ def test_the_table_is_paged_and_filtered_on_the_server(studio):
     assert page["matching"] == 12 and [r["row"] for r in page["rows"]] == [5, 6, 7, 8]
     first = page["rows"][0]
     assert first["id"] == "train/5" and first["labels"] == {"topic": "other"}
-    assert set(first["answers"]["topic"]) == {"answer", "confidence"}
+    one = first["answers"]["topic"]
+    assert set(one) == {"answer", "confidence", "probability"}
+    # The probability of the answer given, as the Playground shows it next to it.
+    whole = studio.get(f"{API}/{name}/rows", params={"row": 5}).json()["row"]["response"][
+        "answers"
+    ]["topic"]
+    assert one["probability"] == round(whole["probabilities"][one["answer"]], 4)
     found = studio.get(f"{API}/{name}/rows", params={"search": "TRAIN 1"}).json()
     assert [r["row"] for r in found["rows"]] == [1, 10, 11]
     analysed = studio.get(f"{API}/{name}").json()["results"]["questions"]["topic"]

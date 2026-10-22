@@ -564,7 +564,13 @@ def jobs_router(
             text = await asyncio.to_thread((folder / REPORT_FILE).read_text)
             written = json.loads(text)
         except (OSError, ValueError):
-            raise ApiError(404, f"{folder} is gone or has no report") from None
+            if not folder.exists():
+                raise ApiError(
+                    404,
+                    f"The fitted model {folder.name} was deleted; its report went with it.",
+                    code="model_gone",
+                ) from None
+            raise ApiError(404, f"{folder.name} has no report ({REPORT_FILE})") from None
         return {"path": str(folder), "report": written}
 
     @router.post("/{job_id}/reveal", status_code=204)

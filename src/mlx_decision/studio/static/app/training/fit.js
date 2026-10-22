@@ -14,6 +14,7 @@ import { gpuJob } from "../store/jobs.js";
 import { remembered } from "../store/prefs.js";
 import { href, navigate } from "../router.js";
 import { dataFiles, datasetOf, splitFor } from "../store/data.js";
+import { NO_MODELS, NoModels } from "../components/no-models.js";
 import { loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
@@ -165,6 +166,7 @@ async function plan(model, data, split, report, share, order) {
 export const notReady = computed(() => {
   const job = gpuJob.value;
   if (job) return `${job.title} is running; one job at a time can use the GPU`;
+  if (models.value && models.value.length === 0) return NO_MODELS;
   if (!fitData.value) return "Download or add a dataset first, on the Datasets page";
   if (notReadyData.value) return notReadyData.value;
   if (planError.value) return planError.value;
@@ -344,9 +346,11 @@ export function FitForm() {
       <section class="gsec"><div class="gsec-head"><h2>Base model</h2></div>
         <div class="group form">
           <div class="row"><label for="fit-base">Model</label><div class="line">
-            <select id="fit-base" value=${baseName.value ?? ""} onChange=${(event) => (base.value = event.target.value)}>
-              ${list.map((model) => html`<option value=${model.name}>${model.name}${model.fitted ? ` (fitted on ${model.base})` : ""}</option>`)}
-            </select>
+            ${list.length === 0
+              ? html`<${NoModels} />`
+              : html`<select id="fit-base" value=${baseName.value ?? ""} onChange=${(event) => (base.value = event.target.value)}>
+                  ${list.map((model) => html`<option value=${model.name}>${model.name}${model.fitted ? ` (fitted on ${model.base})` : ""}</option>`)}
+                </select>`}
             ${result && html`<span class="hint">${result.family}${result.base !== baseName.value ? ` · its base ${result.base}; the fit is replaced` : ""}</span>`}
           </div></div>
         </div></section>

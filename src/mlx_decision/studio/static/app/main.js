@@ -3,7 +3,9 @@ import { render } from "preact";
 import { html } from "htm/preact";
 import { App } from "./components/app.js";
 import "./keys.js";
+import { loadBatches } from "./store/batches.js";
 import { reloadData } from "./store/data.js";
+import { loadFits } from "./store/fits.js";
 import { reloadSets } from "./store/sets.js";
 import { navigate } from "./router.js";
 import { loadModels, loadStatus, models, rescanModels } from "./store/status.js";
@@ -23,6 +25,8 @@ addEventListener("focus", () => {
   rescanModels();
   reloadSets();
   reloadData();
+  loadBatches();
+  loadFits();
 });
 document.addEventListener("click", () => {
   openMenu.value = null;

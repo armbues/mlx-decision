@@ -317,11 +317,11 @@ def test_a_file_over_the_upload_limit_is_copied_in_instead(make_studio, page, tm
     studio = make_studio(max_body_bytes=4_000)
     open_studio(page, studio, "datasets")
     big = tmp_path / "big tickets.jsonl"
-    big.write_text("\n".join(line(i, "tech") for i in range(100)) + "\n")  # about 11 kB
+    big.write_text("\n".join(line(i, "tech") for i in range(100)) + "\n")  # about 19 kB
     add(page, big)
     sheet = page.locator(".sheet")
     expect(sheet.locator("h2")).to_have_text("big tickets.jsonl is too large to add here")
-    expect(sheet).to_contain_text("the Studio takes files up to 4 kB this way")
+    expect(sheet).to_contain_text("It is 19 kB; the Studio takes up to 4 kB this way")
     expect(sheet).to_contain_text("as big-tickets.jsonl")
     expect(sheet.locator(".too-large code")).to_have_text(
         str((studio.workspace / "data").resolve())
@@ -336,6 +336,17 @@ def test_a_file_over_the_upload_limit_is_copied_in_instead(make_studio, page, tm
     assert edge.stat().st_size <= 4_000
     add(page, edge)
     expect(sheet.locator("h2")).to_have_text("edge.jsonl is too large to add here")
+    expect(sheet).to_contain_text("Its upload would be")  # not "It is", which is under the limit
+    sheet.get_by_role("button", name="OK").click()
+    # A CSV over the limit: the data command in a terminal, not a copy as .jsonl.
+    rows = tmp_path / "rows.csv"
+    rows.write_text("text,label\n" + "".join(f"ticket number {i},tech\n" for i in range(400)))
+    add(page, rows)
+    expect(sheet.locator("h2")).to_have_text("rows.csv is too large to add here")
+    expect(sheet).not_to_contain_text(".jsonl")
+    command = f"mlx-decision data rows.csv -o {(studio.workspace / 'data').resolve()}/rows/"
+    expect(sheet.locator(".too-large code")).to_have_text(command)
+    expect(sheet.get_by_role("button", name="Copy Command")).to_be_visible()
 
 
 def write_tweets(studio, questions=False):

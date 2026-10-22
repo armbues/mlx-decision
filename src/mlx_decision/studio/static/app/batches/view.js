@@ -26,6 +26,8 @@ import { openSaveDataset } from "./start.js";
 
 export const PAGE = 100;
 const UNSURE = 0.6;
+// An answer's probability as the Playground's cards show it.
+const probability = (value) => `${Math.round((value ?? 0) * 100)}%`;
 const METRICS = [
   ["accuracy", "Accuracy", true],
   ["macro_f1", "Macro-F1", true],
@@ -256,10 +258,11 @@ function Question({ id, item, batch }) {
         </div>
         <div class="bq-counts">
           <button class="btn sm" disabled=${!item.unsure} onClick=${() => show({ show: "unsure" })}
-            title=${`Answers below ${Math.round(UNSURE * 100)}% confidence`}>${plural(item.unsure, "unsure answer")}</button>
+            title=${`Answers with a confidence below ${UNSURE}`}>${plural(item.unsure, "unsure answer")}</button>
           ${item.labelled && html`<button class="btn sm" disabled=${!item.wrong} onClick=${() => show({ show: "wrong" })}>${item.wrong.toLocaleString("en")} wrong</button>`}
         </div>
-        ${item.labelled &&
+        ${item.labelled && !item.metrics && html`<p class="bq-note">Accuracy and the rest show as its labelled rows are answered.</p>`}
+        ${item.metrics &&
         html`<div class="bq-metrics">
           <dl class="metric-row">
             ${METRICS.filter(([key]) => item.metrics[key] != null).map(
@@ -404,8 +407,8 @@ function Rows({ batch, results }) {
                       .map((id) => {
                         const one = row.answers[id];
                         const many = questions.length > 1;
-                        return html`<span key=${id} class=${`chip-answer${id === question ? " main" : ""}`} title=${`${id}: ${one.answer}, ${Math.round(one.confidence * 100)}% sure`}>
-                          ${many && html`<i>${id}</i>`}<span class=${`lab${one.confidence < UNSURE ? " unsure" : ""}`}>${one.answer}</span><small class="num">${Math.round(one.confidence * 100)}%</small>
+                        return html`<span key=${id} class=${`chip-answer${id === question ? " main" : ""}`} title=${`${id}: ${one.answer} ${probability(one.probability)}, confidence ${one.confidence.toFixed(2)}${one.confidence < UNSURE ? `, below ${UNSURE}: unsure` : ""}`}>
+                          ${many && html`<i>${id}</i>`}<span class=${`lab${one.confidence < UNSURE ? " unsure" : ""}`}>${one.answer}</span><small class="num">${probability(one.probability)}</small>
                         </span>`;
                       })
               }</span>
@@ -486,7 +489,7 @@ export function RowInspector({ name }) {
       ${Object.entries(answers).map(
         ([id, answer]) => html`<section class="igroup" key=${id}><h4 class="mono">${id}</h4>
           <dl>
-            <div class="kv"><dt>Answer</dt><dd><code>${row.answers[id]?.answer}</code> <small>${Math.round((row.answers[id]?.confidence ?? 0) * 100)}% sure</small></dd></div>
+            <div class="kv"><dt>Answer</dt><dd><code>${row.answers[id]?.answer}</code> <small>Confidence ${(row.answers[id]?.confidence ?? 0).toFixed(2)}</small></dd></div>
             ${row.labels[id] != null && html`<div class="kv"><dt>Expected</dt><dd><code>${row.labels[id]}</code>${
               row.answers[id]?.answer === row.labels[id] ? html` <small class="right">right</small>` : html` <small class="wrong">wrong</small>`
             }</dd></div>`}

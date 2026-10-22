@@ -49,18 +49,20 @@ class Entry:
     labels: dict[str, str]
     request: dict[str, Any]
     result: dict[str, Any] | None  # None: not answered yet
-    picked: dict[str, tuple[str, float]]  # question id -> (answer key, confidence)
+    picked: dict[str, tuple[str, float, float]]  # id -> (answer key, confidence, probability)
 
     @property
     def error(self) -> dict[str, Any] | None:
         return None if self.result is None else self.result.get("error")
 
 
-def answer_key(answer: dict[str, Any]) -> tuple[str, float]:
+def answer_key(answer: dict[str, Any]) -> tuple[str, float, float]:
     """The answer as the metrics name it (an option id, "true" / "false", a
-    level's key) and its confidence."""
+    level's key), its confidence and its probability (as the Playground shows
+    it next to the answer)."""
     item = record(answer, "")
-    return item["predicted"], answer.get("confidence", item["p_max"])
+    probability = (item.get("probabilities") or {}).get(item["predicted"], item["p_max"])
+    return item["predicted"], answer.get("confidence", item["p_max"]), probability
 
 
 def label_order(question: dict[str, Any]) -> list[str]:
@@ -224,11 +226,17 @@ class Results:
                     item = record(answer, gold)
                     item["truncated"] = entry.result.get("truncated", False)
                     records.append(item)
+            # Labelled when its rows carry labels, answered yet or not (the
+            # metrics come with the answers).
+            labelled = bool(records) or any(
+                qid in e.request["questions"] and e.labels.get(qid) is not None for e in entries
+            )
             summary: dict[str, Any] = {
                 "type": question.get("type", "noul"),
                 "answers": counts,
                 "unsure": unsure_count,
-                "labelled": bool(records),
+                "labelled": labelled,
+                "wrong": 0,
             }
             if records:
                 summary["metrics"] = {
@@ -318,8 +326,8 @@ class Results:
             "state": text[:STATE_CUT] + "…" if cut and len(text) > STATE_CUT else text,
             "labels": entry.labels,
             "answers": {
-                qid: {"answer": key, "confidence": round(c, 4)}
-                for qid, (key, c) in entry.picked.items()
+                qid: {"answer": key, "confidence": round(c, 4), "probability": round(p, 4)}
+                for qid, (key, c, p) in entry.picked.items()
             },
             "error": entry.error,
         }
@@ -398,7 +406,7 @@ class Results:
                 continue
             labels = {
                 qid: key
-                for qid, (key, confidence) in entry.picked.items()
+                for qid, (key, confidence, _) in entry.picked.items()
                 if threshold is None or confidence >= threshold
             }
             if not labels:

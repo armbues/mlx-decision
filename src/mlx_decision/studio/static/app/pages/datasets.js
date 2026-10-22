@@ -235,7 +235,7 @@ function Picked({ name }) {
         <${MenuButton} id="data-more" className="btn" ariaLabel=${`More actions for ${name}`}
           label=${html`<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><circle cx="5" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="15" cy="10" r="1.5" /></svg>`}
           menuStyle="top:32px; right:0; width:200px">
-          <${MenuItem} onSelect=${() => openNewBatch({ dataset: name, split: summary.split })}>Run as Batch…<//>
+          <${MenuItem} onSelect=${() => openNewBatch({ dataset: name, split: splitOf(name) })}>Run as Batch…<//>
           <${MenuSeparator} />
           <${MenuItem} onSelect=${() => revealData(name)}>Show in Finder<//>
           <${MenuSeparator} />

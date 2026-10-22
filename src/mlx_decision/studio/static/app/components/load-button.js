@@ -1,15 +1,18 @@
 // Load / Unload for one model: what it does now, disabled while a job holds the GPU.
 import { html } from "htm/preact";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
-import { busy, loadedNames } from "../store/status.js";
+import { busy, loadedNames, overBudget } from "../store/status.js";
 
 export function LoadButton({ name, className = "btn" }) {
   const loaded = loadedNames.value.has(name);
   const doing = pending.value[name];
   const holder = busy.value;
+  const over = overBudget(name);
   const label = doing === "load" ? "Loading…" : doing === "unload" ? "Unloading…" : loaded ? "Unload" : "Load";
   const title = holder
     ? `A job holds the GPU (${holder}): models load again when it is done`
+    : over
+      ? over
     : loaded
       ? `Free the memory ${name} takes (it loads again on its next request)`
       : `Load ${name} now, unloading others if it needs the room`;
@@ -20,7 +23,7 @@ export function LoadButton({ name, className = "btn" }) {
     else loadModel(name);
   };
   return html`
-    <button class=${className} disabled=${Boolean(doing || holder)} title=${title}
+    <button class=${className} disabled=${Boolean(doing || holder || over)} title=${title}
             aria-busy=${doing ? "true" : undefined} onClick=${click}>${label}</button>
   `;
 }

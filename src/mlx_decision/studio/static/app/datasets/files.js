@@ -7,7 +7,7 @@ import { html } from "htm/preact";
 import { api } from "../api.js";
 import * as icons from "../components/icons.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
-import { fileSize, plural } from "../format.js";
+import { fileSize, plural, shellWord } from "../format.js";
 import { href, navigate, route } from "../router.js";
 import { reveal } from "../settings/places.js";
 import { dataFiles, dataFolder, datasetOf, forget, nameTaken, reloadData } from "../store/data.js";
@@ -40,9 +40,17 @@ export function uploadData() {
     if (!file) return;
     if (!dataFolder.value) await reloadData(); // the upload limit and the folder, if not read yet
     const limit = dataFolder.value?.upload_limit;
-    if (limit && file.size > limit) tooLarge(file);
-    else if (/\.csv$/i.test(file.name)) await askColumns(file, await file.text(), "csv");
-    else await send(file, dataName(file.name), await file.text());
+    if (limit && file.size > limit) {
+      tooLarge(file);
+      return;
+    }
+    // The limit holds for the request's body: the text as JSON, its escapes
+    // included, which can make a file under the limit too large to send.
+    const text = await file.text();
+    const upload = new Blob([JSON.stringify({ name: dataName(file.name), text, format: "csv" })]).size;
+    if (limit && upload > limit) tooLarge(file, upload);
+    else if (/\.csv$/i.test(file.name)) await askColumns(file, text, "csv");
+    else await send(file, dataName(file.name), text);
   });
   picker.click();
 }
@@ -175,19 +183,38 @@ function showErrors(file, text, errors) {
   });
 }
 
-// Too large for an upload: copy it into data/ instead, where the list finds it.
-function tooLarge(file) {
+// Too large for an upload (``upload``: the request's size, when it is the
+// JSON body and not the file that is over): training lines are copied into
+// data/ instead, where the list finds them; rows of columns (a CSV) become a
+// dataset in a terminal, with the data command.
+function tooLarge(file, upload = null) {
   const folder = dataFolder.value;
   const limit = folder?.upload_limit;
+  const size = upload ? `Its upload would be ${fileSize(upload)}` : `It is ${fileSize(file.size)}`;
+  const csv = /\.csv$/i.test(file.name);
+  const command = `mlx-decision data ${shellWord(file.name)} -o ${shellWord(`${folder?.folder ?? "data"}/${dataName(file.name)}`)}/`;
+  const copy = () =>
+    navigator.clipboard.writeText(command).then(
+      () => toast("Copied the command"),
+      () => toast("Could not copy the command"),
+    );
   openSheet({
     title: `${file.name} is too large to add here`,
-    purpose: `It is ${fileSize(file.size)}; the Studio takes files up to ${limit ? fileSize(limit) : "its upload limit"} this way. Copy it into the workspace's data folder instead, as ${dataName(file.name)}.jsonl (training data: JSON lines with questions and labels): it joins Datasets under that name, and it is checked when it is read.`,
-    Body: () => html`
-      <div class="name-field too-large">
-        <span>Folder</span>
-        <code class="mono" title=${folder?.folder ?? ""}>${folder?.display ?? "data/"}</code>
-        <button class="btn sm" onClick=${() => reveal("data")}>Show in Finder</button>
-      </div>`,
+    purpose: csv
+      ? `${size}; the Studio takes up to ${limit ? fileSize(limit) : "its upload limit"} this way. Make it a dataset in a terminal instead, in the file's folder: the command asks for its columns, and the dataset joins Datasets.`
+      : `${size}; the Studio takes up to ${limit ? fileSize(limit) : "its upload limit"} this way. Copy it into the workspace's data folder instead, as ${dataName(file.name)}.jsonl (training data: JSON lines with questions and labels): it joins Datasets under that name, and it is checked when it is read.`,
+    Body: () =>
+      csv
+        ? html`<div class="name-field too-large">
+            <span>Command</span>
+            <code class="mono">${command}</code>
+            <button class="btn sm" onClick=${copy}>Copy Command</button>
+          </div>`
+        : html`<div class="name-field too-large">
+            <span>Folder</span>
+            <code class="mono" title=${folder?.folder ?? ""}>${folder?.display ?? "data/"}</code>
+            <button class="btn sm" onClick=${() => reveal("data")}>Show in Finder</button>
+          </div>`,
     done: "OK",
   });
 }

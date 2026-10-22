@@ -5,6 +5,7 @@ import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { MenuButton, MenuHeader, MenuItem, MenuNote, MenuSeparator } from "../components/menu.js";
+import { openDownload } from "../models/download.js";
 import { clock, duration, plural } from "../format.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { href, navigate, route } from "../router.js";
@@ -35,6 +36,8 @@ import {
   justAnswered,
   lastRun,
   modelName,
+  modelOverBudget,
+  goneModel,
   problems,
   run,
   runMain,
@@ -145,11 +148,13 @@ function Target() {
         <${MenuHeader}>Run on<//>
         ${list.map(
           (item) => html`<${MenuItem} ticked=${item.name === current}
-            right=${loaded.has(item.name) ? "Loaded" : item.family}
+            right=${loaded.has(item.name) ? "Loaded" : item.memory?.over_budget ? "Over the budget" : item.family}
             sub=${item.fitted ? `fitted on ${item.base}` : null}
             onSelect=${() => chooseModel(item.name)}><span class="mono">${item.name}</span><//>`,
         )}
-        ${list.length === 0 && html`<${MenuNote}>No models yet. Download one in Models (${SHORTCUTS.download}).<//>`}
+        ${list.length === 0 &&
+        html`<${MenuNote}>No models yet<//>
+          <${MenuItem} right=${SHORTCUTS.download} onSelect=${() => openDownload()}>Download a Model…<//>`}
         ${list.length > 1 &&
         html`<${MenuSeparator} />
           <${MenuHeader}>Compare With<//>
@@ -199,6 +204,8 @@ const status = computed(() => {
     };
   if (problems.value.length) return { icon: "warn", text: problems.value[0].message };
   if (comparing.value) return compareStatus();
+  if (modelOverBudget.value) return { icon: "warn", text: modelOverBudget.value };
+  if (goneModel.value) return { icon: "warn", text: html`<b>${goneModel.value}</b> is gone · Run uses <b>${modelName.value}</b>` };
   const loads = loadedNames.value.has(modelName.value) ? "" : " · loads it first";
   if (many) {
     if (fileProblems.value.length) return { icon: "warn", text: exampleProblem(fileProblems.value[0]) };
@@ -345,6 +352,14 @@ function DatasetMenu() {
 
 // What keeps the dataset from a fit, as the last save (or load) left it.
 function DatasetBanner() {
+  if (entry.value?.onDisk === "deleted")
+    return html`
+      <div class="banner disk-banner" role="status">
+        <${icons.StatusIcon} kind="warn" />
+        <span><b>data/${datasetOfDocument(setName.value)}/</b> was deleted. Your questions are only here.</span>
+        <button class="btn" onClick=${files.saveAs}>Save as Question Set…</button>
+      </div>
+    `;
   const missing = dataset.value?.missing ?? [];
   if (!missing.length) return null;
   return html`

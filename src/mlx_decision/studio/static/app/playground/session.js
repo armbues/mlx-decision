@@ -6,7 +6,7 @@ import { showTab } from "../components/inspector.js";
 import { route } from "../router.js";
 import { remembered } from "../store/prefs.js";
 import { sets } from "../store/sets.js";
-import { busy, loadedNames, models, status } from "../store/status.js";
+import { busy, loadedNames, models, overBudget, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 import { answersFor, changedSince, currentExample, fromBody, locate, toBody, toFile } from "./draft.js";
 
@@ -26,6 +26,14 @@ export const modelName = computed(() => {
 export function chooseModel(name) {
   chosenModel.value = name;
 }
+
+// The model picked here when it is gone (deleted, its folder moved): Run uses
+// another until one is picked, and the status field says so.
+export const goneModel = computed(() => {
+  const list = models.value;
+  if (!list || !chosenModel.value) return null;
+  return list.some((model) => model.name === chosenModel.value) ? null : chosenModel.value;
+});
 
 export const model = computed(
   () => (models.value ?? []).find((entry) => entry.name === modelName.value) ?? null,
@@ -302,8 +310,12 @@ export const stale = computed(() => {
 // A dataset's search found no row: nothing to ask.
 const noRow = computed(() => !!example.value?.row?.empty);
 
+// The picked model is over the memory budget: it cannot load (why, or null).
+export const modelOverBudget = computed(() => (modelName.value ? overBudget(modelName.value) : null));
+
 export const canRun = computed(
   () =>
+    !modelOverBudget.value &&
     !noRow.value &&
     !running.value &&
     !busy.value &&
@@ -367,6 +379,7 @@ export const comparing = computed(() => answersView.value === "compare");
 
 export const canRunAll = computed(
   () =>
+    !modelOverBudget.value &&
     !running.value &&
     !busy.value &&
     !!draft.value &&
@@ -452,6 +465,12 @@ export const compareWith = computed(() => {
     .slice(0, MAX_COMPARED - 1);
 });
 export const compareModels = computed(() => (modelName.value ? [modelName.value, ...compareWith.value] : []));
+
+// Compare exactly these other models (a fit's base), shown in the Compare view.
+export function compareOnly(names) {
+  comparedOthers.value = names.slice(0, MAX_COMPARED - 1);
+  answersView.value = "compare";
+}
 
 // Pick or drop a model to compare with; picking one shows the Compare view.
 export function toggleCompared(name) {

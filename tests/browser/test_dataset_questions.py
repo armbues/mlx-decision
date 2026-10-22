@@ -86,9 +86,10 @@ def test_write_questions_on_a_dataset(studio, page):
     assert described(folder)["questions"] == {
         "noul": {"type": "noul", "instructions": "Is it about the Fed?"}
     }
-    # Asked, not answered yet: what a fit still needs.
+    # Answered by the dataset's value column at once, its values not mapped yet:
+    # what a fit still needs.
     expect(centre.locator(".ds-banner")).to_contain_text(
-        "no question is answered by one of its columns"
+        "noul: label values not mapped to an answer or left out: 0, 1, 2, 3"
     )
     page.goto(f"{studio.base}/#/datasets/tweets")
     expect(page.locator(".ds-question", has_text="noul")).to_be_visible()

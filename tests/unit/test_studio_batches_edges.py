@@ -297,3 +297,12 @@ def test_a_delete_is_announced_to_every_tab(studio):  # noqa: F811
         time.sleep(0.02)
     else:
         raise AssertionError("no workspace message for the delete")
+
+
+def test_a_labelled_batch_says_so_before_its_first_answer(studio):  # noqa: F811
+    # Nothing answered yet: the question is labelled (its rows carry labels),
+    # with no wrong answers and no metrics until answers come.
+    folder = studio.batches.prepare("tweets", "test", "fake", name="waiting")
+    analysed = Results(studio.batches.root).analyse(folder.name)["questions"]["topic"]
+    assert analysed["labelled"] is True and analysed["wrong"] == 0
+    assert "metrics" not in analysed

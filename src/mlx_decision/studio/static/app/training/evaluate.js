@@ -13,6 +13,7 @@ import { href, navigate } from "../router.js";
 import { dataFiles, datasetOf, splitFor } from "../store/data.js";
 import { gpuJob } from "../store/jobs.js";
 import { remembered } from "../store/prefs.js";
+import { NO_MODELS, NoModels } from "../components/no-models.js";
 import { loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
@@ -113,6 +114,7 @@ async function plan(model, compare, data, split) {
 export const evalNotReady = computed(() => {
   const job = gpuJob.value;
   if (job) return `${job.title} is running; one job at a time can use the GPU`;
+  if (models.value && models.value.length === 0) return NO_MODELS;
   if (!evalModel.value) return "No model to evaluate";
   if (!evalData.value) return "Download or add a dataset first, on the Datasets page";
   if (notReadyData.value) return notReadyData.value;
@@ -166,9 +168,11 @@ export function EvalForm() {
       <section class="gsec"><div class="gsec-head"><h2>Models</h2><span class="tag">Scored one after the other on the same examples</span></div>
         <div class="group form">
           <div class="row"><label for="eval-model">Model</label><div class="line">
-            <select id="eval-model" value=${model ?? ""} onChange=${(event) => (chosenModel.value = event.target.value)}>
-              ${list.map((item) => html`<option value=${item.name}>${label(item)}</option>`)}
-            </select>
+            ${list.length === 0
+              ? html`<${NoModels} />`
+              : html`<select id="eval-model" value=${model ?? ""} onChange=${(event) => (chosenModel.value = event.target.value)}>
+                  ${list.map((item) => html`<option value=${item.name}>${label(item)}</option>`)}
+                </select>`}
           </div></div>
           <div class="row"><label for="eval-compare">Compare with</label><div class="line">
             <select id="eval-compare" value=${evalCompare.value}

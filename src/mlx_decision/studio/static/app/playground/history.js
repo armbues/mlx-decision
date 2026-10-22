@@ -485,7 +485,7 @@ function clearHistory() {
               histories.value = { ...histories.value, [set]: { runs: [] } };
               forgetRuns(set);
             });
-            toast(`Cleared the history of ${set}`);
+            toast(`Cleared the history of ${datasetOfDocument(set) ?? set}`);
           } catch (error) {
             toast(`Not cleared: ${error.message}`);
           }

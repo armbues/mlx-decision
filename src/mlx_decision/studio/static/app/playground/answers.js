@@ -6,7 +6,8 @@ import { html } from "htm/preact";
 import { ChoiceBars, NoulBar, ScoreColumns, two } from "../charts/answers.js";
 import * as icons from "../components/icons.js";
 import { clock, duration } from "../format.js";
-import { loadedNames } from "../store/status.js";
+import { openDownload } from "../models/download.js";
+import { loadedNames, models } from "../store/status.js";
 import { SHORTCUTS } from "../keys.js";
 import { answerValue } from "./changes.js";
 import { TYPE_LABELS, changedSince, expectedAnswer, toBody } from "./draft.js";
@@ -215,6 +216,8 @@ function AllExamples() {
 export function Answers() {
   const current = draft.value;
   const name = modelName.value;
+  if (models.value && models.value.length === 0)
+    return html`<div class="empty"><b>No models yet</b><span class="empty-actions"><button class="btn primary" onClick=${() => openDownload()}>Download a Model…</button></span></div>`;
   if (!current || !name)
     return html`<div class="empty"><b>Nothing to run yet</b><span>Pick a question set and a model.</span></div>`;
   const shown =

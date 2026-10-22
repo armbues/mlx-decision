@@ -343,6 +343,9 @@ class Jobs:
         return "failed", self._stderr_tail(job) or f"ended with exit code {job.returncode}"
 
     def _end(self, job: Job, outcome: str, message: str | None) -> None:
+        if self.closing and outcome == "cancelled":
+            # Stopped by the Studio's shutdown, not by a Stop pressed.
+            outcome, message = INTERRUPTED, "the Studio stopped while it ran"
         job.state = "ended"
         job.outcome = outcome
         job.message = message

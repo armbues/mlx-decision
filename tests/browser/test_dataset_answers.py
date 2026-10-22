@@ -60,12 +60,10 @@ def test_options_from_the_cards_names(tweets, page):
     open_studio(page, tweets, "playground/data:tweets")
     question = add_choice(page)
     answered = question.get_by_label("Answered by, choice")
-    expect(answered).to_have_value("")  # asked, not trained, until a column answers it
-    answered.select_option("label")
+    # Answered by the dataset's value column at once, an option per value.
+    expect(answered).to_have_value("label")
     rows = question.locator(".am-row")
     expect(rows).to_have_count(20)
-    expect(question.locator(".am-open")).to_contain_text("No value is mapped yet")
-    question.get_by_role("button", name="Options from Values").click()
     keys = question.get_by_label("Option key")
     expect(keys).to_have_count(20)
     expect(keys.nth(1)).to_have_value("fed_central_banks")
