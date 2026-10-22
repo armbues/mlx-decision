@@ -161,8 +161,11 @@ def check_options(family: Family, options: dict) -> None:
 
 
 def load_backend(path: Path, **options) -> Backend:
+    from .memory import cap_buffer_cache
+
     family = detect_family(path)
     check_options(family, options)
+    cap_buffer_cache()
     backend = resolve(family.loader)(path, **options)
     if family is not FITTED:  # a fitted model's family is its base's
         backend.family = family.name

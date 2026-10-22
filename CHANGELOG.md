@@ -101,6 +101,14 @@ change the interface).
 
 ### Fixed
 
+- Answering many requests in one process (`run --states`, `server`,
+  `mcp`, the Studio's batches) no longer runs out of memory: MLX kept
+  the GPU buffers of finished requests for reuse, up to more than a
+  16 GB Mac has, and requests of varying length rarely reuse each
+  other's, so `run --states` with Laya was killed by macOS after 251 of
+  400 requests. Loading a model now caps that cache at a tenth of the
+  GPU's working set (at least 1 GB; a lower limit set before is kept).
+  Speed is unchanged.
 - A model whose `joint_config.json` names a request format no family
   knows, or a known one with other settings, is refused with a message
   naming it: `load` by repo id fetches no weights, `convert` writes no

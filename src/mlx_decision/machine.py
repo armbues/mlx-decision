@@ -66,7 +66,7 @@ def working_set_bytes() -> int | None:
     try:
         import mlx.core as mx
 
-        return int(mx.device_info()["max_recommended_working_set_size"])
+        return int(mx.device_info(mx.gpu)["max_recommended_working_set_size"])
     except Exception:
         return None
 

@@ -44,7 +44,30 @@ def working_set() -> int:
     """The GPU's recommended working set in bytes."""
     import mlx.core as mx
 
-    return int(mx.device_info()["max_recommended_working_set_size"])
+    # The GPU's, also when the CPU is the default device.
+    return int(mx.device_info(mx.gpu)["max_recommended_working_set_size"])
+
+
+# MLX keeps freed GPU buffers for reuse, by default up to 1.5 times the
+# working set: more than a 16 GB Mac has. Requests of varying length rarely
+# fit each other's buffers, so over many requests the cache grew until macOS
+# killed the process. Capped at a tenth of the working set, at least 1 GB:
+# as fast as an unlimited cache on Laya's requests, and flat.
+CACHE_FRACTION = 0.1
+MIN_CACHE_BYTES = 2**30
+
+
+def cap_buffer_cache() -> int:
+    """Cap MLX's cache of freed buffers for this process (a lower cap set
+    before is kept); returns the cap in force."""
+    import mlx.core as mx
+
+    cap = max(MIN_CACHE_BYTES, int(working_set() * CACHE_FRACTION))
+    previous = mx.set_cache_limit(cap)
+    if previous < cap:
+        mx.set_cache_limit(previous)
+        return previous
+    return cap
 
 
 def read_header(file: Path) -> dict[str, dict]:
