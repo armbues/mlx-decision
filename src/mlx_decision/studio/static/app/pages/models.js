@@ -437,20 +437,20 @@ const status_ = computed(() => {
   const list = models.value;
   if (!list) return null;
   if (list.length === 0)
-    return { text: html`No models yet · Download Model… (${SHORTCUTS.download})` };
+    return { text: html`No models yet · Download a Model… (${SHORTCUTS.download})` };
   return {
     text: html`<b>${plural(list.length, "model")}</b> · ${loadedNames.value.size} loaded`,
   };
 });
 
 const action = computed(() => ({
-  label: "Download Model…",
-  title: `Download Model… (${SHORTCUTS.download})`,
+  label: "Download a Model…",
+  title: `Download a Model… (${SHORTCUTS.download})`,
   icon: false,
   run: openDownload,
 }));
 
-// ⌘D opens Download Model from any page.
+// ⌘D opens Download a Model from any page.
 onKey("download", () => openDownload());
 
 function Centre() {

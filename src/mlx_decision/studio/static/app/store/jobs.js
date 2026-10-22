@@ -64,6 +64,12 @@ export function dismissJob(id) {
   if (!dismissed.value.includes(id)) dismissed.value = [...dismissed.value, id];
 }
 
+// Close every ended job the list shows; running and waiting ones stay.
+export function dismissEnded() {
+  const ended = listed.value.filter((job) => job.state === "ended").map((job) => job.id);
+  if (ended.length) dismissed.value = [...dismissed.value, ...ended];
+}
+
 // How a stage reads in the list.
 const STAGES = {
   check: "Checking",

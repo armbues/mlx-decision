@@ -183,3 +183,34 @@ def test_downloading_and_converting_rows_on_the_models_page(studio, page):
     expect(row).to_have_count(0)
     expect(page.locator(".msec", has_text="Downloading")).to_have_count(0)
     expect(page.locator(".mrow[data-name='model-x']")).to_have_count(0)
+
+
+def test_clear_closes_every_ended_job_and_keeps_running_ones(studio, page):
+    fake_jobs(studio.app, steps=400, every=0.1)
+    open_studio(page, studio)
+    clear = page.locator(".sidebar .jobs-clear")
+    download = start_job(page, studio, kind="download", repo="Org/model-x")
+    expect(job_row(page, download).locator("small")).to_have_text(re.compile(r"\d+%"))
+    expect(clear).to_have_count(0)  # nothing has ended
+
+    stopped = []
+    for name in ("one", "two"):
+        job = start_job(page, studio, kind="convert", model="fake", name=name)
+        row = job_row(page, job)
+        expect(row.locator("small")).to_have_text(re.compile(r"\d+%"))
+        row.get_by_role("button", name=re.compile("^Stop Convert")).click()
+        expect(row.locator("small")).to_have_text("Stopped")
+        stopped.append(job)
+    expect(clear).to_have_attribute("title", "Clear the 2 ended jobs")
+
+    clear.click()
+    for job in stopped:
+        expect(job_row(page, job)).to_have_count(0)
+    expect(job_row(page, download)).to_have_count(1)
+    expect(clear).to_have_count(0)
+    # Closed per browser: a reload keeps them closed.
+    page.reload()
+    page.wait_for_selector(".app")
+    expect(job_row(page, download)).to_have_count(1)
+    expect(job_row(page, stopped[0])).to_have_count(0)
+    job_row(page, download).get_by_role("button", name=re.compile("^Stop ")).click()

@@ -1,4 +1,4 @@
-// Download Model (⌘D): the families `download` offers, then the family's
+// Download a Model (⌘D): the families `download` offers, then the family's
 // models, then how to store the one picked (full size, 8-bit, 4-bit) with its
 // size and the fit check; or a repo id typed in. Each pick is checked on the
 // Hub first, as `download` checks it; the download itself is a job.

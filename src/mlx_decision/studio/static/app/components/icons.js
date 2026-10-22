@@ -72,6 +72,13 @@ export const Close = () => html`
   <svg viewBox="0 0 10 10" ...${stroke(1.4)} aria-hidden="true"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" /></svg>
 `;
 
+// A cross in a circle: Clear, which closes every ended job in the Jobs list.
+export const ClearAll = () => html`
+  <svg viewBox="0 0 14 14" width="13" height="13" ...${stroke(1.2)} aria-hidden="true">
+    <circle cx="7" cy="7" r="5.6" /><path d="M5 5l4 4M9 5l-4 4" />
+  </svg>
+`;
+
 export const File = ({ className = "file" }) => html`
   <svg class=${className} viewBox="0 0 14 16" ...${stroke(1.2)} aria-hidden="true">
     <path d="M2.5 1.5h6l3 3v10h-9z" /><path d="M8.5 1.5v3h3" />

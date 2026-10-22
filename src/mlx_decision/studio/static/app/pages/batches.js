@@ -8,6 +8,8 @@ import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import { openNewBatch } from "../batches/start.js";
 import { BatchView, pickedRow, RowInspector } from "../batches/view.js";
+import { uploadData } from "../datasets/files.js";
+import { openGetDataset } from "../datasets/get.js";
 import * as icons from "../components/icons.js";
 import { plural } from "../format.js";
 import { href, route } from "../router.js";
@@ -28,9 +30,9 @@ const status = computed(() => {
 });
 
 const action = computed(() => ({
-  label: "New Batch",
+  label: "New Batch…",
   icon: false,
-  title: "New Batch: a dataset's rows answered by a model",
+  title: "New Batch… (a dataset's rows answered by a model)",
   run: () => openNewBatch(),
 }));
 
@@ -42,8 +44,9 @@ function Empty() {
       <span>A batch answers a dataset's rows with a model, one after another, while the Playground and the API go on answering. You see each row's answers, export them, and with labels how often the model is right. Its answers can become a new dataset another model learns from.</span>
       <span class="empty-actions">${
         none
-          ? html`<a class="btn primary" href=${href("datasets")}>Get a Dataset</a>`
-          : html`<button class="btn primary" onClick=${() => openNewBatch()}>New Batch</button>`
+          ? html`<button class="btn primary" onClick=${openGetDataset}>Download a Dataset…</button>
+              <button class="btn" onClick=${uploadData}>Add a Dataset…</button>`
+          : html`<button class="btn primary" onClick=${() => openNewBatch()}>New Batch…</button>`
       }</span>
     </div>
   `;
@@ -74,7 +77,7 @@ function BatchList() {
   return html`
     <div class="sb-sec">
       <ul class="sb-list new-list">
-        <li><button class="sb-item" onClick=${() => openNewBatch()}><${icons.Plus} /><span class="label">New Batch</span></button></li>
+        <li><button class="sb-item" onClick=${() => openNewBatch()}><${icons.Plus} /><span class="label">New Batch…</span></button></li>
       </ul>
     </div>
     <div class="sb-sec">

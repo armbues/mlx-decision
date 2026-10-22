@@ -1,7 +1,7 @@
 // First start (no models yet): where models go, asked once when the config file
 // does not say, then "Download your first model" with a small, a medium and a
 // large model that fit this Mac (chosen at random among those that fit). A
-// pick opens Download Model on it, so its check and licence note come first.
+// pick opens Download a Model on it, so its check and licence note come first.
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
@@ -17,6 +17,7 @@ const place = signal("hf-cache"); // the answer: "hf-cache" or "folder"
 const folder = signal("");
 const saved = signal(null); // {line, config_path} once written
 const saving = signal(false);
+const folderError = signal(null); // why the folder was refused, shown under it
 
 async function load() {
   try {
@@ -36,7 +37,8 @@ async function answer(event) {
     saved.value = await api("/downloads/destination", { method: "POST", body });
     first.value = { ...first.value, models_dir_set: true };
   } catch (error) {
-    toast(error.message);
+    if (error.param === "path") folderError.value = error.message;
+    else toast(error.message);
   } finally {
     saving.value = false;
   }
@@ -56,9 +58,15 @@ function WhereModelsGo() {
         <label class="choice">
           <input type="radio" name="place" value="folder" checked=${place.value === "folder"}
                  onChange=${() => (place.value = "folder")} />
-          <span><b>A folder</b><small>Each model in a folder of its own; <code>-m</code> takes their names.</small>
+          <span><b>A folder</b><small>Under your home folder, each model in a folder of its own; <code>-m</code> takes their names.</small>
             <input class="folder-path mono" aria-label="Folder" value=${folder.value} spellcheck=${false}
-                   onFocus=${() => (place.value = "folder")} onInput=${(event) => (folder.value = event.target.value)} />
+                   aria-invalid=${folderError.value ? "true" : undefined} aria-describedby=${folderError.value ? "folder-error" : undefined}
+                   onFocus=${() => (place.value = "folder")}
+                   onInput=${(event) => {
+                     folder.value = event.target.value;
+                     folderError.value = null;
+                   }} />
+            ${folderError.value && place.value === "folder" && html`<small id="folder-error" class="warn-text" role="alert">${folderError.value}</small>`}
           </span>
         </label>
       </div>
@@ -94,8 +102,8 @@ function Picks() {
         <${StatusIcon} kind="ok" /><span>Saved <code>${saved.value.line}</code> in <code>${saved.value.config_path}</code>; change it there.</span>
       </p>`}
       <p>${picks.length
-        ? "Three that fit this Mac's memory, a small, a medium and a large one; each opens Download Model with its check and terms first."
-        : "None of the models the Studio knows fits this Mac's memory budget at full size; Download Model offers them quantized."}</p>
+        ? "Three that fit this Mac's memory, a small, a medium and a large one; each opens Download a Model with its check and terms first."
+        : "None of the models the Studio knows fits this Mac's memory budget at full size; Download a Model offers them quantized."}</p>
       <div class="first-picks">${picks.map((pick) => html`<${Pick} key=${pick.repo} pick=${pick} />`)}</div>
       <div class="first-actions">
         <button class="btn" onClick=${() => openDownload()}>Download Another Model…</button>

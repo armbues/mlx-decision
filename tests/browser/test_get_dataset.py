@@ -32,6 +32,16 @@ def test_download_a_preset(studio, page):
         ["TREC", "TweetEval Offensive", "SST-5", "OpenBookQA", "ANLI round 3", "Another dataset…"]
     )
     expect(sheet.locator(".fam[aria-selected='true'] b")).to_have_text("TREC")
+    # Each thing said once: the task in the list, the question and its options beside it.
+    expect(sheet.locator(".fam[aria-selected='true']")).to_contain_text("Question classification")
+    pane = sheet.locator(".fam-pane")
+    expect(pane.locator("p").first).to_have_text(
+        re.compile(r"^From CogComp/trec on the Hugging Face Hub")
+    )
+    expect(pane).not_to_contain_text("Question classification")
+    expect(pane.locator(".ds-instructions")).to_have_text(
+        "What kind of answer does this question ask for?"
+    )
     expect(sheet.locator(".ds-options li")).to_have_count(6)
     expect(sheet.locator(".st-row[data-split='train']")).to_contain_text("5,452")
     test = sheet.locator(".st-row[data-split='test']")

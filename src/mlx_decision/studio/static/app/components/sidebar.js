@@ -3,7 +3,7 @@ import { html } from "htm/preact";
 import { gigabytes, hostPort } from "../format.js";
 import { href } from "../router.js";
 import { batchProgressText, runningBatch, stopBatch } from "../store/batches.js";
-import { dismissJob, listed, progress, stopJob } from "../store/jobs.js";
+import { dismissEnded, dismissJob, listed, progress, stopJob } from "../store/jobs.js";
 import { groupColour, groupLabel } from "../families.js";
 import { dataFiles } from "../store/data.js";
 import { busy, connection, models, status } from "../store/status.js";
@@ -81,9 +81,16 @@ function BatchJob({ batch }) {
 function Jobs() {
   const shown = listed.value;
   const batch = runningBatch.value;
+  const ended = shown.filter((job) => job.state === "ended").length;
   return html`
     <div class="sb-sec">
-      <h3>Jobs</h3>
+      <h3>
+        Jobs
+        ${ended > 0 &&
+        html`<button class="jobs-clear" aria-label="Clear ended jobs" title=${ended === 1 ? "Clear the ended job" : `Clear the ${ended} ended jobs`} onClick=${dismissEnded}>
+          <${icons.ClearAll} />
+        </button>`}
+      </h3>
       ${shown.length === 0 && !batch
         ? html`<p class="sb-empty">Nothing running</p>`
         : html`<ul class="jobs">${batch && html`<${BatchJob} batch=${batch} />`}${shown.map((job) => html`<${Job} key=${job.id} job=${job} />`)}</ul>`}

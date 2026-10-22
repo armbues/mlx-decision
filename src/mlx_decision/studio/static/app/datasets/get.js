@@ -10,7 +10,6 @@ import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
-import { plural } from "../format.js";
 import { toast } from "../store/ui.js";
 import { AnyDataset, anyJob, anyProblem, resetAny } from "./any-dataset.js";
 import { NameAndSeed, SplitTable, freeBase, seeded, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
@@ -82,7 +81,7 @@ function Presets() {
       ${presets.value.map(
         (item) => html`<button class="fam ds" role="option" aria-selected=${item.name === picked.value ? "true" : "false"}
           data-preset=${item.name} onClick=${() => pick(item.name)}>
-          <span><b>${item.title}</b><span>${item.question.type} · ${plural(item.question.options.length, "option")}</span></span>
+          <span><b>${item.title}</b><span>${item.summary}</span></span>
         </button>`,
       )}
       <button class="fam ds" role="option" aria-selected=${picked.value === ANY ? "true" : "false"} data-preset="any" onClick=${() => pick(ANY)}>
@@ -98,7 +97,7 @@ function Picked() {
   if (!item) return null;
   const question = item.question;
   return html`
-    <p>${item.summary}. From <code>${item.repo}</code>${item.config ? html` (${item.config})` : ""} on the Hugging Face Hub, at a pinned commit.</p>
+    <p>From <code>${item.repo}</code>${item.config ? html` (${item.config})` : ""} on the Hugging Face Hub, at a pinned commit.</p>
     <div class="opts">
       <h4>Question <code>${question.id}</code></h4>
       <p class="ds-instructions">${question.instructions}</p>

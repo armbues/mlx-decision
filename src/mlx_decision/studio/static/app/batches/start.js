@@ -77,6 +77,10 @@ function sameAs(asked, labelled) {
   return options(asked) === theirs;
 }
 
+// What a labelled question gets in the batch's metrics.
+const SCORED = "accuracy, F1, calibration and a confusion matrix";
+const ids = (list) => list.map((id, index) => html`${index ? ", " : ""}<code>${id}</code>`);
+
 // What the batch's labels will count for, in words.
 function LabelsHint({ item, current }) {
   const summary = described.value[summaryKey(current.dataset, current.split)];
@@ -84,7 +88,7 @@ function LabelsHint({ item, current }) {
   const labelled = (summary.questions ?? []).filter((question) => question.labelled > 0);
   if (current.questions === OWN) {
     if (!labelled.length) return html`Its rows have no labels: answers only.`;
-    return html`Its labels give accuracy and the rest for ${labelled.map((question, index) => html`${index ? ", " : ""}<code>${question.id}</code>`)}.`;
+    return html`Its labels score ${ids(labelled.map((question) => question.id))}: ${SCORED}.`;
   }
   const set = setQuestions.value?.name === current.questions ? setQuestions.value.questions : null;
   if (!set) return null;
@@ -92,8 +96,8 @@ function LabelsHint({ item, current }) {
   const counted = Object.keys(set).filter((id) => sameAs(set[id], byId[id]));
   const others = Object.keys(set).filter((id) => !counted.includes(id));
   if (!counted.length) return html`Answers only: ${item?.name ?? "the dataset"} has no labels for these questions.`;
-  return html`The labels count for ${counted.map((id, index) => html`${index ? ", " : ""}<code>${id}</code>`)}${
-    others.length ? html`; answers only for ${others.map((id, index) => html`${index ? ", " : ""}<code>${id}</code>`)} (not asked as the dataset asks them)` : ""
+  return html`Its labels score ${ids(counted)}: ${SCORED}${
+    others.length ? html`; answers only for ${ids(others)} (not asked as the dataset asks them)` : ""
   }.`;
 }
 

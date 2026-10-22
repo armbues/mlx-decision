@@ -271,10 +271,10 @@ export function DatasetList() {
       <h3>
         Datasets
         <span class="sb-actions">
-          <button aria-label="Download a dataset" title="Download (a public dataset from the Hugging Face Hub)" onClick=${openGetDataset}>
+          <button aria-label="Download a dataset" title="Download a Dataset… (a public dataset from the Hugging Face Hub)" onClick=${openGetDataset}>
             <${icons.Download} />
           </button>
-          <button aria-label="Add a dataset" title="Add (training data as JSON lines, or rows of columns as CSV or JSON lines)" onClick=${uploadData}>
+          <button aria-label="Add a dataset" title="Add a Dataset… (training data as JSON lines, or rows of columns as CSV or JSON lines)" onClick=${uploadData}>
             <${icons.Plus} />
           </button>
         </span>

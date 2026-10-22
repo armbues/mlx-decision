@@ -4,6 +4,7 @@ page and the sidebar, export, Save Answers as a Dataset, Delete."""
 
 import json
 import re
+import shutil
 
 import pytest
 from drive import menu_item, open_studio, put_set
@@ -79,6 +80,21 @@ def test_an_empty_page_explains_batches(studio, page):
     expect(page.locator(".sidebar .sb-item", has_text="Batches")).to_have_attribute(
         "aria-current", "page"
     )
+    # Buttons that open a sheet say so: its title and "…".
+    empty = page.locator(".batch-empty")
+    expect(empty.get_by_role("button")).to_have_text(["New Batch…"])
+    expect(page.locator(".toolbar").get_by_role("button", name="New Batch…")).to_be_visible()
+    expect(page.locator(".sidebar").get_by_role("button", name="New Batch…")).to_be_visible()
+
+
+def test_without_datasets_the_empty_page_offers_to_get_one(studio, page):
+    shutil.rmtree(studio.workspace / "data")
+    (studio.workspace / "data").mkdir()
+    open_studio(page, studio, "batches")
+    empty = page.locator(".batch-empty")
+    expect(empty.get_by_role("button")).to_have_text(["Download a Dataset…", "Add a Dataset…"])
+    empty.get_by_role("button", name="Download a Dataset…").click()
+    expect(page.locator(".sheet h2")).to_have_text("Download a Dataset")
 
 
 def test_a_batch_shows_its_answers_metrics_and_rows(tweets, page):
@@ -261,9 +277,13 @@ def test_every_questions_answer_in_the_table_and_wrong_only_with_labels(tweets, 
     sheet = page.locator(".sheet")
     sheet.locator("#batch-data").select_option("tweets")
     sheet.locator("#batch-split").select_option("test")
-    sheet.locator("#batch-questions").select_option("both")
     hint = sheet.locator(".hint")
-    expect(hint).to_contain_text("The labels count for topic")
+    # The dataset's own questions: what its labels give, named.
+    expect(hint).to_have_text(
+        "Its labels score topic: accuracy, F1, calibration and a confusion matrix."
+    )
+    sheet.locator("#batch-questions").select_option("both")
+    expect(hint).to_contain_text("Its labels score topic: accuracy, F1")
     expect(hint).to_contain_text("answers only for urgent")
     sheet.get_by_role("button", name="Start").click()
     done(page, "9 answered")

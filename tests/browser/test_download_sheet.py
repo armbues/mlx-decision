@@ -36,7 +36,7 @@ def hub(monkeypatch):
 
 def test_pick_a_model_and_download_it(studio, page, hub):
     open_studio(page, studio, "models")
-    page.get_by_role("button", name="Download Model…").click()
+    page.get_by_role("button", name="Download a Model…").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator("h2")).to_have_text("Download a Model")
     expect(sheet).to_contain_text("Into the Hugging Face cache")
@@ -87,7 +87,7 @@ def test_pick_a_model_and_download_it(studio, page, hub):
 
 def test_a_typed_repo_id_is_checked_first(studio, page, hub):
     open_studio(page, studio, "models")
-    page.get_by_role("button", name="Download Model…").click()
+    page.get_by_role("button", name="Download a Model…").click()
     sheet = page.locator(".sheet")
     field = sheet.locator("#repo-id")
     download = sheet.get_by_role("button", name="Download", exact=True)

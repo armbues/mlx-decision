@@ -36,16 +36,14 @@ CELL_CHARS = 160
 # A label column has at most MAX_CLASSES classes, and repeats them (more, or
 # about one value a row, is free text or ids, not labels).
 
-# How the sheet names each preset, and what it is for.
+# How the sheet names each preset, and its task in a few words (the question
+# and its options, shown beside it, say the rest).
 TITLES = {
-    "trec": ("TREC", "Question classification: which kind of answer a question asks for (6 types)"),
-    "offensive": ("TweetEval Offensive", "Whether a tweet is offensive (yes or no)"),
-    "sst5": ("SST-5", "Movie review sentiment on five levels, very negative to very positive"),
-    "openbookqa": ("OpenBookQA", "Elementary science questions with four answers to pick from"),
-    "anli-r3": (
-        "ANLI round 3",
-        "Whether a premise entails, contradicts or is neutral to a hypothesis",
-    ),
+    "trec": ("TREC", "Question classification"),
+    "offensive": ("TweetEval Offensive", "Offensive tweets"),
+    "sst5": ("SST-5", "Movie review sentiment"),
+    "openbookqa": ("OpenBookQA", "Elementary science questions"),
+    "anli-r3": ("ANLI round 3", "Natural language inference"),
 }
 # The split a training file is read from by default.
 TRAIN_SPLITS = {"anli-r3": "train_r3"}

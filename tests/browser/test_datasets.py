@@ -278,8 +278,8 @@ def test_delete_the_picked_file(studio, page):
     # The empty state: what a dataset is, with Download and Add.
     empty = page.locator(".centre .ds-empty")
     expect(empty).to_contain_text("A dataset holds examples")
-    expect(empty.get_by_role("button", name="Download")).to_be_visible()
-    expect(empty.get_by_role("button", name="Add")).to_be_visible()
+    expect(empty.get_by_role("button", name="Download a Dataset…")).to_be_visible()
+    expect(empty.get_by_role("button", name="Add a Dataset…")).to_be_visible()
     # Training says where datasets come from.
     page.goto(f"{studio.base}/#/training")
     expect(page.locator(".centre .empty")).to_contain_text("No datasets yet")

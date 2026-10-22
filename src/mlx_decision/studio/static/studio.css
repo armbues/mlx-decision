@@ -985,6 +985,7 @@ a.sb-item { color: var(--fg); }
 .first-card .choice input[type="radio"] { margin: 2px 0 0; accent-color: var(--accent); }
 .first-card .choice b { display: block; font-weight: 600; }
 .first-card .choice small { display: block; color: var(--fg-2); font-size: 12px; margin-top: 2px; }
+.first-card .choice small.warn-text { color: var(--orange); margin-top: 6px; }
 .first-card .folder-path { margin-top: 8px; width: min(360px, 100%); padding: 5px 8px; border: 0.5px solid var(--sep-strong); border-radius: 6px; background: var(--bg, var(--group)); font: 12px var(--mono); color: var(--fg); }
 .first-card .first-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .first-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }

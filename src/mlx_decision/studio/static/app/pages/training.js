@@ -77,8 +77,8 @@ function Form() {
           <b>No datasets yet</b>
           <span>A fit learns from a dataset: labelled examples in the workspace's data/ folder. Get a public dataset or add a file of your own; both are on the <a href=${href("datasets")}>Datasets</a> page.</span>
           <span class="empty-actions">
-            <button class="btn" onClick=${openGetDataset}>Download</button>
-            <button class="btn" onClick=${uploadData}>Add</button>
+            <button class="btn" onClick=${openGetDataset}>Download a Dataset…</button>
+            <button class="btn" onClick=${uploadData}>Add a Dataset…</button>
           </span>
         </div>`}
   `;

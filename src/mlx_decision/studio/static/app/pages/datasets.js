@@ -41,8 +41,8 @@ const status = computed(() => {
 });
 
 const action = computed(() => ({
-  label: "Download",
-  title: "Download (a public dataset from the Hugging Face Hub)",
+  label: "Download a Dataset…",
+  title: "Download a Dataset… (a public dataset from the Hugging Face Hub)",
   icon: false,
   run: openGetDataset,
 }));
@@ -53,8 +53,8 @@ function Empty() {
       <b>No datasets yet</b>
       <span>A dataset holds examples: each a state and its label, split into the examples a fit learns from, those its report is scored on and those kept for an evaluation. Download a public dataset from the Hugging Face Hub, or add a file of your own (training data as JSON lines, or rows of columns).</span>
       <span class="empty-actions">
-        <button class="btn primary" onClick=${openGetDataset}>Download</button>
-        <button class="btn" onClick=${uploadData}>Add</button>
+        <button class="btn primary" onClick=${openGetDataset}>Download a Dataset…</button>
+        <button class="btn" onClick=${uploadData}>Add a Dataset…</button>
       </span>
     </div>
   `;

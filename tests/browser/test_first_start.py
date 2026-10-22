@@ -85,8 +85,18 @@ def test_the_hugging_face_cache_is_the_default_answer(empty, page):
 def test_a_folder_outside_the_home_folder_is_refused(empty, page, tmp_path):
     open_studio(page, empty)
     card = page.locator(".first-card")
-    card.locator(".folder-path").fill(str(tmp_path / "elsewhere"))
+    # The limit is said before anything is tried.
+    expect(card.locator(".choice").nth(1)).to_contain_text("Under your home folder")
+    field = card.locator(".folder-path")
+    field.fill(str(tmp_path / "elsewhere"))
     card.get_by_role("button", name="Continue").click()
-    expect(page.locator(".toast")).to_contain_text("not a folder under your home folder")
+    # The reason shows under the field, not in a toast.
+    error = card.locator("#folder-error")
+    expect(error).to_contain_text("not a folder under your home folder")
+    expect(field).to_have_attribute("aria-invalid", "true")
+    expect(page.locator(".toast")).to_have_count(0)
     expect(card.locator("h2")).to_have_text("Where should models go?")
     assert not (empty.home / "config.toml").exists()
+    # Typing again clears it.
+    field.fill("~/Models")
+    expect(error).to_have_count(0)

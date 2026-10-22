@@ -101,8 +101,8 @@ def test_stop_sits_beside_run_in_the_toolbar(studio, page):
 def test_the_download_button_names_its_shortcut(studio, page):
     open_studio(page, studio, "models")
     button = page.locator(".run-btn")
-    expect(button).to_have_text("Download Model…")
-    expect(button).to_have_attribute("title", "Download Model… (⌘D)")
+    expect(button).to_have_text("Download a Model…")
+    expect(button).to_have_attribute("title", "Download a Model… (⌘D)")
 
 
 def test_the_theme_switch_overrides_the_system_and_is_kept(studio, page):
