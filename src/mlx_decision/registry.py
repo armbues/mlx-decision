@@ -224,8 +224,20 @@ class UnknownFormat(ValueError):
 # names (pplx's names none).
 LETTER_PROMPTS = {None: "pplx", "d3": "d3"}
 # The families by the request format (``template``) a ``joint_config.json``
-# names: none yet (pplx-decider v1.2 declares one).
-JOINT_TEMPLATES: dict[str, str] = {}
+# names, with the whole protocol it must declare (pplx-decider v1.2's; its
+# code refuses any other value too).
+JOINT_TEMPLATES: dict[str, str] = {"joint-question-inline-readout-v1": "pplx"}
+JOINT_PROTOCOLS: dict[str, dict] = {
+    "joint-question-inline-readout-v1": {
+        "version": 3,
+        "template": "joint-question-inline-readout-v1",
+        "marker": "<|fim_suffix|>",
+        "readout_offset": 0,
+        "max_questions": None,
+        "max_length": None,
+        "usage": "nonpadding_joint_sequence_including_template_and_image_positions",
+    },
+}
 
 
 def _letter_family(path: Path) -> str | None:
@@ -244,6 +256,15 @@ def _letter_family(path: Path) -> str | None:
                 f"{path}: joint_config.json names the request format {template!r}, "
                 "which no family here knows"
             )
+        protocol = JOINT_PROTOCOLS[template]
+        different = sorted(
+            k for k in protocol.keys() | config.keys() if config.get(k, ...) != protocol.get(k, ...)
+        )
+        if different:
+            raise UnknownFormat(
+                f"{path}: joint_config.json declares {template!r} with other settings "
+                f"({', '.join(different)}) than the version known here"
+            )
         return JOINT_TEMPLATES[template]
     prompt = json.loads(file.read_text()).get("prompt")
     if prompt not in LETTER_PROMPTS:
@@ -259,11 +280,19 @@ register_family(
     detect=lambda path: _letter_family(path) == "pplx",
     loader="mlx_decision.models.pplx.model:load",
     capabilities="mlx_decision.models.pplx.model:capabilities",
-    listing=Listing("pplx", "Perplexity", "letter readout over Qwen3.5; text and images"),
+    listing=Listing(
+        "pplx", "Perplexity", "whole requests in one pass, 4B and 27B; text and images"
+    ),
     converter="mlx_decision.models.pplx.convert:convert",
+    # v1.1 (``perplexity-ai/pplx-decider-v1.1-27b``) still downloads by repo id.
     known_models=(
         KnownModel(
-            "perplexity-ai/pplx-decider-v1.1-27b",
+            "perplexity-ai/pplx-decider-flash-v1.2",
+            "pplx decider flash: Perplexity's 4B decision model (Qwen3.5), text and images",
+            "9.1 GB",
+        ),
+        KnownModel(
+            "perplexity-ai/pplx-decider-v1.2",
             "pplx decider: Perplexity's 27B decision model (Qwen3.5), text and images; "
             "below 96 GB of memory it runs quantized (offered after picking it)",
             "52 GB",
@@ -273,9 +302,11 @@ register_family(
     files=(
         "config.json",
         "decision_config.json",
+        "joint_config.json",
         "model.safetensors.index.json",
         "processor_config.json",
         "tokenizer.json",
+        "tokenizer_config.json",
         "model*.safetensors",
         "readout.safetensors",
         "LICENSE",

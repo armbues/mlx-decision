@@ -205,13 +205,15 @@ def test_first_picks_one_small_one_medium_one_large_that_fit():
         "convaiinnovations/laya-typed-decisions", "vllm-sr/d3-edge", "vllm-sr/d3-lite",
     }  # fmt: skip
     assert seen["medium"] == {"vllm-sr/d3-nano", "LiquidAI/d1-3B"}
-    assert seen["large"] == {"vllm-sr/d3-mini", "h2oai/h2o-lightning-4b"}
+    assert seen["large"] == {
+        "vllm-sr/d3-mini", "h2oai/h2o-lightning-4b", "perplexity-ai/pplx-decider-flash-v1.2"
+    }  # fmt: skip
     assert "Cloudflare/clef-flash" not in set().union(*seen.values())  # 19 GB does not fit
     # A big Mac sees the big models; a small one gets thirds of what fits; a
     # tiny budget fewer than three.
     big = {pick["repo"] for seed in range(100) for pick in
            downloads_route.first_picks(64 * GB, random.Random(seed))[2:]}  # fmt: skip
-    assert "Cloudflare/clef-flash" in big and "perplexity-ai/pplx-decider-v1.1-27b" in big
+    assert "Cloudflare/clef-flash" in big and "perplexity-ai/pplx-decider-v1.2" in big
     small_mac = downloads_route.first_picks(int(5.4 * GB), random.Random(1))
     assert [pick["tier"] for pick in small_mac] == ["small", "medium", "large"]
     assert small_mac[-1]["memory_bytes"] <= 5.4 * GB

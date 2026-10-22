@@ -17,9 +17,9 @@ REPOS = {
     "Cloudflare/clef-flash": {"joint_head_config.json": "{}", "config.json": "{}"},
     "Qwen/Qwen3.5-9B": {"config.json": "{}"},
     "convaiinnovations/laya": {"rl_agent_config.json": "{}"},
-    "perplexity-ai/pplx-decider-v1.2": {
+    "perplexity-ai/pplx-decider-v9": {
         "decision_config.json": '{"format_version": 2}',
-        "joint_config.json": '{"template": "joint-question-inline-readout-v1"}',
+        "joint_config.json": '{"template": "joint-question-inline-readout-v9"}',
     },
     "LiquidAI/d1-3B": {
         "config.json": '{"model_type": "lfm2_vl", "auto_map": {"AutoModel": "modeling_d1.D1Model"}}'
@@ -141,11 +141,11 @@ def test_an_unsupported_model_needs_yes(hub):
 
 
 def test_a_request_format_no_family_knows_names_it_and_needs_yes(hub):
-    result = invoke("perplexity-ai/pplx-decider-v1.2")
+    result = invoke("perplexity-ai/pplx-decider-v9")
     assert result.exit_code == 1
     assert (
-        "warning: perplexity-ai/pplx-decider-v1.2: joint_config.json names the request format "
-        "'joint-question-inline-readout-v1', which no family here knows"
+        "warning: perplexity-ai/pplx-decider-v9: joint_config.json names the request format "
+        "'joint-question-inline-readout-v9', which no family here knows"
     ) in result.stderr
     assert "not downloaded" in result.stderr
     assert len(hub) == 1  # only the JSON files
@@ -210,7 +210,8 @@ def test_the_menu_lists_known_models_and_other():
     assert [m.repo_id for m in known_models()] == [
         "Cloudflare/clef-flash",
         "Cloudflare/clef",
-        "perplexity-ai/pplx-decider-v1.1-27b",
+        "perplexity-ai/pplx-decider-flash-v1.2",
+        "perplexity-ai/pplx-decider-v1.2",
         "vllm-sr/d3-flash",
         "vllm-sr/d3",
         "vllm-sr/d3-mini",
@@ -228,7 +229,9 @@ def test_the_menu_lists_known_models_and_other():
     # Families: Clef, pplx, d3, H2O-Lightning, d1, Laya, Julia, then "Other...".
     for typed, expected in [
         ("\r\r", "Cloudflare/clef-flash"),  # Clef, its first model
-        (down + "\r", "perplexity-ai/pplx-decider-v1.1-27b"),  # one model: no second menu
+        (down + "\r\r", "perplexity-ai/pplx-decider-flash-v1.2"),
+        (down + "\r" + down + "\r", "perplexity-ai/pplx-decider-v1.2"),
+        (down * 3 + "\r", "h2oai/h2o-lightning-4b"),  # one model: no second menu
         (down * 2 + "\r" + down * 5 + "\r", "vllm-sr/d3-edge"),
         # d3, "Back" (its seventh entry), d3 again (still selected), its second model.
         (down * 2 + "\r" + down * 6 + "\r" + "\r" + down + "\r", "vllm-sr/d3"),
@@ -394,6 +397,20 @@ def remote_pplx(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def remote_pplx_joint(monkeypatch, tmp_path):
+    """The same for a tiny pplx v1.2 release (flash's shape), with its extra files."""
+    from tiny_models import write_pplx
+
+    release = write_pplx(tmp_path / "release", joint="flash")
+    for name in ("README.md", "NOTICE", "chat_template.jinja", "requirements.txt"):
+        (release / name).write_text("x\n")
+    for name in ("source/src/pplx_decider/protocol.py", "evaluation/inference-verification.json"):
+        (release / name).parent.mkdir(parents=True, exist_ok=True)
+        (release / name).write_text("{}\n")
+    return serve(monkeypatch, tmp_path, release)
+
+
+@pytest.fixture
 def remote_h2o(monkeypatch, tmp_path):
     """The same for a tiny H2O-Lightning release: one model.safetensors, no index."""
     from tiny_models import write_h2o
@@ -551,6 +568,47 @@ def test_a_quantized_pplx_download_equals_a_converted_copy(remote_pplx, tmp_path
     assert not (out / "source").exists() and not (out / "chat_template.jinja").exists()
     result = mlx_decision.load(out).decide("refund please", {"q": {"type": "noul"}})
     assert 0 <= result.answers["q"].noul <= 1
+
+
+def test_a_pplx_v12_download_fetches_only_what_it_loads(remote_pplx_joint, tmp_path):
+    import mlx_decision
+
+    check = download.check_repo("perplexity-ai/tiny-pplx-flash")
+    assert check.family == "pplx" and check.convertible
+    out = download.download(check.repo_id, tmp_path / "full", check.files, check.revision)
+    assert sorted(p.name for p in out.iterdir()) == [
+        "LICENSE",
+        "NOTICE",
+        "README.md",
+        "config.json",
+        "decision_config.json",
+        "joint_config.json",
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+        "model.safetensors.index.json",
+        "readout.safetensors",
+        "tokenizer.json",
+        "tokenizer_config.json",
+    ]
+    result = mlx_decision.load(out).decide("refund please", {"q": {"type": "noul"}})
+    assert 0 <= result.answers["q"].noul <= 1
+
+
+def test_a_quantized_pplx_v12_download_equals_a_converted_copy(remote_pplx_joint, tmp_path):
+    import mlx_decision
+    from mlx_decision.convert import convert
+    from mlx_decision.models.pplx.backend import JointBackend
+
+    check = download.check_repo("perplexity-ai/tiny-pplx-flash")
+    out = download.download_quantized(check, 8, tmp_path / "models" / "tiny-pplx-flash")
+    converted = convert(remote_pplx_joint.release, tmp_path / "converted", bits=8)
+    assert_same_model(out, converted)
+    for name in ("joint_config.json", "tokenizer_config.json", "decision_config.json"):
+        assert (out / name).read_bytes() == (remote_pplx_joint.release / name).read_bytes(), name
+    assert not (out / "source").exists() and not (out / "evaluation").exists()
+    model = mlx_decision.load(out)
+    assert isinstance(model.backend, JointBackend)
+    assert 0 <= model.decide("refund please", {"q": {"type": "noul"}}).answers["q"].noul <= 1
 
 
 def test_a_quantized_h2o_download_streams_its_single_weight_file(remote_h2o, tmp_path):

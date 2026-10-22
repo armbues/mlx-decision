@@ -142,3 +142,51 @@ def test_no_convert_hint_for_a_converted_copy(q8, working_set):
     with pytest.raises(ModelTooLargeError) as error:
         check_fits(q8)
     assert "convert" not in str(error.value)
+
+
+# pplx v1.2: the joint request format's files go along, mixed precision works.
+
+
+@pytest.fixture(scope="module")
+def joint_release(tmp_path_factory):
+    return write_pplx(tmp_path_factory.mktemp("pplx") / "tiny-flash", joint="flash")
+
+
+def test_v12_copy_answers_like_the_release(joint_release, tmp_path):
+    out = convert(joint_release, tmp_path / "copy")
+    for name in ("joint_config.json", "tokenizer_config.json", "decision_config.json"):
+        assert (out / name).read_bytes() == (joint_release / name).read_bytes()
+    body = {"state": "please refund", "questions": QUESTIONS, "images": [png()]}
+    original = mlx_decision.load(joint_release).decide_request(body)
+    copy = mlx_decision.load(out).decide_request(body)
+    assert copy.answers == original.answers
+    assert copy.usage.input_tokens == original.usage.input_tokens
+
+
+def test_v12_8bit_stays_close_to_the_release(joint_release, tmp_path):
+    out = convert(joint_release, tmp_path / "q8", bits=8)
+    model = mlx_decision.load(out)
+    assert model.info()["precision"] == "8-bit"
+    original = mlx_decision.load(joint_release).decide("please refund", QUESTIONS)
+    copy = model.decide("please refund", QUESTIONS)
+    team = original.answers["team"].probabilities
+    assert copy.answers["team"].probabilities == pytest.approx(team, abs=0.01)
+    assert copy.answers["refund"].noul == pytest.approx(original.answers["refund"].noul, abs=0.01)
+
+
+def test_v12_mixed_precision(joint_release, tmp_path, monkeypatch):
+    from mlx_decision.models import qwen_convert
+    from mlx_decision.models.qwen_convert import SENSITIVITY_FILE
+
+    monkeypatch.setattr(
+        qwen_convert,
+        "calibration_requests",
+        lambda: [{"state": "please refund", "questions": QUESTIONS}],
+    )
+    out = convert(joint_release, tmp_path / "mixed", target_bits=4.5, group_size=32)
+    assert json.loads((out / SENSITIVITY_FILE).read_text())["average_bits"] <= 4.5
+    marker = json.loads((out / MARKER_FILE).read_text())
+    assert marker["family"] == "pplx" and marker["mixed"]["target_bits"] == 4.5
+    model = mlx_decision.load(out)
+    assert model.info()["precision"] == "mixed 4.5-bit"
+    assert model.decide("please refund", QUESTIONS).answers

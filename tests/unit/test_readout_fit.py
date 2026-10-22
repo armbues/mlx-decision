@@ -22,7 +22,13 @@ from tiny_models import write_d1, write_d3, write_h2o, write_pplx
 TEAM = {"type": "choice", "criteria": {"billing": "refund", "technical": "crash"}}
 URGENT = {"type": "noul", "instructions": "Is it urgent?"}
 STATES = ["please refund", "crash now", "refund now please", "crash"]
-WRITERS = {"h2o": write_h2o, "d1": write_d1, "pplx": write_pplx, "d3": write_d3}
+WRITERS = {
+    "h2o": write_h2o,
+    "d1": write_d1,
+    "pplx": write_pplx,
+    "pplx-v1.2": lambda folder: write_pplx(folder, joint="flash"),
+    "d3": write_d3,
+}
 
 
 def labelled(count: int = 120) -> list[Example]:
@@ -126,7 +132,7 @@ def test_no_readout_for_a_question_whose_examples_score_other_tokens():
 
 def test_readout_is_the_main_kind_of_the_reading_families(tmp_path):
     for family in WRITERS:
-        assert plan.resolve(family, "auto") == ["readout", "calibrate"]
+        assert plan.resolve(family.split("-")[0], "auto") == ["readout", "calibrate"]
     splits = training_splits(labelled(200))
     base = write_h2o(tmp_path / "tiny-h2o")
     readout = plan.estimate(["readout", "calibrate"], base, {}, splits)

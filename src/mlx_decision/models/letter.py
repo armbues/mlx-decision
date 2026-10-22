@@ -216,8 +216,8 @@ class LetterBackend:
             input_tokens=sum(len(q.input_ids) for q in encoded),
         )
 
-    def last_hidden(self, input_ids: list[int], images=(), features=None) -> mx.array:
-        """One pass: the final hidden state at the last token, in float32.
+    def hidden_states(self, input_ids: list[int], images=(), features=None) -> mx.array:
+        """One pass: the final hidden states of every token (not evaluated yet).
 
         ``images`` (prepared) and their vision ``features`` fill the image
         pad tokens of ``input_ids``.
@@ -227,10 +227,12 @@ class LetterBackend:
             embeddings, positions = image_inputs(
                 self.backbone, self.load_vision(), self.tokenizer, input_ids, images, features
             )
-            hidden = self.backbone(ids, embeddings[None], positions)
-        else:
-            hidden = self.backbone(ids)
-        last = hidden[0, -1].astype(mx.float32)
+            return self.backbone(ids, embeddings[None], positions)[0]
+        return self.backbone(ids)[0]
+
+    def last_hidden(self, input_ids: list[int], images=(), features=None) -> mx.array:
+        """One pass: the final hidden state at the last token, in float32."""
+        last = self.hidden_states(input_ids, images, features)[-1].astype(mx.float32)
         mx.eval(last)
         return last
 
@@ -243,10 +245,11 @@ class LetterBackend:
         return read_out(Features([], hidden, rows, singletons(count), self.temperature))
 
 
-def read_decision_config(path: Path) -> tuple[list[str], float, bool]:
-    """Answer codes, temperature and whether attention is causal, from ``decision_config.json``."""
+def read_decision_config(path: Path, formats=(1,)) -> tuple[list[str], float, bool]:
+    """Answer codes, temperature and whether attention is causal, from
+    ``decision_config.json``, whose format must be one of ``formats``."""
     config = json.loads((path / "decision_config.json").read_text())
-    if config.get("format_version") != 1:
+    if config.get("format_version") not in formats:
         raise ValueError(f"{path}: unsupported decision config format")
     mode = config.get("attention_mode", "causal")
     if mode not in ATTENTION_MODES:
@@ -297,12 +300,12 @@ def _check_input_limit(preset: Preset, max_input_tokens: int | None) -> None:
         raise ValueError(f"max_input_tokens must be between 1 and {limit}")
 
 
-def capabilities(path: Path, preset: Preset, options: dict) -> Capabilities:
+def capabilities(path: Path, preset: Preset, options: dict, formats=(1,)) -> Capabilities:
     """What ``load(path, preset, **options)`` gives the backend, from the folder's
     config files."""
     max_input_tokens = options.get("max_input_tokens")
     _check_input_limit(preset, max_input_tokens)
-    codes, _, _ = read_decision_config(path)
+    codes, _, _ = read_decision_config(path, formats)
     result = _capabilities(
         preset,
         codes,
@@ -321,22 +324,28 @@ def load(
     max_input_tokens: int | None = None,
     vision: bool = False,
     max_image_pixels: int | None = None,
+    backend: type[LetterBackend] = LetterBackend,
+    formats=(1,),
+    required: tuple[str, ...] = (),
+    **extra,
 ) -> LetterBackend:
     """Load a letter-readout model from a release folder or a converted copy.
 
     ``max_input_tokens`` lowers the limit per question's sequence (at most
     the preset's ``input_token_limit``); longer input is refused, not cut.
     ``vision=True`` loads the vision tower now, not with the first image.
-    ``max_image_pixels`` lowers the preset's image maximum.
+    ``max_image_pixels`` lowers the preset's image maximum. ``backend`` is
+    the class to make, given ``extra`` as keywords; ``formats`` the
+    decision config formats it reads; ``required`` more files it needs.
     """
     _check_input_limit(preset, max_input_tokens)
     # Checked before the backbone, which takes a while to load.
-    for name in REQUIRED_FILES:
+    for name in REQUIRED_FILES + required:
         if not (path / name).exists():
             raise FileNotFoundError(f"{path}: {name} is missing")
     if not any(path.glob("model*.safetensors")):
         raise FileNotFoundError(f"{path}: no model*.safetensors weights")
-    codes, temperature, causal = read_decision_config(path)
+    codes, temperature, causal = read_decision_config(path, formats)
     readout = mx.load(str(path / "readout.safetensors"))["weight"]
     if readout.shape[0] < len(codes):
         raise ValueError(f"{path}: the readout has fewer rows than answer codes")
@@ -345,7 +354,7 @@ def load(
         raise ValueError(f"{path}: the readout does not match the backbone's width")
     mx.eval(readout)
     tokenizer = load_tokenizer(path)
-    backend = LetterBackend(
+    backend = backend(
         path.resolve().name,
         backbone,
         readout,
@@ -356,6 +365,7 @@ def load(
         max_input_tokens,
         path,
         max_image_pixels,
+        **extra,
     )
     backend.precision = precision(path, backbone)
     if vision:

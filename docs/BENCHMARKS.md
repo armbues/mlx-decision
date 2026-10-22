@@ -66,9 +66,10 @@ the memory.
 
 ### pplx
 
-Not measured: the release's code loads the 27B in float32 on a Mac (about
-104 GB). `scripts/pplx_parity_bundle.py` writes the same kind of bundle as
-for Clef 27B, for a Mac that has the memory.
+Not measured for v1.1: the release's code loads the 27B in float32 on a
+Mac (about 104 GB). `scripts/pplx_parity_bundle.py` writes the same kind
+of bundle as for Clef 27B, for a Mac that has the memory. v1.2 and flash
+have not been measured yet.
 
 ### d3-flash
 
@@ -195,7 +196,7 @@ Clef 27B as an 8-bit and a 4-bit copy (bf16 does not fit on the M5 Pro):
 | 16,384 | 20 | 43.8 s | 40.7 s |
 | Peak memory | | 31.8 GB | 19.3 GB |
 
-pplx as an 8-bit and a 4-bit copy, median of 3 runs per row (`--questions
+pplx v1.1 as an 8-bit and a 4-bit copy, median of 3 runs per row (`--questions
 1,5 --repeats 3`; the time grows linearly with the questions, since each
 is its own pass over the state and its question). Input tokens count the
 state once per question:
@@ -336,7 +337,7 @@ A warm request takes about as long as the same questions on a short state
 (20 questions on a 250-token state: 1.27 s in bf16); the questions still
 attend over the whole state, which adds a little. Keeping the 16,384-token
 state adds about 1.3 GB to the peak memory. pplx, d3, Laya and Julia read
-each question together with the state, so they have nothing to reuse.
+the state together with the questions, so they have nothing to reuse.
 
 ```bash
 mlx-decision benchmark -m Cloudflare/clef-flash --lengths 16384
@@ -382,7 +383,7 @@ reference's top two are more than 0.04 apart:
 | 8-bit (`-q`) | 27.7 GB | 32.0 GB | 0.002 / 0.113 | 1 (1) |
 | uniform 4-bit (`-q --bits 4`) | 15.2 GB | 19.5 GB | 0.011 / 0.290 | 3 (2) |
 
-pplx copies have not been compared yet: the unquantized model does not fit
+pplx v1.1 copies have not been compared yet: the unquantized model does not fit
 here, and there is no bf16 run of it from a larger Mac.
 
 d3-flash's copies have not been run over the whole parity set. On the
@@ -428,6 +429,23 @@ probability.
   over 8,192 tokens. Probabilities were compared on a small random model
   in the release's layout (8 layers, real vocabulary), on the CPU: within
   0.00001. The 27B weights were not run against the release's code.
+- pplx v1.2 and flash: 113 requests (the 97 above, each sent whole, plus
+  16 of its own: several questions, special tokens in every field, 255
+  options beside other questions, requests split under a lowered limit)
+  against the release's own code at 32,768 tokens or the request's
+  limit. With the release's tokenizer the parts, token ids and marker
+  positions are the same for every request, and the same 2 are refused
+  (a question over the limit alone). Probabilities were compared on small
+  random models in both releases' layouts (8 layers, real vocabulary),
+  345 questions each, on the CPU: within 0.00001. Flash on its weights:
+  the 102 requests whose parts have at most 4,096 tokens (299 questions;
+  longer ones need more memory than the 16 GB M2 it ran on), the release's
+  code in bf16 on MPS against mlx-decision on the same Mac. bf16: largest
+  difference 0.058 per probability (on a 1.6 MP image), mean 0.0023, the
+  top answer the same for 296 questions (the other three near ties,
+  margins 0.03, 0 and 0); the release reports up to 0.059 between two
+  runs of its own reference code. 8-bit copy: largest 0.142, mean
+  0.0034, the same top answer for 296 (margins 0.02, 0 and 0).
 - d3-flash: 108 requests (the 97 above plus 11 of its own: null, empty
   and whitespace states, empty instructions and option descriptions,
   score levels of mixed types, duplicate and empty levels, 11 levels, an
@@ -512,11 +530,11 @@ probability, lower is better), in percent; for SST-5 also the mean
 absolute error of the expected level, in levels. A `noul` answer counts
 as yes at a probability of 0.5 or more; a `score` answer's most likely
 level is its prediction. clef-flash, d3-flash, H2O-Lightning and d1-3B ran in bf16, Clef
-27B and pplx as 8-bit copies; H2O-Lightning with its yes/no floor on, as
+27B and pplx v1.1 as 8-bit copies; H2O-Lightning with its yes/no floor on, as
 released (it moves Offensive's probabilities, never an answer); Jev is TypeSafe AI's hosted model (`typesafe/jev-1.14.0`, run on
 2026-10-20), and its column needs a Jev account.
 
-| Benchmark | clef-flash | clef (8-bit) | pplx (8-bit) | d3-flash | H2O-Lightning-4B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
+| Benchmark | clef-flash | clef (8-bit) | pplx v1.1 (8-bit) | d3-flash | H2O-Lightning-4B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 85.8 / 87.3 / 3.5 | 85.2 / 86.8 / 4.7 | 86.6 / 86.8 / 5.5 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.6 / 3.6 |
 | TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 83.8 / 77.7 / 3.6 | 82.1 / 76.3 / 5.0 | 83.1 / 78.7 / 5.3 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.0 / 77.3 / 4.0 |
@@ -528,7 +546,7 @@ Notes:
 - No model refused an example or had its input cut: every state fits
   every model's limit, and every option list fits Julia's 2 to 20 options.
 - Clef 27B gains on clef-flash mainly on entailment and calibration; pplx
-  is the only local model close to Jev on ANLI round 3, with d3-flash, at
+  v1.1 is the only local model close to Jev on ANLI round 3, with d3-flash, at
   9B, 2.5 points behind it there (and 1.6 on OpenBookQA). H2O-Lightning,
   at 4B, is ahead of clef-flash on ANLI round 3, but trails the larger
   models on TREC and OpenBookQA; d1-3B, at 3B, is level with it (ahead
@@ -539,7 +557,7 @@ Notes:
   answers 453 of 500 questions with its first two options.
 - Run times on the M5 Pro, for the whole suite: Laya and Julia under a
   minute, d1-3B 3 minutes, H2O-Lightning 11, d3-flash 13, clef-flash 22,
-  pplx (8-bit) 44,
+  pplx v1.1 (8-bit) 44,
   Clef 27B (8-bit) 74.
 
 ```bash

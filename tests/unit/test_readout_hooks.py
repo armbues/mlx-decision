@@ -19,7 +19,12 @@ QUESTIONS = {
     "refund": {"type": "noul", "instructions": "Does the customer want a refund?"},
 }
 REQUEST = parse_request({"state": "My invoice is wrong, please refund me", "questions": QUESTIONS})
-WRITERS = {"h2o": write_h2o, "d1": write_d1, "pplx": write_pplx}
+WRITERS = {
+    "h2o": write_h2o,
+    "d1": write_d1,
+    "pplx": write_pplx,
+    "pplx-v1.2": lambda folder: write_pplx(folder, joint="flash"),
+}
 
 
 @pytest.fixture(scope="module", params=list(WRITERS))

@@ -372,8 +372,8 @@ MaxImageOption = Annotated[
         "--max-image-mp",
         min=0,
         help="Shrink larger images to this many megapixels (1 MP = 2^20 pixels = 1,024 "
-        "tokens; Clef and d3). Default: Clef 2, d3 its release's 1.56. 0 = no cap beyond the "
-        "model's own, as in Cloudflare's reference.",
+        "tokens; Clef, pplx and d3). Default: Clef 2, pplx v1.2 and d3 their releases' 1.56, "
+        "pplx v1.1 0.25. 0 = no cap beyond the model's own, as in Cloudflare's reference.",
     ),
 ]
 
@@ -384,9 +384,10 @@ MaxInputOption = Annotated[
         "--max-input-tokens",
         min=16,
         help="Input limit in tokens; longer states are cut (or refused by models that do not "
-        "cut). Default: the model's own (Clef 16,384; pplx 8,192; d3 32,768; "
-        "H2O-Lightning 40,960; d1 32,768; Laya 512 or 1,024; Julia 8,192). d3 takes up to "
-        "262,144, Laya and Julia up to 8,192; pplx, H2O-Lightning and d1 only a lower limit.",
+        "cut; pplx v1.2 answers a longer request in parts). Default: the model's own (Clef "
+        "16,384; pplx v1.2 32,768 per request, v1.1 8,192; d3 32,768; H2O-Lightning 40,960; "
+        "d1 32,768; Laya 512 or 1,024; Julia 8,192). d3 and pplx v1.2 take up to 262,144, "
+        "Laya and Julia up to 8,192; pplx v1.1, H2O-Lightning and d1 only a lower limit.",
     ),
 ]
 

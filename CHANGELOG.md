@@ -9,6 +9,20 @@ change the interface).
 
 ### Added
 
+- Perplexity's pplx-decider-v1.2 (27B) and pplx-decider-flash-v1.2
+  (4B), in their joint request format: the state and all questions of a
+  request in one sequence, each answer read at its question's marker,
+  so more questions cost little and the questions see each other. The
+  input limit applies per request: 32,768 tokens by default, up to
+  262,144 with `--max-input-tokens`; a longer request is answered in
+  parts of its questions, each with the whole state and images, as the
+  release does, and a question that does not fit alone is refused.
+  Images up to 1.6 MP (`--max-image-mp` lowers it). `convert` (also
+  mixed precision), quantized `download` and the readout fit of
+  `training fit` work as for the other families. Token for token and on
+  small random models in both layouts, the answers match the release's
+  own code, and flash's also on its weights (bf16: within 0.06 per
+  probability). pplx-decider-v1.1-27b still loads with its own prompt.
 - A config file, `~/.mlx-decision/config.toml` (`MLX_DECISION_HOME`
   moves the folder), with defaults for existing flags: `models` (`-m` of
   `server` and `benchmark`), `default_model` (`run`, `chat`,
@@ -72,6 +86,9 @@ change the interface).
 
 ### Changed
 
+- The `download` menu lists pplx-decider-flash-v1.2 and
+  pplx-decider-v1.2 instead of pplx-decider-v1.1-27b, which still
+  downloads by repo id.
 - `run` and `chat` print a score's levels counted from 1 (`2.05 on 1-3`),
   as people rate; `--json`, the server, MCP and the API keep the
   Jev-compatible value, which counts from 0.
@@ -85,11 +102,11 @@ change the interface).
 ### Fixed
 
 - A model whose `joint_config.json` names a request format no family
-  knows (pplx-decider v1.2 and its flash model) is refused with a
-  message naming the format: `load` by repo id fetches no weights,
-  `convert` writes no copy, and `download` names the format and fetches
-  the weights only after a confirmation or with `--yes`. It used to be
-  taken for pplx v1.1: `download` fetched it, `convert` wrote a copy, and
+  knows, or a known one with other settings, is refused with a message
+  naming it: `load` by repo id fetches no weights, `convert` writes no
+  copy, and `download` names the format and fetches the weights only
+  after a confirmation or with `--yes`. 0.9.1 took pplx-decider v1.2
+  for pplx v1.1: `download` fetched it, `convert` wrote a copy, and
   loading failed only then, with "unsupported decision config format".
 - `server` accepts request bodies compressed with zstd
   (`Content-Encoding: zstd`), which Jev's Python SDK sends for bodies of

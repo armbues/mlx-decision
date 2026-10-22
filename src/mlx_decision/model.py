@@ -192,7 +192,11 @@ def load(model: str | Path, check_memory: bool = True, **options) -> DecisionMod
     (default 16,384; longer states are truncated), ``vision=True`` to load the
     vision tower now rather than with the first image request, and
     ``max_image_pixels`` (default 2**21; larger images are shrunk, None keeps
-    only the processor's own maximum). For pplx: ``max_input_tokens`` (default
+    only the processor's own maximum). For pplx v1.2: ``max_input_tokens``
+    (default 32,768 per request, at most 262,144; a longer request is
+    answered in parts of its questions, a question that does not fit alone
+    is refused), ``vision`` and ``max_image_pixels`` (default and maximum
+    the release's 1,638,400); for pplx v1.1: ``max_input_tokens`` (default
     and maximum 8,192 per question; longer input is refused). For d3:
     ``max_input_tokens`` (default 32,768 per question, at most 262,144;
     longer input is refused), ``vision`` as for Clef and ``max_image_pixels``

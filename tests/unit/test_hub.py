@@ -107,7 +107,7 @@ def test_a_repo_id_in_a_format_no_family_knows_fetches_no_weights(monkeypatch, t
     snapshot = tmp_path / "snapshot"
     snapshot.mkdir()
     (snapshot / "decision_config.json").write_text('{"format_version": 2}')
-    (snapshot / "joint_config.json").write_text('{"template": "joint-question-inline-readout-v1"}')
+    (snapshot / "joint_config.json").write_text('{"template": "joint-question-inline-readout-v9"}')
     calls = []
 
     def snapshot_download(repo_id, allow_patterns=None):

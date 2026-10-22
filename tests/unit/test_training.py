@@ -258,6 +258,7 @@ def test_the_decision_loss_by_hand():
 WRITERS = {
     "clef": write_clef,
     "pplx": write_pplx,
+    "pplx-v1.2": lambda folder: write_pplx(folder, joint="flash"),
     "d3": write_d3,
     "h2o": write_h2o,
     "d1": write_d1,
@@ -284,7 +285,7 @@ def test_every_family_calibrates_end_to_end(tmp_path, family):
     ]
     result = fit(base, data, output=tmp_path / "fitted", method="calibrate")
     model = mlx_decision.load(result.path)
-    assert model.info()["family"] == family
+    assert model.info()["family"] == family.split("-")[0]
     assert model.info()["fit"]["questions"] == ["team", "urgent"]
     # The report's "after" is what the fitted model answers when loaded.
     holdout = training_splits(data, seed=0).holdout

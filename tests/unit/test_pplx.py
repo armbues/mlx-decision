@@ -223,9 +223,10 @@ def test_a_request_format_no_family_knows_is_refused(folder, tmp_path):
     from mlx_decision.convert import convert
 
     copy = edit_config(folder, tmp_path, format_version=2)
-    (copy / "joint_config.json").write_text(json.dumps(JOINT_CONFIG))
+    config = JOINT_CONFIG | {"template": "joint-question-inline-readout-v9"}
+    (copy / "joint_config.json").write_text(json.dumps(config))
     message = (
-        "names the request format 'joint-question-inline-readout-v1', which no family here knows"
+        "names the request format 'joint-question-inline-readout-v9', which no family here knows"
     )
     with pytest.raises(UnknownFormat, match=message):
         detect_family(copy)
@@ -234,3 +235,16 @@ def test_a_request_format_no_family_knows_is_refused(folder, tmp_path):
     with pytest.raises(UnknownFormat, match=message):
         convert(copy, tmp_path / "converted")
     assert not (tmp_path / "converted").exists()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"version": 4}, {"marker": "<|fim_middle|>"}, {"readout_offset": 1}, {"max_questions": 8}],
+)
+def test_the_known_request_format_with_other_settings_is_refused(folder, tmp_path, change):
+    copy = edit_config(folder, tmp_path, format_version=2)
+    (copy / "joint_config.json").write_text(json.dumps(JOINT_CONFIG | change))
+    (name,) = change
+    message = f"declares 'joint-question-inline-readout-v1' with other settings \\({name}\\)"
+    with pytest.raises(UnknownFormat, match=message):
+        detect_family(copy)

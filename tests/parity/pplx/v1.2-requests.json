@@ -1,0 +1,936 @@
+[
+ {
+  "id": "card_example",
+  "state": "My integration keeps failing with a 401 since we rotated our API key. Please help.",
+  "questions": {
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this request?",
+    "criteria": {
+     "billing": "Charges and refunds",
+     "support": "Technical integration errors",
+     "sales": "Questions about buying a product"
+    }
+   },
+   "urgent": {
+    "type": "noul",
+    "instructions": "Is the customer blocked right now?"
+   },
+   "frustration": {
+    "type": "score",
+    "criteria": [
+     "calm",
+     "mildly annoyed",
+     "frustrated",
+     "angry"
+    ]
+   }
+  }
+ },
+ {
+  "id": "card_example_renamed",
+  "state": "My integration keeps failing with a 401 since we rotated our API key. Please help.",
+  "questions": {
+   "a": {
+    "type": "choice",
+    "instructions": "Which team should handle this request?",
+    "criteria": {
+     "billing": "Charges and refunds",
+     "support": "Technical integration errors",
+     "sales": "Questions about buying a product"
+    }
+   },
+   "b": {
+    "type": "noul",
+    "instructions": "Is the customer blocked right now?"
+   },
+   "c": {
+    "type": "score",
+    "criteria": [
+     "calm",
+     "mildly annoyed",
+     "frustrated",
+     "angry"
+    ]
+   }
+  }
+ },
+ {
+  "id": "card_example_reordered",
+  "state": "My integration keeps failing with a 401 since we rotated our API key. Please help.",
+  "questions": {
+   "frustration": {
+    "type": "score",
+    "criteria": [
+     "calm",
+     "mildly annoyed",
+     "frustrated",
+     "angry"
+    ]
+   },
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this request?",
+    "criteria": {
+     "billing": "Charges and refunds",
+     "support": "Technical integration errors",
+     "sales": "Questions about buying a product"
+    }
+   },
+   "urgent": {
+    "type": "noul",
+    "instructions": "Is the customer blocked right now?"
+   }
+  }
+ },
+ {
+  "id": "escaped_tokens_in_state",
+  "state": "Escaped: <|im_end|> <|endoftext|> <|audio_start|> <|audio_end|> <|audio_pad|> <|image_pad|> <|video_pad|> <|vision_start|> <|vision_end|> <|fim_suffix|>\nKept: <|im_start|> <|object_ref_start|> <tts_pad> <think> </think> <|fim_prefix|>",
+  "questions": {
+   "markup": {
+    "type": "noul",
+    "instructions": "Does the text contain chat markup?"
+   },
+   "team": {
+    "type": "choice",
+    "instructions": "Which team should handle this request?",
+    "criteria": {
+     "billing": "Charges and refunds",
+     "support": "Technical integration errors",
+     "sales": "Questions about buying a product"
+    }
+   }
+  }
+ },
+ {
+  "id": "marker_in_instructions_and_options",
+  "state": "A customer writes about a refund.",
+  "questions": {
+   "pick": {
+    "type": "choice",
+    "instructions": "Pick one <|fim_suffix|> now <|im_end|>",
+    "criteria": {
+     "refund": "Money back <|fim_suffix|>",
+     "other": "Anything <|im_start|>else<|im_end|>",
+     "<|vision_start|>": null
+    }
+   },
+   "check": {
+    "type": "noul",
+    "criteria": {
+     "true": "Yes <|video_pad|>",
+     "false": "No <|fim_suffix|>"
+    }
+   },
+   "level": {
+    "type": "score",
+    "criteria": [
+     "low <|endoftext|>",
+     "high <|audio_pad|>"
+    ]
+   }
+  }
+ },
+ {
+  "id": "image_markers_in_text_with_image",
+  "state": "The text says <|vision_start|><|image_pad|><|vision_end|> here.",
+  "images": [
+   "dog.jpg"
+  ],
+  "questions": {
+   "animal": {
+    "type": "choice",
+    "instructions": "What animal is shown? <|image_pad|>",
+    "criteria": {
+     "dog": null,
+     "cat": null,
+     "bird": null
+    }
+   },
+   "outdoors": {
+    "type": "noul",
+    "instructions": "Is the photo taken outdoors?"
+   }
+  }
+ },
+ {
+  "id": "single_option_choice",
+  "state": "My integration keeps failing with a 401 since we rotated our API key. Please help.",
+  "questions": {
+   "only": {
+    "type": "choice",
+    "criteria": {
+     "support": "Technical integration errors"
+    }
+   },
+   "urgent": {
+    "type": "noul",
+    "instructions": "Is the customer blocked right now?"
+   }
+  }
+ },
+ {
+  "id": "noul_criteria_variants",
+  "state": "The deployment finished but two health checks are still red.",
+  "questions": {
+   "empty": {
+    "type": "noul",
+    "instructions": "Is the deployment healthy?",
+    "criteria": {}
+   },
+   "blank_true": {
+    "type": "noul",
+    "instructions": "",
+    "criteria": {
+     "true": "",
+     "false": "Not at all"
+    }
+   },
+   "false_only": {
+    "type": "noul",
+    "instructions": "Should we roll back?",
+    "criteria": {
+     "false": "Keep the release"
+    }
+   }
+  }
+ },
+ {
+  "id": "json_everything",
+  "state": {
+   "ticket": {
+    "id": 4711,
+    "text": "Die Rechnung ist doppelt — bitte prüfen ✓",
+    "tags": [
+     "billing",
+     null,
+     3.5,
+     true
+    ]
+   }
+  },
+  "questions": {
+   "route": {
+    "type": "choice",
+    "instructions": {
+     "task": "route",
+     "teams": [
+      "billing",
+      "tech"
+     ]
+    },
+    "criteria": {
+     "billing": {
+      "handles": [
+       "invoices",
+       "refunds"
+      ]
+     },
+     "tech": [
+      "bugs",
+      "outages"
+     ],
+     "none": null
+    }
+   },
+   "mood": {
+    "type": "score",
+    "instructions": [
+     "How",
+     "upset?"
+    ],
+    "criteria": [
+     {
+      "level": "calm"
+     },
+     [
+      "annoyed"
+     ],
+     "angry ✗"
+    ]
+   },
+   "german": {
+    "type": "noul",
+    "instructions": "Is the ticket in German?"
+   }
+  }
+ },
+ {
+  "id": "thirty_nouls",
+  "state": "2026-10-19 08:00:11 worker-0 retrying upload of batch 1000 after a timeout from the storage service\n2026-10-19 08:01:11 worker-1 retrying upload of batch 1001 after a timeout from the storage service\n2026-10-19 08:02:11 worker-2 retrying upload of batch 1002 after a timeout from the storage service\n2026-10-19 08:03:11 worker-3 retrying upload of batch 1003 after a timeout from the storage service\n2026-10-19 08:04:11 worker-0 retrying upload of batch 1004 after a timeout from the storage service\n2026-10-19 08:05:11 worker-1 retrying upload of batch 1005 after a timeout from the storage service\n2026-10-19 08:06:11 worker-2 retrying upload of batch 1006 after a timeout from the storage service\n2026-10-19 08:07:11 worker-3 retrying upload of batch 1007 after a timeout from the storage service",
+  "questions": {
+   "n0": {
+    "type": "noul",
+    "instructions": "Does line 0 mention worker-0?"
+   },
+   "n1": {
+    "type": "noul",
+    "instructions": "Does line 1 mention worker-1?"
+   },
+   "n2": {
+    "type": "noul",
+    "instructions": "Does line 2 mention worker-2?"
+   },
+   "n3": {
+    "type": "noul",
+    "instructions": "Does line 3 mention worker-3?"
+   },
+   "n4": {
+    "type": "noul",
+    "instructions": "Does line 4 mention worker-0?"
+   },
+   "n5": {
+    "type": "noul",
+    "instructions": "Does line 5 mention worker-1?"
+   },
+   "n6": {
+    "type": "noul",
+    "instructions": "Does line 6 mention worker-2?"
+   },
+   "n7": {
+    "type": "noul",
+    "instructions": "Does line 7 mention worker-3?"
+   },
+   "n8": {
+    "type": "noul",
+    "instructions": "Does line 8 mention worker-0?"
+   },
+   "n9": {
+    "type": "noul",
+    "instructions": "Does line 9 mention worker-1?"
+   },
+   "n10": {
+    "type": "noul",
+    "instructions": "Does line 10 mention worker-2?"
+   },
+   "n11": {
+    "type": "noul",
+    "instructions": "Does line 11 mention worker-3?"
+   },
+   "n12": {
+    "type": "noul",
+    "instructions": "Does line 12 mention worker-0?"
+   },
+   "n13": {
+    "type": "noul",
+    "instructions": "Does line 13 mention worker-1?"
+   },
+   "n14": {
+    "type": "noul",
+    "instructions": "Does line 14 mention worker-2?"
+   },
+   "n15": {
+    "type": "noul",
+    "instructions": "Does line 15 mention worker-3?"
+   },
+   "n16": {
+    "type": "noul",
+    "instructions": "Does line 16 mention worker-0?"
+   },
+   "n17": {
+    "type": "noul",
+    "instructions": "Does line 17 mention worker-1?"
+   },
+   "n18": {
+    "type": "noul",
+    "instructions": "Does line 18 mention worker-2?"
+   },
+   "n19": {
+    "type": "noul",
+    "instructions": "Does line 19 mention worker-3?"
+   },
+   "n20": {
+    "type": "noul",
+    "instructions": "Does line 20 mention worker-0?"
+   },
+   "n21": {
+    "type": "noul",
+    "instructions": "Does line 21 mention worker-1?"
+   },
+   "n22": {
+    "type": "noul",
+    "instructions": "Does line 22 mention worker-2?"
+   },
+   "n23": {
+    "type": "noul",
+    "instructions": "Does line 23 mention worker-3?"
+   },
+   "n24": {
+    "type": "noul",
+    "instructions": "Does line 24 mention worker-0?"
+   },
+   "n25": {
+    "type": "noul",
+    "instructions": "Does line 25 mention worker-1?"
+   },
+   "n26": {
+    "type": "noul",
+    "instructions": "Does line 26 mention worker-2?"
+   },
+   "n27": {
+    "type": "noul",
+    "instructions": "Does line 27 mention worker-3?"
+   },
+   "n28": {
+    "type": "noul",
+    "instructions": "Does line 28 mention worker-0?"
+   },
+   "n29": {
+    "type": "noul",
+    "instructions": "Does line 29 mention worker-1?"
+   }
+  }
+ },
+ {
+  "id": "choice_255_with_noul",
+  "state": "Pick the code that matches the number 200.",
+  "questions": {
+   "code": {
+    "type": "choice",
+    "instructions": "Which option is number 200?",
+    "criteria": {
+     "n0": "number 0",
+     "n1": "number 1",
+     "n2": "number 2",
+     "n3": "number 3",
+     "n4": "number 4",
+     "n5": "number 5",
+     "n6": "number 6",
+     "n7": "number 7",
+     "n8": "number 8",
+     "n9": "number 9",
+     "n10": "number 10",
+     "n11": "number 11",
+     "n12": "number 12",
+     "n13": "number 13",
+     "n14": "number 14",
+     "n15": "number 15",
+     "n16": "number 16",
+     "n17": "number 17",
+     "n18": "number 18",
+     "n19": "number 19",
+     "n20": "number 20",
+     "n21": "number 21",
+     "n22": "number 22",
+     "n23": "number 23",
+     "n24": "number 24",
+     "n25": "number 25",
+     "n26": "number 26",
+     "n27": "number 27",
+     "n28": "number 28",
+     "n29": "number 29",
+     "n30": "number 30",
+     "n31": "number 31",
+     "n32": "number 32",
+     "n33": "number 33",
+     "n34": "number 34",
+     "n35": "number 35",
+     "n36": "number 36",
+     "n37": "number 37",
+     "n38": "number 38",
+     "n39": "number 39",
+     "n40": "number 40",
+     "n41": "number 41",
+     "n42": "number 42",
+     "n43": "number 43",
+     "n44": "number 44",
+     "n45": "number 45",
+     "n46": "number 46",
+     "n47": "number 47",
+     "n48": "number 48",
+     "n49": "number 49",
+     "n50": "number 50",
+     "n51": "number 51",
+     "n52": "number 52",
+     "n53": "number 53",
+     "n54": "number 54",
+     "n55": "number 55",
+     "n56": "number 56",
+     "n57": "number 57",
+     "n58": "number 58",
+     "n59": "number 59",
+     "n60": "number 60",
+     "n61": "number 61",
+     "n62": "number 62",
+     "n63": "number 63",
+     "n64": "number 64",
+     "n65": "number 65",
+     "n66": "number 66",
+     "n67": "number 67",
+     "n68": "number 68",
+     "n69": "number 69",
+     "n70": "number 70",
+     "n71": "number 71",
+     "n72": "number 72",
+     "n73": "number 73",
+     "n74": "number 74",
+     "n75": "number 75",
+     "n76": "number 76",
+     "n77": "number 77",
+     "n78": "number 78",
+     "n79": "number 79",
+     "n80": "number 80",
+     "n81": "number 81",
+     "n82": "number 82",
+     "n83": "number 83",
+     "n84": "number 84",
+     "n85": "number 85",
+     "n86": "number 86",
+     "n87": "number 87",
+     "n88": "number 88",
+     "n89": "number 89",
+     "n90": "number 90",
+     "n91": "number 91",
+     "n92": "number 92",
+     "n93": "number 93",
+     "n94": "number 94",
+     "n95": "number 95",
+     "n96": "number 96",
+     "n97": "number 97",
+     "n98": "number 98",
+     "n99": "number 99",
+     "n100": "number 100",
+     "n101": "number 101",
+     "n102": "number 102",
+     "n103": "number 103",
+     "n104": "number 104",
+     "n105": "number 105",
+     "n106": "number 106",
+     "n107": "number 107",
+     "n108": "number 108",
+     "n109": "number 109",
+     "n110": "number 110",
+     "n111": "number 111",
+     "n112": "number 112",
+     "n113": "number 113",
+     "n114": "number 114",
+     "n115": "number 115",
+     "n116": "number 116",
+     "n117": "number 117",
+     "n118": "number 118",
+     "n119": "number 119",
+     "n120": "number 120",
+     "n121": "number 121",
+     "n122": "number 122",
+     "n123": "number 123",
+     "n124": "number 124",
+     "n125": "number 125",
+     "n126": "number 126",
+     "n127": "number 127",
+     "n128": "number 128",
+     "n129": "number 129",
+     "n130": "number 130",
+     "n131": "number 131",
+     "n132": "number 132",
+     "n133": "number 133",
+     "n134": "number 134",
+     "n135": "number 135",
+     "n136": "number 136",
+     "n137": "number 137",
+     "n138": "number 138",
+     "n139": "number 139",
+     "n140": "number 140",
+     "n141": "number 141",
+     "n142": "number 142",
+     "n143": "number 143",
+     "n144": "number 144",
+     "n145": "number 145",
+     "n146": "number 146",
+     "n147": "number 147",
+     "n148": "number 148",
+     "n149": "number 149",
+     "n150": "number 150",
+     "n151": "number 151",
+     "n152": "number 152",
+     "n153": "number 153",
+     "n154": "number 154",
+     "n155": "number 155",
+     "n156": "number 156",
+     "n157": "number 157",
+     "n158": "number 158",
+     "n159": "number 159",
+     "n160": "number 160",
+     "n161": "number 161",
+     "n162": "number 162",
+     "n163": "number 163",
+     "n164": "number 164",
+     "n165": "number 165",
+     "n166": "number 166",
+     "n167": "number 167",
+     "n168": "number 168",
+     "n169": "number 169",
+     "n170": "number 170",
+     "n171": "number 171",
+     "n172": "number 172",
+     "n173": "number 173",
+     "n174": "number 174",
+     "n175": "number 175",
+     "n176": "number 176",
+     "n177": "number 177",
+     "n178": "number 178",
+     "n179": "number 179",
+     "n180": "number 180",
+     "n181": "number 181",
+     "n182": "number 182",
+     "n183": "number 183",
+     "n184": "number 184",
+     "n185": "number 185",
+     "n186": "number 186",
+     "n187": "number 187",
+     "n188": "number 188",
+     "n189": "number 189",
+     "n190": "number 190",
+     "n191": "number 191",
+     "n192": "number 192",
+     "n193": "number 193",
+     "n194": "number 194",
+     "n195": "number 195",
+     "n196": "number 196",
+     "n197": "number 197",
+     "n198": "number 198",
+     "n199": "number 199",
+     "n200": "number 200",
+     "n201": "number 201",
+     "n202": "number 202",
+     "n203": "number 203",
+     "n204": "number 204",
+     "n205": "number 205",
+     "n206": "number 206",
+     "n207": "number 207",
+     "n208": "number 208",
+     "n209": "number 209",
+     "n210": "number 210",
+     "n211": "number 211",
+     "n212": "number 212",
+     "n213": "number 213",
+     "n214": "number 214",
+     "n215": "number 215",
+     "n216": "number 216",
+     "n217": "number 217",
+     "n218": "number 218",
+     "n219": "number 219",
+     "n220": "number 220",
+     "n221": "number 221",
+     "n222": "number 222",
+     "n223": "number 223",
+     "n224": "number 224",
+     "n225": "number 225",
+     "n226": "number 226",
+     "n227": "number 227",
+     "n228": "number 228",
+     "n229": "number 229",
+     "n230": "number 230",
+     "n231": "number 231",
+     "n232": "number 232",
+     "n233": "number 233",
+     "n234": "number 234",
+     "n235": "number 235",
+     "n236": "number 236",
+     "n237": "number 237",
+     "n238": "number 238",
+     "n239": "number 239",
+     "n240": "number 240",
+     "n241": "number 241",
+     "n242": "number 242",
+     "n243": "number 243",
+     "n244": "number 244",
+     "n245": "number 245",
+     "n246": "number 246",
+     "n247": "number 247",
+     "n248": "number 248",
+     "n249": "number 249",
+     "n250": "number 250",
+     "n251": "number 251",
+     "n252": "number 252",
+     "n253": "number 253",
+     "n254": "number 254"
+    }
+   },
+   "even": {
+    "type": "noul",
+    "instructions": "Is the number even?"
+   }
+  }
+ },
+ {
+  "id": "large_image_two_questions",
+  "state": "A photo from a customer.",
+  "images": [
+   {
+    "file": "lake.jpg",
+    "size": [
+     2400,
+     1600
+    ]
+   }
+  ],
+  "questions": {
+   "water": {
+    "type": "noul",
+    "instructions": "Is there water in the photo?"
+   },
+   "season": {
+    "type": "choice",
+    "criteria": {
+     "summer": null,
+     "winter": null,
+     "autumn": null,
+     "spring": null
+    }
+   }
+  }
+ },
+ {
+  "id": "split_twelve_questions",
+  "state": "2026-10-19 08:00:11 worker-0 retrying upload of batch 1000 after a timeout from the storage service\n2026-10-19 08:01:11 worker-1 retrying upload of batch 1001 after a timeout from the storage service\n2026-10-19 08:02:11 worker-2 retrying upload of batch 1002 after a timeout from the storage service\n2026-10-19 08:03:11 worker-3 retrying upload of batch 1003 after a timeout from the storage service\n2026-10-19 08:04:11 worker-0 retrying upload of batch 1004 after a timeout from the storage service\n2026-10-19 08:05:11 worker-1 retrying upload of batch 1005 after a timeout from the storage service\n2026-10-19 08:06:11 worker-2 retrying upload of batch 1006 after a timeout from the storage service\n2026-10-19 08:07:11 worker-3 retrying upload of batch 1007 after a timeout from the storage service",
+  "max_input_tokens": 520,
+  "questions": {
+   "q0": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 0 getting worse?"
+   },
+   "q1": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 1?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   },
+   "q2": {
+    "type": "score",
+    "instructions": "How severe is issue 2?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   },
+   "q3": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 3 getting worse?"
+   },
+   "q4": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 4?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   },
+   "q5": {
+    "type": "score",
+    "instructions": "How severe is issue 5?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   },
+   "q6": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 6 getting worse?"
+   },
+   "q7": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 7?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   },
+   "q8": {
+    "type": "score",
+    "instructions": "How severe is issue 8?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   },
+   "q9": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 9 getting worse?"
+   },
+   "q10": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 10?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   },
+   "q11": {
+    "type": "score",
+    "instructions": "How severe is issue 11?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   }
+  }
+ },
+ {
+  "id": "split_five_questions",
+  "state": "2026-10-19 08:00:11 worker-0 retrying upload of batch 1000 after a timeout from the storage service\n2026-10-19 08:01:11 worker-1 retrying upload of batch 1001 after a timeout from the storage service\n2026-10-19 08:02:11 worker-2 retrying upload of batch 1002 after a timeout from the storage service\n2026-10-19 08:03:11 worker-3 retrying upload of batch 1003 after a timeout from the storage service\n2026-10-19 08:04:11 worker-0 retrying upload of batch 1004 after a timeout from the storage service\n2026-10-19 08:05:11 worker-1 retrying upload of batch 1005 after a timeout from the storage service\n2026-10-19 08:06:11 worker-2 retrying upload of batch 1006 after a timeout from the storage service\n2026-10-19 08:07:11 worker-3 retrying upload of batch 1007 after a timeout from the storage service",
+  "max_input_tokens": 480,
+  "questions": {
+   "q0": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 0 getting worse?"
+   },
+   "q1": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 1?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   },
+   "q2": {
+    "type": "score",
+    "instructions": "How severe is issue 2?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   },
+   "q3": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 3 getting worse?"
+   },
+   "q4": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 4?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   }
+  }
+ },
+ {
+  "id": "split_with_image",
+  "state": "Screenshot of the failing job.",
+  "images": [
+   {
+    "file": "chart.png",
+    "size": [
+     320,
+     240
+    ]
+   }
+  ],
+  "max_input_tokens": 300,
+  "questions": {
+   "q0": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 0 getting worse?"
+   },
+   "q1": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 1?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   },
+   "q2": {
+    "type": "score",
+    "instructions": "How severe is issue 2?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   },
+   "q3": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 3 getting worse?"
+   },
+   "q4": {
+    "type": "choice",
+    "instructions": "Which component is most likely at fault for issue 4?",
+    "criteria": {
+     "storage": "The storage service",
+     "network": "The network between services",
+     "worker": "The worker itself"
+    }
+   },
+   "q5": {
+    "type": "score",
+    "instructions": "How severe is issue 5?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   }
+  }
+ },
+ {
+  "id": "split_question_too_long",
+  "state": "2026-10-19 08:00:11 worker-0 retrying upload of batch 1000 after a timeout from the storage service\n2026-10-19 08:01:11 worker-1 retrying upload of batch 1001 after a timeout from the storage service\n2026-10-19 08:02:11 worker-2 retrying upload of batch 1002 after a timeout from the storage service\n2026-10-19 08:03:11 worker-3 retrying upload of batch 1003 after a timeout from the storage service\n2026-10-19 08:04:11 worker-0 retrying upload of batch 1004 after a timeout from the storage service\n2026-10-19 08:05:11 worker-1 retrying upload of batch 1005 after a timeout from the storage service\n2026-10-19 08:06:11 worker-2 retrying upload of batch 1006 after a timeout from the storage service\n2026-10-19 08:07:11 worker-3 retrying upload of batch 1007 after a timeout from the storage service",
+  "max_input_tokens": 700,
+  "questions": {
+   "q0": {
+    "type": "noul",
+    "instructions": "Does the log show problem number 0 getting worse?"
+   },
+   "long": {
+    "type": "choice",
+    "instructions": "Which option fits best?",
+    "criteria": {
+     "option_0": "A long description of option 0 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_1": "A long description of option 1 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_2": "A long description of option 2 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_3": "A long description of option 3 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_4": "A long description of option 4 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_5": "A long description of option 5 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_6": "A long description of option 6 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_7": "A long description of option 7 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_8": "A long description of option 8 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_9": "A long description of option 9 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_10": "A long description of option 10 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_11": "A long description of option 11 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_12": "A long description of option 12 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_13": "A long description of option 13 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_14": "A long description of option 14 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_15": "A long description of option 15 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_16": "A long description of option 16 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_17": "A long description of option 17 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_18": "A long description of option 18 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_19": "A long description of option 19 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_20": "A long description of option 20 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_21": "A long description of option 21 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_22": "A long description of option 22 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_23": "A long description of option 23 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_24": "A long description of option 24 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_25": "A long description of option 25 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_26": "A long description of option 26 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_27": "A long description of option 27 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_28": "A long description of option 28 that mentions retries, timeouts, storage quotas and network partitions in some detail",
+     "option_29": "A long description of option 29 that mentions retries, timeouts, storage quotas and network partitions in some detail"
+    }
+   },
+   "q2": {
+    "type": "score",
+    "instructions": "How severe is issue 2?",
+    "criteria": [
+     "minor",
+     "moderate",
+     "severe"
+    ]
+   }
+  }
+ }
+]

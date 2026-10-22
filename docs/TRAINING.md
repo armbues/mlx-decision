@@ -380,8 +380,8 @@ whose working set holds it:
 | clef-flash, 4-bit copy | about 10 GB (`calibrate` 7 GB) | 16 GB (at the edge) |
 | clef-flash, 8-bit copy | 15.1 GB (`calibrate` 11.9 GB) | 24 GB |
 | clef-flash, bf16 | about 24 GB (`calibrate` 21 GB) | 48 GB (`calibrate` 32 GB) |
-| pplx, 4-bit copy | about 17 GB | 32 GB |
-| pplx, 8-bit copy | about 31 GB | 48 GB |
+| pplx v1.1 or v1.2 (27B), 4-bit copy | about 17 GB | 32 GB |
+| pplx v1.1 or v1.2 (27B), 8-bit copy | about 31 GB | 48 GB |
 | d3-flash, 8-bit copy | about 10.6 GB | 16 GB (at the edge) |
 | d3-flash, bf16 | about 18.8 GB | 32 GB |
 | d3-mini (bf16) | about 10.3 GB | 16 GB (at the edge) |

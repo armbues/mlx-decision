@@ -167,22 +167,56 @@ PPLX_FILES = (
 )
 
 
+# pplx v1.2: the joint request format's files, and how each release's
+# config differs from v1.1's (the 27B is v1.1's shape; flash ties its
+# embeddings and has no BOS token). Keys transformers does not read are
+# kept, so loading must ignore them too.
+PPLX_JOINT_FILES = PPLX_FILES + ("joint_config.json",)
+PPLX_JOINT_PROTOCOL = {
+    "version": 3,
+    "template": "joint-question-inline-readout-v1",
+    "marker": "<|fim_suffix|>",
+    "readout_offset": 0,
+    "max_questions": None,
+    "max_length": None,
+    "usage": "nonpadding_joint_sequence_including_template_and_image_positions",
+}
+PPLX_JOINT_SHAPES = {
+    "27b": {
+        "top": {"language_model_only": False},
+        "text": {"bos_token_id": 248044, "output_gate_type": "swish"},
+        "temperature": 1.3823494677922652,
+    },
+    "flash": {
+        "top": {"tie_word_embeddings": True},
+        "text": {"bos_token_id": None, "tie_word_embeddings": True},
+        "temperature": 1.5539092221462472,
+    },
+}
 PPLX_CODES = [chr(65 + i) for i in range(26)]
 PPLX_CODES += [a + b for a in PPLX_CODES for b in PPLX_CODES][: 255 - 26]
 PPLX_SPECIAL = ["<|im_start|>", "<|im_end|>", "<think>", "</think>"]
 PPLX_SPECIAL += ["<|vision_start|>", "<|image_pad|>", "<|vision_end|>"]
 PPLX_WORDS = ["[UNK]", "system", "user", "assistant", "State", "Question", "Options", ":"]
 PPLX_WORDS += ["billing", "technical", "sales", "refund", "please", "crash", "now"]
+PPLX_JOINT_SPECIAL = ["<|fim_suffix|>", "<|endoftext|>"]
 
 
-def write_pplx_tokenizer(folder: Path) -> None:
-    """A word-level tokenizer and decision config for a pplx folder without release files."""
-    words = PPLX_WORDS + PPLX_SPECIAL + PPLX_CODES
+def write_pplx_tokenizer(folder: Path, joint: str | None = None) -> None:
+    """A word-level tokenizer and decision config for a pplx folder without release files.
+
+    ``joint`` (``"27b"`` or ``"flash"``) writes v1.2's files instead: the
+    marker among the special tokens, decision config format 2 with the
+    release's temperature and image maximum, ``joint_config.json`` and a
+    ``tokenizer_config.json`` naming the tokens the prompt escapes.
+    """
+    special = PPLX_SPECIAL + (PPLX_JOINT_SPECIAL if joint else [])
+    words = PPLX_WORDS + special + PPLX_CODES
     tokenizer = Tokenizer(
         models.WordLevel({word: i for i, word in enumerate(words)}, unk_token="[UNK]")
     )
     tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-    tokenizer.add_special_tokens(PPLX_SPECIAL)
+    tokenizer.add_special_tokens(special)
     tokenizer.save(str(folder / "tokenizer.json"))
     config = {
         "format_version": 1,
@@ -192,6 +226,25 @@ def write_pplx_tokenizer(folder: Path) -> None:
         "attention_mode": "noncausal_full_attention",
         "pooling": "last",
     }
+    if joint:
+        config |= {
+            "format_version": 2,
+            "temperature": PPLX_JOINT_SHAPES[joint]["temperature"],
+            "max_pixels": 1638400,
+        }
+        (folder / "joint_config.json").write_text(json.dumps(PPLX_JOINT_PROTOCOL, indent=2) + "\n")
+        tokenizer_config = {
+            "eos_token": "<|im_end|>",
+            "pad_token": "<|endoftext|>",
+            "bos_token": None,
+            "unk_token": None,
+            "model_specific_special_tokens": {
+                "image_token": "<|image_pad|>",
+                "vision_bos_token": "<|vision_start|>",
+                "vision_eos_token": "<|vision_end|>",
+            },
+        }
+        (folder / "tokenizer_config.json").write_text(json.dumps(tokenizer_config, indent=2) + "\n")
     (folder / "decision_config.json").write_text(json.dumps(config, indent=2) + "\n")
 
 
@@ -207,7 +260,9 @@ def _random(name: str, shape: tuple[int, ...], seed: int):
     return rng.normal(0, 0.05, shape).astype(np.float32)
 
 
-def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> Path:
+def write_pplx(
+    folder: Path, seed: int = 0, files_from: Path | None = None, joint: str | None = None
+) -> Path:
     """A pplx release folder: tiny backbone with vision tower and readout, float32.
 
     Names and layouts are the release's (``language_model.*`` and
@@ -218,6 +273,10 @@ def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> P
     decision config. Without it the folder gets a word-level tokenizer
     (``PPLX_WORDS``, the prompt's special tokens and the answer codes) and a
     decision config with the release's codes and temperature.
+
+    ``joint`` makes a v1.2 folder in the shape of that release (``"27b"``
+    or ``"flash"``, ``PPLX_JOINT_SHAPES``): the same tiny weights, the
+    release's config differences and the joint request format's files.
     """
     import shutil
 
@@ -259,16 +318,24 @@ def write_pplx(folder: Path, seed: int = 0, files_from: Path | None = None) -> P
         total += sum(t.nbytes for t in tensors.values())
     index = {"metadata": {"total_size": total}, "weight_map": dict(sorted(weight_map.items()))}
     (folder / "model.safetensors.index.json").write_text(json.dumps(index, indent=2) + "\n")
-    (folder / "config.json").write_text(json.dumps(PPLX_CONFIG, indent=2) + "\n")
+    config = PPLX_CONFIG
+    if joint:
+        shape = PPLX_JOINT_SHAPES[joint]
+        config = {
+            **config,
+            **shape["top"],
+            "text_config": {**config["text_config"], **shape["text"]},
+        }
+    (folder / "config.json").write_text(json.dumps(config, indent=2) + "\n")
     readout = _random("readout", (255, PPLX_TEXT["hidden_size"]), seed) * 3
     mx.save_safetensors(
         str(folder / "readout.safetensors"), {"weight": mx.array(readout)}, {"format": "pt"}
     )
     if files_from:
-        for name in PPLX_FILES:
+        for name in PPLX_JOINT_FILES if joint else PPLX_FILES:
             shutil.copy(Path(files_from) / name, folder / name)
     else:
-        write_pplx_tokenizer(folder)
+        write_pplx_tokenizer(folder, joint)
     (folder / "LICENSE").write_text("test licence\n")
     return folder
 
