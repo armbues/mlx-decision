@@ -11,6 +11,7 @@ import { api } from "../api.js";
 import { two } from "../charts/answers.js";
 import { closeSheet, openSheet } from "../components/sheet.js";
 import { showTab } from "../components/inspector.js";
+import { Trash } from "../components/icons.js";
 import { clock, duration, plural } from "../format.js";
 import { workspaceChange } from "../stream.js";
 import { toast } from "../store/ui.js";
@@ -22,6 +23,7 @@ import {
   built,
   draft,
   example,
+  forgetRunIds,
   forgetRuns,
   lastRun,
   modelName,
@@ -227,12 +229,17 @@ function EntriesList({ list }) {
       ${[...entries.value].reverse().map((entry) => {
         const { what, meta } = entrySummary(list, entry);
         return html`
-          <button class=${`hrow ${entry.batch ? "batch" : entry.compare ? "compared" : ""}`} role="option" key=${entry.key}
-                  aria-selected=${entry.key === current.key} onClick=${() => pick(entry.key)}>
-            <span class="n num">#${entry.number}</span>
-            <span class="what"><b>${what}</b><span class="num">${meta}</span></span>
-            <span class="t num">${clock(entry.lines[0].time)}</span>
-          </button>
+          <div class="hrow-wrap" role="presentation" key=${entry.key}>
+            <button class=${`hrow ${entry.batch ? "batch" : entry.compare ? "compared" : ""}`} role="option"
+                    aria-selected=${entry.key === current.key} onClick=${() => pick(entry.key)}>
+              <span class="n num">#${entry.number}</span>
+              <span class="what"><b>${what}</b><span class="num">${meta}</span></span>
+              <span class="t num">${clock(entry.lines[0].time)}</span>
+            </button>
+            <button class="row-delete" aria-label=${`Delete run #${entry.number}…`} title="Delete…" onClick=${() => deleteEntry(entry, what)}>
+              <${Trash} />
+            </button>
+          </div>
         `;
       })}
     </div>
@@ -427,6 +434,38 @@ function BatchAnswers({ entry }) {
 // A document's history file as the workspace keeps it: a set's
 // history/NAME.jsonl, a dataset's history/datasets/NAME.jsonl.
 const historyFile = (name) => (isDataset(name) ? `history/datasets/${datasetOfDocument(name)}.jsonl` : `history/${name}.jsonl`);
+
+// Delete one entry: a run, or a whole Run All or Compare.
+function deleteEntry(entry, what) {
+  const set = setName.value;
+  const runsText = entry.lines.length > 1 ? ` and its ${entry.lines.length} runs` : "";
+  openSheet({
+    title: `Delete run #${entry.number}?`,
+    purpose: `${what}, ${clock(entry.lines[0].time)}${runsText}: taken out of ${historyFile(set)}. The numbers of later runs go down by one.`,
+    actions: [
+      {
+        label: "Delete",
+        primary: true,
+        danger: true,
+        onSelect: async () => {
+          closeSheet();
+          try {
+            const { deleted } = await api(`/history/${encodeURIComponent(set)}/${encodeURIComponent(entry.lines[0].id)}`, { method: "DELETE" });
+            const gone = new Set(deleted);
+            batch(() => {
+              const current = histories.value[set]?.runs ?? [];
+              histories.value = { ...histories.value, [set]: { runs: current.filter((line) => !gone.has(line.id)) } };
+              forgetRunIds(gone);
+            });
+            toast(`Deleted run #${entry.number} of ${datasetOfDocument(set) ?? set}`);
+          } catch (error) {
+            toast(`Not deleted: ${error.message}`);
+          }
+        },
+      },
+    ],
+  });
+}
 
 function clearHistory() {
   const set = setName.value;

@@ -276,6 +276,12 @@ export function forgetRuns(set) {
   });
 }
 
+// Answers this tab remembers from runs deleted from the History are dropped.
+export function forgetRunIds(ids) {
+  const keep = (map) => Object.fromEntries(Object.entries(map).filter(([, value]) => !ids.has(value?.id)));
+  runs.value = keep(runs.value);
+}
+
 // The run in flight: {model, loads, controller, example, and for a Run All
 // all: {done, total}, for a Compare compare: {id, done, total}}.
 export const running = signal(null);

@@ -4,7 +4,7 @@
 // open says so in a toast.
 import { computed, signal } from "@preact/signals";
 import { api } from "../api.js";
-import { navigate } from "../router.js";
+import { navigate, route } from "../router.js";
 import { toast } from "./ui.js";
 
 const listed = signal(null); // GET /batches: summaries, the running one first
@@ -126,6 +126,6 @@ export async function deleteBatch(name) {
     live.value = rest;
     await loadBatches();
     toast(`Deleted the batch ${name}`);
-    navigate("batches");
+    if (route.value.page === "batches" && route.value.item === name) navigate("batches");
   }
 }

@@ -268,20 +268,31 @@ def test_cancel_keeps_the_set(studio, page):
     assert (studio.sets / "ticket-triage.json").exists()
 
 
-def test_the_open_sets_row_has_a_delete_button_shown_on_hover(studio, page):
+def test_every_sets_row_has_a_delete_button_shown_on_hover(studio, page):
     open_studio(page, studio, "playground/order-json")
-    delete = page.locator(".sb-delete")
-    expect(delete).to_have_count(1)
-    expect(page.locator("li.open .sb-delete")).to_have_count(1)
+    rows = page.locator(".sidebar .sb-list li", has=page.locator(".sb-delete"))
+    expect(rows).to_have_count(2)
+    other = sidebar_item(page, "ticket-triage").locator("xpath=..")
+    delete = other.locator(".sb-delete")
     expect(delete).to_have_css("opacity", "0")
-    page.locator("li.open .sb-item").hover()
+    other.hover()
     expect(delete).to_have_css("opacity", "1")
     shot(page, "sidebar-delete")
 
+    # A set that is not open: deleted, the open one stays open.
     delete.click()
-    expect(page.locator(".sheet")).to_contain_text("Delete order-json?")
+    expect(page.locator(".sheet")).to_contain_text("Delete ticket-triage?")
     page.locator(".sheet .btn.danger").click()
     expect(page.locator(".sheet")).to_have_count(0)
+    expect(sidebar_item(page, "ticket-triage")).to_have_count(0)
+    expect(page).to_have_url(re.compile("#/playground/order-json$"))
+    assert not (studio.sets / "ticket-triage.json").exists()
+
+    # The open one: the page moves on.
+    open_row = page.locator("li.open")
+    open_row.hover()
+    open_row.locator(".sb-delete").click()
+    page.locator(".sheet .btn.danger").click()
     expect(page).not_to_have_url(re.compile("#/playground/order-json$"))
     assert not (studio.sets / "order-json.json").exists()
 

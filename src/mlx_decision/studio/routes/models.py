@@ -27,13 +27,19 @@ from ...memory import (
 )
 from ...pool import ModelSpec
 from ...registry import MARKER_FILE
+from ..removal import ModelRemoval, RemovalError
 from ..rescan import Rescans
 from . import ApiError, field, json_body
 
 logger = logging.getLogger(__name__)
 
 
-def models_router(gpu: Gpu, max_body_bytes: int, rescans: Rescans | None = None) -> APIRouter:
+def models_router(
+    gpu: Gpu,
+    max_body_bytes: int,
+    rescans: Rescans | None = None,
+    removal: ModelRemoval | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/studio/api/models")
     pool = gpu.pool
 
@@ -80,6 +86,21 @@ def models_router(gpu: Gpu, max_body_bytes: int, rescans: Rescans | None = None)
         (none when it was not loaded)."""
         name = await named(request)
         return {"model": name, "unloaded": await gpu.run(pool.unload, name)}
+
+    @router.delete("/{name}")
+    async def delete(name: str):
+        """``{model, path}``: a model the Studio made (in the workspace's
+        ``models/``) deleted, unloaded first. 403 for a downloaded model, 409
+        while it is the default, has fitted models or a job uses it; 503 while
+        a GPU job or a batch holds it."""
+        if removal is None:
+            raise ApiError(403, "models are not deleted here", kind="permission_error")
+        try:
+            path = await removal.delete(name)
+        except RemovalError as error:
+            kind = "permission_error" if error.status == 403 else "invalid_request_error"
+            raise ApiError(error.status, str(error), param="model", kind=kind) from None
+        return {"model": name, "path": path}
 
     @router.get("/convert")
     async def convert_plan(model: str):

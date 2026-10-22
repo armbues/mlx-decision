@@ -674,3 +674,39 @@ def test_speed_summary():
         "median_ms": 20.0, "count": 3, "tokens_min": 10, "tokens_max": 50, "chip": "M2",
     }  # fmt: skip
     assert speed_summary(records + [{"latency_ms": 40.0}])["median_ms"] == 25.0
+
+
+def test_one_history_entry_is_deleted_a_run_all_whole(studio):
+    image = png((0, 0, 255))
+    lone = run(studio, {**BODY, "images": [image]}, "seeing", set="tickets").json()
+    first = run(studio, BODY, "fake", set="tickets", batch="b1").json()
+    run(studio, {**BODY, "state": "two"}, "fake", set="tickets", batch="b1")
+    kept = run(studio, BODY, "fake", set="tickets").json()
+    history = "/studio/api/history/tickets"
+    reference = studio.get(history).json()["runs"][0]["request"]["images"][0]["sha256"]
+
+    # A run of a Run All takes the whole Run All with it.
+    response = studio.delete(f"{history}/{first['id']}", headers=JSON)
+    assert response.status_code == 200 and len(response.json()["deleted"]) == 2
+    assert [entry["id"] for entry in studio.get(history).json()["runs"]] == [lone["id"], kept["id"]]
+    # A single run; the image no history uses any more goes with it.
+    assert studio.delete(f"{history}/{lone['id']}", headers=JSON).json() == {
+        "deleted": [lone["id"]]
+    }
+    assert [entry["id"] for entry in studio.get(history).json()["runs"]] == [kept["id"]]
+    assert studio.get(f"/studio/api/images/{reference}").status_code == 404
+    assert studio.delete(f"{history}/{lone['id']}", headers=JSON).status_code == 404
+    # The last one: the file goes.
+    studio.delete(f"{history}/{kept['id']}", headers=JSON)
+    assert studio.get(history).json() == {"runs": []}
+    assert not studio.app_state.workspace.history_path("tickets").exists()
+
+
+def test_a_broken_history_line_survives_a_delete(studio):
+    first = run(studio, BODY, "fake", set="tickets").json()
+    run(studio, BODY, "fake", set="tickets")
+    path = studio.app_state.workspace.history_path("tickets")
+    path.write_bytes(path.read_bytes() + b"{not json\n")
+    studio.delete(f"/studio/api/history/tickets/{first['id']}", headers=JSON)
+    assert path.read_bytes().endswith(b"{not json\n")
+    assert len(studio.get("/studio/api/history/tickets").json()["runs"]) == 1

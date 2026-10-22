@@ -7,7 +7,7 @@ import { computed } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect } from "preact/hooks";
 import { openNewBatch } from "../batches/start.js";
-import { BatchView, pickedRow, RowInspector } from "../batches/view.js";
+import { BatchView, confirmDelete, pickedRow, RowInspector } from "../batches/view.js";
 import { uploadData } from "../datasets/files.js";
 import { openGetDataset } from "../datasets/get.js";
 import * as icons from "../components/icons.js";
@@ -96,6 +96,10 @@ function BatchList() {
               <span class="label">${batch.name}<small>${batch.dataset} · ${batch.model}</small></span>
               <span class="count num">${short}</span>
             </a>
+            ${!running &&
+            html`<button class="sb-delete" aria-label=${`Delete ${batch.name}…`} title="Delete…" onClick=${() => confirmDelete(batch)}>
+              <${icons.Trash} />
+            </button>`}
           </li>`;
         })}
       </ul>

@@ -16,6 +16,7 @@ import { dataFiles } from "../store/data.js";
 import { fitById, fits } from "../store/fits.js";
 import { progress } from "../store/jobs.js";
 import { inspectorMode } from "../store/ui.js";
+import { confirmDeleteRun } from "../training/delete.js";
 import { EvalForm, evalData, evalModel, evalNotReady, startEval } from "../training/evaluate.js";
 import { FitForm, fitData, notReady, planned, startFit } from "../training/fit.js";
 import { FitView } from "../training/run.js";
@@ -139,6 +140,10 @@ function FitList() {
               <span class="label">${job.kind === "eval" ? job.title.replace(/^Evaluate /, "") : (job.details?.name ?? job.title)}</span>
               <span class="count">${rowText(job)}</span>
             </a>
+            ${!running &&
+            html`<button class="sb-delete" aria-label=${`Delete ${job.title}…`} title="Delete…" onClick=${() => confirmDeleteRun(job)}>
+              <${icons.Trash} />
+            </button>`}
           </li>`;
         })}
       </ul>

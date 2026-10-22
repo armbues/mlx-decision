@@ -98,9 +98,8 @@ function SetsList() {
                   <${icons.File} /><span class="label">${item.name}</span>
                   ${editedNames.value.has(item.name) && html`<span class="edited" title="Edited, not saved"></span>`}
                 </a>
-                ${open &&
-                html`<button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
-                  onClick=${files.deleteSet}><${icons.Trash} /></button>`}
+                <button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
+                  onClick=${() => files.deleteSet(item.name)}><${icons.Trash} /></button>
               </li>
             `;
           },
@@ -324,7 +323,7 @@ function MoreMenu() {
       <${MenuItem} sub=${edited.value ? "The saved file, without your edits" : null} onSelect=${files.exportSet}>Export<//>
       <${MenuItem} onSelect=${files.reveal}>Show in Workspace Folder<//>
       <${MenuSeparator} />
-      <${MenuItem} onSelect=${files.deleteSet}>Delete…<//>
+      <${MenuItem} onSelect=${() => files.deleteSet()}>Delete…<//>
     <//>
   `;
 }

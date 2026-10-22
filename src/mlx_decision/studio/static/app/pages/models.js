@@ -12,6 +12,7 @@ import { duration, gigabytes, parameters, plural, shellWord } from "../format.js
 import { chooseModel } from "../playground/session.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { openConvert } from "../models/convert.js";
+import { confirmDeleteModel, deletable, deleteWhyNot } from "../models/delete.js";
 import { openDownload } from "../models/download.js";
 import { FirstStart } from "../models/first-start.js";
 import { Places, loadPlaces } from "../settings/places.js";
@@ -429,6 +430,10 @@ function ContextMenu() {
       <${MenuItem} disabled=${Boolean(convertWhyNot(byName.value.get(at.name)))} onSelect=${() => openConvert(at.name)}>Convert…<//>
       <${MenuSeparator} />
       <${MenuItem} onSelect=${copy}>Copy Name<//>
+      ${deletable(byName.value.get(at.name)) &&
+      html`<${MenuSeparator} />
+        <${MenuItem} disabled=${Boolean(deleteWhyNot(byName.value.get(at.name)))} sub=${deleteWhyNot(byName.value.get(at.name))}
+          onSelect=${() => confirmDeleteModel(byName.value.get(at.name))}>Delete…<//>`}
     </div>
   `;
 }
@@ -587,6 +592,11 @@ function Details() {
         <${Kv} label="API"><code>"model": "${model.name}"</code><//>
         <${Kv} label="CLI"><code>${(model.cli?.short ?? ["-m", model.name]).map(shellWord).join(" ")}</code><//>
       </dl></section>
+      ${deletable(model) &&
+      html`<div class="idet-foot">
+        <button class="btn plain danger" disabled=${Boolean(deleteWhyNot(model))} title=${deleteWhyNot(model) ?? `Delete the folder of ${model.name}`}
+                onClick=${() => confirmDeleteModel(model)}>Delete…</button>
+      </div>`}
     </div>
   `;
 }

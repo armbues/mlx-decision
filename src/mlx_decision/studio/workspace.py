@@ -179,7 +179,7 @@ class Workspace:
         self.lock = threading.Lock()
         self.on_change: Callable[[dict[str, str]], None] | None = None
 
-    def changed(self, folder: str, name: str, action: str, **details: str) -> None:
+    def changed(self, folder: str, name: str, action: str, **details: Any) -> None:
         if self.on_change is not None:
             try:
                 self.on_change({"folder": folder, "name": name, "action": action, **details})
@@ -497,6 +497,52 @@ class Workspace:
             path.unlink(missing_ok=True)
             self._prune_images()
         self.changed("history", name, "cleared")
+
+    def delete_run(self, name: str, run_id: str) -> list[str]:
+        """Delete one entry of the set's history: the run ``run_id`` and, when it
+        belongs to a Run All or a Compare, the other runs of that group (the
+        History lists them as one). Images no history uses any more go too.
+        Returns the deleted runs' ids; raises ``NotFound``."""
+        path = self.history_path(name)
+        with self.lock:
+            try:
+                raws = path.read_bytes().splitlines()
+            except FileNotFoundError:
+                raws = []
+            parsed = []
+            for raw in raws:
+                try:
+                    entry = json.loads(raw)
+                except ValueError:
+                    entry = None
+                parsed.append(entry if isinstance(entry, dict) else None)
+            target = next((entry for entry in parsed if entry and entry.get("id") == run_id), None)
+            if target is None:
+                raise NotFound(f"no run {run_id!r} in the history of {name!r}")
+            group = next(
+                ((key, target[key]) for key in ("batch", "compare") if target.get(key)), None
+            )
+
+            def goes(entry: dict | None) -> bool:
+                if entry is None:
+                    return False
+                if group is not None:
+                    return entry.get(group[0]) == group[1]
+                return entry.get("id") == run_id
+
+            deleted = [entry["id"] for entry in parsed if goes(entry)]
+            kept = [
+                raw
+                for raw, entry in zip(raws, parsed, strict=True)
+                if raw.strip() and not goes(entry)
+            ]
+            if kept:
+                self.write(path, b"".join(raw + b"\n" for raw in kept))
+            else:
+                path.unlink(missing_ok=True)
+            self._prune_images()
+        self.changed("history", name, "deleted", ids=deleted)
+        return deleted
 
     def restore_images(self, request: dict[str, Any]) -> dict[str, Any]:
         """A history line's request with its images as data URLs again; an image

@@ -64,6 +64,11 @@ export function dismissJob(id) {
   if (!dismissed.value.includes(id)) dismissed.value = [...dismissed.value, id];
 }
 
+// A job deleted (from Training's History, here or in another tab): gone from the list.
+export function forgetJob(id) {
+  if (jobs.value.some((job) => job.id === id)) jobs.value = jobs.value.filter((job) => job.id !== id);
+}
+
 // Close every ended job the list shows; running and waiting ones stay.
 export function dismissEnded() {
   const ended = listed.value.filter((job) => job.state === "ended").map((job) => job.id);

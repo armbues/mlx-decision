@@ -27,6 +27,7 @@ from .batches import BatchError, Batches
 from .catalog import Catalog
 from .jobs import Jobs
 from .page import Page, watch
+from .removal import ModelRemoval
 from .rescan import Rescans
 from .routes.batches import BatchMessages, batches_router
 from .routes.data import data_router
@@ -106,6 +107,7 @@ def create_studio(
         hub.publish("catalog", {"added": added, "removed": removed})
 
     rescans = Rescans(gpu, catalog, catalog_changed)
+    removal = ModelRemoval(gpu, jobs, files.root / "models", catalog_changed)
     settings = Settings(
         config,
         gpu,
@@ -170,8 +172,8 @@ def create_studio(
     app.include_router(datasets_router(max_body_bytes))
     app.include_router(run_router(gpu, models, recorder, max_body_bytes))
     app.include_router(batches_router(batches, files, max_body_bytes))
-    app.include_router(models_router(gpu, max_body_bytes, rescans))
-    app.include_router(jobs_router(jobs, gpu, files, current, max_body_bytes))
+    app.include_router(models_router(gpu, max_body_bytes, rescans, removal))
+    app.include_router(jobs_router(jobs, gpu, files, current, max_body_bytes, removal))
     app.include_router(
         downloads_router(
             gpu,

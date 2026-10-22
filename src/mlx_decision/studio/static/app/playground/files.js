@@ -369,8 +369,8 @@ export function renameSet() {
 }
 
 // Delete the open set and its history, after asking; the next set opens.
-export async function deleteSet() {
-  const name = setName.value;
+// Delete a set (the open one by default) and its history, after asking.
+export async function deleteSet(name = setName.value) {
   if (!name) return;
   let count = 0;
   try {
@@ -402,8 +402,10 @@ export async function deleteSet() {
           forgetRuns(name);
           setEntry(name, null);
           reloadSets();
-          const next = (sets.value ?? []).find((item) => item.name !== name)?.name ?? null;
-          navigate("playground", next ?? undefined);
+          if (name === setName.value) {
+            const next = (sets.value ?? []).find((item) => item.name !== name)?.name ?? null;
+            navigate("playground", next ?? undefined);
+          }
           toast(`Deleted ${fileOf(name)}`);
         },
       },

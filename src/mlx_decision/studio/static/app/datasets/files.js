@@ -256,9 +256,8 @@ function Row({ item, picked }) {
           ? html`<span class="mark" aria-label="Not ready for a fit"></span>`
           : splits > 1 && html`<span class="count">${splits}</span>`}
       </a>
-      ${open &&
-      html`<button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
-        onClick=${() => deleteData(item.name)}><${icons.Trash} /></button>`}
+      <button class="sb-delete" aria-label=${`Delete ${item.name}…`} title="Delete…"
+        onClick=${() => deleteData(item.name)}><${icons.Trash} /></button>
     </li>
   `;
 }

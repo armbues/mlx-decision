@@ -32,9 +32,11 @@ from ...fitted import REPORT_FILE
 from ...flags import join_pairs
 from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
+from ...watchdog import remove
 from ..catalog import option_arguments
 from ..checks import training_data_warnings
 from ..jobs import Job, JobBlocked, JobConflict, Jobs
+from ..removal import ModelRemoval, RemovalError
 from ..security import is_loopback
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
@@ -83,9 +85,15 @@ class Plan:
 
 
 def jobs_router(
-    jobs: Jobs, gpu: Gpu, files: Workspace, config: Callable[[], Config], max_body_bytes: int
+    jobs: Jobs,
+    gpu: Gpu,
+    files: Workspace,
+    config: Callable[[], Config],
+    max_body_bytes: int,
+    removal: ModelRemoval | None = None,
 ) -> APIRouter:
-    """``config`` returns the config file as it is now (where downloads go)."""
+    """``config`` returns the config file as it is now (where downloads go);
+    ``removal`` deletes a fit's model with its entry."""
     router = APIRouter(prefix="/studio/api/jobs")
     pool = gpu.pool
 
@@ -514,6 +522,36 @@ def jobs_router(
         if sys.platform == "darwin":
             await asyncio.to_thread(reveal, output)
         return Response(status_code=204)
+
+    @router.delete("/{job_id}")
+    async def delete(job_id: str, model: bool = False):
+        """``{job, model}``: an ended job's entry deleted (its folder in
+        ``jobs/``); with ``?model=true`` a fit's model too, first (``model`` its
+        name, else None). 409 for a job that has not ended, or a model that
+        cannot go now (``ModelRemoval``); then nothing is deleted."""
+        job = summary_of(job_id)
+        if job.get("state") != "ended":
+            raise ApiError(409, f"{job['title']} has not ended: stop it first")
+        deleted = None
+        output = Path(job["output"]) if job.get("output") else None
+        if model and job["kind"] == "fit" and output is not None and removal is not None:
+            name = removal.name_of(output)
+            try:
+                if name is not None:
+                    await removal.delete(name)
+                    deleted = name
+                elif removal.deletable(output) and output.exists():
+                    await asyncio.to_thread(remove, output)  # written, not listed yet
+                    deleted = output.name
+            except RemovalError as error:
+                raise ApiError(error.status, str(error), param="model") from None
+        try:
+            jobs.delete(job_id)
+        except (KeyError, WorkspaceError):
+            raise ApiError(404, f"no job {job_id}") from None
+        except ValueError as error:
+            raise ApiError(409, str(error)) from None
+        return {"job": job_id, "model": deleted}
 
     @router.post("/{job_id}/stop")
     async def stop(job_id: str):

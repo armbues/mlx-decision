@@ -3,7 +3,8 @@
 // one open in the centre, loaded once and then taken from the stream.
 import { computed, effect, signal } from "@preact/signals";
 import { api } from "../api.js";
-import { jobs, onJobEvent } from "./jobs.js";
+import { workspaceChange } from "../stream.js";
+import { forgetJob, jobs, onJobEvent } from "./jobs.js";
 
 const KINDS = new Set(["fit", "eval"]);
 const listed = signal([]); // GET /jobs, filtered
@@ -41,6 +42,14 @@ effect(() => {
     known = now;
     loadFits();
   }
+});
+
+// A fit or evaluation deleted in another tab.
+effect(() => {
+  const change = workspaceChange.value;
+  if (change?.folder !== "jobs" || change.action !== "deleted") return;
+  forgetJob(change.name);
+  loadFits();
 });
 
 // The open fit's events: {id, events (by index), loaded}.

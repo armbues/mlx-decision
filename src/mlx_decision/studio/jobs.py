@@ -410,6 +410,18 @@ class Jobs:
             for suffix in WORKING_SUFFIXES:
                 remove(output.parent / f".{output.name}{suffix}")
 
+    def delete(self, job_id: str) -> dict[str, Any]:
+        """Delete an ended job's folder (its record, events and stderr; not
+        what it wrote) and forget it; returns its summary. Raises ``KeyError``
+        and ``ValueError`` for a job that has not ended."""
+        summary = self.get(job_id)
+        if summary.get("state") != "ended":
+            raise ValueError(f"{summary.get('title', job_id)} has not ended: stop it first")
+        remove(self.workspace.path("jobs", job_id))
+        self.jobs.pop(job_id, None)
+        self.workspace.changed("jobs", job_id, "deleted")
+        return summary
+
     # Reading
 
     def get(self, job_id: str) -> dict[str, Any]:

@@ -148,6 +148,12 @@ def sets_router(files: Workspace, max_body_bytes: int) -> APIRouter:
 
         return await run(find)
 
+    @router.delete("/history/{name}/{run_id}")
+    async def delete_run(name: str, run_id: str):
+        """``{deleted}``: one History entry gone, a run or a whole Run All or
+        Compare (the ids of its runs)."""
+        return {"deleted": await run(files.delete_run, name, run_id)}
+
     @router.delete("/history/{name}", status_code=204)
     async def clear_history(name: str):
         await run(files.clear_history, name)

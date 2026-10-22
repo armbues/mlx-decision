@@ -196,11 +196,14 @@ def test_stop_from_the_sidebar_and_run_the_rest(make_studio, page):
     job = page.locator(".sidebar .batch-job")
     expect(job).to_contain_text("Batch tweets-fake-slow")
     expect(job.locator("small")).to_contain_text("1 of 3", timeout=10_000)
+    entry = page.locator(".sidebar .batch-list li", has_text="tweets-fake-slow")
+    expect(entry.locator(".sb-delete")).to_have_count(0)  # not while it runs
     job.get_by_role("button", name="Stop the batch tweets-fake-slow").click()
     expect(page.locator(".batch-progress")).to_have_class(
         re.compile(r"\bstopped\b"), timeout=10_000
     )
     expect(page.locator(".sidebar .batch-job")).to_have_count(0)
+    expect(entry.locator(".sb-delete")).to_have_count(1)
     expect(page.locator(".batch-progress")).to_contain_text("Stopped at")
     page.locator(".pane-head").get_by_role("button", name="Run the Rest").click()
     done(page, "3 answered")
@@ -352,3 +355,24 @@ def test_the_rows_stay_reachable_by_keyboard(make_studio, page):
     page.locator('.batch-rows [data-row="100"]').press("ArrowUp")
     expect(table.locator(".ex-pager")).to_contain_text("1–100 of 120")
     expect(page.locator(".batch-inspector h2")).to_have_text("train/99")
+
+
+def test_delete_a_batch_from_the_sidebar(tweets, page):
+    open_studio(page, tweets, "batches")
+    new_batch(page, sample=5)
+    done(page, "5 answered")
+    new_batch(page, sample=4)
+    expect(page).to_have_url(re.compile(r"#/batches/tweets-fake-2$"))
+    done(page, "4 answered")
+    # The batch that is not open: it goes, the open one stays.
+    entry = page.locator(".sidebar .batch-list li").filter(
+        has=page.locator(".sb-item[href='#/batches/tweets-fake']")
+    )
+    entry.hover()
+    entry.get_by_role("button", name="Delete tweets-fake…").click()
+    sheet = page.locator(".sheet")
+    expect(sheet).to_contain_text("Its folder batches/tweets-fake/ goes, with its 5 answers")
+    sheet.get_by_role("button", name="Delete").click()
+    expect(page.locator(".sidebar .batch-list li")).to_have_count(1)
+    expect(page).to_have_url(re.compile(r"#/batches/tweets-fake-2$"))
+    assert not (tweets.workspace / "batches" / "tweets-fake").exists()

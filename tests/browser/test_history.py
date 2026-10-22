@@ -151,3 +151,26 @@ def test_clear_history_asks_first_and_deletes_the_file(studio, page):
     page.locator(".sheet-foot .btn", has_text=re.compile("^Clear History$")).click()
     expect(page.locator(".insp-body .empty")).to_contain_text("No runs of this set yet")
     assert not (studio.history / "ticket-triage.jsonl").exists()
+
+
+def test_one_run_is_deleted_from_the_history(studio, page):
+    three_runs(page, studio)
+    inspector_tab(page, "History")
+    rows = page.locator(".hist-list .hrow")
+    expect(rows).to_have_count(3)
+    second = page.locator(".hrow-wrap", has=history_row(page, 2))
+    delete = second.locator(".row-delete")
+    expect(delete).to_have_css("opacity", "0")
+    second.hover()
+    expect(delete).to_have_css("opacity", "1")
+    delete.click()
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text("Delete run #2?")
+    expect(sheet).to_contain_text("history/ticket-triage.jsonl")
+    sheet.get_by_role("button", name="Delete").click()
+    expect(page.locator(".toast")).to_contain_text("Deleted run #2 of ticket-triage")
+    # The later run takes its number.
+    expect(rows).to_have_count(2)
+    expect(page.locator(".hist-list .hrow .n")).to_have_text(["#2", "#1"])
+    lines = (studio.history / "ticket-triage.jsonl").read_text().splitlines()
+    assert len(lines) == 2

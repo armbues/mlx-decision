@@ -173,7 +173,7 @@ async function exportFile(name, format) {
   }
 }
 
-function confirmDelete(batch) {
+export function confirmDelete(batch) {
   openSheet({
     title: `Delete the batch ${batch.name}?`,
     purpose: `Its folder batches/${batch.name}/ goes, with its ${plural(batch.answered, "answer")}. The dataset stays.`,
