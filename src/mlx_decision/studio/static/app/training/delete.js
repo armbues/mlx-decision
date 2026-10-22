@@ -4,7 +4,7 @@
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
-import { closeSheet, openSheet } from "../components/sheet.js";
+import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
 import { gigabytes } from "../format.js";
 import { navigate, route } from "../router.js";
 import { loadFits } from "../store/fits.js";
@@ -38,16 +38,17 @@ export function confirmDeleteRun(job) {
         danger: true,
         onSelect: async () => {
           const both = Boolean(model && withModel.value);
-          closeSheet();
           try {
             await api(`/jobs/${encodeURIComponent(job.id)}${both ? "?model=true" : ""}`, { method: "DELETE" });
-            forgetJob(job.id);
-            if (route.value.page === "training" && route.value.item === job.id) navigate("training");
-            loadFits();
-            toast(both ? `Deleted ${job.title} and ${model.name}` : `Deleted ${job.title}`);
           } catch (error) {
-            toast(`Not deleted: ${error.message}`);
+            sheetError(`Not deleted: ${error.message}`);
+            return;
           }
+          closeSheet();
+          forgetJob(job.id);
+          if (route.value.page === "training" && route.value.item === job.id) navigate("training");
+          loadFits();
+          toast(both ? `Deleted ${job.title} and ${model.name}` : `Deleted ${job.title}`);
         },
       },
     ],

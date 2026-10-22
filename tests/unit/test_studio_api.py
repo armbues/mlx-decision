@@ -710,3 +710,17 @@ def test_a_broken_history_line_survives_a_delete(studio):
     studio.delete(f"/studio/api/history/tickets/{first['id']}", headers=JSON)
     assert path.read_bytes().endswith(b"{not json\n")
     assert len(studio.get("/studio/api/history/tickets").json()["runs"]) == 1
+
+
+def test_a_write_the_disk_refuses_names_the_file_and_why(studio):
+    folder = studio.app_state.workspace.root / "sets"
+    folder.chmod(0o555)  # read-only: nothing can be written in it
+    try:
+        response = studio.put("/studio/api/sets/locked", json={"body": BODY})
+    finally:
+        folder.chmod(0o755)
+    assert response.status_code == 500
+    error = response.json()["error"]
+    assert error["type"] == "api_error"
+    assert error["message"].startswith("could not write sets/")
+    assert error["message"].endswith(": permission denied")

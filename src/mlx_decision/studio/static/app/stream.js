@@ -72,14 +72,39 @@ function flush() {
   batch(() => messages.forEach(apply));
 }
 
+// Hidden tabs get no animation frames: catch up when shown again.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && queue.length) flush();
+});
+
+// The connection's states: "connecting" (the browser retries), "down" (no
+// answer for DOWN_AFTER_MS: the Studio stopped), "restarted" (the stream was
+// refused: a new Studio with a new session), "open". After a refusal the
+// page asks for the status every POLL_MS and opens a new stream once it
+// answers (another tab opened the address the new Studio printed).
+const DOWN_AFTER_MS = 2000;
+const POLL_MS = 3000;
+let downTimer = null;
+
 export function connect() {
   const source = new EventSource("/studio/api/stream");
   source.onopen = () => {
+    clearTimeout(downTimer);
+    downTimer = null;
     connection.value = "open";
   };
   source.onerror = () => {
-    // CLOSED: refused (no session); otherwise the browser retries.
-    connection.value = source.readyState === EventSource.CLOSED ? "lost" : "connecting";
+    if (source.readyState === EventSource.CLOSED) {
+      source.close();
+      waitForStudio();
+      return;
+    }
+    if (connection.value === "open") connection.value = "connecting";
+    if (!downTimer)
+      downTimer = setTimeout(() => {
+        downTimer = null;
+        if (connection.value === "connecting") connection.value = "down";
+      }, DOWN_AFTER_MS);
   };
   source.onmessage = (event) => {
     queue.push(JSON.parse(event.data));
@@ -88,9 +113,21 @@ export function connect() {
       requestAnimationFrame(flush);
     }
   };
-  // Hidden tabs get no animation frames: catch up when shown again.
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && queue.length) flush();
-  });
   return source;
+}
+
+async function waitForStudio() {
+  clearTimeout(downTimer);
+  downTimer = null;
+  try {
+    const response = await fetch("/studio/api/status", { headers: { Accept: "application/json" } });
+    if (response.ok) {
+      connect(); // its snapshot brings the page up to date
+      return;
+    }
+    connection.value = response.status === 401 ? "restarted" : "down";
+  } catch {
+    connection.value = "down";
+  }
+  setTimeout(waitForStudio, POLL_MS);
 }

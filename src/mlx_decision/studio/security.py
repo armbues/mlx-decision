@@ -164,7 +164,7 @@ class Guard:
         if path.startswith(API_PREFIX) and not self.session.has_cookie(_cookies(headers)):
             return error_response(
                 401,
-                "no Studio session; open the address `mlx-decision web` printed",
+                "no Studio session; open the address mlx-decision web printed when it started",
                 "authentication_error",
             )
         return None

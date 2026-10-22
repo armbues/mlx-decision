@@ -68,12 +68,30 @@ effect(() => {
 // One menu open at a time, named by its id; Esc and a click elsewhere close it.
 export const openMenu = signal(null);
 
+// Toasts: a note after an action goes after 3.5 s; a failure ("Not saved:
+// …", "Could not …") stays longer, by its length, while the pointer is on it
+// and until closed.
 export const toasts = signal([]);
 let toastId = 0;
-export function toast(text) {
+const FAILURE = /^(Not \w+:|Could not |Cannot )|\bfailed\b/;
+
+export function toast(text, { error } = {}) {
   const id = ++toastId;
-  toasts.value = [...toasts.value, { id, text }];
-  setTimeout(() => {
-    toasts.value = toasts.value.filter((item) => item.id !== id);
-  }, 3500);
+  const failure = error ?? (typeof text === "string" && FAILURE.test(text));
+  const ms = failure ? Math.max(8000, 60 * String(text).length) : 3500;
+  toasts.value = [...toasts.value, { id, text, error: failure, held: false }];
+  const expire = () => {
+    const item = toasts.value.find((entry) => entry.id === id);
+    if (item?.held) setTimeout(expire, 1000); // read while hovered: wait
+    else dismissToast(id);
+  };
+  setTimeout(expire, ms);
+}
+
+export function dismissToast(id) {
+  toasts.value = toasts.value.filter((item) => item.id !== id);
+}
+
+export function holdToast(id, held) {
+  toasts.value = toasts.value.map((item) => (item.id === id ? { ...item, held } : item));
 }

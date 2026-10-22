@@ -5,7 +5,9 @@ import { api } from "../api.js";
 
 export const status = signal(null);
 export const models = signal(null); // null until loaded
-export const connection = signal("connecting"); // "connecting", "open" or "lost"
+export const connection = signal("connecting"); // "connecting", "open", "down" or "restarted" (stream.js)
+// The page cannot reach the Studio: stopped, or restarted with a new session.
+export const offline = computed(() => connection.value === "down" || connection.value === "restarted");
 export const loadError = signal(null);
 
 export const loadedNames = computed(() => new Set(status.value?.loaded ?? []));

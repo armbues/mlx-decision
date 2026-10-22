@@ -19,6 +19,12 @@ export function closeSheet() {
   sheet.value = null;
 }
 
+// Why the sheet's action was refused, shown in the sheet above its buttons
+// (it stays open); null takes it away.
+export function sheetError(message) {
+  if (sheet.value) sheet.value = { ...sheet.value, error: message };
+}
+
 export function Sheet() {
   const current = sheet.value;
   const panel = useRef(null);
@@ -43,6 +49,7 @@ export function Sheet() {
         ${purpose && html`<p>${purpose}</p>`}
       </div>
       <div class="sheet-body">${Body && html`<${Body} />`}</div>
+      ${current.error && html`<p class="warn-text sheet-error" role="alert">${current.error}</p>`}
       <div class="sheet-foot">
         ${Foot ? html`<${Foot} />` : note && html`<span class="note">${note}</span>`}
         ${done

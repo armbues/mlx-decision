@@ -215,7 +215,13 @@ function Picked({ name }) {
   if (summary && query.value.name === name && query.value.split !== summary.split && !summary.error) showDataset(name, summary.split);
   if (!summary) return null;
   if (summary.error)
-    return html`<div class="pane-head"><div><h1 class="mono">${name}</h1></div></div><p class="warn-text">${summary.error}</p>`;
+    return html`<div class="pane-head"><div><h1 class="mono">${name}</h1></div></div>
+      <p class="warn-text">${summary.error}</p>
+      ${!summary.unreachable &&
+      html`<div class="empty-actions error-actions">
+        <button class="btn" onClick=${() => revealData(name)}>Show in Finder</button>
+        <button class="btn" onClick=${() => deleteData(name)}>Delete…</button>
+      </div>`}`;
   const folder = summary.kind === "folder";
   const asked = summary.questions.length > 0;
   return html`

@@ -648,6 +648,7 @@ textarea.field { resize: vertical; line-height: 1.45; }
 .snip-note { margin: 0 2px; line-height: 1.5; }
 .snip-note code { overflow-wrap: anywhere; }
 .sheet .warn-text { color: var(--orange); }
+.sheet .sheet-error { margin: 0 18px 10px; font-size: 12.5px; }
 .btn.tool:disabled { opacity: 0.45; }
 
 @media (max-width: 1280px) {
@@ -702,6 +703,11 @@ a.sb-item { color: var(--fg); }
 
 .toasts { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 50; display: grid; gap: 6px; justify-items: center; pointer-events: none; }
 .toast { background: var(--menu); color: var(--fg); box-shadow: var(--menu-shadow); border-radius: 9px; padding: 7px 14px; font-size: 12px; }
+.toast.error { pointer-events: auto; display: flex; align-items: center; gap: 8px; max-width: min(640px, calc(100vw - 32px)); padding-right: 6px; }
+.toast.error .ic { width: 14px; height: 14px; color: var(--orange); flex: none; }
+.toast-close { border: 0; background: none; color: var(--fg-2); width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; padding: 0; flex: none; }
+.toast-close:hover { background: var(--fill); color: var(--fg); }
+.toast-close svg { width: 9px; height: 9px; }
 
 /* Below 1,100 px the inspector leaves the layout; its toggle opens it over the centre.
    An inspector shown on a pick does so below 1,280 px (insp-over). */

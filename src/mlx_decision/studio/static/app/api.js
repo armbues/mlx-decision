@@ -3,7 +3,14 @@
 export class ApiError extends Error {
   constructor(status, body) {
     const error = (body && body.error) || {};
-    super(error.message || `the Studio answered ${status}`);
+    super(
+      error.message ||
+        (status === 0
+          ? "the Studio is not answering"
+          : status >= 500
+            ? `the Studio failed (HTTP ${status}); the terminal running mlx-decision web says why`
+            : `the Studio answered ${status}`),
+    );
     this.status = status;
     this.param = error.param ?? null;
     this.code = error.code ?? null;
@@ -19,7 +26,13 @@ export async function api(path, { method = "GET", body, signal } = {}) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body ?? {});
   }
-  const response = await fetch(`/studio/api${path}`, init);
+  let response;
+  try {
+    response = await fetch(`/studio/api${path}`, init);
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    throw new ApiError(0, null); // no answer: the Studio is not running
+  }
   if (response.status === 204) return null;
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new ApiError(response.status, data);

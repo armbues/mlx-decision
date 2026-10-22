@@ -6,11 +6,12 @@ import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import * as icons from "../components/icons.js";
-import { closeSheet, openSheet } from "../components/sheet.js";
+import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
+import { stopJob } from "../store/jobs.js";
 import { fileSize, plural, shellWord } from "../format.js";
 import { href, navigate, route } from "../router.js";
 import { reveal } from "../settings/places.js";
-import { dataFiles, dataFolder, datasetOf, forget, nameTaken, reloadData } from "../store/data.js";
+import { dataFiles, dataFolder, datasetOf, forget, nameTaken, readerOf, reloadData } from "../store/data.js";
 import { toast } from "../store/ui.js";
 import { openGetDataset } from "./get.js";
 
@@ -229,18 +230,27 @@ export function deleteData(name) {
   const splits = folder ? ` (${plural(item.splits.length, "split")})` : "";
   openSheet({
     title: `Delete ${name}?`,
+    // A fit or an evaluation that reads it: why Delete is off, with its Stop.
+    Body: () => {
+      const reader = readerOf(name);
+      return reader
+        ? html`<p class="warn-text">${reader.title} reads it: stop it or wait until it ends.
+            <button class="btn sm" onClick=${() => stopJob(reader.id)}>Stop ${reader.kind === "eval" ? "the Evaluation" : "the Fit"}</button></p>`
+        : null;
+    },
     purpose: `The dataset ${where}${splits} is deleted${folder ? ", and the history of its questions tried in the Playground" : ""}. This cannot be undone; models fitted on it stay.`,
-    actions: [
+    actions: () => [
       {
         label: "Delete",
         primary: true,
         danger: true,
+        disabled: Boolean(readerOf(name)),
         onSelect: async () => {
           try {
             await api(`/data/${encodeURIComponent(name)}`, { method: "DELETE" });
           } catch (error) {
             if (error.status !== 404) {
-              toast(`Not deleted: ${error.message}`);
+              sheetError(`Not deleted: ${error.message}`);
               return;
             }
           }

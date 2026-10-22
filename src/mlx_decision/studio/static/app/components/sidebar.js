@@ -6,7 +6,7 @@ import { batchProgressText, runningBatch, stopBatch } from "../store/batches.js"
 import { dismissEnded, dismissJob, listed, progress, stopJob } from "../store/jobs.js";
 import { groupColour, groupLabel } from "../families.js";
 import { dataFiles } from "../store/data.js";
-import { busy, connection, models, status } from "../store/status.js";
+import { busy, models, offline, status } from "../store/status.js";
 import * as icons from "./icons.js";
 import { UnloadMark } from "./load-button.js";
 
@@ -130,7 +130,7 @@ function Memory() {
 function Serving() {
   const current = status.value;
   if (!current) return null;
-  const state = connection.value === "lost" ? "lost" : busy.value ? "busy" : "ready";
+  const state = offline.value ? "lost" : busy.value ? "busy" : "ready";
   const title = {
     ready: "The Jev-compatible API answers here, from the same models",
     busy: `A job holds the GPU: the API answers 503 until it is done`,

@@ -5,7 +5,7 @@
 import { effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
-import { closeSheet, openSheet, sheet } from "../components/sheet.js";
+import { closeSheet, openSheet, sheet, sheetError } from "../components/sheet.js";
 import { navigate } from "../router.js";
 import { reloadSets, sets } from "../store/sets.js";
 import { toast } from "../store/ui.js";
@@ -428,7 +428,7 @@ export async function deleteSet(name = setName.value) {
             await api(`/sets/${encodeURIComponent(name)}`, { method: "DELETE" });
           } catch (error) {
             if (error.status !== 404) {
-              toast(`Not deleted: ${error.message}`);
+              sheetError(`Not deleted: ${error.message}`);
               return;
             }
           }

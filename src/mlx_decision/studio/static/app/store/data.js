@@ -1,9 +1,10 @@
 // The datasets in the workspace's data/ folder (a dataset folder with its
 // splits, or a JSON-lines file), and each split's summary (questions, labels,
 // values, counts) once read.
-import { computed, signal } from "@preact/signals";
+import { computed, effect, signal } from "@preact/signals";
 import { api } from "../api.js";
 import { jobs } from "./jobs.js";
+import { connection } from "./status.js";
 
 export const dataFiles = signal(null); // null until loaded
 // The data/ folder ({folder, display}) and the most an upload can hold.
@@ -38,9 +39,20 @@ export async function describe(name, split = null) {
     const summary = await api(`/data/${encodeURIComponent(name)}${query}`);
     described.value = { ...described.value, [key]: summary };
   } catch (error) {
-    described.value = { ...described.value, [key]: { error: error.message } };
+    described.value = { ...described.value, [key]: { error: error.message, unreachable: error.status === 0 } };
   }
 }
+
+// Summaries that failed while the Studio was not answering: read again once
+// the stream is open again.
+effect(() => {
+  if (connection.value !== "open") return;
+  for (const [key, value] of Object.entries(described.peek())) {
+    if (!value?.unreachable) continue;
+    const [name, split] = key.split("\u0000");
+    describe(name, split || null);
+  }
+});
 
 export function forget(name) {
   described.value = Object.fromEntries(Object.entries(described.value).filter(([key]) => !key.startsWith(`${name}\u0000`)));
@@ -60,6 +72,11 @@ export function splitFor(item, role) {
   }
   return splits.length === 1 ? splits[0].name : null;
 }
+
+// A job that has not ended and reads dataset ``name`` (a fit or an
+// evaluation), or null: the dataset cannot be deleted while it runs.
+export const readerOf = (name) =>
+  jobs.value.find((job) => job.state !== "ended" && (job.details?.data === name || job.details?.report === name)) ?? null;
 
 // When the file was last changed, as the list says (a summary reads again then).
 export const modifiedOf = (name) => (dataFiles.value ?? []).find((item) => item.name === name)?.modified;

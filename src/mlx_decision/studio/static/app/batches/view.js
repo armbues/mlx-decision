@@ -8,7 +8,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { api } from "../api.js";
 import { Confusion, Reliability } from "../components/charts.js";
 import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
-import { closeSheet, openSheet } from "../components/sheet.js";
+import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
 import { plural, shellWord } from "../format.js";
 import { href } from "../router.js";
 import {
@@ -184,9 +184,8 @@ export function confirmDelete(batch) {
         label: "Delete",
         primary: true,
         danger: true,
-        onSelect: () => {
-          closeSheet();
-          deleteBatch(batch.name);
+        onSelect: async () => {
+          if (await deleteBatch(batch.name, sheetError)) closeSheet();
         },
       },
     ],

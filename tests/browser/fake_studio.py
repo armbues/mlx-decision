@@ -204,11 +204,13 @@ class Served:
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
-def serve(home: Path, **options):
-    """Serve a fake Studio on a free port, on a thread; a context manager that
-    yields ``Served`` and stops the server on exit."""
+def serve(home: Path, port: int = 0, **options):
+    """Serve a fake Studio on a free port (or ``port``: a Studio started again
+    where one ran), on a thread; a context manager that yields ``Served`` and
+    stops the server on exit."""
     sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", port))
     sock.listen()
     port = sock.getsockname()[1]
     app = write_studio(home, port, **options)

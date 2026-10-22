@@ -9,7 +9,7 @@ import { batch, computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { two } from "../charts/answers.js";
-import { closeSheet, openSheet } from "../components/sheet.js";
+import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
 import { showTab } from "../components/inspector.js";
 import { Trash } from "../components/icons.js";
 import { clock, duration, plural } from "../format.js";
@@ -448,9 +448,15 @@ function deleteEntry(entry, what) {
         primary: true,
         danger: true,
         onSelect: async () => {
-          closeSheet();
+          let deleted;
           try {
-            const { deleted } = await api(`/history/${encodeURIComponent(set)}/${encodeURIComponent(entry.lines[0].id)}`, { method: "DELETE" });
+            ({ deleted } = await api(`/history/${encodeURIComponent(set)}/${encodeURIComponent(entry.lines[0].id)}`, { method: "DELETE" }));
+          } catch (error) {
+            sheetError(`Not deleted: ${error.message}`);
+            return;
+          }
+          closeSheet();
+          {
             const gone = new Set(deleted);
             batch(() => {
               const current = histories.value[set]?.runs ?? [];
@@ -458,8 +464,6 @@ function deleteEntry(entry, what) {
               forgetRunIds(gone);
             });
             toast(`Deleted run #${entry.number} of ${datasetOfDocument(set) ?? set}`);
-          } catch (error) {
-            toast(`Not deleted: ${error.message}`);
           }
         },
       },
@@ -478,17 +482,18 @@ function clearHistory() {
         label: "Clear History",
         primary: true,
         onSelect: async () => {
-          closeSheet();
           try {
             await api(`/history/${encodeURIComponent(set)}`, { method: "DELETE" });
-            batch(() => {
-              histories.value = { ...histories.value, [set]: { runs: [] } };
-              forgetRuns(set);
-            });
-            toast(`Cleared the history of ${datasetOfDocument(set) ?? set}`);
           } catch (error) {
-            toast(`Not cleared: ${error.message}`);
+            sheetError(`Not cleared: ${error.message}`);
+            return;
           }
+          closeSheet();
+          batch(() => {
+            histories.value = { ...histories.value, [set]: { runs: [] } };
+            forgetRuns(set);
+          });
+          toast(`Cleared the history of ${datasetOfDocument(set) ?? set}`);
         },
       },
     ],

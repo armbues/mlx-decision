@@ -7,6 +7,9 @@ what is on disk), 422 for a request the model refuses, 503 while a job
 holds the GPU. Bodies are JSON (the guard refuses anything else).
 """
 
+import logging
+from contextlib import suppress
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -17,6 +20,8 @@ from ...gpu import Busy
 from ...server import UnsupportedEncoding, busy_response, error_response, read_body
 from ...types import decode_json
 from ..workspace import Conflict, WorkspaceError
+
+logger = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
@@ -71,6 +76,26 @@ def install_errors(app: FastAPI) -> None:
     @app.exception_handler(Busy)
     async def busy(request: Request, error: Busy):
         return busy_response(error)
+
+    @app.exception_handler(OSError)
+    async def os_error(request: Request, error: OSError):
+        # A write the disk refused (permissions, a full disk): say which file
+        # and why, its path inside the workspace when it is there.
+        logger.exception("%s %s failed", request.method, request.url.path)
+        return error_response(500, os_error_message(request, error), "api_error")
+
+
+def os_error_message(request: Request, error: OSError) -> str:
+    """``could not write sets/x.json: permission denied`` (read for a GET)."""
+    verb = "read" if request.method in ("GET", "HEAD") else "write"
+    path = error.filename
+    files = getattr(request.app.state, "workspace", None)
+    if path is not None and files is not None:
+        with suppress(ValueError, OSError):
+            path = Path(path).resolve().relative_to(files.root.resolve())
+    reason = (error.strerror or str(error)).lower()
+    where = f" {path}" if path is not None else ""
+    return f"could not {verb}{where}: {reason}"
 
 
 async def json_body(request: Request, limit: int) -> Any:

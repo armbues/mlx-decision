@@ -8,6 +8,8 @@ import { plural } from "../format.js";
 import { navigate } from "../router.js";
 import { batches, loadBatches, runningBatch } from "../store/batches.js";
 import { dataChanged, dataFiles, datasetOf, describe, described, freeName, nameTaken, summaryKey } from "../store/data.js";
+import { uploadData } from "../datasets/files.js";
+import { openGetDataset } from "../datasets/get.js";
 import { gpuJob } from "../store/jobs.js";
 import { reloadSets, sets } from "../store/sets.js";
 import { NO_MODELS, NoModels } from "../components/no-models.js";
@@ -191,6 +193,14 @@ function NewBatch() {
   const placeholder = current.dataset && current.model ? defaultName(current.dataset, current.model) : "";
   if (current.dataset && current.split && !described.value[summaryKey(current.dataset, current.split)]) describe(current.dataset, current.split);
   if (current.questions !== OWN) readSet(current.questions);
+  if (dataFiles.value && list.length === 0)
+    return html`<div class="empty no-datasets">
+      <b>No datasets yet</b><span>A batch answers a dataset's rows.</span>
+      <span class="empty-actions">
+        <button class="btn primary" onClick=${() => { closeSheet(); openGetDataset(); }}>Download a Dataset…</button>
+        <button class="btn" onClick=${() => { closeSheet(); uploadData(); }}>Add a Dataset…</button>
+      </span>
+    </div>`;
   return html`
     <div class="form-grid batch-form">
       <label for="batch-data">Dataset</label>

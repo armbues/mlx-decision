@@ -3,7 +3,7 @@
 // Downloaded models are not deleted here (other tools may use them).
 import { html } from "htm/preact";
 import { api } from "../api.js";
-import { closeSheet, openSheet } from "../components/sheet.js";
+import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
 import { gigabytes } from "../format.js";
 import { navigate, route } from "../router.js";
 import { loadModels, models } from "../store/status.js";
@@ -31,15 +31,16 @@ export function confirmDeleteModel(model) {
         primary: true,
         danger: true,
         onSelect: async () => {
-          closeSheet();
           try {
             await api(`/models/${encodeURIComponent(model.name)}`, { method: "DELETE" });
-            toast(`Deleted ${model.name}`);
-            if (route.value.page === "models" && route.value.item === model.name) navigate("models");
-            loadModels();
           } catch (error) {
-            toast(`Not deleted: ${error.message}`);
+            sheetError(`Not deleted: ${error.message}`);
+            return;
           }
+          closeSheet();
+          toast(`Deleted ${model.name}`);
+          if (route.value.page === "models" && route.value.item === model.name) navigate("models");
+          loadModels();
         },
       },
     ],

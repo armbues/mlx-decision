@@ -12,8 +12,10 @@ import { MenuButton, MenuItem } from "./menu.js";
 // ``icon`` only when it means something: "spin" while working, "warn" when
 // something needs attention, "ok" right after a run is answered; else none.
 function fieldContent(page) {
-  if (connection.value === "lost")
-    return { icon: "warn", text: html`Not connected to the Studio · reload the page` };
+  if (connection.value === "down")
+    return { icon: "warn", text: html`The Studio is not answering · start it again with <code>mlx-decision web</code>; your edits stay in this tab` };
+  if (connection.value === "restarted")
+    return { icon: "warn", text: html`The Studio restarted · open the address it printed in a new tab, then come back here and save` };
   if (busy.value) {
     const job = gpuJob.value?.title === busy.value ? gpuJob.value : null;
     const fraction = job ? progress(job).fraction : null;

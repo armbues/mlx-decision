@@ -119,8 +119,17 @@ export async function runAgain(name) {
   }
 }
 
-export async function deleteBatch(name) {
-  const answer = await act(`/batches/${encoded(name)}`, `delete ${name}`, "DELETE");
+// Delete a batch; ``onRefused`` gets why it was refused (a sheet shows it),
+// else a toast does. Returns whether it went.
+export async function deleteBatch(name, onRefused = null) {
+  let answer = null;
+  try {
+    answer = await api(`/batches/${encoded(name)}`, { method: "DELETE" });
+  } catch (error) {
+    if (onRefused) onRefused(`Not deleted: ${error.message}`);
+    else toast(`Not deleted: ${error.message}`);
+    return false;
+  }
   if (answer) {
     const { [name]: _, ...rest } = live.value;
     live.value = rest;
@@ -128,4 +137,5 @@ export async function deleteBatch(name) {
     toast(`Deleted the batch ${name}`);
     if (route.value.page === "batches" && route.value.item === name) navigate("batches");
   }
+  return true;
 }

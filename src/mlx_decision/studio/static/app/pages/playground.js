@@ -438,8 +438,14 @@ function Centre() {
       ${data ? html`<${DatasetBanner} />` : html`<${DiskBanner} />`}
       ${current.error
         ? html`<div class="empty"><b>${current.error}</b>${
-            current.status === 404 &&
-            html`<div class="empty-actions"><button class="btn" onClick=${files.newSet}>New Question Set…</button></div>`
+            current.status === 404
+              ? html`<div class="empty-actions"><button class="btn" onClick=${files.newSet}>New Question Set…</button></div>`
+              : !data && current.status
+                ? html`<div class="empty-actions">
+                    <button class="btn" onClick=${files.reveal}>Show in Finder</button>
+                    <button class="btn" onClick=${() => files.deleteSet()}>Delete…</button>
+                  </div>`
+                : null
           }</div>`
         : html`<${Editor} />`}
     </div>

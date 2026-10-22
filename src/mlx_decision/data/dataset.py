@@ -251,8 +251,15 @@ class Dataset:
                     return parse_examples(file, _plain_lenient, require_labels=False)
                 return parse_examples(file)
         split = split or next(iter(self.splits))
-        with open(self.split_path(split), "rb") as file:
-            return parse_examples(file, self.parse_line(split, lenient), require_labels=not lenient)
+        path = self.split_path(split)
+        with open(path, "rb") as file:
+            try:
+                return parse_examples(
+                    file, self.parse_line(split, lenient), require_labels=not lenient
+                )
+            except DataError as error:
+                error.file = error.file or path.name  # a line that is not JSON, too
+                raise
 
     def sha256(self, split: str | None = None) -> str:
         """The SHA-256 a fit records for its data: a plain file's bytes; a split's
