@@ -288,3 +288,75 @@ def test_the_sheet_opens_again_on_the_entry_last_used(studio, page, hub):
     expect(sheet.locator(".fam[aria-selected='true'] b")).to_have_text("Another dataset…")
     expect(sheet.get_by_label("Hugging Face dataset")).to_have_value("")
     expect(sheet.locator(".any-table")).to_have_count(0)
+
+
+@pytest.fixture
+def mmlu(monkeypatch):
+    """cais/mmlu's columns: question, subject, choices (a list) and answer (A to D)."""
+    import datasets
+
+    from mlx_decision.data import sources
+
+    features = datasets.Features({
+        "question": datasets.Value("string"),
+        "subject": datasets.Value("string"),
+        "choices": datasets.Sequence(datasets.Value("string")),
+        "answer": datasets.ClassLabel(names=["A", "B", "C", "D"]),
+    })  # fmt: skip
+    rows = {"question": [f"question {i}?" for i in range(8)], "subject": ["math", "law"] * 4,
+            "choices": [[f"{i}a", f"{i}b", f"{i}c", f"{i}d"] for i in range(8)],
+            "answer": [i % 4 for i in range(8)]}  # fmt: skip
+    monkeypatch.setattr(sources, "hub_configs", lambda repo, revision=None: ["all"])
+    monkeypatch.setattr(sources, "hub_splits", lambda repo, config=None, revision=None: ["test"])
+    monkeypatch.setattr(
+        sources,
+        "load_hub",
+        lambda repo, config=None, split=None, revision=None: sources._from_dataset(
+            datasets.Dataset.from_dict(rows, features=features), "mmlu", split, {}
+        ),
+    )
+    monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: None)
+
+
+def test_multiple_choice_and_several_columns(studio, page, mmlu):
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    sheet.locator(".fam[data-preset='any']").click()
+    field = sheet.get_by_label("Hugging Face dataset")
+    field.fill("cais/mmlu")
+    field.press("Enter")
+    sheet.get_by_label("Split to preview").select_option("test")
+    # Guessed as the data command guesses it: multiple choice, its columns picked.
+    shapes = sheet.get_by_role("radiogroup", name="Shape")
+    expect(shapes.get_by_role("radio", name="Multiple choice")).to_be_checked()
+    expect(sheet.get_by_label("Question column")).to_have_value("question")
+    expect(sheet.get_by_label("Choices column")).to_have_value("choices")
+    expect(sheet.get_by_label("Answer column")).to_have_value("answer")
+    expect(sheet.get_by_label("Context column")).to_have_value("")
+    expect(sheet.locator(".any-map")).to_have_count(0)  # no label values: it asks here
+    download = sheet.get_by_role("button", name="Download")
+    expect(sheet.locator(".fam-pane > .warn-text")).to_have_text(
+        "Write the question's instructions"
+    )
+    expect(download).to_be_disabled()
+    sheet.get_by_label("Instructions").fill("Which option answers the question?")
+    shot(page, "get-dataset-choice")
+    expect(download).to_be_enabled()
+
+    # Several columns instead: the question and its choices as the state.
+    shapes.get_by_role("radio", name="Several columns").click()
+    expect(sheet.locator(".fam-pane > .warn-text")).to_have_text(
+        "Tick the columns that become the state"
+    )
+    state = sheet.get_by_role("group", name="State columns")
+    sheet.get_by_label("Label column").select_option("answer")
+    expect(state.locator("code")).to_have_text(["question", "subject", "choices"])  # not the label
+    state.get_by_role("checkbox").nth(2).check()
+    state.get_by_role("checkbox").nth(0).check()
+    expect(sheet.locator(".any-map code")).to_have_text(["A", "B", "C", "D"])
+    download.click()
+    expect(page.locator(".toast")).to_contain_text("Download cais/mmlu test")
+    job = next(iter(studio.app.state.jobs.jobs.values()))
+    assert job.argv[job.argv.index("--shape") + 1] == "object"
+    assert job.argv[job.argv.index("--columns") + 1] == "question,choices"  # the preview's order
+    assert job.details["label"] == "answer"

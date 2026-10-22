@@ -2273,10 +2273,18 @@ def data_command(
     shape: Annotated[
         str | None,
         typer.Option(
-            help="text, pair, choice, yesno or rating. Default: guessed from the columns."
+            help="text, pair, choice, yesno, rating or object (several columns as the "
+            "state: --columns). Default: guessed from the columns."
         ),
     ] = None,
     text: ColumnFlag = None,
+    columns: Annotated[
+        str | None,
+        typer.Option(
+            help="The state's columns for the object shape: 'A,B,...' (\\, for a comma); "
+            "the state is an object of them."
+        ),
+    ] = None,
     label: ColumnFlag = None,
     premise: ColumnFlag = None,
     hypothesis: ColumnFlag = None,
@@ -2376,6 +2384,7 @@ def data_command(
         shape=shape,
         columns={
             "text": text,
+            "columns": columns,
             "label": label,
             "premise": premise,
             "hypothesis": hypothesis,

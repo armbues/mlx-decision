@@ -85,7 +85,7 @@ function Presets() {
         </button>`,
       )}
       <button class="fam ds" role="option" aria-selected=${picked.value === ANY ? "true" : "false"} data-preset="any" onClick=${() => pick(ANY)}>
-        <span><b>Another dataset…</b><span>any on the Hub; its questions written afterwards</span></span>
+        <span><b>Another dataset…</b><span>any on the Hub, in the shape you pick</span></span>
       </button>
     </div>
   `;
@@ -132,7 +132,7 @@ export async function openGetDataset() {
   pick(known ? picked.value : presets.value[0].name, true);
   openSheet({
     title: "Download a Dataset",
-    purpose: "A public dataset from the Hugging Face Hub, as a dataset in the workspace's data/ folder: its splits, each with its role. A preset brings its question; another dataset brings its rows and label values, and you write its questions afterwards. It downloads as a job.",
+    purpose: "A public dataset from the Hugging Face Hub, as a dataset in the workspace's data/ folder: its splits, each with its role. A preset brings its question; another dataset brings its rows and label values, and you write its questions afterwards (multiple choice asks its question here). It downloads as a job.",
     Body,
     wide: true,
     note: "In a terminal, mlx-decision data does the same.",

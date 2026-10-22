@@ -143,6 +143,64 @@ def test_multiple_choice_rows_bring_their_own_options(tmp_path):
     assert made.examples[0].request["questions"]["plain"]["criteria"] == {"A": "green", "B": "blue"}
 
 
+def test_several_columns_become_an_object_state(monkeypatch, tmp_path):
+    # MMLU's columns: the choices a list beside the question, the answer a class label.
+    features = datasets.Features({
+        "question": datasets.Value("string"),
+        "subject": datasets.Value("string"),
+        "choices": datasets.Sequence(datasets.Value("string")),
+        "answer": datasets.ClassLabel(names=["A", "B", "C", "D"]),
+    })  # fmt: skip
+    dataset = datasets.Dataset.from_dict(
+        {
+            "question": ["2 + 2?", "Sky?"],
+            "subject": ["math", "weather"],
+            "choices": [["3", "4", "5", "6"], ["green", "blue", "red", "grey"]],
+            "answer": [1, 1],
+        },
+        features=features,
+    )
+    hub(monkeypatch, {"cais/mmlu": {"all": {"test": dataset}}})
+    # Naming the columns picks the shape; without a question, the rows and their values.
+    made = make("hf:cais/mmlu", config="all", columns={"columns": "question,choices"}, raw=True)
+    assert made.mapping.shape == "object"
+    assert made.mapping.columns == {"columns": "question,choices", "label": "answer"}
+    first = made.examples[0]
+    assert first.request == {"state": {"question": "2 + 2?", "choices": ["3", "4", "5", "6"]}}
+    assert first.values == {"answer": "B"}
+    assert made.classes == ["A", "B", "C", "D"]
+    # With a question: a choice from the label's classes, as the text shape asks it.
+    made = make("hf:cais/mmlu", config="all", shape="object",
+                columns={"columns": "subject,question"}, wording={**ASK, "id": "pick"})  # fmt: skip
+    state = made.examples[1].request["state"]
+    assert state == {"subject": "weather", "question": "Sky?"}  # in the order named
+    assert made.examples[1].labels == {"pick": "B"}
+    # A class label among the state's columns shows its name.
+    made = make("hf:cais/mmlu", config="all", columns={"columns": "question,answer",
+                "label": "subject"}, raw=True)  # fmt: skip
+    assert made.examples[0].request["state"] == {"question": "2 + 2?", "answer": "B"}
+    # What is open or wrong names the flag.
+    for columns, message in (
+        ({}, "pass --columns A,B"),
+        ({"columns": "question,nope"}, "--columns: no column 'nope'"),
+        ({"columns": "question,question"}, "named twice"),
+        ({"columns": "question,answer", "label": "answer"}, "not one of the state's columns"),
+    ):
+        with pytest.raises(SourceError, match=message):
+            make("hf:cais/mmlu", config="all", shape="object", columns=columns, raw=True)
+    # The command, into a folder; the flags it repeats.
+    runner = CliRunner()
+    folder = tmp_path / "mmlu"
+    args = ["data", "hf:cais/mmlu", "--config", "all", "--columns", "question,choices",
+            "-o", f"{folder}/"]  # fmt: skip
+    written = runner.invoke(app, args)
+    assert written.exit_code == 0, written.output
+    source = json.loads((folder / "dataset.json").read_text())["source"]
+    assert source["shape"] == "object" and source["columns"]["columns"] == "question,choices"
+    shown = runner.invoke(app, [*args[:-2], "--question", "Which?", "--show", "1"])
+    assert "(object shape: columns=question,choices, label=answer)" in shown.stdout
+
+
 def test_yes_no_rows_ask_their_own_question(tmp_path):
     rows = [{"passage": "Water is wet.", "question": "is water wet", "answer": True},
             {"passage": "Fire is cold.", "question": "is fire hot", "answer": False}]  # fmt: skip

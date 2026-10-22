@@ -46,6 +46,11 @@ change the interface).
   or cuts one into seeded, stratified parts
   (`--roles "train:0.8+report:0.1+evaluate:0.1"`). `--value-names
   "0=Analyst Update,..."` names the label's values in `dataset.json`.
+- `data --shape object --columns A,B --label L`: several columns
+  together are the state, an object keyed by their names (a list of
+  choices beside a question, as in MMLU, or any other columns). Naming
+  `--columns` picks the shape; like `text` it asks a `choice` from the
+  label's classes, or nothing into a dataset folder.
 - `training fit --data FOLDER` trains on a dataset folder's train split
   and reports on its report split (unless `--validation` or `--holdout`
   is given); `training eval --data FOLDER` scores its evaluate split.

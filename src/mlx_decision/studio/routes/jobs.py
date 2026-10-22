@@ -29,7 +29,7 @@ from ...data.presets import PRESETS
 from ...data.presets import SPLITS as PRESETS_SPLITS
 from ...download import recorded_repo
 from ...fitted import REPORT_FILE
-from ...flags import join_pairs
+from ...flags import join_list, join_pairs
 from ...gpu import Gpu
 from ...training.plan import KINDS as FIT_KINDS
 from ...watchdog import remove
@@ -51,6 +51,15 @@ MAX_SPLITS = 10  # splits one download takes
 MAX_NAME_CHARS = 200  # a value's name from the dataset card
 # A label column has at most this many classes (the preview lists no more).
 MAX_CLASSES = 50
+MAX_STATE_COLUMNS = 20  # the object shape's columns
+# A multiple-choice dataset's columns, and the data command's flag for each.
+CHOICE_ROLES = ("question", "choices", "answer", "context")
+CHOICE_FLAGS = {
+    "question": "--question-column",
+    "choices": "--choices",
+    "answer": "--answer",
+    "context": "--context",
+}
 REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
 BITS = (8, 4)
 # What fit and eval take from a model's load options (the others do not apply).
@@ -376,9 +385,13 @@ def jobs_router(
         return get_plan(argv, body, name, base, folder, splits, {"preset": name})
 
     def any_dataset(body: dict) -> Plan:
-        """``hf:ORG/NAME``'s splits: ``text`` the state's column, ``label`` the
-        column whose values the rows keep (answered by questions written
-        later), ``value_names`` the values' names (from the dataset card)."""
+        """``hf:ORG/NAME``'s splits, by ``shape``: "text" (default; ``text`` the
+        state's column), "object" (``columns``, the state's columns) or
+        "choice" (``question``, ``choices``, ``answer``, optional ``context``
+        columns and the question's ``instructions``). Text and object rows keep
+        the ``label`` column's values (answered by questions written later;
+        ``value_names`` the values' names, from the dataset card); choice rows
+        ask the question with their own choices."""
         source = field(body, "source", str).strip()
         repo = source.removeprefix("hf:")
         if not source.startswith("hf:") or not REPO_ID.fullmatch(repo) or ".." in repo:
@@ -387,29 +400,76 @@ def jobs_router(
         if config is not None and not PART.fullmatch(config):
             raise ApiError(400, f"not a dataset's config: {config!r}", param="config")
         splits = get_splits(body, None)
-        text, label = field(body, "text", str), field(body, "label", str)
-        for key, value in (("text", text), ("label", label)):
-            if not value.strip() or len(value) > 200:
+        shape = field(body, "shape", str, required=False) or "text"
+        if shape not in ("text", "object", "choice"):
+            raise ApiError(400, "shape must be text, object or choice", param="shape")
+
+        def column(key: str, required: bool = True) -> str | None:
+            value = field(body, key, str, required=required)
+            if value is not None and (not value.strip() or len(value) > 200):
                 raise ApiError(400, f"name the {key} column", param=key)
-        if text == label:
-            raise ApiError(400, "the state and the label are different columns", param="label")
-        names = body.get("value_names")
-        if names is not None:
-            ok = isinstance(names, dict) and len(names) <= MAX_CLASSES and all(
-                isinstance(k, str) and isinstance(v, str) and 0 < len(v) <= MAX_NAME_CHARS
-                and "=" not in k and k == k.strip() and k
-                for k, v in names.items()
-            )  # fmt: skip
-            if not ok:
-                raise ApiError(400, "value_names maps each value to a short name", "value_names")
-        base, folder = get_folder(body, repo.rsplit("/", 1)[-1])
+            return value
+
         argv = ["data", source]
         if config is not None:
             argv += ["--config", config]
-        argv += ["--shape", "text", "--text", text, "--label", label]
-        if names:
-            argv += ["--value-names", join_pairs(names)]
-        details = {"source": source, "config": config, "text": text, "label": label}
+        details: dict[str, Any] = {"source": source, "config": config, "shape": shape}
+        if shape == "choice":
+            roles = {role: column(role, role != "context") for role in CHOICE_ROLES}
+            named = [name for name in roles.values() if name is not None]
+            if len(set(named)) < len(named):
+                raise ApiError(400, "each role takes a column of its own", param="answer")
+            instructions = field(body, "instructions", str)
+            if not instructions.strip() or len(instructions) > 2000:
+                raise ApiError(400, "write the question's instructions", param="instructions")
+            argv += ["--shape", "choice"]
+            for role, name in roles.items():
+                if name is not None:
+                    argv += [CHOICE_FLAGS[role], name]
+            argv += ["--question", instructions.strip()]
+            details |= {**roles, "instructions": instructions.strip()}
+        else:
+            label = column("label")
+            if shape == "object":
+                state = body.get("columns")
+                if (
+                    not isinstance(state, list)
+                    or not 0 < len(state) <= MAX_STATE_COLUMNS
+                    or not all(
+                        isinstance(name, str) and name.strip() and len(name) <= 200
+                        for name in state
+                    )
+                    or len(set(state)) < len(state)
+                ):
+                    raise ApiError(400, "pick the state's columns, each once", param="columns")
+                if label in state:
+                    raise ApiError(
+                        400, "the label is not one of the state's columns", param="label"
+                    )
+                argv += ["--shape", "object", "--columns", join_list(state), "--label", label]
+                details |= {"columns": state, "label": label}
+            else:
+                text = column("text")
+                if text == label:
+                    raise ApiError(
+                        400, "the state and the label are different columns", param="label"
+                    )
+                argv += ["--shape", "text", "--text", text, "--label", label]
+                details |= {"text": text, "label": label}
+            names = body.get("value_names")
+            if names is not None:
+                ok = isinstance(names, dict) and len(names) <= MAX_CLASSES and all(
+                    isinstance(k, str) and isinstance(v, str) and 0 < len(v) <= MAX_NAME_CHARS
+                    and "=" not in k and k == k.strip() and k
+                    for k, v in names.items()
+                )  # fmt: skip
+                if not ok:
+                    raise ApiError(
+                        400, "value_names maps each value to a short name", "value_names"
+                    )
+                if names:
+                    argv += ["--value-names", join_pairs(names)]
+        base, folder = get_folder(body, repo.rsplit("/", 1)[-1])
         return get_plan(argv, body, repo, base, folder, splits, details)
 
     plans: dict[str, Callable[[dict], Plan]] = {

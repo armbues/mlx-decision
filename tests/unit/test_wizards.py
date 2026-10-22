@@ -108,6 +108,32 @@ def test_two_classes_can_become_a_yes_no_question(tmp_path, tickets):
     assert rerun(plan, tmp_path) == [example.to_json() for example in made.examples]
 
 
+def test_the_object_shape_picks_its_columns_one_at_a_time(tmp_path):
+    path = tmp_path / "tickets.csv"
+    path.write_text(
+        "text,team,label\nrefund please,ops,billing\napp crashes,dev,tech\nrefund,ops,billing\n"
+    )
+    keys = typed(
+        "6",  # shape: object
+        "1",  # state column: text
+        "2",  # another: team ((done) is first)
+        "",  # another: (done), the default with two picked
+        "",  # label column: label
+        "",  # type: choice
+        "",  # id
+        "Which team?",
+        "",  # the options as they are
+        CLEAR_LINE + "o.jsonl",
+        "y!",
+    )
+    plan, made = drive(ask_data, keys, DataPlan(source=str(path)))
+    assert plan.shape == "object"
+    assert plan.columns == {"columns": "text,team", "label": "label"}
+    assert "--columns" in plan.arguments()
+    assert made.examples[0].request["state"] == {"text": "refund please", "team": "ops"}
+    assert rerun(plan, tmp_path) == [example.to_json() for example in made.examples]
+
+
 def test_the_hub_asks_config_and_split_with_train_preselected(tmp_path, monkeypatch):
     train = labelled(["happy", "sad", "glad"], [0, 1, 0], ["joy", "sadness"])
     hub(monkeypatch, {"org/emotion": {"split": {"test": train, "train": train}, "raw": {}}})

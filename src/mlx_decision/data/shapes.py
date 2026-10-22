@@ -11,13 +11,17 @@
   yes / no column the answer.
 - ``rating``: a text column is the state, a numeric (or ordered class)
   column the level of a ``score``.
+- ``object``: several columns of any kind together are the state, an object
+  keyed by their names (a class label's cells by name), a class column the
+  answer as in ``text``. Its columns are named (``--columns A,B``), never
+  guessed; naming them picks the shape.
 
 ``guess`` finds the shape and the columns from the kinds and common names,
 taking what the caller gives; a guess that is not clear stops with the
 columns listed. ``Wording`` holds the question's id, instructions, options
-and label map; ``build`` turns rows into examples. The text, pair and rating
-shapes keep each row's raw label in the example's ``values`` (for a dataset
-folder); with ``raw`` they ask no question and keep only that.
+and label map; ``build`` turns rows into examples. The text, pair, rating and
+object shapes keep each row's raw label in the example's ``values`` (for a
+dataset folder); with ``raw`` they ask no question and keep only that.
 """
 
 import re
@@ -26,10 +30,13 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..flags import join_list, split_list
 from .format import Example
 from .sources import BOOL, FLOAT, INT, LABEL, LIST, OBJECT, OTHER, TEXT, Column, SourceError, Table
 
-SHAPES = ("text", "pair", "choice", "yesno", "rating")
+SHAPES = ("text", "pair", "choice", "yesno", "rating", "object")
+# The shapes whose rows keep their label's raw value (and may ask nothing).
+VALUE_SHAPES = ("text", "pair", "rating", "object")
 # The columns each shape reads, and the flag that names each.
 ROLES = {
     "text": ("text", "label"),
@@ -37,10 +44,12 @@ ROLES = {
     "choice": ("question", "choices", "answer", "context"),
     "yesno": ("text", "question", "label"),
     "rating": ("text", "label"),
+    "object": ("columns", "label"),
 }
 OPTIONAL = {"context"}
 FLAGS = {
     "text": "--text",
+    "columns": "--columns",
     "label": "--label",
     "premise": "--premise",
     "hypothesis": "--hypothesis",
@@ -61,6 +70,7 @@ NAMES = {
     "choices": ("choices", "options", "endings"),
     "answer": ("answerkey", "answer_key", "answer", "label", "correct"),
     "context": ("context", "fact1", "passage", "article", "support"),
+    "columns": (),
 }  # fmt: skip
 # The kinds a role's column may have.
 KINDS = {
@@ -72,6 +82,7 @@ KINDS = {
     "choices": (LIST, OBJECT),
     "answer": (TEXT, INT, LABEL, OTHER),
     "context": (TEXT,),
+    "columns": (TEXT, INT, FLOAT, BOOL, LABEL, LIST, OBJECT, OTHER),
 }
 # A rating's label column, when its name says so.
 RATING_NAMES = ("stars", "rating", "score")
@@ -99,10 +110,35 @@ def candidates(table: Table, role: str, used: set[str]) -> list[str]:
     return []
 
 
+def state_columns(value: str) -> list[str]:
+    """The object shape's columns from ``--columns`` (``A,B``; ``\\,`` for a comma)."""
+    return [name for name in split_list(value) if name]
+
+
 def _resolve(table: Table, shape: str, given: dict[str, str]) -> Mapping:
     columns: dict[str, str | None] = {}
     used: set[str] = set()
+    if shape == "object":
+        names = state_columns(given.get("columns") or "")
+        if not names:
+            raise SourceError(
+                f"the object shape needs the state's columns: pass --columns A,B "
+                f"(columns: {table.listing()})"
+            )
+        for name in names:
+            if name not in table.columns:
+                raise SourceError(
+                    f"--columns: no column {name!r}; the columns are {table.listing()}"
+                )
+        if len(set(names)) < len(names):
+            raise SourceError("--columns: a column is named twice")
+        columns["columns"] = join_list(names)
+        used.update(names)
+        if given.get("label") in used:
+            raise SourceError("--label: the label is not one of the state's columns")
     for role in ROLES[shape]:
+        if role in columns:
+            continue
         name = given.get(role)
         if name is not None:
             if name not in table.columns:
@@ -133,6 +169,8 @@ def _resolve(table: Table, shape: str, given: dict[str, str]) -> Mapping:
 def guess(table: Table, shape: str | None = None, given: dict[str, str] | None = None) -> Mapping:
     """The shape (``shape`` if given) and its columns (``given`` by role)."""
     given = {role: name for role, name in (given or {}).items() if name is not None}
+    if shape is None and given.get("columns"):
+        shape = "object"  # its columns are named, never guessed
     if shape is not None:
         if shape not in SHAPES:
             raise SourceError(f"--shape: no shape {shape!r}; the shapes are {', '.join(SHAPES)}")
@@ -243,7 +281,7 @@ def _classes(table: Table, mapping: Mapping, wording: Wording):
 
 
 def _class_question(table: Table, mapping: Mapping, wording: Wording) -> tuple[dict, list[str]]:
-    """The question of a text or pair shape and its option ids."""
+    """The question of a text, pair or object shape and its option ids."""
     if wording.question is not None:
         question = dict(wording.question)
         kind = question.get("type")
@@ -369,9 +407,15 @@ def _example(
     )
 
 
-def _state(shape: str, columns: dict, row: dict) -> Any:
+def _state(table: Table, shape: str, columns: dict, row: dict) -> Any:
     if shape == "pair":
         return {"premise": row[columns["premise"]], "hypothesis": row[columns["hypothesis"]]}
+    if shape == "object":
+        state = {}
+        for name in state_columns(columns["columns"]):
+            column, value = table.columns[name], row.get(name)
+            state[name] = class_of(column, value) if column.names else value
+        return state
     return row[columns["text"]]
 
 
@@ -385,7 +429,7 @@ def _raw_rows(table: Table, mapping: Mapping, indices: list[int], rows: list[dic
         if name is None:
             built.skipped["no label"] += 1
             continue
-        state = _state(mapping.shape, mapping.columns, row)
+        state = _state(table, mapping.shape, mapping.columns, row)
         built.examples.append(_example(table, index, state, "", None, None, {column_name: name}))
     return built
 
@@ -394,18 +438,18 @@ def build(
     table: Table, mapping: Mapping, wording: Wording, indices: list[int], raw: bool = False
 ) -> Built:
     """The examples of the rows at ``indices``; rows without a usable label are
-    left out and counted by reason. ``raw``: no question (text, pair and rating
-    shapes), each row's state and label value only."""
+    left out and counted by reason. ``raw``: no question (text, pair, rating
+    and object shapes), each row's state and label value only."""
     shape, columns = mapping.shape, mapping.columns
     rows = table.rows(indices)
     if raw:
-        if shape not in ("text", "pair", "rating"):
+        if shape not in VALUE_SHAPES:
             raise SourceError(
                 f"the {shape} shape needs its question's wording: pass --question TEXT (or -q FILE)"
             )
         return _raw_rows(table, mapping, indices, rows)
     built = Built()
-    if shape in ("text", "pair"):
+    if shape in ("text", "pair", "object"):
         _require_instructions(wording, shape)
         question, ids = _class_question(table, mapping, wording)
         label_column = table.columns[columns["label"]]
@@ -423,7 +467,7 @@ def build(
                 )
             if question["type"] == "noul":
                 option = "true" if option == ids[0] else "false"
-            state = _state(shape, columns, row)
+            state = _state(table, shape, columns, row)
             built.examples.append(
                 _example(
                     table, index, state, wording.id, question, option, {columns["label"]: name}

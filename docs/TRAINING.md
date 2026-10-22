@@ -215,7 +215,8 @@ mlx-decision data hf:zeroshot/twitter-financial-news-topic --split train \
 Each dataset row becomes one example with one question. The *shape*
 says how columns map onto it. It is guessed from the column names and
 types (a class-label column gives the label names); `--shape` and the
-column flags override the guess. When a guess is ambiguous, the command
+column flags override the guess. `object` is never guessed: naming its
+`--columns` picks it. When a guess is ambiguous, the command
 stops and lists the columns.
 
 | Shape | Columns | The question | Example |
@@ -225,6 +226,7 @@ stops and lists the columns.
 | `choice` | `--choices` → the options, `--answer`, `--context` (if any) → the state | a `choice` per row with the row's options | ARC, OpenBookQA |
 | `yesno` | the passage → the state, `--question-column` → the question, a bool label | each row's own `noul` | BoolQ |
 | `rating` | `--text` → the state, a numeric `--label` | a `score` with one level per value (`--levels "bad,ok,good"` describes them) | yelp_review_full |
+| `object` | `--columns A,B` → the state as an object of those columns, `--label` | as `text` | MMLU (question and choices) |
 
 The question's wording has no default. Without `--question`, `-q` or a
 preset, the command stops and names these flags. In a terminal, it asks

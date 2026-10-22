@@ -30,6 +30,7 @@ from .dataset import (
 from .format import Example, _label_to_json, parse_examples
 from .format import split as split_examples
 from .shapes import (
+    VALUE_SHAPES,
     Mapping,
     Wording,
     build,
@@ -156,7 +157,7 @@ def make(
     indices = rows_to_read(table.length, limit, sample, seed)
     built = build(table, mapping, Wording(**fields), indices, raw=raw)
     made = Made(checked(built.examples), table, mapping, built.skipped)
-    kept = mapping.shape in ("text", "pair", "rating")
+    kept = mapping.shape in VALUE_SHAPES
     value_column = mapping.columns.get("label") if kept else None
     if value_column is not None:
         column = table.columns[value_column]
@@ -445,6 +446,7 @@ def write_folder(
 # The flag of each column role, in the order commands list them.
 COLUMN_FLAGS = {
     "text": "--text",
+    "columns": "--columns",
     "label": "--label",
     "premise": "--premise",
     "hypothesis": "--hypothesis",

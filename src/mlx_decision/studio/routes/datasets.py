@@ -26,7 +26,7 @@ from fastapi import APIRouter, Request
 
 from ...data import sources
 from ...data.presets import PRESETS, SPLITS, describe
-from ...data.shapes import class_names, class_of
+from ...data.shapes import class_names, class_of, guess
 from ...data.sources import HUB_PREFIX, LABEL, TEXT, SourceError, Table
 from . import ApiError, field, json_body
 from .jobs import MAX_CLASSES, REPO_ID
@@ -203,7 +203,40 @@ def describe_table(table: Table) -> dict[str, Any]:
         "label_columns": label_columns,
         "text": text,
         "label": label,
+        "guess": guessed(table, labels),
     }
+
+
+def guessed(table: Table, labels: list[str]) -> dict[str, Any] | None:
+    """The sheet's shape as the ``data`` command guesses it: ``{shape, ...}``
+    with "text" (``text``, ``label``), "object" (``columns``, ``label``; a
+    pair's or a yes / no passage's columns) or "choice" (``question``,
+    ``choices``, ``answer``, ``context``); None when the guess is not clear."""
+    try:
+        mapping = guess(table)
+    except SourceError:
+        return None
+    columns = mapping.columns
+    label = columns.get("label")
+    if label is not None and label not in labels:
+        label = None  # not a column of a few values: the sheet asks for one
+    if mapping.shape in ("text", "rating"):
+        return {"shape": "text", "text": columns["text"], "label": label}
+    if mapping.shape == "pair":
+        state = [columns["premise"], columns["hypothesis"]]
+        return {"shape": "object", "columns": state, "label": label}
+    if mapping.shape == "yesno":
+        return {
+            "shape": "object",
+            "columns": [columns["text"], columns["question"]],
+            "label": label,
+        }
+    if mapping.shape == "choice":
+        return {
+            "shape": "choice",
+            **{role: columns.get(role) for role in ("question", "choices", "answer", "context")},
+        }
+    return None
 
 
 def cell(value: Any) -> str:

@@ -1119,6 +1119,11 @@ a.sb-item { color: var(--fg); }
 .sheet .any-row small { color: var(--fg-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .any-row.wide .setting-input { grid-column: 2 / -1; font: 13px var(--font); }
 .sheet .any-row select { font: inherit; border: 0.5px solid var(--sep-strong); background: var(--group); color: var(--fg); border-radius: 6px; padding: 3px 6px; }
+.sheet .any-shapes { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 10px; }
+.sheet .any-row.cols { align-items: start; }
+.sheet .any-cols { display: flex; flex-wrap: wrap; gap: 4px 12px; grid-column: 2 / -1; }
+.sheet .any-cols label { display: inline-flex; align-items: center; gap: 4px; }
+.sheet .any-cols code { font: 11.5px var(--mono); }
 .sheet .any-map .any-row { grid-template-columns: minmax(0, 160px) 50px minmax(0, 1fr); }
 .sheet .any-map code { font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; }
 .sheet .any-table { overflow: auto; max-height: 180px; border-radius: 8px; border: 0.5px solid var(--sep); }

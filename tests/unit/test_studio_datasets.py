@@ -338,3 +338,90 @@ def test_a_part_that_rounds_to_no_row_is_refused(studio):
     parts = [{"role": "train", "share": 0.999}, {"role": "report", "share": 0.001}]
     response = get(studio, preset="trec", splits=[{"split": "test", "parts": parts}])
     assert response.status_code == 400 and "is no row (report)" in response.text
+
+
+@pytest.fixture
+def mmlu(monkeypatch):
+    """cais/mmlu's columns: a question, its subject, the choices as a list and
+    the answer as a class label (A to D); one config, one split."""
+    import datasets
+
+    from mlx_decision.data import sources
+
+    features = datasets.Features({
+        "question": datasets.Value("string"),
+        "subject": datasets.Value("string"),
+        "choices": datasets.Sequence(datasets.Value("string")),
+        "answer": datasets.ClassLabel(names=["A", "B", "C", "D"]),
+    })  # fmt: skip
+    rows = {
+        "question": [f"question {i}?" for i in range(8)],
+        "subject": ["math", "law"] * 4,
+        "choices": [[f"{i}a", f"{i}b", f"{i}c", f"{i}d"] for i in range(8)],
+        "answer": [i % 4 for i in range(8)],
+    }
+
+    def load(repo, config=None, split=None, revision=None):
+        dataset = datasets.Dataset.from_dict(rows, features=features)
+        return sources._from_dataset(dataset, "mmlu", split, {"repo": repo})
+
+    monkeypatch.setattr(sources, "hub_configs", lambda repo, revision=None: ["all"])
+    monkeypatch.setattr(sources, "hub_splits", lambda repo, config=None, revision=None: ["test"])
+    monkeypatch.setattr(sources, "load_hub", load)
+
+
+def test_the_preview_guesses_the_shape(studio, hub, mmlu):
+    body = studio.post(
+        "/studio/api/datasets/preview",
+        json={"source": "hf:cais/mmlu", "config": "all", "split": "test"},
+    ).json()
+    assert body["guess"] == {
+        "shape": "choice", "question": "question", "choices": "choices", "answer": "answer",
+        "context": None,
+    }  # fmt: skip
+    assert [c["kind"] for c in body["columns"]] == ["text", "text", "list", "label"]
+
+
+def test_the_preview_without_a_clear_guess(studio, hub):
+    body = preview(studio, config="en", split="train").json()
+    assert body["guess"] is None  # sentiment or stars: either could be the label
+
+
+def test_jobs_of_the_object_and_choice_shapes(studio, mmlu):
+    common = {
+        "source": "hf:cais/mmlu",
+        "config": "all",
+        "splits": [{"split": "test", "role": "evaluate"}],
+    }
+    started = get(studio, **common, shape="object", columns=["question", "choices"], label="answer")
+    assert started.status_code == 202, started.text
+    job = started.json()["job"]
+    assert job["command"][1:9] == [
+        "data", "hf:cais/mmlu", "--config", "all", "--shape", "object",
+        "--columns", "question,choices",
+    ]  # fmt: skip
+    assert job["details"]["columns"] == ["question", "choices"]
+    stop(studio, job)
+    choice = {"shape": "choice", "question": "question", "choices": "choices", "answer": "answer"}
+    started = get(studio, **common, **choice, instructions="Which option answers it?", name="quiz")
+    assert started.status_code == 202, started.text
+    command = started.json()["job"]["command"]
+    assert command[5:14] == [
+        "--shape", "choice", "--question-column", "question", "--choices", "choices",
+        "--answer", "answer", "--question",
+    ]  # fmt: skip
+    assert command[14] == "Which option answers it?" and "--context" not in command
+    stop(studio, started.json()["job"])
+    for body, param in [
+        ({"shape": "object", "columns": [], "label": "answer"}, "columns"),
+        ({"shape": "object", "columns": ["question", "question"], "label": "answer"}, "columns"),
+        ({"shape": "object", "columns": ["question", "answer"], "label": "answer"}, "label"),
+        ({"shape": "choice", "question": "question", "choices": "choices", "answer": "answer",
+          "instructions": " "}, "instructions"),
+        ({"shape": "choice", "question": "question", "choices": "question", "answer": "answer",
+          "instructions": "Which?"}, "answer"),
+        ({"shape": "table"}, "shape"),
+    ]:  # fmt: skip
+        response = get(studio, **common, **body)
+        assert response.status_code == 400, (body, response.text)
+        assert response.json()["error"]["param"] == param, (body, response.text)

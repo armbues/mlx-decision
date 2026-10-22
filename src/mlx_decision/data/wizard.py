@@ -15,7 +15,7 @@ from typing import Any
 from prompt_toolkit.completion import PathCompleter
 from prompt_toolkit.validation import Validator
 
-from ..flags import command_line
+from ..flags import command_line, join_list
 from ..interactive import ask, build_question, confirm, pick, say
 from . import presets as preset_data
 from .make import DataPlan, Made
@@ -29,6 +29,7 @@ from .shapes import (
     default_id,
     guess,
     rating_values,
+    state_columns,
 )
 from .sources import (
     HUB_PREFIX,
@@ -46,6 +47,7 @@ SHAPE_TEXT = {
     "choice": "a question and its choices (multiple choice)",
     "yesno": "a passage and a yes/no question about it",
     "rating": "a text and a number on a scale",
+    "object": "several columns together and their class",
 }
 PRESET_TEXT = {
     "trec": "TREC: the kind of answer a question asks for (6 classes)",
@@ -56,6 +58,7 @@ PRESET_TEXT = {
 }
 HUB, FILE = "hub", "file"
 NONE = "(none)"
+DONE = "(done)"
 
 
 class Cancelled(Exception):
@@ -142,8 +145,13 @@ def ask_shape_and_columns(plan: DataPlan, table: Table) -> None:
         if guessed is not None and guessed.shape != plan.shape:
             guessed = None
     used = set(given.values())
+    if "columns" in given:
+        used.update(state_columns(given["columns"]))
     for role in ROLES[plan.shape]:
         if role in given:
+            continue
+        if role == "columns":
+            plan.columns["columns"] = _ask_state_columns(table, used)
             continue
         fitting = [c for c in table.columns.values() if c.kind in KINDS[role]]
         columns = fitting or list(table.columns.values())
@@ -158,6 +166,24 @@ def ask_shape_and_columns(plan: DataPlan, table: Table) -> None:
         plan.columns[role] = None if picked == NONE else picked
         if picked != NONE:
             used.add(picked)
+
+
+def _ask_state_columns(table: Table, used: set[str]) -> str:
+    """The object shape's columns, one pick at a time until done."""
+    picked: list[str] = []
+    while True:
+        options = [(c.name, c.describe()) for c in table.columns.values() if c.name not in used]
+        if picked:
+            options.insert(0, (DONE, DONE))
+        if not options:
+            break
+        message = "Another state column:" if picked else "State column:"
+        choice = _pick(message, options, DONE if len(picked) > 1 else None)
+        if choice == DONE:
+            break
+        picked.append(choice)
+        used.add(choice)
+    return join_list(picked)
 
 
 def ask_question(plan: DataPlan, table: Table) -> None:

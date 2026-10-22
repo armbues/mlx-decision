@@ -1,8 +1,11 @@
-// Another dataset: any Hugging Face dataset, one split read as a preview, with
-// the column that becomes the state and the label column whose values the rows
-// keep (named from the dataset card when it lists them); the columns apply to
-// every split in the table. It runs `data` as a job; the dataset arrives
-// without questions, which are written afterwards.
+// Another dataset: any Hugging Face dataset, one split read as a preview, read
+// in one of three shapes (guessed from the columns as the data command guesses
+// them): one column as the state, several columns as the state (an object of
+// them), each with a label column whose values the rows keep (named from the
+// dataset card when it lists them) and arriving without questions, which are
+// written afterwards; or multiple choice, each row asking a question written
+// here with its own choices. The columns apply to every split in the table.
+// It runs `data` as a job.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
@@ -16,8 +19,12 @@ const reading = signal(null); // what is being read, while it is
 const failed = signal(null);
 const config = signal(null);
 const split = signal(null);
+const shape = signal("text"); // "text", "object" or "choice"
 const textColumn = signal(null);
 const labelColumn = signal(null);
+const stateColumns = signal([]); // the object shape's, in the preview's order
+const roles = signal({}); // multiple choice: {question, choices, answer, context}
+const instructions = signal("");
 const table = splitState(); // every split's role and sample
 const seed = signal("0");
 const name = signal("");
@@ -36,6 +43,10 @@ export function resetAny(all = false) {
   if (!all) return;
   source.value = "";
   textColumn.value = labelColumn.value = null;
+  shape.value = "text";
+  stateColumns.value = [];
+  roles.value = {};
+  instructions.value = "";
   seed.value = "0";
   name.value = "";
 }
@@ -55,8 +66,7 @@ async function read(fields, what) {
       setSplits(table, result.splits.map((name) => ({ name })), result.split, fresh);
     }
     if (result.rows != null) {
-      textColumn.value = result.text;
-      labelColumn.value = result.label;
+      applyGuess(result);
       rowsOf.value = { ...rowsOf.value, [result.split]: result.rows };
       knowRows(table, result.split, result.rows);
     }
@@ -66,6 +76,29 @@ async function read(fields, what) {
     reading.value = null;
   }
 }
+
+// The shape and columns as the data command guesses them, else one text
+// column and the likeliest label.
+function applyGuess(result) {
+  const guess = result.guess;
+  shape.value = guess?.shape ?? "text";
+  textColumn.value = guess?.shape === "text" ? guess.text : result.text;
+  labelColumn.value = (guess?.shape !== "choice" && guess?.label) || result.label;
+  stateColumns.value = guess?.shape === "object" ? guess.columns : [];
+  roles.value =
+    guess?.shape === "choice"
+      ? { question: guess.question, choices: guess.choices, answer: guess.answer, context: guess.context ?? null }
+      : {};
+}
+
+// The columns that can take each role of multiple choice, by kind.
+const KINDS = {
+  question: ["text"],
+  choices: ["list", "object"],
+  answer: ["text", "int", "label", "other"],
+  context: ["text"],
+};
+const fitting = (role) => (previewed.value?.columns ?? []).filter((column) => KINDS[role].includes(column.kind)).map((column) => column.name);
 
 // Rows by split, as far as the previews read them.
 const rowsOf = signal({});
@@ -89,24 +122,35 @@ export const anyProblem = computed(() => {
   const result = previewed.value;
   if (reading.value) return reading.value;
   if (!result || result.rows == null) return "Read a dataset first";
-  if (!textColumn.value) return "Pick the column that becomes the state";
-  if (!labelColumn.value) return "Pick the label column";
-  if (textColumn.value === labelColumn.value) return "The state and the label are different columns";
+  if (shape.value === "choice") {
+    const picked = roles.value;
+    for (const role of ["question", "choices", "answer"]) if (!picked[role]) return `Pick the ${role} column`;
+    const named = Object.values(picked).filter(Boolean);
+    if (new Set(named).size < named.length) return "Each role takes a column of its own";
+    if (!instructions.value.trim()) return "Write the question's instructions";
+  } else {
+    if (shape.value === "object" && !stateColumns.value.length) return "Tick the columns that become the state";
+    if (shape.value === "text" && !textColumn.value) return "Pick the column that becomes the state";
+    if (!labelColumn.value) return "Pick the label column";
+    const state = shape.value === "object" ? stateColumns.value : [textColumn.value];
+    if (state.includes(labelColumn.value)) return "The state and the label are different columns";
+  }
   return splitsProblem(table, splits.value, base.value);
 });
 
 export function anyJob() {
   const result = previewed.value;
-  const body = {
-    kind: "data",
-    source: result.source,
-    splits: splitsBody(table, splits.value),
-    text: textColumn.value,
-    label: labelColumn.value,
-    name: base.value,
-  };
-  const names = labelInfo.value?.names;
-  if (names && Object.keys(names).length) body.value_names = names;
+  const body = { kind: "data", source: result.source, splits: splitsBody(table, splits.value), shape: shape.value, name: base.value };
+  if (shape.value === "choice") {
+    for (const [role, column] of Object.entries(roles.value)) if (column) body[role] = column;
+    body.instructions = instructions.value.trim();
+  } else {
+    if (shape.value === "object") body.columns = stateColumns.value;
+    else body.text = textColumn.value;
+    body.label = labelColumn.value;
+    const names = labelInfo.value?.names;
+    if (names && Object.keys(names).length) body.value_names = names;
+  }
   if (result.config) body.config = result.config;
   if (seeded(table, splits.value)) body.seed = Number(seed.value) || 0;
   return body;
@@ -161,20 +205,80 @@ function Preview() {
   `;
 }
 
+const SHAPES = [
+  ["text", "One column", "a text the model reads"],
+  ["object", "Several columns", "an object of the columns you tick"],
+  ["choice", "Multiple choice", "a question with its own choices in each row"],
+];
+
+function LabelSelect() {
+  const result = previewed.value;
+  return html`
+    <label class="any-row"><span>Label</span>
+      <select aria-label="Label column" value=${labelColumn.value ?? ""} onChange=${(event) => (labelColumn.value = event.target.value)}>
+        ${result.label_columns.map((item) => html`<option value=${item.name}>${item.name} (${plural(item.classes.length, "value")})</option>`)}
+      </select><small>its values become the answers</small></label>
+    ${result.label_columns.length === 0 && html`<p class="warn-text">No column has a few values to use as labels.</p>`}
+  `;
+}
+
+function toggle(name, on) {
+  const order = previewed.value.columns.map((column) => column.name);
+  const next = on ? [...stateColumns.value, name] : stateColumns.value.filter((item) => item !== name);
+  stateColumns.value = order.filter((item) => next.includes(item));
+}
+
+function RoleSelect({ role, label, optional = false, hint }) {
+  const options = fitting(role);
+  const value = roles.value[role] ?? "";
+  return html`
+    <label class="any-row"><span>${label}</span>
+      <select aria-label=${`${label} column`} value=${value} onChange=${(event) => (roles.value = { ...roles.value, [role]: event.target.value || null })}>
+        ${(optional || !value) && html`<option value="">${optional ? "none" : "Pick one"}</option>`}
+        ${options.map((item) => html`<option value=${item}>${item}</option>`)}
+      </select><small>${hint}</small></label>
+  `;
+}
+
 function Wiring() {
   const result = previewed.value;
   return html`
     <div class="opts">
       <h4>Examples</h4>
-      <label class="any-row"><span>State</span>
-        <select aria-label="State column" value=${textColumn.value ?? ""} onChange=${(event) => (textColumn.value = event.target.value)}>
-          ${result.text_columns.map((item) => html`<option value=${item}>${item}</option>`)}
-        </select><small>the text the model reads</small></label>
-      <label class="any-row"><span>Label</span>
-        <select aria-label="Label column" value=${labelColumn.value ?? ""} onChange=${(event) => (labelColumn.value = event.target.value)}>
-          ${result.label_columns.map((item) => html`<option value=${item.name}>${item.name} (${plural(item.classes.length, "value")})</option>`)}
-        </select><small>its values become the answers</small></label>
-      ${result.label_columns.length === 0 && html`<p class="warn-text">No column has a few values to use as labels.</p>`}
+      <div class="choices any-shapes" role="radiogroup" aria-label="Shape">
+        ${SHAPES.map(
+          ([value, title, text]) => html`<label class="choice" key=${value}>
+            <input type="radio" name="any-shape" value=${value} checked=${shape.value === value} onChange=${() => (shape.value = value)} />
+            <span><b>${title}</b><small>${text}</small></span>
+          </label>`,
+        )}
+      </div>
+      ${shape.value === "text" &&
+      html`<label class="any-row"><span>State</span>
+          <select aria-label="State column" value=${textColumn.value ?? ""} onChange=${(event) => (textColumn.value = event.target.value)}>
+            ${result.text_columns.map((item) => html`<option value=${item}>${item}</option>`)}
+          </select><small>the text the model reads</small></label>
+        <${LabelSelect} />`}
+      ${shape.value === "object" &&
+      html`<div class="any-row cols"><span>State</span>
+          <div class="any-cols" role="group" aria-label="State columns">
+            ${result.columns
+              .filter((column) => column.name !== labelColumn.value)
+              .map(
+                (column) => html`<label key=${column.name}>
+                  <input type="checkbox" checked=${stateColumns.value.includes(column.name)} onChange=${(event) => toggle(column.name, event.target.checked)} />
+                  <code>${column.name}</code></label>`,
+              )}
+          </div></div>
+        <${LabelSelect} />`}
+      ${shape.value === "choice" &&
+      html`<${RoleSelect} role="question" label="Question" hint="the state the model reads" />
+        <${RoleSelect} role="choices" label="Choices" hint="each row's options" />
+        <${RoleSelect} role="answer" label="Answer" hint="the right option" />
+        <${RoleSelect} role="context" label="Context" optional=${true} hint="read with the question" />
+        <label class="any-row wide"><span>Instructions</span>
+          <input class="setting-input" aria-label="Instructions" placeholder="Which option answers the question?" value=${instructions.value}
+                 onInput=${(event) => (instructions.value = event.target.value)} /></label>`}
     </div>
   `;
 }
@@ -214,9 +318,9 @@ export function AnyDataset() {
   const result = previewed.value;
   const ready = result && result.rows != null;
   return html`
-    <p>Any dataset on the Hugging Face Hub: one column becomes the state, and the label column's values are kept with each row. The questions come afterwards, in the Studio, with what each value means.</p>
+    <p>Any dataset on the Hugging Face Hub. Its rows keep their label's values and get their questions afterwards, in the Studio; multiple choice asks its question here.</p>
     <${Source} />
-    ${ready && html`<${Preview} /><${Wiring} /><${LabelValues} /><${Output} />`}
+    ${ready && html`<${Preview} /><${Wiring} />${shape.value !== "choice" && html`<${LabelValues} />`}<${Output} />`}
     ${ready && anyProblem.value && html`<p class="warn-text">${anyProblem.value}</p>`}
   `;
 }
