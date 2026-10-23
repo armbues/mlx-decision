@@ -372,6 +372,15 @@ def test_a_tensor_group_no_kind_owns_is_refused_before_anything_loads(tmp_path, 
         fitted.read_fit(folder, marker)  # also when the fit is read on its own
 
 
+@pytest.mark.parametrize("key", ["calibration.0.scale", "readout.0.offset", "calibration.x.bias"])
+def test_an_unknown_tensor_in_a_known_group_is_refused(tmp_path, base, key):
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    tensors = {**mx.load(str(folder / "fit.safetensors")), key: mx.ones(3)}
+    mx.save_safetensors(str(folder / "fit.safetensors"), tensors)
+    with pytest.raises(ValueError, match=f"holds '{key}', .*a newer mlx-decision wrote"):
+        mlx_decision.load(folder)
+
+
 def test_a_fit_written_by_0_9_1_still_loads(tmp_path):
     copy = shutil.copytree(FIXTURES / "fitted-0.9.1", tmp_path / "fitted-0.9.1")
     marker = json.loads((copy / "fit" / MARKER_FILE).read_text())

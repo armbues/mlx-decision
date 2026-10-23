@@ -120,6 +120,18 @@ All notable changes to this project are documented here. The format follows
   `422`, `code: "unsupported_media"`), `multipart/form-data` bodies
   (`415`) and `box` questions (`422`). Images go in `images` or inside
   the state as before.
+- Score levels must be text, an object or a list, as the Jev API takes
+  them: a number, a boolean or null is refused (`422`, naming
+  `questions.<id>.criteria.<n>`). Their answers' `legend` broke the Jev
+  SDK's parser.
+- `benchmark --questions` is now `--question-counts` (it takes numbers of
+  questions; elsewhere `--questions` is a questions file). The old name
+  still works and prints a warning.
+- MCP `decide`'s schema takes what the tool answers: any JSON value as
+  instructions and option descriptions, options without a description,
+  levels as objects or lists, and questions without instructions.
+- `decide` with questions that are not a mapping raises `DecisionError`
+  (`param: "questions"`), not `TypeError`.
 - Requires typer 0.27 or later (it exits 130 on Ctrl-C).
 - `benchmark --out` is now `-o` / `--output`, and `data --config` is now
   `--subset` (the Studio's Another dataset… says Subset too). The old names
@@ -131,6 +143,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A fitted model with an unknown tensor in a known group (a later
+  version's `calibration.0.scale`) is refused, naming it, instead of
+  read as a bias.
 - Every `--events` run ends with a `done`, `error` or `cancelled` line,
   also when it fails before its first step (a bad config file, a missing
   `-m`), meets an unexpected error, is stopped with Ctrl-C before its

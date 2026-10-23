@@ -214,7 +214,7 @@ state once per question:
 | Peak memory | | | 29.1 GB | 17.1 GB |
 
 d3-flash in bf16 and as an 8-bit copy, and d3-mini in bf16, the same
-way (`--questions 1,5 --repeats 3`; the longest length, 29,450, is 90% of
+way (`--question-counts 1,5 --repeats 3`; the longest length, 29,450, is 90% of
 the default 32,768-token limit):
 
 | State tokens | Questions | Input tokens | d3-flash bf16 | d3-flash 8-bit | d3-mini bf16 |
@@ -238,7 +238,7 @@ and 16.2 GB, 33,032 tokens 27.6 s and 19.1 GB, 131,855 tokens 317 s and
 token.
 
 H2O-Lightning in bf16, as an 8-bit and as a uniform 4-bit copy
-(`--questions 1,5`). Each question is its own sequence, but they share
+(`--question-counts 1,5`). Each question is its own sequence, but they share
 the system prompt and the state, which are computed once per request;
 input tokens count the state once per question. The longest length,
 28,800, stays under the release's state cut at 32,000 tokens. Warm: the

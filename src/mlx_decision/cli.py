@@ -1765,9 +1765,14 @@ def benchmark(
             "they stay below half of it)."
         ),
     ] = None,
-    questions: Annotated[
-        str, typer.Option(help="Numbers of questions, comma-separated.")
-    ] = "1,5,20",
+    question_counts: Annotated[
+        str | None,
+        typer.Option(
+            "--question-counts",
+            help="Numbers of questions per request, comma-separated. Default: 1,5,20.",
+        ),
+    ] = None,
+    old_questions: Annotated[str | None, typer.Option("--questions", hidden=True)] = None,
     repeats: Annotated[int, typer.Option(min=1, help="Timed runs per row.")] = 5,
     no_memory_check: NoMemoryCheckOption = False,
     as_json: Annotated[
@@ -1794,19 +1799,24 @@ def benchmark(
     from .benchmark import benchmark as run_benchmark
     from .benchmark import format_report, to_dict
 
+    questions = (
+        renamed(question_counts, old_questions, "--question-counts", "--questions") or "1,5,20"
+    )
     grid = {
         "lengths": int_list(lengths, "--lengths") if lengths else None,
-        "question_counts": int_list(questions, "--questions"),
+        "question_counts": int_list(questions, "--question-counts"),
     }
     if min(grid["question_counts"]) < 1:
-        raise typer.BadParameter("at least one question per request", param_hint="--questions")
+        raise typer.BadParameter(
+            "at least one question per request", param_hint="--question-counts"
+        )
     out = renamed(out, old_out, "--output", "--out")
     config = read_config()
     references = [model_reference(model, config)] if model is not None else config_models(config)
     if not references:
         fail(f"pass -m MODEL (or set models_dir or models in {config.path})")
     if len(references) > 1 or is_folder_of_models(references[0]):
-        arguments = ["--questions", questions, "--repeats", str(repeats)]
+        arguments = ["--question-counts", questions, "--repeats", str(repeats)]
         arguments += ["--lengths", lengths] if lengths else []
         arguments += ["--no-memory-check"] if no_memory_check else []
         benchmark_models(references, arguments, not no_memory_check, as_json, out)

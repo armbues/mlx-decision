@@ -283,7 +283,7 @@ def test_benchmark_without_m_runs_the_models_of_the_file(mlx_decision_home, tmp_
     monkeypatch.setattr(benchmark, "run_in_process", run)
     first, second = write_model(tmp_path / "first"), write_model(tmp_path / "second")
     write_config(mlx_decision_home, f'models = ["{first}", "{second}"]\n')
-    args = ["benchmark", "--lengths", "20", "--questions", "1", "--repeats", "1", "--json"]
+    args = ["benchmark", "--lengths", "20", "--question-counts", "1", "--repeats", "1", "--json"]
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
     assert calls == ["first", "second"]

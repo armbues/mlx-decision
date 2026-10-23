@@ -55,6 +55,13 @@ TENSOR_GROUPS = {
     "head": ("head", "finetune"),
     "encoder": ("finetune",),
 }
+# The tensors of the question kinds, per question index: the names they hold.
+# (A weight kind's tensors are its model's parameters; its family's loader
+# refuses names that model does not have.)
+QUESTION_TENSORS = {
+    "calibration": ("temperature", "bias"),
+    "readout": ("rows", "bias"),
+}
 # How ``fingerprint`` hashes the base, named in the marker's ``fingerprint_algorithm``;
 # a marker without the field (fits from 0.9) used this one.
 FINGERPRINT_ALGORITHM = "sha256-files-headers"
@@ -334,9 +341,20 @@ def check_tensors(path: Path) -> None:
     if not (path / FIT_FILE).exists():
         return
     for key in read_header(path / FIT_FILE):
-        group = key.partition(".")[0]
-        if group not in TENSOR_GROUPS:
+        if not known_tensor(key):
             raise _newer(path, f"its {FIT_FILE} holds {key!r}")
+
+
+def known_tensor(key: str) -> bool:
+    """Whether a tensor name in ``fit.safetensors`` is one this version writes: a
+    known group, and for a question kind ``<group>.<index>.<one of its names>``."""
+    group, _, rest = key.partition(".")
+    if group not in TENSOR_GROUPS:
+        return False
+    if group not in QUESTION_TENSORS:
+        return True
+    index, _, name = rest.partition(".")
+    return index.isdigit() and name in QUESTION_TENSORS[group]
 
 
 def resolve_base(path: Path, marker: Mapping[str, Any]) -> Path:
@@ -383,7 +401,7 @@ def read_fit(path: Path, marker: Mapping[str, Any]) -> Fit:
     tensors = mx.load(str(path / FIT_FILE)) if (path / FIT_FILE).exists() else {}
     for key, value in tensors.items():
         part, _, rest = key.partition(".")
-        if part not in TENSOR_GROUPS:
+        if not known_tensor(key):
             raise _newer(path, f"its {FIT_FILE} holds {key!r}")
         if part not in ("calibration", "readout"):
             continue  # weight kinds' tensors, read by the family's loader

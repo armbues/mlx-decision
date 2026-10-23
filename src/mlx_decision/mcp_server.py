@@ -160,51 +160,69 @@ def family_hints(info: dict[str, Any], allow_image_paths: bool) -> list[str]:
     return hints
 
 
+# Any JSON value: what the request body takes for instructions and descriptions.
+ANY_JSON = {
+    "anyOf": [{"type": kind} for kind in ("string", "object", "array", "number", "boolean", "null")]
+}
+
+
 def decide_schema(info: dict[str, Any], allow_image_paths: bool) -> dict[str, Any]:
-    text = {"type": "string", "description": "The question or option in plain words."}
+    """The ``decide`` tool's arguments: a request body, as the API takes it. Text is
+    the usual value for instructions and descriptions; any JSON value is read."""
+
+    def text(description: str) -> dict[str, Any]:
+        return {**ANY_JSON, "description": f"{description} Usually text."}
+
+    level = {
+        "description": "A level, in plain words (or an object or a list).",
+        "anyOf": [{"type": "string"}, {"type": "object"}, {"type": "array"}],
+    }
     question = {
         "oneOf": [
             {
                 "type": "object",
                 "properties": {
                     "type": {"const": "noul"},
-                    "instructions": {**text, "description": "The yes/no question."},
+                    "instructions": text("The yes/no question."),
                     "criteria": {
                         "type": "object",
                         "description": "Optional: what yes and no mean.",
-                        "properties": {"true": text, "false": text},
+                        "properties": {
+                            "true": text("What yes means."),
+                            "false": text("What no means."),
+                        },
                         "additionalProperties": False,
                     },
                 },
-                "required": ["type", "instructions"],
+                "required": ["type"],
             },
             {
                 "type": "object",
                 "properties": {
                     "type": {"const": "choice"},
-                    "instructions": {**text, "description": "What to choose."},
+                    "instructions": text("What to choose."),
                     "criteria": {
                         "type": "object",
-                        "description": "Option id -> short description of the option.",
-                        "additionalProperties": text,
+                        "description": "Option id -> short description of the option (or null).",
+                        "additionalProperties": text("The option."),
                         "minProperties": 1,
                     },
                 },
-                "required": ["type", "instructions", "criteria"],
+                "required": ["type", "criteria"],
             },
             {
                 "type": "object",
                 "properties": {
                     "type": {"const": "score"},
-                    "instructions": {**text, "description": "What to rate."},
+                    "instructions": text("What to rate."),
                     "criteria": {
                         "type": "array",
                         "description": "Level descriptions, lowest first.",
-                        "items": text,
+                        "items": level,
                         "minItems": 2,
                     },
                 },
-                "required": ["type", "instructions", "criteria"],
+                "required": ["type", "criteria"],
             },
         ]
     }

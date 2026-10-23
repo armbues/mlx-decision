@@ -400,3 +400,34 @@ def test_http_on_loopback_takes_loopback_hosts_with_or_without_a_port(headers, s
             accept = {"Accept": "application/json, text/event-stream"}
             response = client.post("/mcp", json=INITIALIZE, headers={**accept, **headers})
     assert response.status_code == status
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        {"type": "noul", "instructions": {"potential_duplicate": {"name": "John"}}},
+        {"type": "choice", "instructions": "Team?", "criteria": {"billing": None, "tech": None}},
+        {"type": "score", "instructions": "Rate", "criteria": [{"label": "low"}, ["high"]]},
+        {"type": "score", "criteria": ["calm", "angry"]},  # no instructions
+        {"type": "noul"},
+    ],
+)
+def test_the_decide_schema_takes_what_the_tool_answers(question):
+    jsonschema = pytest.importorskip("jsonschema")
+    from mlx_decision.mcp_server import decide_schema
+
+    schema = decide_schema(DecisionModel(FakeBackend()).info(), allow_image_paths=False)
+    arguments = {"state": "x", "questions": {"q": question}}
+    jsonschema.validate(arguments, schema)
+    assert not decide(arguments).is_error
+
+
+def test_the_decide_schema_refuses_score_levels_the_tool_refuses():
+    jsonschema = pytest.importorskip("jsonschema")
+    from mlx_decision.mcp_server import decide_schema
+
+    schema = decide_schema(DecisionModel(FakeBackend()).info(), allow_image_paths=False)
+    arguments = {"state": "x", "questions": {"q": {"type": "score", "criteria": [1, 2]}}}
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(arguments, schema)
+    assert decide(arguments).is_error

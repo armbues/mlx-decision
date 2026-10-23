@@ -179,6 +179,16 @@ def parse_request(data: Any) -> Request:
         where = f"questions.{question_id}"
         _check_text(question.instructions, f"{where}.instructions")
         _check_text(question.criteria, f"{where}.criteria")
+        if isinstance(question, Score):
+            # As the Jev API takes them: an answer's legend repeats the levels,
+            # and its clients read them as text, objects or lists.
+            for number, level in enumerate(question.criteria):
+                if not isinstance(level, (str, dict, list)):
+                    raise DecisionError(
+                        "a score level is text, an object or a list, not "
+                        f"{'null' if level is None else type(level).__name__}",
+                        param=f"{where}.criteria.{number}",
+                    )
     return request
 
 

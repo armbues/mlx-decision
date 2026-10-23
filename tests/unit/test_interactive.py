@@ -265,7 +265,6 @@ def test_json_answers_note_truncation_on_stderr(tmp_path, capsys):
 @pytest.mark.parametrize(
     "criteria",
     [
-        [1, "1", "high"],  # 1 and "1" show as the same line
         ["low", "low", "high"],
         ["calm\nquiet", "angry"],  # one level, two lines
         ["", "angry"],  # a blank line ends the block

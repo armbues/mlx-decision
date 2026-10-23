@@ -88,7 +88,7 @@ def test_warm_times_with_a_prefix_cache(fake_model):
 
 def test_cli(fake_model_path):
     runner = CliRunner()
-    args = ["benchmark", "-m", str(fake_model_path), "--lengths", "20", "--questions", "2"]
+    args = ["benchmark", "-m", str(fake_model_path), "--lengths", "20", "--question-counts", "2"]
     table = runner.invoke(app, [*args, "--repeats", "2"])
     assert table.exit_code == 0, table.output
     assert "| 20 | 2 | 20 |" in table.stdout
@@ -105,7 +105,7 @@ def test_results_file_names_machine_software_model_and_options(
 
     monkeypatch.setattr(benchmark, "machine_info", lambda: dict(MACHINE))
     out = tmp_path / "result.json"
-    args = ["benchmark", "-m", str(fake_model_path), "--lengths", "20", "--questions", "2"]
+    args = ["benchmark", "-m", str(fake_model_path), "--lengths", "20", "--question-counts", "2"]
     result = CliRunner().invoke(app, [*args, "--repeats", "2", "--output", str(out)])
     assert result.exit_code == 0, result.output
     assert result.stdout.startswith("Apple M1 (MacBookPro17,1), 4 Performance + 4 Efficiency")
@@ -184,7 +184,7 @@ def test_cli_rejects_bad_lists(fake_model_path):
     runner = CliRunner()
     result = runner.invoke(app, ["benchmark", "-m", str(fake_model_path), "--lengths", "a,b"])
     assert result.exit_code == 2
-    result = runner.invoke(app, ["benchmark", "-m", str(fake_model_path), "--questions", "0"])
+    result = runner.invoke(app, ["benchmark", "-m", str(fake_model_path), "--question-counts", "0"])
     assert result.exit_code == 2
 
 
@@ -215,7 +215,7 @@ def test_a_folder_of_models_runs_each_in_its_own_process(tmp_path):
     (folder / "notes").mkdir()
     (folder / ".hidden").mkdir()
     out = tmp_path / "results"
-    args = ["benchmark", "-m", str(folder), "--lengths", "20", "--questions", "1,2"]
+    args = ["benchmark", "-m", str(folder), "--lengths", "20", "--question-counts", "1,2"]
     result = CliRunner().invoke(app, [*args, "--repeats", "1", "-o", str(out)])
     assert result.exit_code == 0, result.output
     # Alphabetical ignoring case (a plain sort puts capitals first); the
@@ -263,7 +263,7 @@ def fake_folder(tmp_path, *names):
     return folder
 
 
-FAST = ["--lengths", "20", "--questions", "1", "--repeats", "1"]
+FAST = ["--lengths", "20", "--question-counts", "1", "--repeats", "1"]
 
 
 def test_a_failed_model_does_not_stop_the_others(tmp_path, fake_runs):
@@ -272,7 +272,7 @@ def test_a_failed_model_does_not_stop_the_others(tmp_path, fake_runs):
     result = CliRunner().invoke(app, ["benchmark", "-m", str(folder), *FAST])
     assert result.exit_code == 1
     assert [name for name, _ in fake_runs.calls] == ["a", "b", "c"]
-    assert fake_runs.calls[0][1] == ["--questions", "1", "--repeats", "1", "--lengths", "20"]
+    assert fake_runs.calls[0][1] == ["--question-counts", "1", "--repeats", "1", "--lengths", "20"]
     assert "error: b: out of memory" in result.stderr
     assert "| b | failed: out of memory |" in result.stdout
     assert "| a | " in result.stdout and "| c | " in result.stdout
@@ -342,3 +342,13 @@ def test_output_and_its_old_name_out_which_warns(fake_model_path, tmp_path):
     assert both.exit_code == 2 and "--out is the old name of --output" in both.output
     shown = CliRunner().invoke(app, ["benchmark", "--help"], terminal_width=200).stdout
     assert "--output" in shown and "--out " not in shown
+
+
+def test_question_counts_and_its_old_name_questions_which_warns(fake_model_path):
+    args = ["benchmark", "-m", str(fake_model_path), "--lengths", "20", "--repeats", "1"]
+    old = CliRunner().invoke(app, [*args, "--questions", "2", "--json"])
+    assert old.exit_code == 0, old.output
+    assert "warning: --questions is now --question-counts" in old.stderr
+    assert {cell["questions"] for cell in json.loads(old.stdout)["cells"]} == {2}
+    shown = CliRunner().invoke(app, ["benchmark", "--help"], terminal_width=200).stdout
+    assert "--question-counts" in shown and "--questions " not in shown

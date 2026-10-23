@@ -83,12 +83,12 @@
     "required": false,
     "type": "path"
    },
-   "--questions": {
-    "default": "1,5,20",
+   "--question-counts": {
+    "default": null,
     "kind": "option",
     "multiple": false,
     "names": {
-     "--questions": true
+     "--question-counts": true
     },
     "required": false,
     "type": "str"

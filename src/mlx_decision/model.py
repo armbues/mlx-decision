@@ -57,6 +57,10 @@ class DecisionModel:
         ``images`` may hold file paths, image bytes, PIL images or data URLs
         (``data:image/png;base64,...``); they need the ``images`` extra.
         """
+        if not isinstance(questions, Mapping):
+            raise DecisionError(
+                "questions is an object from question id to question", param="questions"
+            )
         request = {"state": state, "questions": dict(questions)}
         if images:
             request["images"] = list(images)

@@ -21,6 +21,16 @@ def body(**questions):
         ),
         (body(q={"type": "box", "instructions": "x"}), "questions.q.type", "box questions"),
         (
+            body(q={"type": "score", "criteria": ["calm", None]}),
+            "questions.q.criteria.1",
+            "a score level is text, an object or a list, not null",
+        ),
+        (
+            body(q={"type": "score", "criteria": [1, 2, 3]}),
+            "questions.q.criteria.0",
+            "not int",
+        ),
+        (
             {**body(q={"type": "noul"}), "assets": {"a": {"type": "image"}}},
             "assets",
             "assets (the Jev API's images by placeholder) are not supported yet",
@@ -167,7 +177,7 @@ def test_valid_request_parses_into_typed_questions():
         body(
             a={"type": "noul"},
             b={"type": "choice", "criteria": {"x": None}},
-            c={"type": "score", "criteria": [1, 2]},
+            c={"type": "score", "criteria": ["low", "high"]},
         )
     )
     assert isinstance(request, Request)
@@ -235,7 +245,7 @@ def test_invalid_typed_requests_never_reach_the_backend():
 
 def test_unsupported_question_type():
     error = decide_with(
-        body(a={"type": "noul"}, b={"type": "score", "criteria": [1, 2]}),
+        body(a={"type": "noul"}, b={"type": "score", "criteria": ["low", "high"]}),
         question_types=frozenset({"noul", "choice"}),
     )
     assert error.param == "questions.b.type"
@@ -263,7 +273,9 @@ def test_choice_option_limit():
 
 
 def test_score_level_limit():
-    error = decide_with(body(q={"type": "score", "criteria": list(range(11))}), max_score_levels=10)
+    error = decide_with(
+        body(q={"type": "score", "criteria": list("abcdefghijk")}), max_score_levels=10
+    )
     assert error.param == "questions.q.criteria"
     assert "at most 10 levels" in error.message
 
@@ -292,3 +304,16 @@ def test_non_finite_probabilities_never_become_answers():
     model = DecisionModel(FakeBackend(fixed={"q": {"true": float("nan"), "false": 0.5}}))
     with pytest.raises(RuntimeError, match="non-finite"):
         model.decide("text", {"q": {"type": "noul"}})
+
+
+def test_score_levels_may_be_text_objects_or_lists():
+    levels = ["calm", {"label": "upset"}, ["angry", "furious"]]
+    parse_request(body(q={"type": "score", "criteria": levels}))
+
+
+@pytest.mark.parametrize("questions", [None, "Is it urgent?", ["urgent"]])
+def test_decide_needs_questions_by_id(questions):
+    model = DecisionModel(FakeBackend())
+    with pytest.raises(DecisionError) as refused:
+        model.decide("state", questions)
+    assert refused.value.param == "questions"
