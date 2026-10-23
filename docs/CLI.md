@@ -1,7 +1,7 @@
 # Command line
 
 The `mlx-decision` command. `server` and `mcp` are in [SERVER.md](SERVER.md),
-`web` is the Studio, and `data` and `training` are in
+`web` (the Studio) in [STUDIO.md](STUDIO.md), `data` and `training` in
 [TRAINING.md](TRAINING.md). `mlx-decision COMMAND --help` lists every flag.
 
 - [One state: `run`](#one-state-run)
@@ -105,7 +105,8 @@ it) or `"hf-cache"` for the Hugging Face cache. Its models are served
 with `models` where `-m` is absent, `-m laya` finds `~/Models/laya`, and
 `download` puts a model into it. When it is not set, the first
 `download` in a terminal asks for a folder (or the cache) and adds the
-key to the file; that is the only time the file is written. `run` and
+key to the file, as the Studio's first start does; besides that, only
+the Studio's [Settings](STUDIO.md#settings) page writes the file. `run` and
 `chat` without `-m` or a `default_model` show a menu of the models in
 `models_dir`, in `models` and in the Hugging Face cache.
 
