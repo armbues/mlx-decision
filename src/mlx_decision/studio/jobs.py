@@ -42,6 +42,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..events import FINAL_STAGES
 from ..gpu import Gpu
 from ..watchdog import WATCH_VARIABLE, remove
 from .workspace import INTERRUPTED, JOB_FILE, Workspace, check_name, encode, now
@@ -55,7 +56,6 @@ COMMAND = (sys.executable, "-m", "mlx_decision")
 STOP_GRACE_S = 20.0
 KILL_GRACE_S = 5.0
 # Last events that decide the outcome.
-FINAL = ("done", "error", "cancelled")
 # What a killed write leaves beside an output folder NAME: the fitted or
 # converted folder before its rename, a fit's stored hidden states, the
 # full-size files of a quantized download.
@@ -336,7 +336,7 @@ class Jobs:
 
     def _outcome(self, job: Job) -> tuple[str, str | None]:
         last = job.last
-        if last is not None and last.get("stage") in FINAL:
+        if last is not None and last.get("stage") in FINAL_STAGES:
             return last["stage"], last.get("message")
         if job.stop_requested:
             return "cancelled", "stopped"

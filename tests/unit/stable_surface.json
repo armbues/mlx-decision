@@ -1,0 +1,1224 @@
+{
+ "DecisionModel": {
+  "check": {
+   "request": {
+    "kind": "positional_or_keyword",
+    "position": 0
+   }
+  },
+  "decide": {
+   "images": {
+    "default": null,
+    "kind": "keyword_only"
+   },
+   "questions": {
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "state": {
+    "kind": "positional_or_keyword",
+    "position": 0
+   }
+  },
+  "decide_request": {
+   "request": {
+    "kind": "positional_or_keyword",
+    "position": 0
+   }
+  },
+  "info": {},
+  "name": "property"
+ },
+ "commands": {
+  "benchmark": {
+   "--json": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--json": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--lengths": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--lengths": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--model": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--model": true,
+     "-m": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--no-memory-check": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--no-memory-check": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--output": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--output": true,
+     "-o": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--questions": {
+    "default": "1,5,20",
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--questions": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--repeats": {
+    "default": 5,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--repeats": true
+    },
+    "required": false,
+    "type": "int range"
+   }
+  },
+  "chat": {
+   "--choice": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--choice": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--image": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--image": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--json": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--json": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--max-image-mp": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-image-mp": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--max-input-tokens": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-input-tokens": true
+    },
+    "required": false,
+    "type": "int range"
+   },
+   "--model": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--model": true,
+     "-m": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--no-memory-check": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--no-memory-check": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--noul": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--noul": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--noul-floor": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--noul-floor": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--prefix-cache": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--prefix-cache": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--questions": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--questions": true,
+     "-q": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--score": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--score": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--state-json": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--state-json": true
+    },
+    "required": false,
+    "type": "boolean"
+   }
+  },
+  "convert": {
+   "--bits": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--bits": true
+    },
+    "required": false,
+    "type": "int"
+   },
+   "--events": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--events": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--group-size": {
+    "default": 64,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--group-size": true
+    },
+    "required": false,
+    "type": "int"
+   },
+   "--keep-output-embeddings": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--keep-output-embeddings": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--model": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--model": true,
+     "-m": true
+    },
+    "required": true,
+    "type": "str"
+   },
+   "--output": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--output": true,
+     "-o": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--quantize": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--quantize": true,
+     "-q": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--target-bits": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--target-bits": true
+    },
+    "required": false,
+    "type": "float range"
+   }
+  },
+  "download": {
+   "--bits": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--bits": true
+    },
+    "required": false,
+    "type": "int"
+   },
+   "--events": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--events": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--local-dir": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--local-dir": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--yes": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--yes": true,
+     "-y": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "repo_id": {
+    "default": null,
+    "kind": "argument",
+    "multiple": false,
+    "names": {
+     "repo_id": true
+    },
+    "required": false,
+    "type": "str"
+   }
+  },
+  "mcp": {
+   "--api-key": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--api-key": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--host": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--host": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--http": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--http": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--max-image-mp": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-image-mp": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--max-input-tokens": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-input-tokens": true
+    },
+    "required": false,
+    "type": "int range"
+   },
+   "--model": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--model": true,
+     "-m": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--no-memory-check": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--no-memory-check": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--noul-floor": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--noul-floor": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--port": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--port": true
+    },
+    "required": false,
+    "type": "int"
+   },
+   "--prefix-cache": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--prefix-cache": true
+    },
+    "required": false,
+    "type": "float range"
+   }
+  },
+  "run": {
+   "--choice": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--choice": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--image": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--image": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--json": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--json": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--max-image-mp": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-image-mp": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--max-input-tokens": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-input-tokens": true
+    },
+    "required": false,
+    "type": "int range"
+   },
+   "--model": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--model": true,
+     "-m": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--no-memory-check": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--no-memory-check": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--noul": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--noul": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--noul-floor": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--noul-floor": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--prefix-cache": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--prefix-cache": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--questions": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--questions": true,
+     "-q": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--score": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--score": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--state": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--state": true,
+     "-s": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--state-file": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--state-file": true
+    },
+    "required": false,
+    "type": "path"
+   },
+   "--state-json": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--state-json": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--states": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--states": true
+    },
+    "required": false,
+    "type": "str"
+   }
+  },
+  "server": {
+   "--api-key": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--api-key": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--default-model": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--default-model": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--host": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--host": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--max-image-mp": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-image-mp": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--max-input-tokens": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-input-tokens": true
+    },
+    "required": false,
+    "type": "int range"
+   },
+   "--memory-budget": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--memory-budget": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--model": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--model": true,
+     "-m": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--no-memory-check": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--no-memory-check": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--noul-floor": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--noul-floor": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--port": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--port": true
+    },
+    "required": false,
+    "type": "int"
+   },
+   "--prefix-cache": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--prefix-cache": true
+    },
+    "required": false,
+    "type": "float range"
+   }
+  },
+  "web": {
+   "--api-key": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--api-key": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--default-model": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--default-model": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--host": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--host": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--max-image-mp": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-image-mp": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--max-input-tokens": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--max-input-tokens": true
+    },
+    "required": false,
+    "type": "int range"
+   },
+   "--memory-budget": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--memory-budget": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--model": {
+    "default": null,
+    "kind": "option",
+    "multiple": true,
+    "names": {
+     "--model": true,
+     "-m": true
+    },
+    "required": false,
+    "type": "str"
+   },
+   "--no-browser": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--no-browser": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--no-memory-check": {
+    "default": false,
+    "kind": "flag",
+    "multiple": false,
+    "names": {
+     "--no-memory-check": true
+    },
+    "required": false,
+    "type": "boolean"
+   },
+   "--noul-floor": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--noul-floor": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--port": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--port": true
+    },
+    "required": false,
+    "type": "int"
+   },
+   "--prefix-cache": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--prefix-cache": true
+    },
+    "required": false,
+    "type": "float range"
+   },
+   "--workspace": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--workspace": true
+    },
+    "required": false,
+    "type": "directory"
+   }
+  }
+ },
+ "config_keys": {
+  "default_model": true,
+  "host": true,
+  "memory_budget_gb": true,
+  "models": true,
+  "models_dir": true,
+  "port": true,
+  "workspace": true
+ },
+ "errors": {
+  "DataError": {
+   "arguments": {
+    "file": {
+     "default": null,
+     "kind": "positional_or_keyword",
+     "position": 3
+    },
+    "line": {
+     "kind": "positional_or_keyword",
+     "position": 1
+    },
+    "message": {
+     "kind": "positional_or_keyword",
+     "position": 0
+    },
+    "param": {
+     "default": null,
+     "kind": "positional_or_keyword",
+     "position": 2
+    }
+   },
+   "bases": {
+    "DecisionError": true,
+    "Exception": true,
+    "ValueError": true
+   }
+  },
+  "DecisionError": {
+   "arguments": {
+    "code": {
+     "default": null,
+     "kind": "positional_or_keyword",
+     "position": 2
+    },
+    "message": {
+     "kind": "positional_or_keyword",
+     "position": 0
+    },
+    "param": {
+     "default": null,
+     "kind": "positional_or_keyword",
+     "position": 1
+    }
+   },
+   "bases": {
+    "Exception": true,
+    "ValueError": true
+   }
+  },
+  "ModelTooLargeError": {
+   "arguments": {
+    "available": {
+     "kind": "positional_or_keyword",
+     "position": 2
+    },
+    "message": {
+     "kind": "positional_or_keyword",
+     "position": 0
+    },
+    "required": {
+     "kind": "positional_or_keyword",
+     "position": 1
+    }
+   },
+   "bases": {
+    "DecisionError": true,
+    "Exception": true,
+    "ValueError": true
+   }
+  },
+  "PlatformError": {
+   "arguments": {
+    "args": {
+     "kind": "var_positional"
+    },
+    "kwargs": {
+     "kind": "var_keyword"
+    }
+   },
+   "bases": {
+    "Exception": true,
+    "RuntimeError": true
+   }
+  }
+ },
+ "events": {
+  "fields": {
+   "eta_s": true,
+   "message": true,
+   "metrics": true,
+   "stage": true,
+   "step": true,
+   "total": true
+  },
+  "final_stages": {
+   "cancelled": true,
+   "done": true,
+   "error": true
+  }
+ },
+ "exports": {
+  "Choice": true,
+  "ChoiceAnswer": true,
+  "DataError": true,
+  "DecisionError": true,
+  "DecisionModel": true,
+  "ModelTooLargeError": true,
+  "Noul": true,
+  "NoulAnswer": true,
+  "PlatformError": true,
+  "Request": true,
+  "Response": true,
+  "Result": true,
+  "Score": true,
+  "ScoreAnswer": true,
+  "Usage": true,
+  "load": true
+ },
+ "formats": {
+  "dataset": 1,
+  "fingerprint_algorithm": "sha256-files-headers",
+  "fitted_model": 1,
+  "workspace": 1
+ },
+ "load": {
+  "check_memory": {
+   "default": true,
+   "kind": "keyword_only"
+  },
+  "model": {
+   "kind": "positional_or_keyword",
+   "position": 0
+  },
+  "options": {
+   "kind": "var_keyword"
+  }
+ },
+ "routes": {
+  "/health": {
+   "GET": true
+  },
+  "/v1/models": {
+   "GET": true
+  },
+  "/v1/systemone": {
+   "POST": true
+  }
+ },
+ "types": {
+  "Choice": {
+   "fields": {
+    "criteria": {
+     "required": true
+    },
+    "instructions": {
+     "default": null,
+     "required": false
+    },
+    "type": {
+     "default": "choice",
+     "required": false
+    }
+   },
+   "members": {}
+  },
+  "ChoiceAnswer": {
+   "fields": {
+    "choice": {
+     "required": true
+    },
+    "confidence": {
+     "required": true
+    },
+    "probabilities": {
+     "required": true
+    },
+    "type": {
+     "default": "choice",
+     "required": false
+    }
+   },
+   "members": {}
+  },
+  "Noul": {
+   "fields": {
+    "criteria": {
+     "default": null,
+     "required": false
+    },
+    "instructions": {
+     "default": null,
+     "required": false
+    },
+    "type": {
+     "default": "noul",
+     "required": false
+    }
+   },
+   "members": {}
+  },
+  "NoulAnswer": {
+   "fields": {
+    "noul": {
+     "required": true
+    },
+    "type": {
+     "default": "noul",
+     "required": false
+    }
+   },
+   "members": {}
+  },
+  "Request": {
+   "fields": {
+    "images": {
+     "default": null,
+     "required": false
+    },
+    "model": {
+     "default": null,
+     "required": false
+    },
+    "questions": {
+     "required": true
+    },
+    "state": {
+     "required": true
+    },
+    "videos": {
+     "default": null,
+     "required": false
+    }
+   },
+   "members": {}
+  },
+  "Response": {
+   "fields": {
+    "answers": {
+     "required": true
+    },
+    "model": {
+     "required": true
+    },
+    "usage": {
+     "required": true
+    }
+   },
+   "members": {}
+  },
+  "Result": {
+   "fields": {
+    "answers": {
+     "required": true
+    },
+    "model": {
+     "required": true
+    },
+    "truncated": {
+     "default": false,
+     "on_the_wire": false,
+     "required": false
+    },
+    "usage": {
+     "required": true
+    }
+   },
+   "members": {
+    "to_wire": "method"
+   }
+  },
+  "Score": {
+   "fields": {
+    "criteria": {
+     "required": true
+    },
+    "instructions": {
+     "default": null,
+     "required": false
+    },
+    "type": {
+     "default": "score",
+     "required": false
+    }
+   },
+   "members": {}
+  },
+  "ScoreAnswer": {
+   "fields": {
+    "confidence": {
+     "required": true
+    },
+    "legend": {
+     "required": true
+    },
+    "probabilities": {
+     "required": true
+    },
+    "score": {
+     "required": true
+    },
+    "type": {
+     "default": "score",
+     "required": false
+    }
+   },
+   "members": {}
+  },
+  "Usage": {
+   "fields": {
+    "input_tokens": {
+     "required": true
+    },
+    "output_tokens": {
+     "default": 0,
+     "required": false
+    }
+   },
+   "members": {}
+  }
+ }
+}

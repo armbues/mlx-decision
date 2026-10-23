@@ -6,6 +6,9 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any
 
+# The stages a run's events end with (``--events``' last line).
+FINAL_STAGES = ("done", "error", "cancelled")
+
 
 class Cancelled(Exception):
     """A run stopped by its cancel flag; nothing was written."""
