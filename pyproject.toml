@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mlx-decision"
 dynamic = ["version"]
-description = "Run and fine-tune decision models such as Cloudflare's Clef locally on Apple Silicon with MLX"
+description = "Run and fine-tune decision models locally on Apple Silicon with MLX, from Python, the command line, a Jev-compatible server or the Studio in your browser"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT AND Apache-2.0"
@@ -16,15 +16,18 @@ keywords = [
     "apple-silicon",
     "decision-model",
     "classification",
+    "fine-tuning",
+    "studio",
     "clef",
     "qwen",
     "llm",
     "mcp",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Environment :: GPU",
+    "Environment :: Web Environment",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Operating System :: MacOS",
@@ -61,6 +64,10 @@ Changelog = "https://github.com/armbues/mlx-decision/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "src/mlx_decision/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+# The README's screenshots are served from GitHub; the wheel never had them.
+exclude = ["docs/images"]
 
 [project.scripts]
 mlx-decision = "mlx_decision.cli:entry"
