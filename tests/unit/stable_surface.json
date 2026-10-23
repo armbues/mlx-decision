@@ -908,6 +908,28 @@
   "MLX_DECISION_HOME": true,
   "MLX_DECISION_WATCH_STDIN": true
  },
+ "error_attributes": {
+  "DataError": {
+   "code": true,
+   "file": true,
+   "line": true,
+   "message": true,
+   "param": true
+  },
+  "DecisionError": {
+   "code": true,
+   "message": true,
+   "param": true
+  },
+  "ModelTooLargeError": {
+   "available": true,
+   "code": true,
+   "message": true,
+   "param": true,
+   "required": true
+  },
+  "PlatformError": {}
+ },
  "errors": {
   "DataError": {
    "arguments": {
@@ -1027,8 +1049,13 @@
   "Usage": true,
   "load": true
  },
+ "files": {
+  "config.toml": true,
+  "fit.safetensors": true,
+  "mlx_decision.json": true,
+  "workspace.json": true
+ },
  "formats": {
-  "dataset": 1,
   "fingerprint_algorithm": "sha256-files-headers",
   "fitted_model": 1,
   "workspace": 1
@@ -1046,6 +1073,382 @@
    "kind": "var_keyword"
   }
  },
+ "load_options": {
+  "clef": {
+   "max_image_pixels": {
+    "default": 2097152,
+    "kind": "positional_or_keyword",
+    "position": 3
+   },
+   "max_input_tokens": {
+    "default": 16384,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "prefix_cache_gb": {
+    "default": 2.0,
+    "kind": "positional_or_keyword",
+    "position": 4
+   },
+   "vision": {
+    "default": false,
+    "kind": "positional_or_keyword",
+    "position": 2
+   }
+  },
+  "d1": {
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "prefix_cache_gb": {
+    "default": 2.0,
+    "kind": "positional_or_keyword",
+    "position": 2
+   }
+  },
+  "d3": {
+   "max_image_pixels": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 3
+   },
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "vision": {
+    "default": false,
+    "kind": "positional_or_keyword",
+    "position": 2
+   }
+  },
+  "h2o": {
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "noul_floor": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 2
+   },
+   "prefix_cache_gb": {
+    "default": 2.0,
+    "kind": "positional_or_keyword",
+    "position": 3
+   },
+   "vision": {
+    "default": false,
+    "kind": "positional_or_keyword",
+    "position": 4
+   }
+  },
+  "julia": {
+   "dtype": {
+    "default": "float16",
+    "kind": "positional_or_keyword",
+    "position": 2
+   },
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "strict_encoding": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 3
+   }
+  },
+  "laya": {
+   "dtype": {
+    "default": "float16",
+    "kind": "positional_or_keyword",
+    "position": 2
+   },
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   }
+  },
+  "pplx": {
+   "max_image_pixels": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 3
+   },
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "vision": {
+    "default": false,
+    "kind": "positional_or_keyword",
+    "position": 2
+   }
+  }
+ },
+ "mcp": {
+  "decide_result": {
+   "answers": true,
+   "model": true,
+   "truncated": true,
+   "usage": true
+  },
+  "decide_schema": {
+   "properties": {
+    "questions": {
+     "additionalProperties": {
+      "oneOf": [
+       {
+        "properties": {
+         "criteria": {
+          "additionalProperties": false,
+          "properties": {
+           "false": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "object"
+             },
+             {
+              "type": "array"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "true": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "object"
+             },
+             {
+              "type": "array"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           }
+          },
+          "type": "object"
+         },
+         "instructions": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "object"
+           },
+           {
+            "type": "array"
+           },
+           {
+            "type": "number"
+           },
+           {
+            "type": "boolean"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "type": {
+          "const": "noul"
+         }
+        },
+        "required": [
+         "type"
+        ],
+        "type": "object"
+       },
+       {
+        "properties": {
+         "criteria": {
+          "additionalProperties": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "object"
+            },
+            {
+             "type": "array"
+            },
+            {
+             "type": "number"
+            },
+            {
+             "type": "boolean"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "minProperties": 1,
+          "type": "object"
+         },
+         "instructions": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "object"
+           },
+           {
+            "type": "array"
+           },
+           {
+            "type": "number"
+           },
+           {
+            "type": "boolean"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "type": {
+          "const": "choice"
+         }
+        },
+        "required": [
+         "type",
+         "criteria"
+        ],
+        "type": "object"
+       },
+       {
+        "properties": {
+         "criteria": {
+          "items": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "object"
+            },
+            {
+             "type": "array"
+            }
+           ]
+          },
+          "minItems": 2,
+          "type": "array"
+         },
+         "instructions": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "object"
+           },
+           {
+            "type": "array"
+           },
+           {
+            "type": "number"
+           },
+           {
+            "type": "boolean"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "type": {
+          "const": "score"
+         }
+        },
+        "required": [
+         "type",
+         "criteria"
+        ],
+        "type": "object"
+       }
+      ]
+     },
+     "minProperties": 1,
+     "type": "object"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "object"
+      },
+      {
+       "type": "array"
+      },
+      {
+       "type": "number"
+      },
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "state",
+    "questions"
+   ],
+   "type": "object"
+  },
+  "tools": {
+   "decide": true,
+   "model_info": true
+  }
+ },
+ "renamed_flags": {
+  "benchmark": {
+   "--out": {
+    "--out": true
+   },
+   "--questions": {
+    "--questions": true
+   }
+  }
+ },
  "routes": {
   "/health": {
    "GET": true
@@ -1056,6 +1459,9 @@
   "/v1/systemone": {
    "POST": true
   }
+ },
+ "top_level": {
+  "--version": true
  },
  "types": {
   "Choice": {
@@ -1227,6 +1633,33 @@
     }
    },
    "members": {}
+  }
+ },
+ "wire": {
+  "error_body": {
+   "error": {
+    "code": true,
+    "message": true,
+    "param": true,
+    "type": true
+   }
+  },
+  "headers": {
+   "Retry-After": true,
+   "X-MLX-Decision-Truncated": true
+  },
+  "health": {
+   "loaded": true,
+   "model": true,
+   "status": true
+  },
+  "model": {
+   "description": true,
+   "name": true,
+   "release_date": true
+  },
+  "models": {
+   "models": true
   }
  }
 }

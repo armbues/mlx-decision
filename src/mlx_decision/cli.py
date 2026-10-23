@@ -71,9 +71,7 @@ class EventRun:
     def end(self, stage: str, message: str) -> None:
         """Print the last line, unless events are off or it is out already."""
         if self.on and not self.ended:
-            from .events import Event
-
-            echo_event(Event(stage, message=message))
+            echo_event(stage_event(stage, message))
 
 
 RUN = EventRun()
@@ -2191,8 +2189,11 @@ def read_metrics(made) -> dict:
 
 def stage_event(stage: str, message: str):
     """How a run ended other than done: ``error`` or ``cancelled``."""
+    from .events import FINAL_STAGES
     from .training import Event
 
+    if stage not in FINAL_STAGES:
+        raise ValueError(f"{stage!r} is not a final stage ({', '.join(FINAL_STAGES)})")
     return Event(stage, message=message)
 
 
