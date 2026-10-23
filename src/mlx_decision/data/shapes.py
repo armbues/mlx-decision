@@ -242,7 +242,13 @@ def class_names(column: Column, table: Table, label_map: dict[str, str] | None) 
         return list(column.names)
     if label_map:
         return list(label_map)
-    values = {v for v in table.column(column.name) if v is not None and v != ""}
+    values = [v for v in table.column(column.name) if v is not None and v != ""]
+    if any(not isinstance(v, (str, int, float, bool)) for v in values):
+        raise SourceError(
+            f"the label column {column.name} holds lists or objects; pick a column whose "
+            "values are single words or numbers"
+        )
+    values = set(values)
     numeric = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values)
     return [_raw(v) for v in sorted(values, key=float if numeric else str)]
 

@@ -393,3 +393,30 @@ def test_a_name_a_job_writes_is_not_free(studio):
     finally:
         del jobs["get"]
     assert not folder.exists() and not (studio.data / "incoming.jsonl").exists()
+
+
+DEEP = '{"text": "a", "topic": ' + "[" * 100_000 + "]" * 100_000 + "}\n"
+LONG_INT = '{"text": "a", "topic": ' + "9" * 5000 + "}\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "kind", "status", "message"),
+    [
+        ("text,topic\nrates rise,fed\nbuy apple\n", "csv", 200, None),
+        ("text,topic\n" + "x" * 200_000 + ",fed\n", "csv", 200, None),
+        ('text,topic\n"rates rise,fed\nbuy,analyst\n', "csv", 422, "line 1: not valid CSV"),
+        (DEEP, "jsonl", 422, "line 1 is nested too deeply"),
+        (LONG_INT, "jsonl", 422, "number too long"),
+        ('{"text": "a", "topic": {"name": "fed"}}\n', "jsonl", 422, "lists or objects"),
+    ],
+    ids=["short row", "long cell", "unclosed quote", "deep", "long number", "object label"],
+)
+def test_rows_that_do_not_read_are_named_not_a_500(studio, text, kind, status, message):
+    upload = {"name": "rows", "text": text, "format": kind, "text_column": "text",
+              "label_column": "topic"}  # fmt: skip
+    added = studio.post("/studio/api/data", json=upload)
+    assert added.status_code == status, added.text
+    if message is not None:
+        assert message in added.json()["error"]["message"]
+    columns = studio.post("/studio/api/data/columns", json={"text": text, "format": kind})
+    assert columns.status_code in (200, 422), columns.text  # never a 500

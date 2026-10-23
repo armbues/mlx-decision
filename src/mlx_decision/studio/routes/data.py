@@ -162,9 +162,9 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         kind = upload_kind(body)
         try:
             table = await asyncio.to_thread(table_from_text, text, kind, "upload")
+            return await asyncio.to_thread(describe_table, table)
         except SourceError as error:
             raise ApiError(422, str(error), param="text") from None
-        return await asyncio.to_thread(describe_table, table)
 
     @router.get("/{name}")
     async def describe_data(name: str, split: str | None = None):
@@ -451,12 +451,13 @@ def save_rows(files: Workspace, name: str, text: str, kind: str, columns: dict) 
         table = table_from_text(text, kind, name)
         mapping = guess(table, "text", columns)
         built = build(table, mapping, Wording(id=name), list(range(table.length)), raw=True)
+        classes = class_names(table.columns[columns["label"]], table, None)
     except SourceError as error:
         raise ApiError(422, str(error), param="text") from None
     if not built.examples:
         raise ApiError(422, "no row has a label value", param="label_column")
     made = Made(built.examples, table, mapping, built.skipped, columns["label"])
-    made.classes = class_names(table.columns[columns["label"]], table, None)
+    made.classes = classes
     folder = files.dataset_folder(name)
     dataset = Dataset(
         folder,

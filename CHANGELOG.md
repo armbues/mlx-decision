@@ -130,6 +130,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `data` on a local CSV or JSON lines file: a row with fewer cells than
+  the header reads its missing cells as empty, and a cell over 128 KB is
+  read; an unclosed quote, a line nested too deeply or holding a number
+  too long, and a label column of lists or objects end with an error
+  naming the file and line instead of a traceback.
 - `server` now refuses requests from other sites' pages and requests that
   name another address in `Host` (`403`), as the Studio does: a web page
   could make it run a model, and with DNS rebinding read the answers.

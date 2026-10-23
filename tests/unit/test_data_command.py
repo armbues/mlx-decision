@@ -362,3 +362,19 @@ def test_subset_and_its_old_name_config_which_warns(monkeypatch, tmp_path):
     assert both.exit_code == 2 and "--config is the old name of --subset" in both.output
     shown = runner.invoke(app, ["data", "--help"], terminal_width=200).stdout
     assert "--subset" in shown and "--config" not in shown
+
+
+def test_a_file_that_does_not_read_names_its_line(tmp_path):
+    from mlx_decision.data.sources import load_file
+
+    ragged = tmp_path / "ragged.csv"
+    ragged.write_text("text,label\nhello,a\nworld\n")
+    assert load_file(ragged).length == 2  # the short row's label is empty
+    quote = tmp_path / "quote.csv"
+    quote.write_text('text,label\n"open,a\nnext,b\n')
+    with pytest.raises(SourceError, match=r"quote.csv line 1: not valid CSV"):
+        load_file(quote)
+    deep = tmp_path / "deep.jsonl"
+    deep.write_text('{"a": 1}\n{"a": ' + "[" * 100_000 + "]" * 100_000 + "}\n")
+    with pytest.raises(SourceError, match=r"deep.jsonl line 2 is nested too deeply"):
+        load_file(deep)

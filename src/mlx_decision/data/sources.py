@@ -11,7 +11,7 @@ CSV and JSON lines files are read with the standard library.
 import csv
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -255,8 +255,15 @@ def _kind(values: list) -> str:
     return OTHER
 
 
-def _csv_value(text: str) -> Any:
-    """A CSV cell as a number or a boolean when it is one, else the text."""
+# The longest CSV cell read (the csv module's default is 128 KB).
+MAX_CSV_CELL = 2**31 - 1
+
+
+def _csv_value(text: str | None) -> Any:
+    """A CSV cell as a number or a boolean when it is one, else the text; a cell a
+    short row leaves out is None (no value)."""
+    if text is None:
+        return None
     for convert in (int, float):
         try:
             return convert(text)
@@ -265,6 +272,40 @@ def _csv_value(text: str) -> Any:
     if text.lower() in ("true", "false"):
         return text.lower() == "true"
     return text
+
+
+def _csv_rows(handle: Iterable[str], where: str) -> list[dict]:
+    """The rows of CSV text with a header row; ``SourceError`` naming the line for
+    CSV that does not read (an unclosed quote)."""
+    csv.field_size_limit(max(csv.field_size_limit(), MAX_CSV_CELL))
+    reader = csv.DictReader(handle, strict=True)
+    rows = []
+    try:
+        for row in reader:
+            rows.append({key: _csv_value(value) for key, value in row.items() if key is not None})
+    except csv.Error as error:
+        raise SourceError(f"{where}line {reader.line_num}: not valid CSV ({error})") from None
+    return rows
+
+
+def _jsonl_rows(lines: Iterable[str], where: str) -> list[dict]:
+    """The objects of JSON lines; ``SourceError`` naming the line for one that is
+    not a JSON object (or nests too deep, or holds a number too long)."""
+    from ..errors import DecisionError
+    from ..types import decode_json
+
+    rows = []
+    for number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            row = decode_json(line, f"{where}line {number}")
+        except DecisionError as error:
+            raise SourceError(error.message) from None
+        if not isinstance(row, dict):
+            raise SourceError(f"{where}line {number}: not an object")
+        rows.append(row)
+    return rows
 
 
 def _from_rows(rows: list[dict], name: str, origin: dict) -> Table:
@@ -290,23 +331,9 @@ def table_from_text(text: str, kind: str, name: str) -> Table:
     import io
 
     if kind == "csv":
-        reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff"), newline=""))
-        rows = [
-            {key: _csv_value(value) for key, value in row.items() if key is not None}
-            for row in reader
-        ]
+        rows = _csv_rows(io.StringIO(text.lstrip("\ufeff"), newline=""), "")
     elif kind == "jsonl":
-        rows = []
-        for number, line in enumerate(text.splitlines(), 1):
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise SourceError(f"line {number}: not JSON ({error.msg})") from None
-            if not isinstance(row, dict):
-                raise SourceError(f"line {number}: not an object")
-            rows.append(row)
+        rows = _jsonl_rows(text.splitlines(), "")
     else:
         raise SourceError("the file is a .csv or a .jsonl file")
     if not rows:
@@ -322,23 +349,10 @@ def load_file(path: Path) -> Table:
         return _from_dataset(dataset, path.stem, None, {"path": str(path)})
     if suffix == ".csv":
         with open(path, newline="", encoding="utf-8-sig") as file:
-            rows = [
-                {key: _csv_value(value) for key, value in row.items() if key is not None}
-                for row in csv.DictReader(file)
-            ]
+            rows = _csv_rows(file, f"{path} ")
     elif suffix in (".jsonl", ".json"):
-        rows = []
         with open(path, encoding="utf-8") as file:
-            for number, line in enumerate(file, 1):
-                if not line.strip():
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError as error:
-                    raise SourceError(f"{path} line {number}: not JSON ({error.msg})") from None
-                if not isinstance(row, dict):
-                    raise SourceError(f"{path} line {number}: not an object")
-                rows.append(row)
+            rows = _jsonl_rows(file, f"{path} ")
     else:
         raise SourceError(f"{path}: not a .csv, .jsonl or .parquet file")
     if not rows:
