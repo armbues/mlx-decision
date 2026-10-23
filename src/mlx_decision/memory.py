@@ -12,6 +12,7 @@ import struct
 from collections.abc import Iterable
 from pathlib import Path
 
+from .errors import DecisionError
 from .registry import MARKER_FILE, detect_family, resolve
 
 MARGIN = 1.1
@@ -31,8 +32,9 @@ FLOAT_DTYPES = {"F64", "F32", "F16", "BF16"}
 LOAD_DTYPE_BYTES = {"float32": 4, "float16": 2, "bfloat16": 2}
 
 
-class ModelTooLargeError(ValueError):
-    """A model that needs more memory than the limit allows."""
+class ModelTooLargeError(DecisionError):
+    """A model that needs more memory than the limit allows (a ``DecisionError``,
+    so a ``ValueError`` too)."""
 
     def __init__(self, message: str, required: int, available: int):
         super().__init__(message)

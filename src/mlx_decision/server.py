@@ -251,12 +251,12 @@ def add_jev_api(
             answered = await gpu.run(answer, pool, name if isinstance(name, str) else None, body)
         except Busy as error:
             return busy_response(error)
+        except ModelTooLargeError as error:  # a DecisionError, named by the model
+            return error_response(422, str(error), "invalid_request_error", "model")
         except DecisionError as error:
             return error_response(
                 422, error.message, "invalid_request_error", error.param, error.code
             )
-        except ModelTooLargeError as error:
-            return error_response(422, str(error), "invalid_request_error", "model")
         except Exception:
             logger.exception("request failed")
             return error_response(500, "the model failed to answer the request", "api_error")

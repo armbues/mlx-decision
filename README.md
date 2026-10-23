@@ -182,8 +182,10 @@ H2O-Lightning and d1 only lower),
 H2O-Lightning's [yes/no floor](#h2o-lightning), and `prefix_cache_gb` sets
 how much memory Clef, H2O-Lightning and d1 keep for
 [recent states](#reusing-a-state) (default 2, 0 turns it off).
-`check_memory=False` skips the memory check; a model that does not fit
-raises `mlx_decision.ModelTooLargeError` otherwise.
+`check_memory=False` (by keyword) skips the memory check; a model that
+does not fit raises `mlx_decision.ModelTooLargeError` otherwise, a
+`DecisionError`. Without Apple Silicon (no Metal GPU), loading raises
+`mlx_decision.PlatformError`.
 `model.info()` describes the loaded model as JSON data: family,
 precision, input limit, option limits and whether it takes images.
 

@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 import mlx_decision
 from fake_backend import write_fitted, write_model
 from mlx_decision.cli import app as cli_app
+from mlx_decision.config import Config
 from mlx_decision.memory import working_set
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, templates
@@ -724,3 +725,18 @@ def test_a_write_the_disk_refuses_names_the_file_and_why(studio):
     assert error["type"] == "api_error"
     assert error["message"].startswith("could not write sets/")
     assert error["message"].endswith(": permission denied")
+
+
+def test_a_run_on_a_model_over_the_budget_is_a_422_on_model(tmp_path):
+    from fake_backend import write_sized_model
+
+    write_sized_model(tmp_path / "big" / "huge", 10**4)
+    pool = ModelPool(discover([tmp_path / "big"]), budget=2200)
+    config = Config(tmp_path / "config.toml")
+    app = create_studio(pool, workspace=tmp_path / "ws", config=config, load_default=False)
+    with TestClient(app, base_url=HERE, client=("127.0.0.1", 50000)) as client:
+        client.get(f"/?token={app.state.session.token}")
+        response = client.post("/studio/api/run", json={"request": BODY, "model": "huge"})
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["param"] == "model" and error["message"].startswith("huge needs about ")

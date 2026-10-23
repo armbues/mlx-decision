@@ -10,7 +10,7 @@ at a time: the first is released before the second loads.
 import gc
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,7 @@ class EvalResult:
     """The data scored and each model's results, in the order given."""
 
     data: dict[str, Any]
-    models: list[ModelEval] = field(default_factory=list)
+    models: list[ModelEval]
 
     def as_json(self) -> dict[str, Any]:
         return {"data": self.data, "models": [m.as_json() for m in self.models]}
@@ -159,12 +159,10 @@ def evaluate(
     if not labelled:
         raise ValueError("the data has no labels to score against")
     info = {"file": source.source, "sha256": source.sha256, "examples": len(source.examples)}
-    result = EvalResult(info)
-    for name in [model] + ([compare] if compare is not None else []):
-        result.models.append(
-            _score_model(
-                name, source.examples, labelled, emit, cancelled, check_memory, load_options
-            )
-        )
+    scored = [
+        _score_model(name, source.examples, labelled, emit, cancelled, check_memory, load_options)
+        for name in [model] + ([compare] if compare is not None else [])
+    ]
+    result = EvalResult(info, scored)
     emit(Event("done", metrics=result.as_json()))
     return result

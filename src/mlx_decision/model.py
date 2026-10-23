@@ -50,7 +50,7 @@ class DecisionModel:
         }
 
     def decide(
-        self, state: Any, questions: Mapping[str, Any], images: Sequence[Any] | None = None
+        self, state: Any, questions: Mapping[str, Any], *, images: Sequence[Any] | None = None
     ) -> Result:
         """Answer ``questions`` (dicts or ``Choice``/``Score``/``Noul``) about ``state``.
 
@@ -185,7 +185,7 @@ def _checked(
     return request, lifted
 
 
-def load(model: str | Path, check_memory: bool = True, **options) -> DecisionModel:
+def load(model: str | Path, *, check_memory: bool = True, **options) -> DecisionModel:
     """Load a decision model from a local folder or a Hugging Face repo id.
 
     ``options`` go to the model family's loader. For Clef: ``max_input_tokens``

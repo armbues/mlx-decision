@@ -253,10 +253,10 @@ def run_router(gpu: Gpu, models: Models, recorder: Recorder, max_body_bytes: int
         check_data_urls(decision)
         try:
             answered = await gpu.run(answer, pool, name, decision, models.check)
+        except ModelTooLargeError as error:  # a DecisionError, named by the model
+            raise ApiError(422, str(error), param="model") from None
         except (Busy, DecisionError):
             raise
-        except ModelTooLargeError as error:
-            raise ApiError(422, str(error), param="model") from None
         except Exception:
             logger.exception("the run failed")
             raise ApiError(

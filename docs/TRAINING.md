@@ -581,9 +581,9 @@ print(report.as_json())
 ```
 
 `fit` raises `Cancelled` when cancelled (nothing written),
-`mlx_decision.data.format.DataError` for a bad training file (with its
-`line`), and `mlx_decision.ModelTooLargeError` when the run does not
-fit. Further
+`mlx_decision.DataError` for a bad training file (with its `line`),
+and `mlx_decision.ModelTooLargeError` when the run does not fit (both
+are `DecisionError`s). Further
 options: `validation=`, `head_only=`, `early_stop=`, `overwrite=` and
 the loader's options (`max_input_tokens=`).
 
