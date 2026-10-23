@@ -35,8 +35,9 @@ H2O-Lightning's, whose release runs on vLLM with CUDA. d3-flash's own runtime wa
 test set, not per request: it took 2.9 times as long. How the models
 differ is in [Models](#models).
 
-This is alpha software: the interface may still change. Questions and bug
-reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues).
+What stays stable from 1.0 on, and what may still change, is in
+[docs/STABILITY.md](https://github.com/armbues/mlx-decision/blob/main/docs/STABILITY.md).
+Questions and bug reports go to the [issue tracker](https://github.com/armbues/mlx-decision/issues).
 
 ## Install
 

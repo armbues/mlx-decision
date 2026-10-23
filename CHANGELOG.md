@@ -2,12 +2,19 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/) (before 1.0, minor versions may
-change the interface).
+[Semantic Versioning](https://semver.org/): from 1.0, what
+[docs/STABILITY.md](docs/STABILITY.md) calls stable does not break before
+2.0 (before 1.0, minor versions could change the interface).
 
 ## [Unreleased]
 
 ### Added
+
+- `docs/STABILITY.md`: what stays stable until 2.0 (the Python inference
+  API, the wire format, MCP `decide`, the inference and serving commands,
+  the `--events` envelope, fitted models, training files, the config
+  file, the Studio's workspace), what is still provisional (training),
+  how renamed names keep working, and the exit codes.
 
 - Perplexity's pplx-decider-v1.2 (27B) and pplx-decider-flash-v1.2
   (4B), in their joint request format: the state and all questions of a

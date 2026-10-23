@@ -379,6 +379,7 @@
   "mcp": {
    "--api-key": {
     "default": null,
+    "envvar": "MLX_DECISION_API_KEY",
     "kind": "option",
     "multiple": false,
     "names": {
@@ -647,6 +648,7 @@
   "server": {
    "--api-key": {
     "default": null,
+    "envvar": "MLX_DECISION_API_KEY",
     "kind": "option",
     "multiple": false,
     "names": {
@@ -760,6 +762,7 @@
   "web": {
    "--api-key": {
     "default": null,
+    "envvar": "MLX_DECISION_API_KEY",
     "kind": "option",
     "multiple": false,
     "names": {
@@ -899,6 +902,11 @@
   "models_dir": true,
   "port": true,
   "workspace": true
+ },
+ "environment": {
+  "MLX_DECISION_API_KEY": true,
+  "MLX_DECISION_HOME": true,
+  "MLX_DECISION_WATCH_STDIN": true
  },
  "errors": {
   "DataError": {

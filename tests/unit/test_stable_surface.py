@@ -126,6 +126,8 @@ def flags(command: click.Command) -> dict[str, Any]:
             "multiple": bool(param.multiple),
             "required": bool(param.required),
         }
+        if getattr(param, "envvar", None):
+            entry["envvar"] = param.envvar
         if isinstance(param.type, click.Choice):
             entry["choices"] = {str(choice): True for choice in param.type.choices}
         if not callable(param.default):
@@ -144,12 +146,13 @@ def routes() -> dict[str, Any]:
 
 def surface() -> dict[str, Any]:
     from mlx_decision.cli import app
-    from mlx_decision.config import _READERS
+    from mlx_decision.config import _READERS, HOME_VARIABLE
     from mlx_decision.data.dataset import DATASET_FORMAT
     from mlx_decision.events import FINAL_STAGES, Event
     from mlx_decision.fitted import FINGERPRINT_ALGORITHM
     from mlx_decision.fitted import FORMAT as FIT_FORMAT
     from mlx_decision.studio.workspace import WORKSPACE_FORMAT
+    from mlx_decision.watchdog import WATCH_VARIABLE
 
     exported = {name: getattr(mlx_decision, name) for name in mlx_decision.__all__}
     types, errors = {}, {}
@@ -163,6 +166,11 @@ def surface() -> dict[str, Any]:
             types[name] = {"fields": fields(value), "members": members(value)}
     model = mlx_decision.DecisionModel
     group = typer.main.get_command(app)
+    commands = {name: flags(group.commands[name]) for name in COMMANDS}
+    from_flags = {
+        entry["envvar"] for command in commands.values() for entry in command.values()
+        if "envvar" in entry
+    }  # fmt: skip
     return {
         "exports": {name: True for name in mlx_decision.__all__},
         "load": signature(mlx_decision.load),
@@ -172,7 +180,10 @@ def surface() -> dict[str, Any]:
         },
         "types": types,
         "errors": errors,
-        "commands": {name: flags(group.commands[name]) for name in COMMANDS},
+        "commands": commands,
+        "environment": {
+            name: True for name in sorted({HOME_VARIABLE, WATCH_VARIABLE, *from_flags})
+        },
         "events": {
             "fields": {f.name: True for f in dataclasses.fields(Event)},
             "final_stages": {stage: True for stage in FINAL_STAGES},
@@ -256,3 +267,20 @@ def test_a_removed_flag_and_a_renamed_field_are_breaking():
     assert broken == ["commands.run.json: gone", "types.Usage.input_tokens: gone"]
     assert added == ["types.Usage.tokens_in"]
     assert differences(now, now) == ([], [])
+
+
+def test_the_stability_page_names_everything_the_snapshot_holds():
+    page = (Path(__file__).parents[2] / "docs" / "STABILITY.md").read_text()
+    snapshot = json.loads(SNAPSHOT.read_text())
+    named = [
+        *snapshot["exports"],
+        *snapshot["DecisionModel"],
+        *snapshot["commands"],
+        *snapshot["events"]["fields"],
+        *snapshot["events"]["final_stages"],
+        *snapshot["config_keys"],
+        *snapshot["environment"],
+        *(path.lstrip("/").removeprefix("v1/") for path in snapshot["routes"]),
+    ]
+    missing = [name for name in named if f"`{name}" not in page and f"{name}`" not in page]
+    assert not missing, f"docs/STABILITY.md does not name: {', '.join(missing)}"

@@ -5,6 +5,11 @@ the Mac it runs on, and serve the result like any other model. Four kinds
 of fit cover the six model families, from a calibration in seconds to
 fine-tuning a whole encoder. None of them needs more than MLX.
 
+Training is newer than the rest of mlx-decision: the flags of `data` and
+`training`, the Python training API and `dataset.json` are provisional
+and may change in a minor release ([Stability](STABILITY.md)). Fitted
+models and training files in JSON lines are stable.
+
 The workflow has four steps:
 
 1. **Data**: turn a dataset into labelled examples, one JSON request per
@@ -434,10 +439,15 @@ lines on stdout instead, one per event, for other programs to follow:
 The stages are `check`, `before`, `features`, `train`, `calibrate`,
 `after`, `write` and `done`; a run goes through those its kinds need. A
 run that fails ends with `{"stage": "error", "message": ...}`, a
-cancelled one with `{"stage": "cancelled"}`. Ctrl-C stops the run at its
-next step: the next example scored, the next training batch, or the next
-20 steps of a search. A second Ctrl-C stops it at once. A stopped run
-writes nothing: there is no half-written folder.
+cancelled one with `{"stage": "cancelled"}`. The lines' keys and the
+three final stages (`done`, `error`, `cancelled`) are stable; the stages
+before them and what `metrics` holds are provisional
+([Stability](STABILITY.md#provisional)).
+
+Ctrl-C stops the run at its next step: the next example scored, the next
+training batch, or the next 20 steps of a search. A second Ctrl-C stops
+it at once. A stopped run writes nothing: there is no half-written
+folder.
 
 A program that runs `training fit --events` can have the run stop when
 the program ends: it sets `MLX_DECISION_WATCH_STDIN=1` in the run's
