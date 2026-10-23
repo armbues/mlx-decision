@@ -1,0 +1,42 @@
+{
+  "format": 1,
+  "family": "fake",
+  "base": {
+    "path": "/fixture/base"
+  },
+  "fingerprint": "10370b5ac2bc948be75997e59930e6495d17074f041d1eac87824f68de0e1f7d",
+  "fit": {
+    "kinds": [
+      "calibrate"
+    ],
+    "questions": [
+      {
+        "id": "team",
+        "type": "choice",
+        "options": [
+          "billing",
+          "tech",
+          "sales"
+        ]
+      }
+    ],
+    "metrics": {
+      "team": {
+        "n": 20,
+        "before": {
+          "accuracy": 0.1,
+          "macro_f1": 0.0606,
+          "ece": 0.4
+        },
+        "after": {
+          "accuracy": 0.8,
+          "macro_f1": 0.2963,
+          "ece": 0.0
+        }
+      }
+    },
+    "seed": 0,
+    "data": "6b95248b79b5bcd6239c11eda3f17c5eac2ee73d9209c6b85dcd8b978efeee61",
+    "version": "0.9.1"
+  }
+}

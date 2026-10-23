@@ -98,6 +98,11 @@ change the interface).
   renames it when complete; Ctrl-C (or a failed download) removes it, and
   removes a model's new folder in the Hugging Face cache too. `convert`
   stops at the next tensor on Ctrl-C. Neither leaves a half model behind.
+- A fitted model from a newer release (a kind of fit, tensors or a base
+  fingerprint this release does not know) is refused with a message
+  naming it, instead of loading without the parts it does not know. Fits
+  now record how their base's fingerprint was made; fits from 0.9 load
+  as before.
 
 ### Fixed
 

@@ -7,6 +7,8 @@ metrics, seed, data hash, package version); ``fit.safetensors`` holds the
 trained tensors; ``training.json`` the full report. The base's weights are
 not copied. Loading resolves the base, refuses it if it changed since the
 fit, loads it and wraps it in a ``FittedBackend`` named after the folder.
+A fit from a newer version (a kind, a tensor group or a fingerprint algorithm
+this one does not know) is refused before anything loads, never half applied.
 
 Per question (same id, type and options as fitted): a readout's rows and
 biases replace the release's (families with readout hooks), then a
@@ -45,12 +47,32 @@ REPORT_FILE = "training.json"
 # Kinds that change answers per question, and kinds whose tensors load into the base.
 QUESTION_KINDS = ("calibrate", "readout")
 WEIGHT_KINDS = ("head", "finetune")
+# The tensor groups of ``fit.safetensors`` (the name before the first dot) and the
+# kinds that write them; a fit with any other group or kind is from a newer version.
+TENSOR_GROUPS = {
+    "calibration": ("calibrate",),
+    "readout": ("readout",),
+    "head": ("head", "finetune"),
+    "encoder": ("finetune",),
+}
+# How ``fingerprint`` hashes the base, named in the marker's ``fingerprint_algorithm``;
+# a marker without the field (fits from 0.9) used this one.
+FINGERPRINT_ALGORITHM = "sha256-files-headers"
 
 log = logging.getLogger(__name__)
 
 
 class BaseModelError(ValueError):
     """A fitted model's base that is missing or no longer the one it was fitted on."""
+
+
+def _newer(path: Path, what: str) -> ValueError:
+    from . import __version__
+
+    return ValueError(
+        f"{path.name}: {what}, which mlx-decision {__version__} does not know; a newer "
+        "mlx-decision wrote this fitted model (upgrade to load it)"
+    )
 
 
 def option_ids(question) -> list[str]:
@@ -287,10 +309,34 @@ def is_fitted(path: Path) -> bool:
 
 
 def read_marker(path: Path) -> dict[str, Any]:
+    """The marker of a fitted model folder, refused (``ValueError``) when it is not one
+    or names a format, kind or fingerprint algorithm this version does not know."""
     marker = json.loads((path / MARKER_FILE).read_text())
-    if marker.get("format") != FORMAT or not isinstance(marker.get("base"), dict):
+    version = marker.get("format")
+    if isinstance(version, int) and version > FORMAT:
+        raise _newer(path, f"its format is {version}")
+    if version != FORMAT or not isinstance(marker.get("base"), dict):
         raise ValueError(f"{path}: not a fitted model this version reads (format {FORMAT})")
+    for kind in (marker.get("fit") or {}).get("kinds", []):
+        if kind not in QUESTION_KINDS + WEIGHT_KINDS:
+            raise _newer(path, f"its fit has the kind {kind!r}")
+    algorithm = marker.get("fingerprint_algorithm", FINGERPRINT_ALGORITHM)
+    if algorithm != FINGERPRINT_ALGORITHM:
+        raise _newer(path, f"its base's fingerprint uses the algorithm {algorithm!r}")
     return marker
+
+
+def check_tensors(path: Path) -> None:
+    """Refuse a ``fit.safetensors`` holding a tensor group no known kind writes (from its
+    header; nothing is loaded), so a newer fit is never answered without its tensors."""
+    from .memory import read_header
+
+    if not (path / FIT_FILE).exists():
+        return
+    for key in read_header(path / FIT_FILE):
+        group = key.partition(".")[0]
+        if group not in TENSOR_GROUPS:
+            raise _newer(path, f"its {FIT_FILE} holds {key!r}")
 
 
 def resolve_base(path: Path, marker: Mapping[str, Any]) -> Path:
@@ -337,6 +383,8 @@ def read_fit(path: Path, marker: Mapping[str, Any]) -> Fit:
     tensors = mx.load(str(path / FIT_FILE)) if (path / FIT_FILE).exists() else {}
     for key, value in tensors.items():
         part, _, rest = key.partition(".")
+        if part not in TENSOR_GROUPS:
+            raise _newer(path, f"its {FIT_FILE} holds {key!r}")
         if part not in ("calibration", "readout"):
             continue  # weight kinds' tensors, read by the family's loader
         index, _, name = rest.partition(".")
@@ -402,6 +450,7 @@ class FittedFolder:
 def open_folder(path: Path) -> FittedFolder:
     """Read a fitted model folder and resolve and check its base (``BaseModelError``)."""
     marker = read_marker(path)
+    check_tensors(path)
     base = resolve_base(path, marker)
     check_base(path, marker, base)
     family = detect_family(base)
@@ -467,6 +516,7 @@ def write(
             "family": family,
             "base": dict(base),
             "fingerprint": base_fingerprint,
+            "fingerprint_algorithm": FINGERPRINT_ALGORITHM,
             "fit": {
                 "kinds": fit.kinds,
                 "questions": [

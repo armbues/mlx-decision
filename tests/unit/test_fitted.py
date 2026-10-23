@@ -321,3 +321,65 @@ def test_a_shared_h2o_base_answers_as_before_beside_its_readout_fit(tmp_path):
     assert pool.get("h2o-fit").backend.base is pool.get("tiny-h2o").backend
     assert got_base.to_wire()["answers"] == want
     assert got_fit.answers["team"].choice != got_base.answers["team"].choice
+
+
+FIXTURES = Path(__file__).parent.parent / "fixtures"
+
+
+def edit_marker(folder: Path, **changes) -> None:
+    marker = json.loads((folder / MARKER_FILE).read_text())
+    for key, value in changes.items():
+        if key == "kinds":
+            marker["fit"]["kinds"] = value
+        else:
+            marker[key] = value
+    (folder / MARKER_FILE).write_text(json.dumps(marker))
+
+
+def test_new_fits_name_their_fingerprint_algorithm(tmp_path, base):
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    marker = json.loads((folder / MARKER_FILE).read_text())
+    assert marker["fingerprint_algorithm"] == fitted.FINGERPRINT_ALGORITHM
+
+
+@pytest.mark.parametrize(
+    ("changes", "named"),
+    [
+        ({"kinds": ["calibrate", "lora"]}, "its fit has the kind 'lora'"),
+        ({"fingerprint_algorithm": "blake3"}, "its base's fingerprint uses the algorithm 'blake3'"),
+        ({"format": 2}, "its format is 2"),
+    ],
+)
+def test_a_fit_from_a_newer_version_is_refused_naming_what_it_does_not_know(
+    tmp_path, base, changes, named
+):
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    edit_marker(folder, **changes)
+    with pytest.raises(ValueError, match=f"fit: {named}, .*a newer mlx-decision wrote") as error:
+        mlx_decision.load(folder)
+    assert not isinstance(error.value, BaseModelError)  # not "the base has changed"
+
+
+def test_a_tensor_group_no_kind_owns_is_refused_before_anything_loads(tmp_path, base):
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    tensors = {**mx.load(str(folder / "fit.safetensors")), "lora.0.a": mx.zeros((2, 2))}
+    mx.save_safetensors(str(folder / "fit.safetensors"), tensors)
+    newer = "fit: its fit.safetensors holds 'lora.0.a', .*a newer mlx-decision wrote"
+    with pytest.raises(ValueError, match=newer):
+        mlx_decision.load(folder)
+    marker = json.loads((folder / MARKER_FILE).read_text())
+    with pytest.raises(ValueError, match=newer):
+        fitted.read_fit(folder, marker)  # also when the fit is read on its own
+
+
+def test_a_fit_written_by_0_9_1_still_loads(tmp_path):
+    copy = shutil.copytree(FIXTURES / "fitted-0.9.1", tmp_path / "fitted-0.9.1")
+    marker = json.loads((copy / "fit" / MARKER_FILE).read_text())
+    assert "fingerprint_algorithm" not in marker and marker["fit"]["version"] == "0.9.1"
+    edit_marker(copy / "fit", base={"path": str(copy / "base")})
+    model = mlx_decision.load(copy / "fit")
+    answer = model.decide("anything", {"team": TEAM}).answers["team"]
+    want = json.loads((copy / "answer.json").read_text())  # what 0.9.1 answered
+    assert answer.choice == want["choice"]
+    assert answer.probabilities == pytest.approx(want["probabilities"], abs=1e-6)
+    assert model.info()["fit"]["kinds"] == ["calibrate"]

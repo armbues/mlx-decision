@@ -457,9 +457,9 @@ command line and asks before starting. `--yes` takes the defaults, and
 A fitted model is a folder:
 
 - `mlx_decision.json`: the family, the base (a Hugging Face repo id at
-  its commit, or an absolute path), a fingerprint of the base, the kinds,
-  the questions with their options, the metrics, the seed and the data
-  file's hash.
+  its commit, or an absolute path), a fingerprint of the base and the
+  algorithm that made it, the kinds, the questions with their options,
+  the metrics, the seed and the data file's hash.
 - `fit.safetensors`: the trained tensors only. The base's weights are
   not copied.
 - `training.json`: the full report and the options of the run.
@@ -489,6 +489,13 @@ and compares its fingerprint: its config files and the names, shapes and
 types of its weights. A missing, replaced or re-quantized base is
 refused with a message naming it. A fit made on a quantized copy needs
 that copy; fit again to use another.
+
+**Fits from other versions.** A fitted model written by mlx-decision 0.9
+or later loads in every 1.x release. One written by a newer release that
+uses something this one does not know (a new kind of fit, tensors it
+does not read, another way of fingerprinting the base) is refused with a
+message naming it, instead of being answered without its fit; upgrade
+mlx-decision to load it.
 
 **Fits on unchanged weights share their base.** A calibration or readout
 fit changes only probabilities and readout rows, so the server loads the

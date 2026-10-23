@@ -1,0 +1,91 @@
+{
+  "version": "0.9.1",
+  "base": {
+    "path": "/fixture/base",
+    "name": "base",
+    "family": "fake",
+    "precision": null
+  },
+  "options": {
+    "method": "auto",
+    "kinds": [
+      "calibrate"
+    ],
+    "seed": 0,
+    "holdout": 0.2,
+    "validation": null,
+    "epochs": 3,
+    "head_only": false,
+    "early_stop": true,
+    "load_options": {}
+  },
+  "data": {
+    "file": "/fixture/data.jsonl",
+    "sha256": "6b95248b79b5bcd6239c11eda3f17c5eac2ee73d9209c6b85dcd8b978efeee61",
+    "examples": 100,
+    "holdout": 20,
+    "fit": 40,
+    "dev": 40,
+    "labels": {
+      "team": {
+        "billing": 8,
+        "sales": 8,
+        "tech": 64
+      }
+    },
+    "refused": 0,
+    "truncated": 0
+  },
+  "estimate": {
+    "peak_gb": 0.0
+  },
+  "warnings": [
+    "question 'team': fewer than 10 training examples for billing (8), sales (8)"
+  ],
+  "questions": {
+    "team": {
+      "before": {
+        "n": 20,
+        "refused": 0,
+        "truncated": 0,
+        "accuracy": 0.1,
+        "macro_f1": 0.0606,
+        "ece": 0.4
+      },
+      "after": {
+        "n": 20,
+        "refused": 0,
+        "truncated": 0,
+        "accuracy": 0.8,
+        "macro_f1": 0.2963,
+        "ece": 0.0
+      }
+    }
+  },
+  "training": null,
+  "calibrations": [
+    {
+      "question": "team",
+      "options": [
+        "billing",
+        "tech",
+        "sales"
+      ],
+      "temperature": 3.118855,
+      "bias": [
+        -1.134078860282898,
+        1.075366497039795,
+        -0.7818309664726257
+      ]
+    }
+  ],
+  "seconds": {
+    "check": 0.04,
+    "before": 0.0,
+    "features": 0.0,
+    "calibrate": 0.41,
+    "after": 0.0,
+    "write": 0.0,
+    "total": 0.46
+  }
+}
