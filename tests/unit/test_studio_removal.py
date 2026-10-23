@@ -196,3 +196,37 @@ def test_clear_leaves_a_linked_model_as_delete_does(studio, tmp_path):
     cleared = studio.post("/studio/api/workspace/folders/models/clear", json={})
     assert cleared.status_code == 200, cleared.text
     assert (studio.made / "linked").is_symlink() and elsewhere.is_dir()
+
+
+def test_an_old_fit_entry_does_not_take_a_later_fit_of_its_name(studio):
+    from test_studio_jobs_api import write_data
+
+    write_data(studio.made.parent / "data" / "tickets.jsonl")
+    jobs = studio.app_state.jobs
+    jobs.command = [sys.executable, str(TESTS / "fake_job.py"), "--steps", "2", "--fit-events"]
+    pool = studio.app_state.gpu.pool
+
+    def fit(seed):
+        body = {"kind": "fit", "model": "conv", "data": "tickets", "name": "mine", "seed": seed}
+        response = studio.post("/studio/api/jobs", json=body)
+        assert response.status_code == 202, response.text
+        job = wait_for(studio, response.json()["job"]["id"])
+        deadline = time.monotonic() + 10
+        while "mine" not in pool.specs:  # the rescan after done
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+        return job
+
+    old = fit(1)
+    assert old["outcome"] == "done" and old["wrote"] and old["replaced"] is False
+    assert delete(studio, "mine").status_code == 200
+    new = fit(2)
+    old = studio.get(f"/studio/api/jobs/{old['id']}").json()["job"]
+    assert old["replaced"] is True
+    report = studio.get(f"/studio/api/jobs/{old['id']}/report")
+    assert report.status_code == 404 and report.json()["error"]["code"] == "model_gone"
+    assert "replaced by a later fit" in report.json()["error"]["message"]
+    response = studio.delete(f"/studio/api/jobs/{old['id']}?model=true", headers=JSON)
+    assert response.json() == {"job": old["id"], "model": None}  # the new model stays
+    assert (studio.made / "mine").is_dir() and "mine" in listed(studio)
+    assert studio.get(f"/studio/api/jobs/{new['id']}/report").status_code == 200

@@ -29,6 +29,7 @@ writes made on the loop.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -43,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from ..events import FINAL_STAGES
+from ..fitted import REPORT_FILE
 from ..gpu import Gpu
 from ..watchdog import WATCH_VARIABLE, remove
 from .workspace import INTERRUPTED, JOB_FILE, Workspace, check_name, encode, now
@@ -64,6 +66,23 @@ STDERR_TAIL = 20  # lines of stderr a failed job reports
 LINE_LIMIT = 2**24  # the longest event line read (an evaluation's results)
 
 logger = logging.getLogger(__name__)
+
+
+def report_digest(folder: Path) -> str | None:
+    """The SHA-256 of a fitted model's report, which differs from fit to fit."""
+    try:
+        return hashlib.sha256((Path(folder) / REPORT_FILE).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def with_replaced(summary: dict[str, Any]) -> dict[str, Any]:
+    """``summary`` with ``replaced``: a fit that ended done whose folder now holds
+    another fit's model (one fitted later under the same name). Unknown for jobs
+    recorded before ``wrote``, so False."""
+    wrote, output = summary.get("wrote"), summary.get("output")
+    current = report_digest(Path(output)) if wrote and output else None
+    return {**summary, "replaced": current is not None and current != wrote}
 
 
 class JobConflict(Exception):
@@ -99,7 +118,9 @@ class Job:
     started: str | None = None
     ended: str | None = None
     stop_requested: bool = False
+    stopped_by_user: bool = False  # Stop pressed, not the Studio's shutdown
     returncode: int | None = None
+    wrote: str | None = None  # a fit's report's SHA-256: which fit its folder holds
     events: list[dict[str, Any]] = field(default_factory=list, repr=False)
     process: asyncio.subprocess.Process | None = field(default=None, repr=False)
     starting: asyncio.Task | None = field(default=None, repr=False)  # submit's start
@@ -133,6 +154,7 @@ class Job:
             "ended": self.ended,
             "stop_requested": self.stop_requested,
             "returncode": self.returncode,
+            "wrote": self.wrote,
             "last": self.last,
         }
 
@@ -289,7 +311,8 @@ class Jobs:
         return job
 
     async def _spawn(self, job: Job) -> None:
-        with open(job.folder / STDERR_FILE, "wb") as stderr:
+        # Append: the Studio adds lines (stray stdout) that later stderr must not overwrite.
+        with open(job.folder / STDERR_FILE, "ab") as stderr:
             job.process = await asyncio.create_subprocess_exec(
                 *self.command,
                 *job.argv,
@@ -343,9 +366,11 @@ class Jobs:
         return "failed", self._stderr_tail(job) or f"ended with exit code {job.returncode}"
 
     def _end(self, job: Job, outcome: str, message: str | None) -> None:
-        if self.closing and outcome == "cancelled":
+        if self.closing and outcome == "cancelled" and not job.stopped_by_user:
             # Stopped by the Studio's shutdown, not by a Stop pressed.
             outcome, message = INTERRUPTED, "the Studio stopped while it ran"
+        if outcome == "done" and job.kind == "fit" and job.output is not None:
+            job.wrote = report_digest(job.output)
         job.state = "ended"
         job.outcome = outcome
         job.message = message
@@ -368,6 +393,7 @@ class Jobs:
         if job.state == "ended" or job.stop_requested:
             return job
         job.stop_requested = True
+        job.stopped_by_user = not self.closing
         self._save(job)
         self._changed(job)
         if job.process is not None:
@@ -431,14 +457,14 @@ class Jobs:
         """A job's summary, also of a job that ran before this process (from
         its ``job.json``). Raises ``KeyError``."""
         if job_id in self.jobs:
-            return self.jobs[job_id].summary()
+            return with_replaced(self.jobs[job_id].summary())
         try:
             summary = json.loads((self.workspace.path("jobs", job_id) / JOB_FILE).read_bytes())
         except (OSError, ValueError) as error:
             raise KeyError(job_id) from error
         if not isinstance(summary, dict):
             raise KeyError(job_id)
-        return summary
+        return with_replaced(summary)
 
     def events(self, job_id: str) -> list[dict[str, Any]]:
         """A job's events so far. Raises ``KeyError``."""
@@ -467,7 +493,7 @@ class Jobs:
 
     def list(self) -> list[dict[str, Any]]:
         """Every job's summary, newest first: this process's and those on disk."""
-        found = {job_id: job.summary() for job_id, job in self.jobs.items()}
+        found = {job_id: with_replaced(job.summary()) for job_id, job in self.jobs.items()}
         for folder in sorted((self.workspace.root / "jobs").iterdir(), reverse=True):
             if folder.name in found or folder.name.startswith(".") or not folder.is_dir():
                 continue

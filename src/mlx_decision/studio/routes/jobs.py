@@ -561,6 +561,13 @@ def jobs_router(
         if job["kind"] != "fit" or job.get("outcome") != "done" or not job.get("output"):
             raise ApiError(404, f"{job['title']} has no report")
         folder = Path(job["output"])
+        if job.get("replaced"):
+            raise ApiError(
+                404,
+                f"The fitted model {folder.name} was replaced by a later fit; this fit's "
+                "report went with it.",
+                code="model_gone",
+            )
         try:
             text = await asyncio.to_thread((folder / REPORT_FILE).read_text)
             written = json.loads(text)
@@ -600,7 +607,8 @@ def jobs_router(
             raise ApiError(409, f"{job['title']} has not ended: stop it first")
         deleted = None
         output = Path(job["output"]) if job.get("output") else None
-        if model and job["kind"] == "fit" and output is not None and removal is not None:
+        mine = not job.get("replaced")  # a later fit of the same name is not this one's
+        if model and mine and job["kind"] == "fit" and output is not None and removal is not None:
             name = removal.name_of(output)
             try:
                 if name is not None:

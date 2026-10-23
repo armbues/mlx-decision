@@ -14,9 +14,9 @@ import { toast } from "../store/ui.js";
 
 const withModel = signal(false);
 
-// The model a fit wrote, while the Studio lists it.
+// The model a fit wrote, while the Studio lists it (and no later fit replaced it).
 const modelOf = (job) =>
-  job.kind === "fit" && job.outcome === "done" && job.output ? ((models.value ?? []).find((model) => model.path === job.output) ?? null) : null;
+  job.kind === "fit" && job.outcome === "done" && job.output && !job.replaced ? ((models.value ?? []).find((model) => model.path === job.output) ?? null) : null;
 
 // "fit mine" or "evaluation of fake against fake-2", as a sheet or toast names it.
 const kindName = (job) =>

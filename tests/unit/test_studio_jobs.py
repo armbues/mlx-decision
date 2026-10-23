@@ -400,3 +400,36 @@ def test_jobs_on_disk_are_listed_and_unfinished_ones_marked_interrupted(jobs, gp
     with pytest.raises(KeyError):
         later.get("nothing-here")
     assert not (workspace.root / "models" / ".lost.states").exists()
+
+
+def test_a_job_stopped_by_hand_stays_cancelled_when_the_studio_stops(jobs):
+    async def scenario():
+        job = await fit(jobs, "--steps", "500", "--stubborn")  # ignores the first SIGINT
+        await until(lambda: len(job.events) >= 2)
+        await jobs.stop(job.id)  # Stop pressed
+        await asyncio.sleep(0.2)
+        await jobs.shutdown()  # then the Studio stops before the job has ended
+        return job
+
+    job = run(scenario())
+    assert job.outcome == "cancelled"
+
+
+def test_the_studios_lines_in_stderr_are_kept(gpu, workspace):
+    child = textwrap.dedent("""
+        import sys, time
+        sys.stderr.write("first stderr line\\n"); sys.stderr.flush()
+        print("a stray line on stdout", flush=True)
+        time.sleep(0.5)
+        sys.stderr.write("RuntimeError: the real reason\\n"); sys.stderr.flush()
+        sys.exit(1)
+    """)
+    jobs = Jobs(gpu, workspace, command=[sys.executable, "-c", child])
+
+    async def scenario():
+        return await finished(await jobs.start("eval", [], holds_gpu=False))
+
+    job = run(scenario())
+    log = (job.folder / "stderr.log").read_text()
+    assert "stdout: a stray line on stdout" in log
+    assert "first stderr line" in log and "RuntimeError: the real reason" in log
