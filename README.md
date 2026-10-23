@@ -42,7 +42,7 @@ Questions and bug reports go to the [issue tracker](https://github.com/armbues/m
 ## Install
 
 Requirements: a Mac with Apple Silicon (M1 or later) and macOS 14 or newer,
-Python 3.12 or newer, and the memory the model needs (see the table; which
+Python 3.12 or 3.13 (later versions may work), and the memory the model needs (see the table; which
 copy fits which Mac is in [Clef](#which-copy-fits), [pplx](#pplx),
 [d3](#d3) and [H2O-Lightning](#h2o-lightning)).
 
@@ -164,7 +164,9 @@ definition.
 
 Questions can also be plain dicts in the API's wire format
 (`{"type": "choice", "instructions": ..., "criteria": {...}}`), and
-`model.decide_request(body)` takes a whole request body. Invalid requests
+`model.decide_request(body)` takes a whole request body;
+`model.check(body)` raises the errors answering it would, without
+answering (it does not read images or count tokens). Invalid requests
 raise `mlx_decision.DecisionError`, whose `param` names the offending field
 (building an invalid `Choice`, `Score` or `Noul` object directly raises
 pydantic's `ValidationError` instead). The state, instructions and criteria
@@ -183,9 +185,11 @@ H2O-Lightning and d1 only lower),
 H2O-Lightning's [yes/no floor](#h2o-lightning), and `prefix_cache_gb` sets
 how much memory Clef, H2O-Lightning and d1 keep for
 [recent states](#reusing-a-state) (default 2, 0 turns it off).
+`vision=True` loads the vision tower at once rather than with the first
+image request (Clef, pplx, d3, H2O-Lightning).
 `check_memory=False` (by keyword) skips the memory check; a model that
 does not fit raises `mlx_decision.ModelTooLargeError` otherwise, a
-`DecisionError`. Without Apple Silicon (no Metal GPU), loading raises
+`DecisionError` whose `required` and `available` are in bytes. Without Apple Silicon (no Metal GPU), loading raises
 `mlx_decision.PlatformError`.
 `model.info()` describes the loaded model as JSON data: family,
 precision, input limit, option limits and whether it takes images.
@@ -292,11 +296,12 @@ built-in default:
 
 ```toml
 models_dir = "~/Models"       # where models live: -m takes their names; download stores there
-models = ["Cloudflare/clef-flash"]  # more models for server, mcp and benchmark without -m
-default_model = "clef-flash"  # run, chat, mcp and training without -m; server's --default-model
-memory_budget_gb = 30         # server's --memory-budget
-host = "127.0.0.1"            # server's and mcp's --host
-port = 8000                   # server's and mcp's --port
+models = ["Cloudflare/clef-flash"]  # more models for server, web and benchmark without -m
+default_model = "clef-flash"  # run, chat, mcp and training without -m; server's and web's --default-model
+memory_budget_gb = 30         # server's and web's --memory-budget
+host = "127.0.0.1"            # server's, mcp's and web's --host
+port = 8000                   # server's, mcp's and web's --port
+workspace = "~/Decisions"     # web's --workspace: where the Studio keeps its files
 ```
 
 `models_dir` is a folder of models (each subfolder a model named after
@@ -436,7 +441,8 @@ for recent states. A request without a `model`, or with one the server
 does not have (such as the SDK's default `jev-latest`), goes to
 `--default-model`, which also loads at startup. With a single model that
 model is the default; with several and no `--default-model`, such
-requests get `422` listing the models. `GET /v1/models` lists them, and
+requests get `422` listing the models. `GET /v1/models` lists them
+(`release_date` is empty: a local model has none), and
 `/health` names the default and the loaded ones. A model too large for
 the budget gets `422` with the memory check's message.
 

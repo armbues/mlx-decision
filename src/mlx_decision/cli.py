@@ -438,7 +438,7 @@ StateJsonOption = Annotated[
 ]
 JsonOption = Annotated[
     bool,
-    typer.Option("--json", help="Print the response body as JSON (always on with run --states)."),
+    typer.Option("--json", help="Print each response body as JSON."),
 ]
 ImageOption = Annotated[
     list[Path] | None,

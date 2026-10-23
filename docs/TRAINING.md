@@ -99,9 +99,10 @@ correct answer for each question, by question id:
 
 - `choice`: the label is an option id (a key of `criteria`).
 - `noul`: `true` or `false` (also as strings).
-- `score`: the level, as one of the `criteria` keys (`2` or `"2"`).
-- `id` is optional. It must be unique in the file and defaults to the
-  line number.
+- `score`: the level, counted from 0 in the order of the `criteria`
+  list (`2` or `"2"` for the third).
+- `id` is optional: a non-empty string, unique in the file. It defaults
+  to the line number.
 - A question without a label is asked but not trained on.
 - Images are not accepted in training data yet.
 

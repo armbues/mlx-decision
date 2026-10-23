@@ -17,18 +17,25 @@ What works with 1.0 keeps working with every 1.x release.
 - `DecisionModel`: `name`, `info()`, `decide(state, questions, *,
   images=None)`, `decide_request(request)` and `check(request)`. The
   `info()` method is stable; the contents of its dict are provisional.
+  `check` raises what answering would (without loading images or
+  counting tokens) and returns the request as checked; that object's
+  contents beyond its own fields are not promised.
   `DecisionModel.backend` is not part of the promise.
 - The question types `Choice`, `Score` and `Noul`; `Request`; the
   answers `ChoiceAnswer`, `ScoreAnswer`, `NoulAnswer`; `Usage`,
   `Response` and `Result` (with `truncated` and `to_wire()`).
+  `Request.videos` is reserved: an empty list or null is fine, and any
+  video is refused (`code: "unsupported_media"`) until a family reads
+  video.
 - The errors: `DecisionError` (`message`, `param`, `code`; a
-  `ValueError`), `ModelTooLargeError` (`required`, `available`; a
-  `DecisionError`), `DataError` (`line`, `param`, `file`; a
+  `ValueError`), `ModelTooLargeError` (`required` and `available`, in
+  bytes; a `DecisionError`), `DataError` (`line`, `param`, `file`; a
   `DecisionError`) and `PlatformError` (a `RuntimeError`).
 
 **The wire format.** `POST /v1/systemone` takes and answers the Jev API's
-request and response bodies (see [The Jev API](#the-jev-api)), with its
-error body and status codes. Also stable are the documented extensions:
+request and response bodies (see [The Jev API](#the-jev-api)), with the
+error body and statuses in [Errors](#errors). Also stable are the
+documented extensions:
 `GET /v1/models`, `GET /health`, the request's `model` field choosing
 among several models, images as data URLs in `images` or in the state
 (mlx-decision's own way; see [The Jev API](#the-jev-api)), the
@@ -40,7 +47,11 @@ shape of its result.
 
 **Commands.** `run`, `chat`, `server`, `mcp`, `download`, `convert`,
 `benchmark` and `web`, with every flag their `--help` shows: its name,
-short form and what it takes.
+short form and what it takes; and `mlx-decision --version`. What `run
+--json` and `run --states` print is stable: response bodies in the wire
+format, and for a line `--states` cannot answer `{"error": ..., "line":
+N}`. Other output (tables, progress, messages) is for people and may
+change.
 
 **Events.** Each line `--events` prints is a JSON object with `stage`,
 and when they apply `step`, `total`, `eta_s`, `message` and `metrics`.
@@ -63,9 +74,10 @@ inside `metrics` are provisional.
   `MLX_DECISION_WATCH_STDIN` (set to `1`, a run with `--events` stops
   when a pipe on its stdin closes).
 - The Studio's workspace: a later 1.x Studio opens a workspace that 1.0
-  made. The question sets in it stay request bodies, its datasets stay
-  training data the `training` commands read, and its models stay model
-  folders `-m` loads.
+  made. The question sets in it stay request bodies, its models stay
+  model folders `-m` loads, and its datasets stay readable by that
+  release's `training` commands (a single JSON lines file stays training
+  data as above; a dataset folder follows its provisional format).
 
 ## Provisional
 
@@ -134,6 +146,33 @@ Jev makes to version 1 may follow in minor releases. Should Jev change
 it in a way that breaks clients, the new version is served beside the
 old one, which stays.
 
+## Errors
+
+An error answer from `/v1` has the body
+
+```json
+{"error": {"message": "...", "type": "invalid_request_error", "param": "questions.q.type"}}
+```
+
+`param` names the field at fault, or is `null`; `code` is there only when
+set. The message's text may change, its `type`, `param` and `code` do not.
+
+| Status | When | `type` | `code` |
+|---|---|---|---|
+| `400` | the body is not JSON, or not valid zstd data (at most 16 frames) | `invalid_request_error` | |
+| `401` | the API key is missing or wrong | `authentication_error` | |
+| `403` | a foreign `Host`, or another site's page (`Origin`) | `permission_error` | |
+| `413` | the body is larger than 64 MB (decoded) | `invalid_request_error` | |
+| `415` | another `Content-Encoding`, or a `multipart` body | `invalid_request_error` | `unsupported_media` for multipart |
+| `422` | the request is not valid, or asks what the model cannot do | `invalid_request_error` | `unsupported_media` for images, `videos` or `assets` it does not read |
+| `429` | too many wrong API keys from the address (`Retry-After`) | `rate_limit_error` | |
+| `500` | the model failed to answer | `api_error` | |
+| `503` | under `web`: a job or batch holds the GPU (`Retry-After`) | `api_error` | `busy` |
+
+A model too large for the memory budget is a `422` with `param:
+"model"`. Jev answers a busy service with `529`; mlx-decision keeps
+`503`, which its SDK retries.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -149,9 +188,13 @@ does not load) answers 1.
 
 ## Platform
 
-Python 3.12 and 3.13 on macOS with Apple Silicon. Without a Metal GPU,
-loading a model raises `PlatformError`.
+Python 3.12 and 3.13, the versions each release is tested on, on macOS
+with Apple Silicon. Later Python versions may work; the package does not
+refuse them. Without a Metal GPU, loading a model raises
+`PlatformError`.
 
-A test (`tests/unit/test_stable_surface.py`) compares the stable names,
-signatures, flags, event fields, config keys and format numbers with a
-snapshot, so a change to them does not go unnoticed.
+A test (`tests/unit/test_stable_surface.py`) compares what this page
+promises (the names, signatures, flags, event fields, config keys,
+environment variables, file names and format numbers, the routes,
+headers and error body, MCP's tools) with a snapshot, so a change to
+them does not go unnoticed.
