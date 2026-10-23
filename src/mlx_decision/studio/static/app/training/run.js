@@ -10,7 +10,7 @@ import { html } from "htm/preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api.js";
 import { Confusion, METRICS, ticks } from "../components/charts.js";
-import { NOT_THIS_MAC, onThisMac, plural, shellWord } from "../format.js";
+import { NOT_THIS_MAC, onThisMac, plural } from "../format.js";
 import { DATASET_DOCUMENT, chooseModel, compareOnly } from "../playground/session.js";
 import { href } from "../router.js";
 import { fitById, opened, openFit } from "../store/fits.js";
@@ -18,7 +18,7 @@ import { confirmDeleteRun } from "./delete.js";
 import { evalFitted } from "./evaluate.js";
 import { stopJob } from "../store/jobs.js";
 import { dataFiles } from "../store/data.js";
-import { models } from "../store/status.js";
+import { homeWord, models, tilde } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
 const STEPS = [
@@ -329,7 +329,7 @@ function Report({ job }) {
   const validation = report.options?.validation;
   const where = validation ? `in ${String(validation).split("/").pop().replace(/\.jsonl$/, "")}` : "kept aside";
   const training = report.training ?? {};
-  const command = (job.command ?? []).map(shellWord).join(" ");
+  const command = (job.command ?? []).map(homeWord).join(" ");
   return html`
     <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">scored ${where === "kept aside" ? "on the rows kept aside" : where.replace(/^in /, "on ")}, before and after the fit</span></div>
       <div class="group report-group">
@@ -342,7 +342,7 @@ function Report({ job }) {
     <section class="gsec"><div class="gsec-head"><h2>The fitted model</h2></div>
       <div class="group"><dl>
         <div class="kv"><dt>Name</dt><dd><code>${name}</code>${report.seconds?.total != null && html`<small>Took ${seconds(report.seconds.total)}</small>`}</dd></div>
-        <div class="kv"><dt>Saved in</dt><dd><code class="path" title=${path}>${path}</code>
+        <div class="kv"><dt>Saved in</dt><dd><code class="path" title=${path}>${tilde(path)}</code>
           <button class="btn sm" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => revealFit(job.id)}>Show in Finder</button></dd></div>
         <div class="kv"><dt>Same in a terminal</dt><dd><code class="command">${command}</code></dd></div>
       </dl></div>
@@ -378,7 +378,7 @@ function EvalReport({ job }) {
   const { data, models: scored } = state.result;
   const [first, second] = scored;
   const ids = [...new Set(scored.flatMap((model) => Object.keys(model.questions)))];
-  const command = (job.command ?? []).map(shellWord).join(" ");
+  const command = (job.command ?? []).map(homeWord).join(" ");
   return html`
     <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">${plural(data.examples, "row")} in ${job.details?.data}</span></div>
       <div class="group report-group">

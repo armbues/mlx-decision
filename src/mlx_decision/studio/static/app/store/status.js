@@ -2,6 +2,7 @@
 // models and the connection of the stream that keeps them current.
 import { computed, signal } from "@preact/signals";
 import { api } from "../api.js";
+import { shellWord } from "../format.js";
 
 export const status = signal(null);
 export const models = signal(null); // null until loaded
@@ -20,6 +21,21 @@ export function overBudget(name) {
   const budget = status.value?.memory?.budget;
   const needs = `about ${(model.memory.bytes / 1e9).toFixed(1)} GB`;
   return `${name} needs ${needs}, more than the ${budget ? `${(budget / 1e9).toFixed(1)} GB ` : ""}budget: raise it in Settings`;
+}
+
+// A path under the home folder written from ~, as the Studio shows its places.
+export function tilde(path) {
+  const home = status.value?.home;
+  if (!home || typeof path !== "string") return path;
+  return path === home || path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
+// A command's word for a terminal, a path under the home folder from ~ (the ~/
+// left unquoted, so the shell expands it).
+export function homeWord(word) {
+  const text = tilde(String(word));
+  if (text === "~") return text;
+  return text.startsWith("~/") ? `~/${shellWord(text.slice(2))}` : shellWord(word);
 }
 
 export function applyStatus(fields) {

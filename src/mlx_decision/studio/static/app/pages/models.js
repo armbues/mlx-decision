@@ -8,7 +8,7 @@ import { Download, Picture } from "../components/icons.js";
 import { LoadButton } from "../components/load-button.js";
 import { groupColour, groupLabel, markOf } from "../families.js";
 import { MenuItem, MenuSeparator } from "../components/menu.js";
-import { duration, gigabytes, parameters, plural, shellWord } from "../format.js";
+import { duration, gigabytes, parameters, plural } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { openConvert } from "../models/convert.js";
@@ -21,7 +21,7 @@ import { href, route } from "../router.js";
 import { gpuJob, jobs, progress, stopJob } from "../store/jobs.js";
 import { loadModel, pending, unloadModel } from "../store/loading.js";
 import { remembered } from "../store/prefs.js";
-import { busy, loadedNames, loadModels, models, status } from "../store/status.js";
+import { busy, homeWord, loadedNames, loadModels, models, status, tilde } from "../store/status.js";
 import { openMenu, toast } from "../store/ui.js";
 
 function Mark({ family, big = false }) {
@@ -574,7 +574,7 @@ function Details() {
       </dl></section>`}
 
       <section class="igroup"><h4>Files</h4><dl>
-        <${Kv} label="Location"><code>${model.path}</code><small>${{ cache: "In the Hugging Face cache", studio: "Made by the Studio, in its models folder", folder: "A folder you named" }[model.place] ?? ""}</small><//>
+        <${Kv} label="Location"><code title=${model.path}>${tilde(model.path)}</code><small>${{ cache: "In the Hugging Face cache", studio: "Made by the Studio, in its models folder", folder: "A folder you named" }[model.place] ?? ""}</small><//>
         ${model.disk_bytes != null && html`<${Kv} label="On disk">${gigabytes(model.disk_bytes)}<//>`}
         ${model.repo && html`<${Kv} label="From"><code>${model.repo}</code><small>Revision ${model.revision.slice(0, 7)}</small><//>`}
         ${model.converted_from && html`<${Kv} label="Converted">from <code>${model.converted_from}</code><//>`}
@@ -589,7 +589,7 @@ function Details() {
 
       <section class="igroup"><h4>From code</h4><dl>
         <${Kv} label="API"><code>"model": "${model.name}"</code><//>
-        <${Kv} label="CLI"><code>${(model.cli?.short ?? ["-m", model.name]).map(shellWord).join(" ")}</code><//>
+        <${Kv} label="CLI"><code>${(model.cli?.short ?? ["-m", model.name]).map(homeWord).join(" ")}</code><//>
       </dl></section>
       ${deletable(model) &&
       html`<div class="idet-foot">

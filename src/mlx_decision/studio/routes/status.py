@@ -104,6 +104,7 @@ def status_router(
             "address": home,
             "api": {"url": f"{home}/v1/systemone", "key_required": bool(api_key)},
             "workspace": str(files.root),
+            "home": str(Path.home()),  # the page writes paths under it from ~
             "sets_folder": str(files.root / "sets"),
             "data_folder": str(files.root / "data"),
             "cli_path": cli_path(),

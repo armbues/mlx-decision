@@ -10,7 +10,7 @@ import { Confusion, METRICS, Reliability } from "../components/charts.js";
 import { TYPE_LABELS } from "../playground/draft.js";
 import { MenuButton, MenuItem, MenuSeparator } from "../components/menu.js";
 import { closeSheet, openSheet, sheetError } from "../components/sheet.js";
-import { NOT_THIS_MAC, onThisMac, plural, shellWord } from "../format.js";
+import { NOT_THIS_MAC, onThisMac, plural } from "../format.js";
 import { href } from "../router.js";
 import {
   batchByName,
@@ -21,7 +21,7 @@ import {
   runRest,
   stopBatch,
 } from "../store/batches.js";
-import { models, status } from "../store/status.js";
+import { homeWord, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
 import { openSaveDataset } from "./start.js";
 
@@ -202,7 +202,7 @@ export function command(batch) {
   const short = model?.cli?.short ?? ["-m", batch.model];
   const folder = `batches/${batch.name}`;
   return ["mlx-decision", "run", ...short, "-q", `${folder}/questions.json`, "--states", `${folder}/rows.jsonl`, "--json"]
-    .map(shellWord)
+    .map(homeWord)
     .join(" ");
 }
 
@@ -234,7 +234,7 @@ function Terminal({ batch }) {
   const workspace = status.value?.workspace;
   return html`
     <details class="gsec batch-cli"><summary class="gsec-head"><h2>From a terminal</h2></summary>
-      <div class="group"><pre class="code-line">${workspace ? `cd ${shellWord(workspace)}\n` : ""}${command(batch)}</pre></div>
+      <div class="group"><pre class="code-line">${workspace ? `cd ${homeWord(workspace)}\n` : ""}${command(batch)}</pre></div>
     </details>
   `;
 }
