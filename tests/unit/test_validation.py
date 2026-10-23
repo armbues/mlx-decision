@@ -19,6 +19,12 @@ def body(**questions):
             "questions.q.type",
             "unknown question type 'rank'",
         ),
+        (body(q={"type": "box", "instructions": "x"}), "questions.q.type", "box questions"),
+        (
+            {**body(q={"type": "noul"}), "assets": {"a": {"type": "image"}}},
+            "assets",
+            "assets (the Jev API's images by placeholder) are not supported yet",
+        ),
         (body(q={"criteria": {"a": None}}), "questions.q.type", "type is required"),
         (body(q={"type": "choice"}), "questions.q.criteria", "criteria is required"),
         (

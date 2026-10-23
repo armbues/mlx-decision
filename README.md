@@ -398,7 +398,10 @@ Images go in the request's `images` list as base64 data URLs
 and fetches no URLs, so anything else is refused with `422` naming the
 image (`images.0`). With the SDK, pass them as
 `extra_body={"images": [...]}`, or put them in the state as data URLs
-([images inside the state](#python)).
+([images inside the state](#python)). The Jev API's own image format
+(`assets`, the SDK's image uploads) and its `box` questions are not
+served yet: such requests are refused (`422` or `415`), not answered
+without them.
 
 To require a key, start it with `--api-key KEY` (or set
 `MLX_DECISION_API_KEY`). Requests to `/v1/*` then need

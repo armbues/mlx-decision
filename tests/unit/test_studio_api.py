@@ -352,6 +352,8 @@ CHECKED = [
         "questions.q.criteria",
     ),
     ({"state": "x", "questions": {"q": {"type": "maybe"}}}, "fake", "questions.q"),
+    ({"state": "x", "questions": {"q": {"type": "box"}}}, "fake", "questions.q.type"),
+    ({**BODY, "assets": {"a": {"type": "image"}}}, "seeing", "assets"),
     ({"questions": QUESTIONS}, "fake", "state"),
     ({**BODY, "images": ["/etc/hosts"]}, "seeing", "images.0"),
     ({**BODY, "images": ["data:image/png;base64,AAAA"]}, "seeing", "images.0"),

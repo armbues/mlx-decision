@@ -30,8 +30,9 @@ What works with 1.0 keeps working with every 1.x release.
 request and response bodies (see [The Jev API](#the-jev-api)), with its
 error body and status codes. Also stable are the documented extensions:
 `GET /v1/models`, `GET /health`, the request's `model` field choosing
-among several models, images as data URLs in `images` or in the state,
-the `X-MLX-Decision-Truncated` header, zstd-compressed bodies, and the
+among several models, images as data URLs in `images` or in the state
+(mlx-decision's own way; see [The Jev API](#the-jev-api)), the
+`X-MLX-Decision-Truncated` header, zstd-compressed bodies, and the
 API key as `Authorization: Bearer KEY`.
 
 **MCP.** The `decide` tool and its arguments (a request body) and the
@@ -116,9 +117,20 @@ message that names it and asks for a newer mlx-decision.
 ## The Jev API
 
 `/v1` follows version 1 of the Jev API as served on 2026-10-20
-(`typesafe/jev-1.14.0`). When Jev adds to that version, a minor release
-follows it. Should Jev change it in a way that breaks clients, the new
-version is served beside the old one, which stays.
+(`typesafe/jev-1.14.0`), except for three of its parts, which are not
+served yet:
+
+- `assets`, its images by placeholder: a request with them gets `422`
+  (`param: "assets"`, `code: "unsupported_media"`);
+- `multipart/form-data` bodies, its image uploads: `415`;
+- `box` questions: `422` naming the question.
+
+They are refused, never answered without them. Images go in
+mlx-decision's own way instead: data URLs in `images` or inside the
+state. Serving any of the three later is an addition. Further additions
+Jev makes to version 1 may follow in minor releases. Should Jev change
+it in a way that breaks clients, the new version is served beside the
+old one, which stays.
 
 ## Exit codes
 

@@ -115,6 +115,11 @@ All notable changes to this project are documented here. The format follows
   `decide(state, questions, images)`) now raises `TypeError`.
 - `ModelTooLargeError` is a `DecisionError` (still a `ValueError`), and
   `DataError` and `PlatformError` can be imported from `mlx_decision`.
+- Requests using parts of the Jev API that are not served yet are refused
+  instead of answered without them: `assets` (images by placeholder;
+  `422`, `code: "unsupported_media"`), `multipart/form-data` bodies
+  (`415`) and `box` questions (`422`). Images go in `images` or inside
+  the state as before.
 - `benchmark --out` is now `-o` / `--output`, and `data --config` is now
   `--subset` (the Studio's Another dataset… says Subset too). The old names
   still work and print a warning; they are no longer in the help.

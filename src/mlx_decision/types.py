@@ -166,6 +166,7 @@ def parse_request(data: Any) -> Request:
             raise DecisionError(
                 f"question id {ascii(question_id)} is not valid text", param="questions"
             )
+    _refuse_jev_extras(data, questions)
     try:
         request = Request.model_validate(data)
     except ValidationError as error:
@@ -179,6 +180,26 @@ def parse_request(data: Any) -> Request:
         _check_text(question.instructions, f"{where}.instructions")
         _check_text(question.criteria, f"{where}.criteria")
     return request
+
+
+def _refuse_jev_extras(data: Any, questions: Any) -> None:
+    """Refuse what newer Jev API versions take that is not served here, rather
+    than answer without it: ``assets`` (images by placeholder) and ``box``
+    questions."""
+    if isinstance(data, Mapping) and data.get("assets") is not None:
+        raise DecisionError(
+            "assets (the Jev API's images by placeholder) are not supported yet; send "
+            "images as data URLs in images, or inside the state",
+            param="assets",
+            code="unsupported_media",
+        )
+    for question_id, question in questions.items() if isinstance(questions, Mapping) else ():
+        if isinstance(question, Mapping) and question.get("type") == "box":
+            raise DecisionError(
+                "box questions (the Jev API's bounding boxes) are not supported yet; "
+                f"expected {QUESTION_TYPES}",
+                param=f"questions.{question_id}.type",
+            )
 
 
 def _is_text(text: str) -> bool:

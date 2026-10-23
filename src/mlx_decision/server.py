@@ -228,6 +228,15 @@ def add_jev_api(
             gpu.check()  # before reading the body
         except Busy as error:
             return busy_response(error)
+        content_type = request.headers.get("content-type", "").strip().lower()
+        if content_type.startswith("multipart/"):
+            return error_response(
+                415,
+                "multipart bodies (the Jev API's image uploads) are not supported yet; send "
+                "JSON, with images as data URLs in images",
+                "invalid_request_error",
+                code="unsupported_media",
+            )
         try:
             raw = await read_body(request, max_body_bytes)
         except UnsupportedEncoding as error:

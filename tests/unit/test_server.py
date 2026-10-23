@@ -96,6 +96,36 @@ def test_truncation_header(client):
     assert set(response.json()) == {"model", "answers", "usage"}
 
 
+def test_newer_jev_parts_are_refused_not_ignored(client):
+    """Jev's images by placeholder (``assets``), its multipart uploads and ``box``
+    questions are not served: refused, never answered without them."""
+    question = {"q": {"type": "noul", "instructions": "Does <image:1> show an error?"}}
+    asset = {"<image:1>": {"type": "image", "format": "png", "data_base64": "iVBORw0KGgo="}}
+    body = {"state": "Screenshot: <image:1>", "questions": question, "assets": asset}
+    response = client.post("/v1/systemone", json=body)
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert (error["param"], error["code"]) == ("assets", "unsupported_media")
+    assert "not supported yet" in error["message"] and "images" in error["message"]
+    request = json.dumps({"state": "x", "questions": question, "assets": asset})
+    multipart = client.post(
+        "/v1/systemone",
+        data={"request": request},
+        files={"asset-0": ("asset-0", b"\x89PNG\r\n\x1a\n", "image/png")},
+    )
+    assert multipart.status_code == 415
+    assert multipart.json()["error"]["code"] == "unsupported_media"
+    assert "multipart" in multipart.json()["error"]["message"]
+    box = {"state": "x", "questions": {"where": {"type": "box", "instructions": "The logo"}}}
+    response = client.post("/v1/systemone", json=box)
+    assert response.status_code == 422
+    assert response.json()["error"]["param"] == "questions.where.type"
+    assert "box questions" in response.json()["error"]["message"]
+    assert client.backend.states == []  # no model work for any of them
+    plain = client.post("/v1/systemone", json={**BODY, "assets": None})  # as absent
+    assert plain.status_code == 200
+
+
 def test_invalid_request_gets_a_jev_error_body(client):
     body = {"state": "x", "questions": {"q": {"type": "rank"}}}
     response = client.post("/v1/systemone", json=body)

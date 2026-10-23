@@ -130,6 +130,8 @@ def test_model_info():
         ({"state": "x"}, "questions"),
         ({"state": "x", "questions": {}}, "questions"),
         ({"state": "x", "questions": {"q": {"type": "maybe"}}}, "questions.q"),
+        ({"state": "x", "questions": {"q": {"type": "box"}}}, "box questions"),
+        ({**ARGUMENTS, "assets": {"a": {"type": "image"}}}, "assets: assets (the Jev API's"),
         ({**ARGUMENTS, "images": [PIXEL]}, "images: fake does not support images"),
     ],
 )
