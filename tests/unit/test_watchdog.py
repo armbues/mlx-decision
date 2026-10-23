@@ -180,7 +180,9 @@ def test_a_fit_stuck_in_a_step_ends_within_5_s(tmp_path, data):
     started = time.monotonic()
     code, rest, errors = ended_within(process, 5)
     assert time.monotonic() - started < 5
-    assert code == 130 and rest == []  # quit from outside: no last event
+    # Quit from outside: its last line still says so.
+    assert code == 130
+    assert rest == [{"stage": "cancelled", "message": "stdin closed and the run did not stop"}]
     assert "the run did not stop: quitting" in errors
     assert sorted(path.name for path in tmp_path.iterdir()) == ["base", "tickets.jsonl"]
 

@@ -206,7 +206,8 @@ def serve(monkeypatch):
 
     def run(*args):
         seen = {}
-        monkeypatch.setattr(server, "create_app", lambda pool, **_: pool)
+        # The command passes its Gpu (the default model loaded): the pool is its own.
+        monkeypatch.setattr(server, "create_app", lambda gpu, **_: gpu.pool)
         monkeypatch.setattr(uvicorn, "run", lambda app, **kw: seen.update(pool=app, **kw))
         result = CliRunner().invoke(app, ["server", *map(str, args)])
         return result, seen.get("pool"), seen

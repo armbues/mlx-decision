@@ -120,6 +120,7 @@ All notable changes to this project are documented here. The format follows
   `422`, `code: "unsupported_media"`), `multipart/form-data` bodies
   (`415`) and `box` questions (`422`). Images go in `images` or inside
   the state as before.
+- Requires typer 0.27 or later (it exits 130 on Ctrl-C).
 - `benchmark --out` is now `-o` / `--output`, and `data --config` is now
   `--subset` (the Studio's Another dataset… says Subset too). The old names
   still work and print a warning; they are no longer in the help.
@@ -130,6 +131,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Every `--events` run ends with a `done`, `error` or `cancelled` line,
+  also when it fails before its first step (a bad config file, a missing
+  `-m`), meets an unexpected error, is stopped with Ctrl-C before its
+  steps begin, or is ended by its watching program after the grace time.
+- An unexpected failure prints `error: ...` and exits 1 instead of a
+  traceback (`MLX_DECISION_DEBUG=1` shows it). `--port` outside 0-65535
+  is refused as wrong usage (2). `server` whose default model does not
+  load exits 1 with the error (was 3, after a traceback). Escape or
+  Ctrl-C in `download`'s menus exits 130.
 - `data` on a local CSV or JSON lines file: a row with fewer cells than
   the header reads its missing cells as empty, and a cell over 128 KB is
   read; an unclosed quote, a line nested too deeply or holding a number

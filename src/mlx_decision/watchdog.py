@@ -47,6 +47,7 @@ def watch_stdin(
     grace: float = GRACE_S,
     stdin: IO | None = None,
     enabled: bool | None = None,
+    on_quit: Callable[[], None] | None = None,
 ) -> Iterator[bool]:
     """Watch stdin while the block runs: when it closes, set ``cancel``; if the
     block has not ended ``grace`` seconds later, remove ``leftovers`` (folders or
@@ -55,7 +56,7 @@ def watch_stdin(
     Yields whether stdin is watched: only when ``enabled`` (by default, when
     ``MLX_DECISION_WATCH_STDIN`` is "1") and stdin is a pipe or a socket.
     Leaving the block ends the watch: from then on a closed stdin changes
-    nothing.
+    nothing. ``on_quit`` runs just before that exit.
     """
     if enabled is None:
         enabled = requested()
@@ -81,6 +82,9 @@ def watch_stdin(
         for path in paths:
             remove(path)
         _say("stdin closed and the run did not stop: quitting")
+        if on_quit is not None:  # the run's last word (its final event)
+            with suppress(Exception):
+                on_quit()
         os._exit(130)
 
     threading.Thread(target=watch, name="stdin watchdog", daemon=True).start()

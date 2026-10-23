@@ -467,7 +467,7 @@
      "--port": true
     },
     "required": false,
-    "type": "int"
+    "type": "int range"
    },
    "--prefix-cache": {
     "default": null,
@@ -746,7 +746,7 @@
      "--port": true
     },
     "required": false,
-    "type": "int"
+    "type": "int range"
    },
    "--prefix-cache": {
     "default": null,
@@ -870,7 +870,7 @@
      "--port": true
     },
     "required": false,
-    "type": "int"
+    "type": "int range"
    },
    "--prefix-cache": {
     "default": null,

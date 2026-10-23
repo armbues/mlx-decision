@@ -101,5 +101,5 @@ def test_escape_in_the_family_menu_cancels(tmp_path):
     term = Terminal(["download", "--local-dir", str(tmp_path / "models")], tmp_path)
     term.expect("Other...")
     term.send(ESCAPE, pause=1)
-    assert term.wait() == 1
-    assert "error" not in term.text()
+    assert term.wait() == 130
+    assert "cancelled" in term.text() and "error" not in term.text()

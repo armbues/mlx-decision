@@ -44,8 +44,10 @@ short form and what it takes.
 
 **Events.** Each line `--events` prints is a JSON object with `stage`,
 and when they apply `step`, `total`, `eta_s`, `message` and `metrics`.
-A run's last line has the stage `done`, `error` or `cancelled`. The
-other stage names and everything inside `metrics` are provisional.
+A run's last line has the stage `done`, `error` or `cancelled`, also
+when it fails before its first step or is stopped. A run its arguments
+refuse (exit 2) prints no lines. The other stage names and everything
+inside `metrics` are provisional.
 
 **Files.**
 
@@ -136,10 +138,14 @@ old one, which stays.
 
 | Code | Meaning |
 |---|---|
-| 0 | done |
-| 1 | the command failed (the error is on stderr) |
-| 2 | wrong usage: an unknown flag or a bad value |
-| 130 | stopped (Ctrl-C, or the program watching it ended) |
+| 0 | done; also `server`, `mcp` and `web` stopped with Ctrl-C |
+| 1 | the command failed: `error: ...` on stderr |
+| 2 | refused by the argument parser: an unknown flag, a missing or bad value |
+| 130 | a run stopped (Ctrl-C, or the program watching it ended) |
+
+Which check refuses a value decides between 1 and 2: the argument parser
+answers 2, a check after it (a file that cannot be read, a model that
+does not load) answers 1.
 
 ## Platform
 

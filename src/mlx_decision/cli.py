@@ -1,6 +1,8 @@
 """The ``mlx-decision`` command."""
 
+import functools
 import json
+import os
 import re
 import sys
 from contextlib import nullcontext, suppress
@@ -49,8 +51,80 @@ def main(
 
 
 def fail(message: str) -> None:
+    RUN.end("error", message)  # with --events, the run's last line
     typer.echo(f"error: {message}", err=True)
     raise typer.Exit(1)
+
+
+class EventRun:
+    """The ``--events`` run of this process: whether it prints events, and whether
+    its last line (``done``, ``error`` or ``cancelled``) is out. Whatever ends
+    the run, it ends with one such line (``end``)."""
+
+    def __init__(self) -> None:
+        self.on = False
+        self.ended = False
+
+    def start(self, on: bool) -> None:
+        self.on, self.ended = on, False
+
+    def end(self, stage: str, message: str) -> None:
+        """Print the last line, unless events are off or it is out already."""
+        if self.on and not self.ended:
+            from .events import Event
+
+            echo_event(Event(stage, message=message))
+
+
+RUN = EventRun()
+
+
+def ends_with_an_event(command):
+    """For a command with ``--events``: a run that stops some other way than by
+    its own last line still ends with one, ``cancelled`` for Ctrl-C (or exit
+    130), ``error`` for a failure. A run its arguments refuse (exit 2) prints
+    nothing."""
+
+    @functools.wraps(command)
+    def run(*args, **kwargs):
+        RUN.start(bool(kwargs.get("events")))
+        try:
+            return command(*args, **kwargs)
+        except KeyboardInterrupt:
+            RUN.end("cancelled", "stopped")
+            raise
+        except typer.Exit as stop:
+            if stop.exit_code == 130:
+                RUN.end("cancelled", "stopped")
+            elif stop.exit_code:
+                RUN.end("error", "the run failed")
+            raise
+        except typer.TyperException:
+            raise  # wrong usage: refused, not run
+        except Exception as error:
+            RUN.end("error", str(error) or type(error).__name__)
+            raise
+        finally:
+            RUN.on = False
+
+    return run
+
+
+DEBUG_VARIABLE = "MLX_DECISION_DEBUG"
+
+
+def entry() -> None:
+    """``mlx-decision``: the commands, with an unexpected failure shown as
+    ``error: ...`` (exit 1) instead of a traceback; ``MLX_DECISION_DEBUG=1``
+    shows the traceback."""
+    try:
+        app(prog_name="mlx-decision")
+    except Exception as error:
+        if os.environ.get(DEBUG_VARIABLE) == "1":
+            raise
+        message = str(error) or type(error).__name__
+        typer.echo(f"error: {message} (MLX_DECISION_DEBUG=1 shows where)", err=True)
+        sys.exit(1)
 
 
 def renamed(new_value, old_value, new: str, old: str):
@@ -760,7 +834,8 @@ def ask_models_dir() -> Path | None:
             completer=PathCompleter(only_directories=True, expanduser=True),
         ).strip()
     except (KeyboardInterrupt, EOFError):
-        raise typer.Exit(1) from None
+        typer.echo("cancelled", err=True)
+        raise typer.Exit(130) from None
     return Path(parent).expanduser() if parent else None
 
 
@@ -811,7 +886,8 @@ def pick_bits(check) -> int:
             key_bindings=MENU_BINDINGS,
         )
     except (KeyboardInterrupt, EOFError):
-        raise typer.Exit(1) from None
+        typer.echo("cancelled", err=True)
+        raise typer.Exit(130) from None
 
 
 def stdin_is_terminal() -> bool:
@@ -819,6 +895,7 @@ def stdin_is_terminal() -> bool:
 
 
 @app.command()
+@ends_with_an_event
 def download(
     repo_id: Annotated[
         str | None,
@@ -897,8 +974,9 @@ def download(
         if not terminal:
             stop("give a repo id, e.g. mlx-decision download Cloudflare/clef-flash")
         repo_id = pick_repo()
-        if repo_id is None:
-            raise typer.Exit(1)
+        if repo_id is None:  # Escape or Ctrl-C in the menu
+            typer.echo("cancelled", err=True)
+            raise typer.Exit(130)
     if events:
         echo_event(Event("check", message=f"checking {repo_id}"))
     try:
@@ -1007,7 +1085,9 @@ HostOption = Annotated[
 ]
 PortOption = Annotated[
     int | None,
-    typer.Option(help="Port to listen on. Default: port in the config file, else 8000."),
+    typer.Option(
+        min=0, max=65535, help="Port to listen on. Default: port in the config file, else 8000."
+    ),
 ]
 
 
@@ -1130,7 +1210,17 @@ def server(
         typer.echo(f"models: {names}; default {pool.default}", err=True)
     if api_key:
         typer.echo("API key required on /v1/*", err=True)
-    app = create_app(pool, api_key=api_key, host=host, port=port)
+    import asyncio
+
+    from .gpu import Gpu
+
+    gpu = Gpu(pool)
+    try:  # here, so a model that does not load ends the command with its error
+        asyncio.run(gpu.start())
+    except Exception as error:
+        gpu.close()
+        fail(f"{pool.default} could not be loaded: {error}")
+    app = create_app(gpu, api_key=api_key, host=host, port=port)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 
@@ -1368,7 +1458,9 @@ def mcp(
     port: Annotated[
         int | None,
         typer.Option(
-            help="Port to listen on (with --http). Default: port in the config file, else 8000."
+            min=0,
+            max=65535,
+            help="Port to listen on (with --http). Default: port in the config file, else 8000.",
         ),
     ] = None,
     max_image_mp: MaxImageOption = None,
@@ -1440,6 +1532,7 @@ def mcp(
 
 
 @app.command()
+@ends_with_an_event
 def convert(
     model: Annotated[
         str,
@@ -1754,6 +1847,10 @@ DataOption = Annotated[
 def echo_event(event) -> None:
     """An event as one JSON line on stdout, at once. Nobody reading it (the
     Studio killed, its pipe closed) is no error: a stop still cleans up."""
+    from .events import FINAL_STAGES
+
+    if event.stage in FINAL_STAGES:
+        RUN.ended = True
     with suppress(OSError, ValueError):
         typer.echo(json.dumps(event.as_json(), ensure_ascii=False))
         sys.stdout.flush()
@@ -1782,6 +1879,7 @@ YesOption = Annotated[
 
 
 @training_app.command("fit")
+@ends_with_an_event
 def training_fit(
     model: Annotated[
         str | None,
@@ -1958,7 +2056,13 @@ def watched(events: bool, cancel, leftovers=()):
     ``MLX_DECISION_WATCH_STDIN=1``)."""
     from .watchdog import watch_stdin
 
-    return watch_stdin(cancel, leftovers) if events else nullcontext()
+    if not events:
+        return nullcontext()
+    return watch_stdin(
+        cancel,
+        leftovers,
+        on_quit=lambda: RUN.end("cancelled", "stdin closed and the run did not stop"),
+    )
 
 
 def data_events(plans, specs=None) -> None:
@@ -2083,6 +2187,7 @@ def stage_event(stage: str, message: str):
 
 
 @training_app.command("eval")
+@ends_with_an_event
 def training_eval(
     model: Annotated[
         str | None,
@@ -2239,6 +2344,7 @@ ColumnFlag = Annotated[str | None, typer.Option(help="Column name (overrides the
 
 
 @app.command("data")
+@ends_with_an_event
 def data_command(
     source: Annotated[
         str | None,
