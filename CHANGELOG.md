@@ -8,8 +8,88 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+The Studio: mlx-decision in the browser, for trying questions, comparing
+models, answering datasets and fitting models without the command line.
+From this release, what [docs/STABILITY.md](docs/STABILITY.md) calls
+stable does not break before 2.0; training stays provisional. Code
+written for 0.9 may need the changes listed first under Changed.
+
 ### Added
 
+- **The Studio**, `mlx-decision web` (the new `web` extra): one process
+  on your Mac that serves the Studio's page and, at the same address,
+  the Jev-compatible API of `server`, with the same models and memory
+  budget. It lists the models `-m`, the config file, the workspace and
+  the Hugging Face cache hold, and loads nothing until one is asked
+  (or `--default-model`). The guide is `docs/STUDIO.md`.
+  - **Playground**: question sets with several examples, eight
+    templates (support triage, review rating, content moderation, fact
+    check, intent routing, many languages, a conversation, a screenshot
+    check), a live check of the questions against the model's limits,
+    images by drop or paste, Run and Run All, Compare on two or three
+    models side by side, a History of every run (what changed in the
+    questions, how each answer moved, restore), and Get Code: the
+    request as curl, Python with the Jev SDK, a `run` line or an MCP
+    client's configuration.
+  - **Models**: each model's memory, what it reads and its measured
+    speed on this Mac, Load and Unload within the memory budget (with a
+    preview of what loading would unload), Download a Model (families,
+    sizes, whether each fits, 8-bit or 4-bit as it downloads, the
+    model's terms of use), Convert to 8-bit or 4-bit, and Delete for the
+    models the Studio made. With no models yet, the first start asks
+    where models go and offers three that fit the Mac.
+  - **Datasets**: Download a Dataset (the five benchmark datasets or any
+    on the Hugging Face Hub, a role per split, samples and stratified
+    parts), Add a JSON-lines or CSV file, and each dataset's labels, rows
+    and files. A dataset's questions are written and tried in the
+    Playground on a sample of its rows and saved to its `dataset.json`,
+    each label value mapped to an answer.
+  - **Batches**: a dataset's rows answered by a model, with accuracy,
+    macro-F1, calibration error, a confusion matrix and a reliability
+    diagram per question; rows filtered by an answer, wrong, unsure or
+    refused; Run the Rest, Run Again, Export as CSV or JSON Lines, and
+    Save Answers as a Dataset, so one model's answers can train another.
+  - **Training**: New Fit, with the kinds of fit the base model takes,
+    each with its estimated peak memory, and a report on a share kept
+    aside, a split or another dataset; its stages, time left, loss and
+    log while it runs; a before-and-after report and the command that
+    does the same. New Evaluation scores a model alone or against
+    another, such as a fitted model against its base.
+  - **Settings**: the config file's keys, where each value comes from,
+    and a change written to the file at once; the workspace's folders
+    with their sizes and Clear.
+  - **Jobs**: downloads, conversions, fits, evaluations and dataset
+    downloads run as the `mlx-decision` commands with `--events`, with
+    progress and Stop. Conversions, fits and evaluations hold the GPU
+    alone, one at a time: every page says so, and the API answers `503`
+    with `Retry-After` until the job ends.
+  - **The workspace**: everything the Studio makes is a plain file the
+    command line reads as it is (question sets are request bodies for
+    `run -q`, datasets are training data, models load with `-m`), in
+    `~/.mlx-decision` or the folder that `--workspace` or the config
+    file's new `workspace` key names. `workspace.json` holds its format,
+    and a Studio older than a workspace refuses to open it; one Studio
+    uses a workspace at a time (`studio.lock`); a folder that is not
+    empty and not a workspace is refused.
+  - **Security**: it answers only on this Mac by default. The printed
+    address carries a session token that sets a cookie, and requests
+    with another `Host` or a foreign `Origin` are refused, so other web
+    pages cannot use it. `--host` serves it on the network and then
+    needs an API key (`--api-key` or `MLX_DECISION_API_KEY`), with which
+    a browser on another machine logs in. Show in Finder, Clear and
+    changes to the config file are offered only on this Mac.
+  - Flags: `-m`, `--default-model`, `--memory-budget`, `--workspace`,
+    `--host`, `--port`, `--api-key`, `--no-browser` and the load
+    options of `server`. Chrome on macOS is the supported browser.
+  - The page needs no build step and loads nothing from other hosts:
+    Preact 10.29.8 and Preact Signals 2.11.2 (MIT) and htm 3.1.1
+    (Apache-2.0) ship in the package, unchanged, with their licences in
+    `LICENSES/` and the wheel's licence files.
+
+- `docs/STUDIO.md`, the Studio page by page and its workspace's files
+  from a terminal; `docs/MODELS.md`, `docs/CLI.md`, `docs/PYTHON.md`,
+  `docs/SERVER.md` and `docs/DEVELOPMENT.md` with the reference that was
+  in the README.
 - `docs/STABILITY.md`: what stays stable until 2.0 (the Python inference
   API, the wire format, MCP `decide`, the inference and serving commands,
   the `--events` envelope, fitted models, training files, the config
@@ -32,14 +112,15 @@ All notable changes to this project are documented here. The format follows
   probability). pplx-decider-v1.1-27b still loads with its own prompt.
 - A config file, `~/.mlx-decision/config.toml` (`MLX_DECISION_HOME`
   moves the folder), with defaults for existing flags: `models` (`-m` of
-  `server` and `benchmark`), `default_model` (`run`, `chat`,
-  `mcp` and `training` without `-m`; `server --default-model`),
-  `memory_budget_gb`, `host` and `port`. Flags win over the file. An
-  unknown key is a warning, a value of the wrong type an error naming
-  the file and the key.
+  `server`, `web` and `benchmark`), `default_model` (`run`, `chat`,
+  `mcp` and `training` without `-m`; `--default-model` of `server` and
+  `web`), `memory_budget_gb`, `host`, `port` and `workspace`. Flags win
+  over the file; `download`, the Studio's first start and its Settings
+  page write it. An unknown key is a warning, a value of the wrong type
+  an error naming the file and the key.
 - `models_dir` in the config file: the folder where models live (or
   `"hf-cache"`). `-m NAME` finds a model there by name in every command
-  that takes `-m`; `server` and `benchmark` without `-m` serve its
+  that takes `-m`; `server`, `web` and `benchmark` without `-m` serve its
   models; `download` stores into it. When it is unset, the first
   `download` in a terminal asks for it and adds it to the file.
 - A model menu for `run` and `chat` without `-m` or a default model: the
@@ -93,6 +174,47 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+Changes that code or scripts written for 0.9 may need to follow, with
+what to do:
+
+- `load` takes `check_memory` and `decide` takes `images` by keyword
+  only: a 0.9 call passing them by position (`load(path, False)`,
+  `decide(state, questions, images)`) now raises `TypeError`. Pass them
+  by name: `load(path, check_memory=False)`, `decide(state, questions,
+  images=images)`.
+- Score levels must be text, an object or a list, as the Jev API takes
+  them: a number, a boolean or null is refused (`422`, naming
+  `questions.<id>.criteria.<n>`), since their answers' `legend` broke
+  the Jev SDK's parser. Write numeric levels as text (`"1"`, not `1`).
+- Requests using parts of the Jev API that are not served yet are refused
+  instead of answered without them: `assets` (images by placeholder;
+  `422`, `code: "unsupported_media"`), `multipart/form-data` bodies
+  (`415`) and `box` questions (`422`). Send images in `images` or inside
+  the state, as before.
+- `decide` with questions that are not a mapping raises `DecisionError`
+  (`param: "questions"`), not `TypeError`; catch `DecisionError` (a
+  `ValueError`) as for every other invalid request.
+- `benchmark --questions` is now `--question-counts` (it takes numbers of
+  questions; elsewhere `--questions` is a questions file), `benchmark
+  --out` is now `-o` / `--output`, and `data --config` is now `--subset`
+  (the Studio says Subset too). The old names still work, print a
+  warning and are no longer in the help; use the new ones.
+- A fitted model from a newer release (a kind of fit, tensors or a base
+  fingerprint this release does not know) is refused with a message
+  naming it, instead of loading without the parts it does not know. Fits
+  now record how their base's fingerprint was made; fits from 0.9 load
+  as before.
+- `dataset.json` has a `format` (1; a file without it reads as 1). A
+  dataset from a newer release is refused with a message naming its
+  format, and keys this release does not know are kept when it writes
+  the file again.
+- Requires typer 0.27 or later (it exits 130 on Ctrl-C).
+
+Other changes:
+
+- The README is shorter and starts with the Studio and a quick start;
+  the reference it held moved, unchanged, into the topic files in
+  `docs/`.
 - The `download` menu lists pplx-decider-flash-v1.2 and
   pplx-decider-v1.2 instead of pplx-decider-v1.1-27b, which still
   downloads by repo id.
@@ -105,41 +227,11 @@ All notable changes to this project are documented here. The format follows
   renames it when complete; Ctrl-C (or a failed download) removes it, and
   removes a model's new folder in the Hugging Face cache too. `convert`
   stops at the next tensor on Ctrl-C. Neither leaves a half model behind.
-- A fitted model from a newer release (a kind of fit, tensors or a base
-  fingerprint this release does not know) is refused with a message
-  naming it, instead of loading without the parts it does not know. Fits
-  now record how their base's fingerprint was made; fits from 0.9 load
-  as before.
-- `load` takes `check_memory` and `decide` takes `images` by keyword
-  only: a 0.9 call passing them by position (`load(path, False)`,
-  `decide(state, questions, images)`) now raises `TypeError`.
 - `ModelTooLargeError` is a `DecisionError` (still a `ValueError`), and
   `DataError` and `PlatformError` can be imported from `mlx_decision`.
-- Requests using parts of the Jev API that are not served yet are refused
-  instead of answered without them: `assets` (images by placeholder;
-  `422`, `code: "unsupported_media"`), `multipart/form-data` bodies
-  (`415`) and `box` questions (`422`). Images go in `images` or inside
-  the state as before.
-- Score levels must be text, an object or a list, as the Jev API takes
-  them: a number, a boolean or null is refused (`422`, naming
-  `questions.<id>.criteria.<n>`). Their answers' `legend` broke the Jev
-  SDK's parser.
-- `benchmark --questions` is now `--question-counts` (it takes numbers of
-  questions; elsewhere `--questions` is a questions file). The old name
-  still works and prints a warning.
 - MCP `decide`'s schema takes what the tool answers: any JSON value as
   instructions and option descriptions, options without a description,
   levels as objects or lists, and questions without instructions.
-- `decide` with questions that are not a mapping raises `DecisionError`
-  (`param: "questions"`), not `TypeError`.
-- Requires typer 0.27 or later (it exits 130 on Ctrl-C).
-- `benchmark --out` is now `-o` / `--output`, and `data --config` is now
-  `--subset` (the Studio's Another dataset… says Subset too). The old names
-  still work and print a warning; they are no longer in the help.
-- `dataset.json` has a `format` (1; a file without it reads as 1). A
-  dataset from a newer release is refused with a message naming its
-  format, and keys this release does not know are kept when it writes
-  the file again.
 
 ### Fixed
 
@@ -166,11 +258,8 @@ All notable changes to this project are documented here. The format follows
 - A compressed body made of many tiny zstd frames no longer freezes the
   server: at most 16 frames, decoded off the event loop.
 - After 10 wrong API keys in a row a client waits before its next try
-  (`429`, from one second doubling up to a minute), on `/v1` and the
-  Studio's login alike; wrong keys are logged with the client's address.
-- The Studio: a browser on another machine can no longer set where models
-  go (`models_dir`); a browser on this Mac that opens the Studio by the
-  Mac's network address (`web --host <address>`) counts as on this Mac.
+  (`429`, from one second doubling up to a minute), on `server`'s `/v1`
+  and the Studio's login alike; wrong keys are logged with the client's address.
 - Answering many requests in one process (`run --states`, `server`,
   `mcp`, the Studio's batches) no longer runs out of memory: MLX kept
   the GPU buffers of finished requests for reuse, up to more than a
