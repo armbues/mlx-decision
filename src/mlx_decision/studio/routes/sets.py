@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 
 from ...errors import DecisionError
 from ...types import decode_json
-from ..security import is_loopback
+from ..security import on_this_mac
 from ..templates import UnknownTemplate, list_templates, template_set
 from ..workspace import Conflict, NotFound, Workspace, check_name
 from . import ApiError, field, json_body
@@ -115,8 +115,7 @@ def sets_router(files: Workspace, max_body_bytes: int) -> APIRouter:
     @router.post("/sets/{name}/reveal", status_code=204)
     async def reveal_set(name: str, request: Request):
         """Show the set's file in Finder (only for a browser on this Mac)."""
-        client = request.client.host if request.client else None
-        if not is_loopback(client):
+        if not on_this_mac(request):
             raise ApiError(
                 403, "Finder opens only for a browser on this Mac", kind="permission_error"
             )

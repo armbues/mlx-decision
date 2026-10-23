@@ -229,6 +229,7 @@ def test_first_start_asks_where_models_go(make_studio, tmp_path):
     studio = make_studio(budget=int(12.7 * GB))
     first = studio.get("/studio/api/downloads/first").json()
     assert first["models_dir_set"] is False
+    assert first["elsewhere"] is False  # this Mac: the page asks where models go
     assert first["config_path"] == str(tmp_path / "config.toml")
     assert first["suggestion"] == "~/Models"
     assert [pick["tier"] for pick in first["picks"]] == ["small", "medium", "large"]

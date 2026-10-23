@@ -9,6 +9,7 @@ under the ``server`` command). With an API key, the ``/v1`` routes require ``Aut
 mounted (a mount or a proxy's root path).
 """
 
+import asyncio
 import hmac
 import logging
 import time
@@ -41,12 +42,21 @@ MAX_BODY_BYTES = 64 * 2**20
 # How a body may be encoded: as it is, or zstd-compressed, as the Jev SDK sends
 # bodies of 1 KB or more on Python 3.14 or with its zstd extra.
 ENCODINGS = ("identity", "zstd")
+# A compressed body holds at most this many zstd frames (the SDK sends one):
+# each frame costs a copy of the rest of the body, so many tiny ones would
+# take quadratic time.
+MAX_ZSTD_FRAMES = 16
+# Wrong API keys a client may send in a row before it has to wait, and the
+# longest wait (doubling from one second).
+FREE_KEY_FAILURES = 10
+MAX_KEY_WAIT_S = 60
 
 logger = logging.getLogger(__name__)
 
 
 class _Unauthorized(Exception):
-    """A request to the API without the configured key."""
+    """A request to the API without the configured key; its argument, when
+    given, is the seconds the client must wait before its next attempt."""
 
 
 def error_response(
@@ -57,6 +67,46 @@ def error_response(
     if code is not None:
         error["code"] = code
     return JSONResponse({"error": error}, status_code=status)
+
+
+class KeyAttempts:
+    """Wrong API keys per client address, shared by the Jev API and the Studio's
+    login: after ``FREE_KEY_FAILURES`` in a row a client waits, one second
+    doubling up to ``MAX_KEY_WAIT_S``, before its next attempt is checked. Each
+    wrong key is logged with the address; the right one clears the count."""
+
+    def __init__(self, limit: int = 1024):
+        self.limit = limit
+        self.failures: dict[str, tuple[int, float]] = {}  # address -> (count, until)
+
+    def wait(self, client: str | None) -> float:
+        """Seconds ``client`` must still wait before its key is checked."""
+        _, until = self.failures.get(client or "", (0, 0.0))
+        return max(0.0, until - time.monotonic())
+
+    def failed(self, client: str | None) -> None:
+        key = client or ""
+        count = self.failures.pop(key, (0, 0.0))[0] + 1
+        until = 0.0
+        if count > FREE_KEY_FAILURES:
+            until = time.monotonic() + min(2 ** (count - FREE_KEY_FAILURES - 1), MAX_KEY_WAIT_S)
+        self.failures[key] = (count, until)
+        while len(self.failures) > self.limit:  # the oldest go first
+            self.failures.pop(next(iter(self.failures)))
+        logger.warning("wrong API key from %s (%d in a row)", key or "an unknown address", count)
+
+    def succeeded(self, client: str | None) -> None:
+        self.failures.pop(client or "", None)
+
+
+def too_many_attempts(seconds: float) -> JSONResponse:
+    response = error_response(
+        429,
+        "too many wrong API keys from this address; try again later",
+        "rate_limit_error",
+    )
+    response.headers["Retry-After"] = str(max(1, round(seconds)))
+    return response
 
 
 class UnsupportedEncoding(Exception):
@@ -70,14 +120,17 @@ class UnsupportedEncoding(Exception):
 
 
 def decode_zstd(data: bytes, limit: int) -> bytes | None:
-    """The bytes of one or more zstd frames, or None when they decode to more than
-    ``limit`` bytes (decoding stops there). Raises ``DecisionError`` for data that
-    is not zstd or is cut short."""
+    """The bytes of one or more zstd frames (at most ``MAX_ZSTD_FRAMES``), or None
+    when they decode to more than ``limit`` bytes (decoding stops there). Raises
+    ``DecisionError`` for data that is not zstd, is cut short or has more frames."""
     if zstd is None:
         raise UnsupportedEncoding("zstd (pip install backports.zstd)")
-    parts, size, rest = [], 0, data
+    parts, size, rest, frames = [], 0, data, 0
     try:
         while rest:
+            frames += 1
+            if frames > MAX_ZSTD_FRAMES:
+                raise DecisionError(f"the body's zstd data has more than {MAX_ZSTD_FRAMES} frames")
             decompressor = zstd.ZstdDecompressor()
             part = decompressor.decompress(rest, max_length=limit - size + 1)
             while True:
@@ -116,7 +169,9 @@ async def read_body(request: Request, limit: int) -> bytes | None:
             return None
         chunks.append(chunk)
     body = b"".join(chunks)
-    return decode_zstd(body, limit) if encoding == "zstd" else body
+    if encoding == "zstd":  # off the event loop: decoding takes a while
+        return await asyncio.to_thread(decode_zstd, body, limit)
+    return body
 
 
 @dataclass(frozen=True)
@@ -179,14 +234,28 @@ def gpu_lifespan(gpu: Gpu):
 
 
 def create_app(
-    gpu: Gpu | ModelPool, api_key: str | None = None, max_body_bytes: int = MAX_BODY_BYTES
+    gpu: Gpu | ModelPool,
+    api_key: str | None = None,
+    max_body_bytes: int = MAX_BODY_BYTES,
+    *,
+    host: str | None = None,
+    port: int | None = None,
 ) -> FastAPI:
     """The app, which owns ``gpu`` (a pool gets a ``Gpu`` of its own) and closes it
-    when it stops; the default model, if there is one, loads at startup."""
+    when it stops; the default model, if there is one, loads at startup.
+
+    With the address it serves (``host``, ``port``), requests must name it in
+    ``Host`` and may not come from another site's pages (``Origin``), as in the
+    Studio: a web page cannot use the server, nor read it by DNS rebinding.
+    """
     if isinstance(gpu, ModelPool):
         gpu = Gpu(gpu)
     app = FastAPI(title="mlx-decision", lifespan=gpu_lifespan(gpu))
     add_jev_api(app, gpu, api_key, max_body_bytes)
+    if host is not None and port is not None:
+        from .studio.security import Guard, allowed_hosts
+
+        app.add_middleware(Guard, hosts=allowed_hosts(host, port), session=None)
     return app
 
 
@@ -196,25 +265,36 @@ def add_jev_api(
     api_key: str | None = None,
     max_body_bytes: int = MAX_BODY_BYTES,
     on_answer: Callable[[Answered], None] | None = None,
+    attempts: KeyAttempts | None = None,
 ) -> None:
     """Add the Jev API (``/v1/systemone``, ``/v1/models``) and ``/health`` to ``app``.
 
     ``on_answer``, when given, is called on the event loop with each request
-    answered, before the response is sent; it must not block.
+    answered, before the response is sent; it must not block. ``attempts``
+    counts wrong keys (shared with the Studio's login).
     """
     pool = gpu.pool
     guards = []
 
     if api_key:
         expected = f"Bearer {api_key}".encode()
+        attempts = attempts if attempts is not None else KeyAttempts()
 
         async def check_api_key(request: Request) -> None:
+            client = request.client.host if request.client else None
+            wait = attempts.wait(client)
+            if wait > 0:
+                raise _Unauthorized(wait)
             given = request.headers.get("authorization", "").encode()
             if not hmac.compare_digest(given, expected):
+                attempts.failed(client)
                 raise _Unauthorized
+            attempts.succeeded(client)
 
         @app.exception_handler(_Unauthorized)
         async def unauthorized(request: Request, error: _Unauthorized):
+            if error.args:
+                return too_many_attempts(error.args[0])
             return error_response(401, "missing or invalid API key", "authentication_error")
 
         guards.append(Depends(check_api_key))

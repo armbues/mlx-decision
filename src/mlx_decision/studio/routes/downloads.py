@@ -32,6 +32,7 @@ from ...hub import http_errors, snapshot_revision
 from ...memory import MARGIN, QUANTIZED_BITS, working_set
 from ...registry import families, get_family
 from ..catalog import Catalog
+from ..security import on_this_mac as browser_on_this_mac
 from . import ApiError, field, json_body
 from .jobs import REPO_ID
 
@@ -119,16 +120,18 @@ def downloads_router(
         return {"families": listed, "destination": destination()}
 
     @router.get("/first")
-    async def first():
-        """``{picks, models_dir_set, config_path, suggestion}`` for the first
-        start: one small, one medium and one large model that fit the Studio's
-        memory budget at full size (``first_picks``), whether the config file
-        says where models go, and the folder offered when it does not."""
+    async def first(request: Request):
+        """``{picks, models_dir_set, elsewhere, config_path, suggestion}`` for the
+        first start: one small, one medium and one large model that fit the
+        Studio's memory budget at full size (``first_picks``), whether the config
+        file says where models go, whether the browser is on another machine
+        (which cannot set it), and the folder offered when it does not."""
         budget = await asyncio.to_thread(pool.limit)
         current = config()
         return {
             "picks": first_picks(budget, choose),
             "models_dir_set": current.models_dir is not None,
+            "elsewhere": not browser_on_this_mac(request),
             "config_path": str(current.path),
             "suggestion": "~/Models",
         }
@@ -139,7 +142,14 @@ def downloads_router(
         config_path, destination}``: where models go, added to the config file
         as ``models_dir`` (the first start's question, asked once). The folder
         must be under the home folder; it is created. 409 when the file says
-        already."""
+        already; 403 for a browser elsewhere (the config file changes only from
+        this Mac)."""
+        if not browser_on_this_mac(request):
+            raise ApiError(
+                403,
+                "The config file changes only from a browser on this Mac",
+                kind="permission_error",
+            )
         body = await json_body(request, max_body_bytes)
         place = field(body, "place", str)
         current = config()

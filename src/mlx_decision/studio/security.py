@@ -10,7 +10,9 @@ The Studio's pages and API need a session: a random token per process,
 part of the address ``web`` prints, is exchanged for an HttpOnly,
 SameSite=Strict cookie on the first visit. With an API key the token is
 accepted only from this machine; a browser elsewhere logs in with the
-key instead. The Jev API keeps its own check (the key, when set).
+key instead. The Jev API keeps its own check (the key, when set). A client that sends
+wrong keys in a row has to wait before trying again (``KeyAttempts``,
+shared by the login and the Jev API).
 
 Requests to the Studio other than GET and HEAD must be JSON, which with
 the Origin check and SameSite closes cross-site form posts.
@@ -27,7 +29,7 @@ from starlette.datastructures import Headers
 from starlette.requests import cookie_parser
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from ..server import error_response, read_body
+from ..server import KeyAttempts, error_response, read_body, too_many_attempts
 
 LOOPBACK_NAMES = ("127.0.0.1", "localhost", "[::1]")
 # Bind addresses that serve every address of the machine.
@@ -55,6 +57,31 @@ def is_loopback(address: str | None) -> bool:
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     return ip.is_loopback
+
+
+def _address(text: str):
+    """``text`` as an IP address (IPv4-mapped IPv6 as IPv4), or None."""
+    try:
+        ip = ipaddress.ip_address(text.strip("[]"))
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
+
+def on_this_mac(request: Request) -> bool:
+    """Whether the request comes from a browser on this machine: from a loopback
+    address, or from the very address it reached the server on (a browser here
+    opening the Studio by this Mac's network address; another machine's
+    address differs)."""
+    client = request.client.host if request.client else None
+    if is_loopback(client):
+        return True
+    local = (request.scope.get("server") or (None,))[0]
+    if client is None or local is None:
+        return False
+    return _address(client) is not None and _address(client) == _address(str(local))
 
 
 def check_bind(host: str, api_key: str | None) -> None:
@@ -119,9 +146,10 @@ def _cookies(headers: Headers) -> dict[str, str]:
 
 
 class Guard:
-    """ASGI middleware: Host, Origin, JSON-only Studio writes, the API's session."""
+    """ASGI middleware: Host, Origin, JSON-only Studio writes, the API's session.
+    Without a ``session`` (the ``server`` command) only Host and Origin."""
 
-    def __init__(self, app: ASGIApp, hosts: frozenset[str] | None, session: Session):
+    def __init__(self, app: ASGIApp, hosts: frozenset[str] | None, session: Session | None):
         self.app = app
         self.hosts = hosts
         self.session = session
@@ -151,6 +179,8 @@ class Guard:
             return error_response(
                 403, "requests from another site's pages are refused", "permission_error"
             )
+        if self.session is None:
+            return None
         path = scope.get("path", "")
         studio = path.startswith(STUDIO_PREFIX) or path == LOGIN_PATH
         if studio and scope.get("method", "GET") not in SAFE_METHODS:
@@ -170,13 +200,20 @@ class Guard:
         return None
 
 
-def install(app: FastAPI, session: Session, host: str, port: int, api_key: str | None) -> None:
+def install(
+    app: FastAPI,
+    session: Session,
+    host: str,
+    port: int,
+    api_key: str | None,
+    attempts: KeyAttempts | None = None,
+) -> None:
     """Add the guard middleware and the login routes to ``app``."""
     app.add_middleware(Guard, hosts=allowed_hosts(host, port), session=session)
-    app.include_router(login_router(session, api_key))
+    app.include_router(login_router(session, api_key, attempts or KeyAttempts()))
 
 
-def login_router(session: Session, api_key: str | None) -> APIRouter:
+def login_router(session: Session, api_key: str | None, attempts: KeyAttempts) -> APIRouter:
     """``/login``: the page and the key check; only with an API key."""
     router = APIRouter()
     if not api_key:
@@ -189,6 +226,10 @@ def login_router(session: Session, api_key: str | None) -> APIRouter:
 
     @router.post(LOGIN_PATH)
     async def login(request: Request):
+        client = request.client.host if request.client else None
+        wait = attempts.wait(client)
+        if wait > 0:
+            return too_many_attempts(wait)
         raw = await read_body(request, MAX_LOGIN_BYTES)
         try:
             given = json.loads(raw)["api_key"] if raw is not None else None
@@ -199,7 +240,9 @@ def login_router(session: Session, api_key: str | None) -> APIRouter:
                 400, 'the body must be {"api_key": "..."}', "invalid_request_error", "api_key"
             )
         if not hmac.compare_digest(given.encode(), expected):
+            attempts.failed(client)
             return error_response(401, "wrong API key", "authentication_error", "api_key")
+        attempts.succeeded(client)
         return session.set_cookie(Response(status_code=204, headers=NO_STORE))
 
     return router

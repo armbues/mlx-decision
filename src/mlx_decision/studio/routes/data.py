@@ -46,7 +46,7 @@ from ...data.sources import SourceError, table_from_text
 from ...errors import DecisionError
 from ...types import parse_request
 from ..jobs import Jobs
-from ..security import is_loopback
+from ..security import on_this_mac
 from ..workspace import Conflict, NotFound, Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
 from .datasets import describe_table
@@ -282,8 +282,7 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
     @router.post("/{name}/reveal", status_code=204)
     async def reveal_data(name: str, request: Request):
         """Show the dataset in Finder (only for a browser on this Mac)."""
-        client = request.client.host if request.client else None
-        if not is_loopback(client):
+        if not on_this_mac(request):
             raise ApiError(
                 403, "Finder opens only for a browser on this Mac", kind="permission_error"
             )

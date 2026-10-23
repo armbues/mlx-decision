@@ -1045,7 +1045,8 @@ ApiKeyOption = Annotated[
     typer.Option(
         envvar="MLX_DECISION_API_KEY",
         help="Require 'Authorization: Bearer KEY' on /v1/* (API clients send "
-        "TYPESAFE_API_KEY this way).",
+        "TYPESAFE_API_KEY this way). Use a long random key; a client that sends wrong "
+        "keys in a row has to wait.",
         show_envvar=True,
     ),
 ]
@@ -1129,7 +1130,7 @@ def server(
         typer.echo(f"models: {names}; default {pool.default}", err=True)
     if api_key:
         typer.echo("API key required on /v1/*", err=True)
-    app = create_app(pool, api_key=api_key)
+    app = create_app(pool, api_key=api_key, host=host, port=port)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 

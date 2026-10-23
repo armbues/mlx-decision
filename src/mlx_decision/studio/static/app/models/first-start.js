@@ -119,7 +119,7 @@ export function FirstStart() {
   if (!first.value) return null;
   return html`
     <div class="first-start">
-      ${first.value.models_dir_set ? html`<${Picks} />` : html`<${WhereModelsGo} />`}
+      ${first.value.models_dir_set || first.value.elsewhere ? html`<${Picks} />` : html`<${WhereModelsGo} />`}
     </div>
   `;
 }

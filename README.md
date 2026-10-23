@@ -406,7 +406,16 @@ without them.
 To require a key, start it with `--api-key KEY` (or set
 `MLX_DECISION_API_KEY`). Requests to `/v1/*` then need
 `Authorization: Bearer KEY`, which is what the SDK sends from
-`TYPESAFE_API_KEY`; others get `401`. `/health` stays open.
+`TYPESAFE_API_KEY`; others get `401`. `/health` stays open. Use a long
+random key (`python -c "import secrets; print(secrets.token_urlsafe(24))"`):
+after 10 wrong keys in a row a client waits, from one second doubling up
+to a minute (`429` with `Retry-After`), and each wrong key is logged
+with the client's address.
+
+A web page in your browser cannot use the server: requests must name the
+server's address in `Host` (so DNS rebinding does not work), and those
+sent by another site's pages (with a foreign `Origin`) get `403`.
+Clients that send no `Origin`, such as the SDK and curl, are unaffected.
 
 ### Several models
 

@@ -21,7 +21,7 @@ from ..config import Config
 from ..config import load as load_config
 from ..gpu import Gpu
 from ..pool import ModelPool
-from ..server import MAX_BODY_BYTES, add_jev_api
+from ..server import MAX_BODY_BYTES, KeyAttempts, add_jev_api
 from . import routes, security
 from .batch_results import Results
 from .batches import BatchError, Batches
@@ -136,7 +136,8 @@ def create_studio(
     app.state.jobs = jobs
     app.state.settings = settings
     app.state.rescans = rescans
-    security.install(app, session, host, port, api_key)
+    attempts = KeyAttempts()  # wrong keys, counted for the login and the Jev API alike
+    security.install(app, session, host, port, api_key, attempts)
     recorder = Recorder(files, models)
     batches = Batches(gpu, files, models, record=lambda answered: recorder.speed(answered, "batch"))
     batches.open()
@@ -163,7 +164,7 @@ def create_studio(
     batch_messages = BatchMessages(hub.publish)
     batches.on_change = lambda batch, progress: batch_messages(batch, progress, batches.live(batch))
     routes.install_errors(app)
-    add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered)
+    add_jev_api(app, gpu, api_key, max_body_bytes, on_answer=recorder.answered, attempts=attempts)
     page.mount(app)
     app.include_router(page_router(page, session, api_key))
     current = lambda: settings.config  # noqa: E731 - read at each request: Settings changes it
@@ -324,11 +325,10 @@ def page_router(page: Page, session: Session, api_key: str | None) -> APIRouter:
             if token is not None:
                 return to_page
             return HTMLResponse(page.html, headers=page.headers)
-        if token is not None and session.matches_token(token):
-            client = request.client.host if request.client else None
-            # With a key, the address alone does not let in another machine.
-            if not api_key or security.is_loopback(client):
-                return session.set_cookie(to_page)
+        # With a key, the address alone does not let in another machine.
+        mine = not api_key or security.on_this_mac(request)
+        if token is not None and session.matches_token(token) and mine:
+            return session.set_cookie(to_page)
         return security.page_without_session(api_key)
 
     return router

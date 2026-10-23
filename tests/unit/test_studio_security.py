@@ -319,3 +319,87 @@ def test_is_loopback():
     assert is_loopback("::ffff:127.0.0.1")
     for address in ("testclient", "192.168.1.20", "::ffff:10.0.0.1", "", None):
         assert not is_loopback(address)
+
+
+# This Mac by its network address, the destination, wrong keys
+
+
+LAN = "10.20.1.145"
+
+
+def test_with_a_key_the_printed_address_lets_in_this_macs_browser(make):
+    """``web --host <this Mac's address>``: a browser here connects from that
+    same address, so the token works and it counts as on this Mac."""
+    app, _ = make(host=LAN, api_key=KEY)
+    with client(app, base_url=f"http://{LAN}:8000", address=(LAN, 50000)) as here:
+        sign_in(here, app)
+        assert here.get("/studio/api/places").json()["editable"] is True
+        with client(app, base_url=f"http://{LAN}:8000", address=("10.20.1.99", 50000)) as other:
+            response = other.get("/", params={"token": app.state.session.token})
+            assert response.headers["location"] == "/login"
+
+
+def test_the_download_destination_is_set_only_from_this_mac(make, tmp_path):
+    from mlx_decision.config import Config
+
+    config = Config(tmp_path / "config.toml")
+    app, _ = make(host="0.0.0.0", api_key=KEY, config=config)
+    with client(app, address=OTHER_CLIENT) as remote:
+        assert remote.post("/login", json={"api_key": KEY}).status_code == 204
+        response = remote.post(
+            "/studio/api/downloads/destination", json={"place": "folder", "path": "~/x"}
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["type"] == "permission_error"
+        assert remote.get("/studio/api/downloads/first").json()["elsewhere"] is True
+    assert not (tmp_path / "config.toml").exists()
+
+
+def test_wrong_keys_in_a_row_make_a_client_wait(make, monkeypatch, caplog):
+    import mlx_decision.server as server
+
+    now = [1000.0]
+    monkeypatch.setattr(server.time, "monotonic", lambda: now[0])
+    app, _ = make(host="0.0.0.0", api_key=KEY)
+    with client(app, address=OTHER_CLIENT) as remote, caplog.at_level("WARNING"):
+        for _ in range(server.FREE_KEY_FAILURES):
+            assert remote.post("/login", json={"api_key": "guess"}).status_code == 401
+        # One more wrong key: the client now waits, on the login and the Jev API alike.
+        assert remote.post("/v1/systemone", json=BODY).status_code == 401
+        waiting = remote.post("/login", json={"api_key": KEY})
+        assert waiting.status_code == 429 and waiting.headers["Retry-After"] == "1"
+        assert remote.post("/v1/systemone", json=BODY).status_code == 429
+        with client(app) as here:  # another address does not wait
+            assert here.post("/login", json={"api_key": KEY}).status_code == 204
+        now[0] += 1.5
+        assert remote.post("/login", json={"api_key": KEY}).status_code == 204
+        assert remote.post("/login", json={"api_key": "guess"}).status_code == 401  # count reset
+    warnings = [r.getMessage() for r in caplog.records if "wrong API key" in r.getMessage()]
+    assert warnings[0] == f"wrong API key from {OTHER_CLIENT[0]} (1 in a row)"
+
+
+def test_the_server_command_refuses_other_sites_and_other_hosts(tmp_path):
+    from mlx_decision.server import create_app
+
+    write_model(tmp_path / "models" / "fake")
+    loads = Loads()
+    pool = ModelPool(discover([tmp_path / "models"]), budget=10**9, load=loads)
+    app = create_app(pool, host="127.0.0.1", port=8000)
+    with client(app) as local:
+        pool.unload_all()  # the default model loaded at startup
+        loaded_at_start = loads.loads
+        page = {"Origin": "https://evil.example", "Content-Type": "text/plain"}
+        response = local.post("/v1/systemone", content=b'{"state": "x"}', headers=page)
+        assert response.status_code == 403
+        rebound = local.get("/v1/models", headers={"Host": "rebind.evil.example:8000"})
+        assert rebound.status_code == 403
+        assert loads.loads == loaded_at_start  # no model work
+        assert local.post("/v1/systemone", json=BODY).status_code == 200  # the SDK, curl
+        same = local.post("/v1/systemone", json=BODY, headers={"Origin": HERE})
+        assert same.status_code == 200
+    wildcard = create_app(ModelPool(discover([tmp_path / "models"]), budget=10**9),
+                          host="0.0.0.0", port=8000)  # fmt: skip
+    with client(wildcard, base_url="http://mac.local:8000") as any_name:
+        assert any_name.post("/v1/systemone", json=BODY).status_code == 200
+        foreign = any_name.post("/v1/systemone", json=BODY, headers=page)
+        assert foreign.status_code == 403

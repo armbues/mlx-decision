@@ -25,6 +25,8 @@ QUESTIONS = {
     "is_urgent": {"type": "noul", "instructions": "Urgent?"},
 }
 BODY = {"model": "jev-latest", "state": "Stripe is down", "questions": QUESTIONS}
+# The address the server command serves by default (its Host check names it).
+SERVED = "http://127.0.0.1:8000"
 
 
 class RecordingBackend(FakeBackend):
@@ -315,7 +317,7 @@ def test_server_command_reads_the_key_from_the_environment(monkeypatch, fake_mod
         env={"MLX_DECISION_API_KEY": "from-env"},
     )
     assert result.exit_code == 0, result.output
-    with TestClient(seen["app"]) as client:
+    with TestClient(seen["app"], base_url=SERVED) as client:
         assert client.post("/v1/systemone", json=BODY).status_code == 401
         headers = {"Authorization": "Bearer from-env"}
         assert client.post("/v1/systemone", json=BODY, headers=headers).status_code == 200
@@ -527,7 +529,7 @@ def test_server_command_without_a_default_warns(serve, models_folder):
     assert "skipped " in result.stderr and "encoder-base" in result.stderr
     assert "models: Alpha, beta, gamma; no default model" in result.stderr
     assert "--default-model" in result.stderr
-    with TestClient(app) as client:
+    with TestClient(app, base_url=SERVED) as client:
         assert client.post("/v1/systemone", json=BODY).status_code == 422
 
 
@@ -536,7 +538,7 @@ def test_server_command_with_a_default_and_several_m(serve, models_folder, tmp_p
     result, app = serve("-m", extra, "-m", models_folder, "--default-model", "beta")
     assert result.exit_code == 0, result.output
     assert "default beta" in result.stderr
-    with TestClient(app) as client:
+    with TestClient(app, base_url=SERVED) as client:
         assert client.get("/health").json()["loaded"] == ["beta"]
         assert client.post("/v1/systemone", json={**BODY, "model": "extra"}).status_code == 200
 
@@ -562,7 +564,7 @@ def test_server_command_refuses_bad_setups(serve, models_folder, tmp_path):
 def test_server_command_passes_the_budget(serve, models_folder):
     result, app = serve("-m", models_folder, "--memory-budget", "0.0000022")
     assert result.exit_code == 0, result.output
-    with TestClient(app) as client:
+    with TestClient(app, base_url=SERVED) as client:
         for name in ("Alpha", "beta", "gamma"):
             client.post("/v1/systemone", json={**BODY, "model": name})
         assert client.get("/health").json()["loaded"] == ["beta", "gamma"]
@@ -574,10 +576,33 @@ def test_fitted_models_are_served_by_name_beside_their_base(serve, models_folder
     assert result.exit_code == 0, result.output
     assert "models: Alpha, beta, beta-support, gamma; default beta" in result.stderr
     body = {**BODY, "questions": {"team": QUESTIONS["department"]}}
-    with TestClient(app) as client:
+    with TestClient(app, base_url=SERVED) as client:
         names = [model["name"] for model in client.get("/v1/models").json()["models"]]
         assert names == ["Alpha", "beta", "beta-support", "gamma"]
         response = client.post("/v1/systemone", json={**body, "model": "beta-support"})
         assert response.status_code == 200
         assert response.json()["model"] == "beta-support"
         assert client.get("/health").json()["loaded"] == ["beta", "beta-support"]
+
+
+def test_a_zstd_body_of_many_frames_is_refused_quickly(client):
+    import time
+
+    from mlx_decision.server import MAX_ZSTD_FRAMES, zstd
+
+    if zstd is None:
+        pytest.skip("no zstd module")
+    body = json.dumps(BODY).encode()
+    frames = zstd.compress(body[:10]) + b"".join(
+        zstd.compress(body[i : i + 1]) for i in range(10, 10 + MAX_ZSTD_FRAMES)
+    )
+    headers = {"Content-Encoding": "zstd", "Content-Type": "application/json"}
+    response = client.post("/v1/systemone", content=frames, headers=headers)
+    assert response.status_code == 400
+    assert f"more than {MAX_ZSTD_FRAMES} frames" in response.json()["error"]["message"]
+    flood = zstd.compress(b" ") * (2 * 2**20 // 10)  # 2 MiB of tiny frames
+    start = time.perf_counter()
+    response = client.post("/v1/systemone", content=flood, headers=headers)
+    assert response.status_code == 400 and time.perf_counter() - start < 2
+    whole = zstd.compress(body)  # one frame, as the SDK sends
+    assert client.post("/v1/systemone", content=whole, headers=headers).status_code == 200

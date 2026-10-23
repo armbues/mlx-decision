@@ -130,6 +130,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `server` now refuses requests from other sites' pages and requests that
+  name another address in `Host` (`403`), as the Studio does: a web page
+  could make it run a model, and with DNS rebinding read the answers.
+- A compressed body made of many tiny zstd frames no longer freezes the
+  server: at most 16 frames, decoded off the event loop.
+- After 10 wrong API keys in a row a client waits before its next try
+  (`429`, from one second doubling up to a minute), on `/v1` and the
+  Studio's login alike; wrong keys are logged with the client's address.
+- The Studio: a browser on another machine can no longer set where models
+  go (`models_dir`); a browser on this Mac that opens the Studio by the
+  Mac's network address (`web --host <address>`) counts as on this Mac.
 - Answering many requests in one process (`run --states`, `server`,
   `mcp`, the Studio's batches) no longer runs out of memory: MLX kept
   the GPU buffers of finished requests for reuse, up to more than a

@@ -28,7 +28,7 @@ from ..catalog import Catalog
 from ..clearing import FOLDERS as CLEARABLE
 from ..clearing import Clearing
 from ..removal import RemovalError
-from ..security import is_loopback
+from ..security import on_this_mac
 from ..settings import KEYS, READ_ONLY, Settings
 from ..workspace import Workspace
 from . import ApiError, field, json_body
@@ -102,9 +102,6 @@ def settings_router(
             if place["id"] == place_id:
                 return Path(place["path"])
         raise ApiError(404, f"no place {place_id!r}", param="place")
-
-    def on_this_mac(request: Request) -> bool:
-        return is_loopback(request.client.host if request.client else None)
 
     def only_on_this_mac(request: Request, what: str) -> None:
         if not on_this_mac(request):

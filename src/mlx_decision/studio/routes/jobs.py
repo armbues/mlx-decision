@@ -37,7 +37,7 @@ from ..catalog import option_arguments
 from ..checks import training_data_warnings
 from ..jobs import Job, JobBlocked, JobConflict, Jobs
 from ..removal import ModelRemoval, RemovalError
-from ..security import is_loopback
+from ..security import on_this_mac
 from ..workspace import Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
 from .picks import pick_split
@@ -576,8 +576,7 @@ def jobs_router(
     @router.post("/{job_id}/reveal", status_code=204)
     async def reveal_output(job_id: str, request: Request):
         """Show what the job wrote in Finder (only for a browser on this Mac)."""
-        client = request.client.host if request.client else None
-        if not is_loopback(client):
+        if not on_this_mac(request):
             raise ApiError(
                 403, "Finder opens only for a browser on this Mac", kind="permission_error"
             )
