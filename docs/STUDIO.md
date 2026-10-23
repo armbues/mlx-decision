@@ -157,6 +157,8 @@ Question Sets lists the sets in the workspace's `sets/`. Each set is a
 request body (`sets/NAME.json`) with a state, its questions and,
 optionally, several examples.
 
+![The Playground: a support-triage question set answered by pplx-decider-flash-v1.2, a card per question](images/playground.png)
+
 ### Question sets
 
 New Question Set… (⌥⌘N, or the + by Question Sets) starts empty or from
@@ -249,6 +251,8 @@ untick them, or switch the Answers tab to One Model, to Run again. Stop
 ends it: the models not asked yet are not run.
 A Compare is one History entry.
 
+![Compare: the same ticket on pplx-decider-flash-v1.2, d1-3B and d3-nano, side by side](images/compare.png)
+
 ### History
 
 Every run is kept, in `history/NAME.jsonl`, until you delete it. The
@@ -302,6 +306,8 @@ Downloading or Converting.
 The status turns into Load or Unload under the pointer. A row's context
 menu has Open in Playground, Load or Unload, Convert…, Copy Name and,
 for a model the Studio made, Delete….
+
+![The Models page: the models on this Mac, a fitted model under its base, pplx-decider-flash-v1.2 in the inspector](images/models.png)
 
 The memory card above the list shows the memory in use against the
 budget. Pointing at a model previews what loading it would do,
@@ -365,6 +371,8 @@ more questions. Fits, evaluations and batches read them from the
 workspace's `data/`, each a dataset folder (a `dataset.json` with the
 questions and one JSON-lines file per split) or a single JSON-lines
 file. The formats are in [TRAINING.md](TRAINING.md#training-data).
+
+![The Datasets page: TREC's test split, its question and label counts, and its rows](images/datasets.png)
 
 The sidebar lists them, with Download (the arrow) and Add (+) in its
 heading and a delete button on each row on hover (refused while a job
@@ -448,6 +456,8 @@ time, and it does not run beside a GPU job ([Jobs](#jobs-and-the-busy-gpu)).
 Its progress (rows answered and the time left) shows on the page and in
 the Jobs list, each with Stop; a stopped batch keeps what it answered.
 
+![A batch: d3-edge over TREC's 500 test rows, with accuracy, a confusion matrix and a reliability diagram](images/batch.png)
+
 The page shows what the batch ran (dataset and split, questions, model),
 how far it got or how it ended, and its results:
 
@@ -489,6 +499,8 @@ evaluations, newest first with the running one on top. Picking one
 shows its progress or its report; an ended one has a delete button on
 hover (for a fit, ticking the model deletes it too). What each kind of
 fit does, and what it gains, is in [TRAINING.md](TRAINING.md).
+
+![A fit's report: d3-edge trained on TREC, accuracy on the test split from 74.4% to 93.2%](images/fit.png)
 
 ### New Fit
 

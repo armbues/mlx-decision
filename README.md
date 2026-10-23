@@ -17,11 +17,11 @@ LLMs. The **Studio**, a web app on your Mac, lets you write questions
 and try them, compare models, answer a whole dataset and fit a model to
 your own examples, without writing code.
 
-![The Studio's Playground comparing three models on a support ticket](https://raw.githubusercontent.com/armbues/mlx-decision/main/docs/images/compare.png)
+![The Studio: a support ticket answered by a model, compared across three models, and a model trained on a dataset](https://raw.githubusercontent.com/armbues/mlx-decision/main/docs/images/studio.webp)
 
-*Compare in the Studio's Playground: pplx-decider-flash-v1.2, d1-3B and
-d3-nano agree on the team for a support ticket and disagree on how
-frustrated and urgent the customer is.*
+*The Studio on a MacBook Air: a support ticket answered by
+pplx-decider-flash-v1.2, the same request compared with d1-3B and
+d3-nano, and d3-edge trained on TREC.*
 
 ## Quick start
 
