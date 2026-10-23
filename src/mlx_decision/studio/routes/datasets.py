@@ -128,7 +128,7 @@ def read_preview(repo: str, config: str | None, split: str | None) -> dict[str, 
         if config is None:
             return answer | {"splits": None, "split": None}
         if config not in configs:
-            raise SourceError(f"{source} has no config {config!r}; it has {', '.join(configs)}")
+            raise SourceError(f"{source} has no subset {config!r}; it has {', '.join(configs)}")
     answer["config"] = config
     try:
         splits = sources.hub_splits(repo, config)

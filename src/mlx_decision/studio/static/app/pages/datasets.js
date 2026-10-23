@@ -128,7 +128,7 @@ function Source({ summary }) {
       <div class="group"><dl>
         ${repo &&
         html`<div class="kv"><dt>Dataset</dt><dd>
-          ${source.preset && html`The <b>${source.preset}</b> preset: `}${source.source === "upload" ? "A file you added" : html`<code>${repo}</code>`}${hub ? " on the Hugging Face Hub" : ""}${source.config ? html`, config <code>${source.config}</code>` : ""}
+          ${source.preset && html`The <b>${source.preset}</b> preset: `}${source.source === "upload" ? "A file you added" : html`<code>${repo}</code>`}${hub ? " on the Hugging Face Hub" : ""}${source.config ? html`, subset <code>${source.config}</code>` : ""}
           ${source.revision && html`<small>At commit <code>${source.revision.slice(0, 7)}</code></small>`}
         </dd></div>`}
         ${(meta.part || meta.sample) &&

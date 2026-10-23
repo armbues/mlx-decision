@@ -108,6 +108,9 @@ change the interface).
   `decide(state, questions, images)`) now raises `TypeError`.
 - `ModelTooLargeError` is a `DecisionError` (still a `ValueError`), and
   `DataError` and `PlatformError` can be imported from `mlx_decision`.
+- `benchmark --out` is now `-o` / `--output`, and `data --config` is now
+  `--subset` (the Studio's Another dataset… says Subset too). The old names
+  still work and print a warning; they are no longer in the help.
 - `dataset.json` has a `format` (1; a file without it reads as 1). A
   dataset from a newer release is refused with a message naming its
   format, and keys this release does not know are kept when it writes

@@ -106,7 +106,7 @@ def test_results_file_names_machine_software_model_and_options(
     monkeypatch.setattr(benchmark, "machine_info", lambda: dict(MACHINE))
     out = tmp_path / "result.json"
     args = ["benchmark", "-m", str(fake_model_path), "--lengths", "20", "--questions", "2"]
-    result = CliRunner().invoke(app, [*args, "--repeats", "2", "--out", str(out)])
+    result = CliRunner().invoke(app, [*args, "--repeats", "2", "--output", str(out)])
     assert result.exit_code == 0, result.output
     assert result.stdout.startswith("Apple M1 (MacBookPro17,1), 4 Performance + 4 Efficiency")
     assert f"results written to {out}" in result.stderr
@@ -216,7 +216,7 @@ def test_a_folder_of_models_runs_each_in_its_own_process(tmp_path):
     (folder / ".hidden").mkdir()
     out = tmp_path / "results"
     args = ["benchmark", "-m", str(folder), "--lengths", "20", "--questions", "1,2"]
-    result = CliRunner().invoke(app, [*args, "--repeats", "1", "--out", str(out)])
+    result = CliRunner().invoke(app, [*args, "--repeats", "1", "-o", str(out)])
     assert result.exit_code == 0, result.output
     # Alphabetical ignoring case (a plain sort puts capitals first); the
     # folder no family loads is listed, not run.
@@ -310,9 +310,9 @@ def test_json_for_a_folder_is_a_list(tmp_path, fake_runs):
 def test_out_must_be_a_folder_for_a_folder_of_models(tmp_path, fake_runs):
     folder = fake_folder(tmp_path, "one")
     (tmp_path / "file.json").write_text("{}")
-    args = ["benchmark", "-m", str(folder), *FAST, "--out", str(tmp_path / "file.json")]
+    args = ["benchmark", "-m", str(folder), *FAST, "--output", str(tmp_path / "file.json")]
     result = CliRunner().invoke(app, args)
-    assert result.exit_code == 2 and "--out is a folder" in result.output
+    assert result.exit_code == 2 and "--output is a folder" in result.output
     assert fake_runs.calls == []
 
 
@@ -328,3 +328,17 @@ def test_a_report_survives_json(fake_model):
 
     report = run(fake_model, lengths=(10,), question_counts=(1, 2), repeats=1)
     assert from_dict(json.loads(json.dumps(to_dict(report)))) == report
+
+
+def test_output_and_its_old_name_out_which_warns(fake_model_path, tmp_path):
+    args = ["benchmark", "-m", str(fake_model_path), *FAST]
+    old = CliRunner().invoke(app, [*args, "--out", str(tmp_path / "old.json")])
+    assert old.exit_code == 0, old.output
+    assert "warning: --out is now --output" in old.stderr
+    assert json.loads((tmp_path / "old.json").read_text())["model"] == "fake"
+    new = CliRunner().invoke(app, [*args, "-o", str(tmp_path / "new.json")])
+    assert new.exit_code == 0 and "warning" not in new.stderr
+    both = CliRunner().invoke(app, [*args, "-o", "a.json", "--out", "b.json"])
+    assert both.exit_code == 2 and "--out is the old name of --output" in both.output
+    shown = CliRunner().invoke(app, ["benchmark", "--help"], terminal_width=200).stdout
+    assert "--output" in shown and "--out " not in shown

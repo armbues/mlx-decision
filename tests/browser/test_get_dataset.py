@@ -186,7 +186,7 @@ def read_reviews(sheet, config="en", split="train"):
     field = sheet.get_by_label("Hugging Face dataset")
     field.fill("org/reviews")
     field.press("Enter")  # reads; it does not download
-    sheet.get_by_label("Config").select_option(config)
+    sheet.get_by_label("Subset").select_option(config)
     sheet.get_by_label("Split to preview").select_option(split)
 
 

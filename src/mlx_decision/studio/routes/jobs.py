@@ -412,7 +412,7 @@ def jobs_router(
 
         argv = ["data", source]
         if config is not None:
-            argv += ["--config", config]
+            argv += ["--subset", config]
         details: dict[str, Any] = {"source": source, "config": config, "shape": shape}
         if shape == "choice":
             roles = {role: column(role, role != "context") for role in CHOICE_ROLES}

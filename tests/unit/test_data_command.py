@@ -81,7 +81,7 @@ def test_open_choices_are_errors_naming_the_flag(emotion, monkeypatch):
     with pytest.raises(SourceError, match="no split 'dev'; it has train, test"):
         make("hf:org/emotion", split="dev", wording=ASK)
     hub(monkeypatch, {"org/multi": {"a": {"train": labelled(["x"], [0], ["y"])}, "b": {}}})
-    with pytest.raises(SourceError, match=r"several configs; pass --config \(a, b\)"):
+    with pytest.raises(SourceError, match=r"several subsets; pass --subset \(a, b\)"):
         make("hf:org/multi", wording=ASK)
 
 
@@ -191,7 +191,7 @@ def test_several_columns_become_an_object_state(monkeypatch, tmp_path):
     # The command, into a folder; the flags it repeats.
     runner = CliRunner()
     folder = tmp_path / "mmlu"
-    args = ["data", "hf:cais/mmlu", "--config", "all", "--columns", "question,choices",
+    args = ["data", "hf:cais/mmlu", "--subset", "all", "--columns", "question,choices",
             "-o", f"{folder}/"]  # fmt: skip
     written = runner.invoke(app, args)
     assert written.exit_code == 0, written.output
@@ -342,3 +342,23 @@ def test_the_command_previews_writes_and_repeats_itself(tmp_path, emotion):
     first = json.loads(with_q.stdout.splitlines()[0])
     assert first["questions"] == {"mood": {"type": "noul", "instructions": "Happy?"}}
     assert first["labels"] == {"mood": True}
+
+
+def test_subset_and_its_old_name_config_which_warns(monkeypatch, tmp_path):
+    rows = labelled(["so happy", "so sad"], [0, 1], ["joy", "sadness"])
+    hub(monkeypatch, {"org/multi": {"a": {"train": rows}, "b": {"train": rows}}})
+    runner = CliRunner()
+    base = ["data", "hf:org/multi", "--split", "train", "--question", "Which?", "--events"]
+    new = runner.invoke(app, [*base, "--subset", "a", "-o", str(tmp_path / "new.jsonl")])
+    assert new.exit_code == 0, new.output
+    assert "warning" not in new.stderr
+    old = runner.invoke(app, [*base, "--config", "a", "-o", str(tmp_path / "old.jsonl")])
+    assert old.exit_code == 0, old.output
+    assert "warning: --config is now --subset" in old.stderr
+    assert all("config" not in line for line in old.stdout.splitlines())  # not an event
+    assert json.loads(old.stdout.splitlines()[-1])["stage"] == "done"
+    assert (tmp_path / "old.jsonl").read_text() == (tmp_path / "new.jsonl").read_text()
+    both = runner.invoke(app, [*base, "--subset", "a", "--config", "b"])
+    assert both.exit_code == 2 and "--config is the old name of --subset" in both.output
+    shown = runner.invoke(app, ["data", "--help"], terminal_width=200).stdout
+    assert "--subset" in shown and "--config" not in shown

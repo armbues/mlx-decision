@@ -53,6 +53,17 @@ def fail(message: str) -> None:
     raise typer.Exit(1)
 
 
+def renamed(new_value, old_value, new: str, old: str):
+    """A flag's value under its new name or its old, hidden one, which still works
+    and warns on stderr (never as an event); both at once is an error."""
+    if old_value is None:
+        return new_value
+    if new_value is not None:
+        raise typer.BadParameter(f"{old} is the old name of {new}: pass one", param_hint=new)
+    typer.echo(f"warning: {old} is now {new}; the old name still works for now", err=True)
+    return old_value
+
+
 def read_config():
     """The config file's values; its warnings go to stderr, an error ends the command."""
     from .config import ConfigError, load
@@ -1590,7 +1601,9 @@ def benchmark_models(
     from .pool import discover
 
     if out is not None and out.exists() and not out.is_dir():
-        raise typer.BadParameter("with a folder of models, --out is a folder", param_hint="--out")
+        raise typer.BadParameter(
+            "with a folder of models, --output is a folder", param_hint="--output"
+        )
     skipped: list[str] = []
     try:
         specs = discover(
@@ -1670,12 +1683,14 @@ def benchmark(
     out: Annotated[
         Path | None,
         typer.Option(
-            "--out",
+            "--output",
+            "-o",
             help="Also write the results as JSON to this file, with the machine's "
             "configuration and the versions, to compare runs across Macs. With a "
             "folder of models: a folder, one <model>.json per model.",
         ),
     ] = None,
+    old_out: Annotated[Path | None, typer.Option("--out", hidden=True)] = None,
 ) -> None:
     """Measure load time and latency per request across state length and question count.
 
@@ -1691,6 +1706,7 @@ def benchmark(
     }
     if min(grid["question_counts"]) < 1:
         raise typer.BadParameter("at least one question per request", param_hint="--questions")
+    out = renamed(out, old_out, "--output", "--out")
     config = read_config()
     references = [model_reference(model, config)] if model is not None else config_models(config)
     if not references:
@@ -2248,7 +2264,11 @@ def data_command(
             "offensive, sst5, openbookqa or anli-r3 (with --split)."
         ),
     ] = None,
-    config: Annotated[str | None, typer.Option(help="The dataset's config.")] = None,
+    subset: Annotated[
+        str | None,
+        typer.Option(help="The dataset's subset (what the Hugging Face Hub calls a config)."),
+    ] = None,
+    old_config: Annotated[str | None, typer.Option("--config", hidden=True)] = None,
     split: Annotated[
         list[str] | None,
         typer.Option(
@@ -2370,12 +2390,13 @@ def data_command(
     from .data.sources import SourceError
     from .flags import split_list
 
+    subset = renamed(subset, old_config, "--subset", "--config")
     splits = split or [None]
     plan = DataPlan(
         source=source,
         output=str(output) if output is not None else None,
         preset=preset,
-        config=config,
+        config=subset,
         split=splits[0],
         revision=revision,
         limit=limit,

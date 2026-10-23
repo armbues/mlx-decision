@@ -181,13 +181,14 @@ mlx-decision data SOURCE -o FILE.jsonl [options] # one file
 mlx-decision data SOURCE --show 3                # preview: three lines and the label counts
 ```
 
-SOURCE is `hf:ORG/NAME` (a Hugging Face dataset, with `--config`,
+SOURCE is `hf:ORG/NAME` (a Hugging Face dataset, with `--subset`,
 `--split` and `--revision`), a `.csv`, `.jsonl` or `.parquet` file, or a
 folder written by the `datasets` library's `save_to_disk`. Everything
 except CSV and JSONL files needs the `training` extra. A dataset with
-several configs or splits must be told which one to use; the error lists
-them. `--limit N` takes the first rows, `--sample N --seed S` draws rows
-at random (in the dataset's order). The same flags always write the same
+several subsets (configs, in the `datasets` library) or splits must be
+told which one to use; the error lists them. `--limit N` takes the
+first rows, `--sample N --seed S` draws rows at random (in the
+dataset's order). The same flags always write the same
 file.
 
 Several splits in one run: repeat `--split`; `-o` then names a dataset
@@ -249,7 +250,7 @@ instead.
 Rows without a usable label are left out and counted in the summary.
 
 ```bash
-mlx-decision data hf:dair-ai/emotion --config split --split train -o emotion.jsonl \
+mlx-decision data hf:dair-ai/emotion --subset split --split train -o emotion.jsonl \
   --question "Which emotion does the text express most?"
 
 mlx-decision data hf:Yelp/yelp_review_full --split train --sample 5000 \
@@ -266,7 +267,7 @@ the dataset's own (`train`, `test`; ANLI's `train_r3`, `dev_r3` and
 
 **Menus.** Without a source in a terminal, `data` asks step by step,
 with its guesses preselected: the source (presets, a Hub dataset, a
-file), config and split, shape, columns (with each column's type and a
+file), subset and split, shape, columns (with each column's type and a
 sample value), label names, the question (the same builder as `chat`)
 and the output file. It then shows the preview, asks for confirmation
 and finally prints the equivalent command. `--no-input` turns the menus

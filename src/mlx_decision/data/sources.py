@@ -213,9 +213,9 @@ def load_hub(
     what = f"{HUB_PREFIX}{repo}"
     configs = hub_configs(repo, revision)
     if configs:
-        config = _pick("config", config, configs, "--config", what)
+        config = _pick("subset", config, configs, "--subset", what)
     elif config is not None:
-        raise SourceError(f"{what} has no config {config!r}")
+        raise SourceError(f"{what} has no subset {config!r}")
     splits = hub_splits(repo, config, revision)
     where = what + (f" ({config})" if config else "")
     split = _pick("split", split, splits, "--split", where)
@@ -356,7 +356,7 @@ def open_source(
     if source.startswith(HUB_PREFIX):
         return load_hub(source[len(HUB_PREFIX) :], config, split, revision)
     if config is not None or revision is not None:
-        raise SourceError("--config and --revision are for Hugging Face datasets (hf:ORG/NAME)")
+        raise SourceError("--subset and --revision are for Hugging Face datasets (hf:ORG/NAME)")
     path = Path(source).expanduser()
     if path.is_dir():
         return load_saved(path, split)

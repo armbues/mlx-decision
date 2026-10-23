@@ -112,7 +112,7 @@ def ask_config_and_split(plan: DataPlan) -> None:
         if config is None:
             configs = hub_configs(repo, revision)
             if len(configs) > 1:
-                plan.config = config = _pick("Config:", [(c, c) for c in configs])
+                plan.config = config = _pick("Subset:", [(c, c) for c in configs])
             elif configs:
                 config = configs[0]
     else:

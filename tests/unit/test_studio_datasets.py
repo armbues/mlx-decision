@@ -284,7 +284,7 @@ def test_a_job_from_any_dataset(studio, hub):
     assert started.status_code == 202, started.text
     job = started.json()["job"]
     assert job["command"][1:] == [
-        "data", "hf:org/reviews", "--config", "en", "--shape", "text",
+        "data", "hf:org/reviews", "--subset", "en", "--shape", "text",
         "--text", "review", "--label", "sentiment", "--split", "train", "--split", "test",
         "--sample", "10", "--sample", "0", "--seed", "2", "--roles", "train,report",
         "-o", str(studio.data / "reviews"),
@@ -397,7 +397,7 @@ def test_jobs_of_the_object_and_choice_shapes(studio, mmlu):
     assert started.status_code == 202, started.text
     job = started.json()["job"]
     assert job["command"][1:9] == [
-        "data", "hf:cais/mmlu", "--config", "all", "--shape", "object",
+        "data", "hf:cais/mmlu", "--subset", "all", "--shape", "object",
         "--columns", "question,choices",
     ]  # fmt: skip
     assert job["details"]["columns"] == ["question", "choices"]

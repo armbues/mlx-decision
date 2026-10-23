@@ -114,7 +114,7 @@ export function check() {
   resetAny();
   const value = source.value.trim();
   if (!value.startsWith("hf:")) source.value = `hf:${value}`;
-  read({}, "Asking the Hub for its configs and splits…");
+  read({}, "Asking the Hub for its subsets and splits…");
 }
 
 const labelInfo = computed(() => previewed.value?.label_columns?.find((column) => column.name === labelColumn.value) ?? null);
@@ -175,8 +175,8 @@ function Source() {
         <button class="btn" disabled=${!source.value.trim() || Boolean(reading.value)} onClick=${check}>Read</button>
       </div>
       ${result?.configs?.length > 1 &&
-      html`<label class="any-row"><span>Config</span>
-        <select aria-label="Config" value=${config.value ?? ""} onChange=${(event) => read({ config: event.target.value }, "Reading the config's splits…")}>
+      html`<label class="any-row"><span>Subset</span>
+        <select aria-label="Subset" value=${config.value ?? ""} onChange=${(event) => read({ config: event.target.value }, "Reading the subset's splits…")}>
           ${!config.value && html`<option value="">Pick one</option>`}
           ${result.configs.map((item) => html`<option value=${item}>${item}</option>`)}
         </select></label>`}

@@ -154,7 +154,7 @@ def test_the_hub_asks_config_and_split_with_train_preselected(tmp_path, monkeypa
     )
     plan, made = drive(ask_data, keys, DataPlan())
     assert (plan.source, plan.config, plan.split) == ("hf:org/emotion", "split", "train")
-    assert plan.arguments()[:5] == ["hf:org/emotion", "--config", "split", "--split", "train"]
+    assert plan.arguments()[:5] == ["hf:org/emotion", "--subset", "split", "--split", "train"]
     assert len(made.examples) == 3
 
 

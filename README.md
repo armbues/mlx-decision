@@ -546,7 +546,7 @@ from you. Five benchmark datasets come as presets:
 
 ```bash
 pip install "mlx-decision[training]"
-mlx-decision data hf:dair-ai/emotion --config split --split train -o emotion.jsonl \
+mlx-decision data hf:dair-ai/emotion --subset split --split train -o emotion.jsonl \
   --question "Which emotion does the text express most?"
 mlx-decision data --preset trec --split train --split test -o trec   # a dataset folder
 mlx-decision data --preset anli-r3 --split train_r3 --sample 2000 -o anli-train.jsonl
@@ -1067,18 +1067,18 @@ H2O-Lightning about 2,400 to 3,100 for one question, and more questions
 add little since they share the state; d1-3B about 4,400 to 5,200 for
 one question, likewise; laya about 25,000,
 laya-multilingual about 60,000 and Julia-1 about 100,000, counting the
-state once per question. `--out FILE` also
+state once per question. `-o FILE` (`--output`) also
 writes the results as JSON, with the Mac's chip, CPU and GPU cores,
 memory, macOS and the versions used, so runs on different Macs can be
 compared.
 
 Given a folder of models, `benchmark` measures each in turn, each in a
 process of its own, and ends with a summary table; folders no family
-loads and models that do not fit are listed as skipped. `--out DIR`
+loads and models that do not fit are listed as skipped. `-o DIR`
 then writes one file per model:
 
 ```bash
-mlx-decision benchmark -m ~/Models --out results/
+mlx-decision benchmark -m ~/Models -o results/
 ```
 
 ## Development

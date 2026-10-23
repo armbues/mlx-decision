@@ -533,7 +533,7 @@ class DataPlan:
         words = [self.source] if self.source else []
         named = [
             ("--preset", self.preset),
-            ("--config", self.config),
+            ("--subset", self.config),
             ("--split", self.split),
             ("--revision", self.revision),
             ("--limit", self.limit),
