@@ -613,3 +613,75 @@ def test_a_json_file_that_is_not_a_set_does_not_open(tmp_path):
     (tmp_path / "ws" / "sets" / "notaset.json").write_text("[1, 2, 3]")
     with pytest.raises(WorkspaceError, match="notaset.json is not a question set"):
         files.load_set("notaset")
+
+
+# A folder that is not a workspace; a second Studio
+
+
+def test_a_folder_of_other_files_is_refused_before_anything_changes(tmp_path):
+    project = tmp_path / "project"
+    (project / "src").mkdir(parents=True)
+    (project / "README.md").write_text("# My project\n")
+    (project / ".draft.md.tmp").write_text("an editor's draft")
+    with pytest.raises(ValueError, match="is not an mlx-decision workspace .*README.md"):
+        Workspace(project).open()
+    assert (project / "README.md").read_text() == "# My project\n"
+    assert (project / ".draft.md.tmp").exists()
+    assert sorted(p.name for p in project.iterdir()) == [".draft.md.tmp", "README.md", "src"]
+
+
+def test_the_home_and_the_workspaces_own_folders_open(tmp_path):
+    home = tmp_path / "home"  # the default workspace: config file, HF cache, models
+    (home / "hf-cache").mkdir(parents=True)
+    (home / "config.toml").write_text("port = 9000\n")
+    (home / "models" / "converted").mkdir(parents=True)
+    Workspace(home).open()
+    assert (home / "workspace.json").is_file()
+    older = tmp_path / "older"  # a Studio's workspace from before workspace.json
+    older.mkdir()
+    (older / "README.md").write_text(README)
+    (older / "notes.txt").write_text("mine")
+    Workspace(older).open()
+    assert (older / "notes.txt").read_text() == "mine"
+
+
+def test_a_second_studio_on_the_workspace_refuses_naming_the_first(tmp_path):
+    import subprocess
+    import sys
+    import textwrap
+
+    root = tmp_path / "ws"
+    Workspace(root).open()
+    holder = subprocess.Popen(
+        [sys.executable, "-c", textwrap.dedent(f"""
+            import sys, time
+            from mlx_decision.studio.workspace import Workspace
+            held = Workspace({str(root)!r})  # kept, as the Studio keeps its own
+            held.open(holder={{"address": "http://127.0.0.1:8123"}})
+            print("held", flush=True)
+            time.sleep(60)
+        """)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )  # fmt: skip
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        leftover = root / "models" / ".fit.partial"  # the first one's work in progress
+        leftover.mkdir()
+        with pytest.raises(ValueError, match=r"in use by the Studio at http://127.0.0.1:8123 \("):
+            Workspace(root).open(holder={"address": "http://127.0.0.1:8124"})
+        assert leftover.exists()  # nothing cleaned up
+    finally:
+        holder.kill()
+        holder.wait()
+    Workspace(root).open(holder={"address": "http://127.0.0.1:8124"})  # free again
+    assert "8124" in (root / "studio.lock").read_text()
+
+
+def test_one_process_may_open_its_workspace_again(tmp_path):
+    first = Workspace(tmp_path / "ws")
+    first.open(holder={"address": "a"})
+    second = Workspace(tmp_path / "ws")
+    second.open(holder={"address": "b"})  # takes the lock over
+    second.close()
+    first.close()

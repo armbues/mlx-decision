@@ -568,7 +568,8 @@ class Batches:
 
     def delete(self, name: str) -> None:
         """Delete batch ``name``; refused while it runs (blocks)."""
-        if self.running is not None and self.running.name == name:
+        running = self.running
+        if running is not None and running.name.casefold() == name.casefold():
             raise BatchError(f"{name} is running: stop it first", status=409)
         folder = self.folder(name)
         if not (folder / BATCH_FILE).is_file():

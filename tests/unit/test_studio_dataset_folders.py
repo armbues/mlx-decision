@@ -360,3 +360,36 @@ def test_a_dataset_from_a_newer_version_is_listed_with_its_error_and_not_saved(s
     saved = questions(studio, {"questions": {"topic": TOPIC}, "answers": ANSWERS})
     assert saved.status_code >= 400 and "its format is 2" in saved.text
     assert (studio.folder / DATASET_FILE).read_text() == before
+
+
+def test_in_use_checks_ignore_the_names_case(studio):
+    """macOS's disks find tweets as TWEETS too: the checks do the same."""
+    jobs = studio.app_state.jobs.jobs
+    jobs["fit"] = SimpleNamespace(state="running", details={"data": "tweets"}, title="Fit x")
+    try:
+        deleted = studio.delete(
+            "/studio/api/data/TWEETS", headers={"Content-Type": "application/json"}
+        )
+        assert deleted.status_code == 409 and "Fit x reads TWEETS" in deleted.text
+    finally:
+        del jobs["fit"]
+    assert (studio.folder / DATASET_FILE).is_file()
+
+
+def test_a_name_a_job_writes_is_not_free(studio):
+    folder = studio.data / "incoming"
+    jobs = studio.app_state.jobs.jobs
+    jobs["get"] = SimpleNamespace(state="running", outputs=[folder], title="Download incoming")
+    try:
+        csv = "text,topic\nrates rise,fed\n"
+        upload = {"name": "INCOMING", "text": csv, "format": "csv", "text_column": "text",
+                  "label_column": "topic"}  # fmt: skip
+        response = studio.post("/studio/api/data", json=upload)
+        assert response.status_code == 409 and "Download incoming is writing" in response.text
+        line = {"state": "s", "questions": {"q": {"type": "noul"}}, "labels": {"q": True}}
+        plain = json.dumps(line)
+        lines = studio.post("/studio/api/data", json={"name": "incoming", "text": plain})
+        assert lines.status_code == 409
+    finally:
+        del jobs["get"]
+    assert not folder.exists() and not (studio.data / "incoming.jsonl").exists()

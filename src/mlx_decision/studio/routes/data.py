@@ -131,12 +131,11 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
             raise ApiError(422, f"{name}: {error}", param="name") from None
 
     def readers(name: str) -> None:
-        """409 while a job that has not ended reads dataset ``name``."""
+        """409 while a job that has not ended reads dataset ``name`` (its letters'
+        case ignored: macOS's disks find the same files either way)."""
         for job in jobs.jobs.values():
-            if job.state != "ended" and name in (
-                job.details.get("data"),
-                job.details.get("report"),
-            ):
+            read = (job.details.get("data"), job.details.get("report"))
+            if job.state != "ended" and name.casefold() in (n.casefold() for n in read if n):
                 raise Conflict(f"{job.title} reads {name}: stop it or wait until it ends")
 
     @router.get("")
@@ -332,8 +331,8 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
                 "text": field(body, "text_column", str),
                 "label": field(body, "label_column", str),
             }
-            if files.data_taken(name):
-                raise Conflict(f"a dataset named {name} exists already")
+            if (conflict := files.data_conflict(name)) is not None:
+                raise Conflict(conflict)
             await asyncio.to_thread(save_rows, files, name, text, kind, columns)
             return await describe_data(name)
         examples, errors = await asyncio.to_thread(check_examples, text.splitlines(), ERRORS_SHOWN)
@@ -471,8 +470,8 @@ def save_rows(files: Workspace, name: str, text: str, kind: str, columns: dict) 
         outs = [SplitOut("train", made.examples, meta)]
         staged = write_dataset(Path(scratch) / name, dataset, outs)
         with files.lock:
-            if files.data_taken(name):
-                raise Conflict(f"a dataset named {name} exists already")
+            if (conflict := files.data_conflict(name)) is not None:
+                raise Conflict(conflict)
             shutil.move(str(staged), folder)
     files.changed("data", name, "saved")
     return folder

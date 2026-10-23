@@ -131,15 +131,16 @@ def jobs_router(
             path = files.path("models", name, what="the model's name")
         except WorkspaceError as error:
             raise ApiError(400, error.message, param="name") from None
-        if path.exists() or name in pool.specs:
+        # Case ignored: on macOS's disks Fit and fit are one folder.
+        if path.exists() or name.casefold() in {other.casefold() for other in pool.specs}:
             raise ApiError(409, f"a model named {name} exists already", param="name")
         writing(path, "name")
         return name, path
 
     def writing(path: Path, key: str) -> None:
-        for job in jobs.jobs.values():
-            if job.state != "ended" and path in job.outputs:
-                raise ApiError(409, f"{job.title} is writing {path.name}", param=key)
+        title = jobs.writer(path)
+        if title is not None:
+            raise ApiError(409, f"{title} is writing {path.name}", param=key)
 
     def bits(body: dict, default: int | None) -> int | None:
         value = field(body, "bits", int, required=False)

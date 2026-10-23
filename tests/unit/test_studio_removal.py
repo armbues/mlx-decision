@@ -174,3 +174,25 @@ def test_a_fit_whose_model_was_deleted_on_disk_says_so(studio):
     error = report.json()["error"]
     assert error["code"] == "model_gone"
     assert error["message"] == "The fitted model gone was deleted; its report went with it."
+
+
+def test_a_folder_that_cannot_move_aside_keeps_its_model(studio, monkeypatch):
+    def refuse(self, target):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "rename", refuse)
+    assert delete(studio, "conv-fit").status_code == 500
+    monkeypatch.undo()
+    assert "conv-fit" in listed(studio)
+    assert (studio.made / "conv-fit").is_dir()
+
+
+def test_clear_leaves_a_linked_model_as_delete_does(studio, tmp_path):
+    elsewhere = write_model(tmp_path / "mine")
+    (studio.made / "linked").symlink_to(elsewhere)
+    studio.post("/studio/api/models/rescan", json={})
+    if "linked" in listed(studio):
+        assert delete(studio, "linked").status_code == 403
+    cleared = studio.post("/studio/api/workspace/folders/models/clear", json={})
+    assert cleared.status_code == 200, cleared.text
+    assert (studio.made / "linked").is_symlink() and elsewhere.is_dir()

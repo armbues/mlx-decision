@@ -40,7 +40,7 @@ from .routes.models import models_router
 from .routes.run import Models, Recorder, run_router
 from .routes.sets import sets_router
 from .routes.settings import settings_router
-from .routes.status import status_router
+from .routes.status import address, status_router
 from .routes.training import training_router
 from .security import NO_STORE, Session
 from .settings import Settings
@@ -90,10 +90,11 @@ def create_studio(
     security.check_bind(host, api_key)  # before the lifespan could load a model
     config = config if config is not None else load_config()
     files = Workspace(workspace if workspace is not None else root_folder(config))
-    files.open()
+    files.open(holder={"address": address(host, port)})  # a second Studio on it refuses
     page = Page(dev=dev)
     status = status_reader(gpu)
     jobs = Jobs(gpu, files)
+    files.writer = jobs.writer
 
     def running_batch() -> dict[str, Any] | None:  # the stream's snapshot
         running = batches.running
@@ -307,6 +308,7 @@ def studio_lifespan(
                 await jobs.shutdown()
             hub.close()
             gpu.close()
+            files.close()  # the workspace's lock
             gpu.on_change = gpu.pool.on_change = gpu.pool.on_use = files.on_change = None
             if jobs is not None:
                 jobs.on_change = None

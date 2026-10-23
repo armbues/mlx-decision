@@ -158,11 +158,12 @@ def batches_router(
         threshold = field(body, "threshold", (int, float), required=False)
         if threshold is not None and not 0 <= threshold <= 1:
             raise ApiError(400, "threshold is between 0 and 1", param="threshold")
-        if batches.running is not None and batches.running.name == name:
+        running = batches.running
+        if running is not None and running.name.casefold() == name.casefold():
             raise ApiError(409, f"{name} is running: stop it or wait until it is done")
         await asyncio.to_thread(batches.get, name)
-        if await asyncio.to_thread(files.data_taken, target):
-            raise ApiError(409, f"a dataset named {target} exists already", param="name")
+        if (conflict := await asyncio.to_thread(files.data_conflict, target)) is not None:
+            raise ApiError(409, conflict, param="name")
         folder = files.dataset_folder(target)
         saved = await asyncio.to_thread(results.save_dataset, name, folder, threshold)
         files.changed("data", target, "saved")

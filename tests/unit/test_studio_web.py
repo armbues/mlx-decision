@@ -354,6 +354,15 @@ def test_web_refuses_a_workspace_of_a_newer_format(web, tmp_path):
     assert not (tmp_path / "ws" / "README.md").exists()
 
 
+def test_web_refuses_a_folder_that_is_not_a_workspace(web, tmp_path):
+    (tmp_path / "project").mkdir()
+    (tmp_path / "project" / "README.md").write_text("# My project\n")
+    result, served, _ = web("--workspace", str(tmp_path / "project"), "--no-browser")
+    assert result.exit_code == 1 and served is None
+    assert "is not an mlx-decision workspace and holds other files (README.md)" in result.stderr
+    assert (tmp_path / "project" / "README.md").read_text() == "# My project\n"
+
+
 def test_web_default_model(web, tmp_path):
     write_model(tmp_path / "models" / "a")
     write_model(tmp_path / "models" / "b")

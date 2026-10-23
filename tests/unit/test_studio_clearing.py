@@ -145,3 +145,13 @@ def test_only_from_this_mac(tmp_path, studio):
     response = other.post(f"{API}/sets/clear", json={})
     assert response.status_code in (401, 403)
     assert folders(studio)["sets"]["count"] == 1
+
+
+def test_a_link_out_of_the_workspace_is_not_listed_nor_stops_clear(studio, tmp_path):
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"state": "x", "questions": {"q": {"type": "noul"}}}')
+    sets = studio.app_state.workspace.root / "sets"
+    (sets / "link.json").symlink_to(outside)
+    assert "link" not in [s["name"] for s in studio.get("/studio/api/sets").json()["sets"]]
+    assert clear(studio, "sets").status_code == 200
+    assert outside.is_file()

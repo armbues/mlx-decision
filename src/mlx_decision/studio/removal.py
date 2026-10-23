@@ -101,9 +101,9 @@ class ModelRemoval:
                 f"fitted models are made from {name} ({', '.join(children)}): delete them first"
             )
         pool.unload(name)  # Busy while a batch keeps it loaded
-        pool.remove(name)
         aside = path.with_name(f".{path.name}.{os.getpid()}.removing")
-        path.rename(aside)
+        path.rename(aside)  # first: a folder that cannot move stays listed
+        pool.remove(name)
         return path, aside
 
     async def delete_all(self) -> list[str]:
@@ -121,8 +121,11 @@ class ModelRemoval:
             if busy is not None:
                 raise RemovalError(f"{busy} uses {name}: clear the folder when the job has ended")
         asides = await self.gpu.run(self._take_out_all, names)
+        # Links to folders elsewhere stay, as Delete refuses them (not made here).
         others = [
-            path for path in _entries(self.models_root) if not path.name.endswith(".removing")
+            path
+            for path in _entries(self.models_root)
+            if not path.name.endswith(".removing") and not path.is_symlink()
         ]
         await asyncio.to_thread(_remove_all, [*asides, *others])
         if names:
@@ -146,14 +149,20 @@ class ModelRemoval:
                 raise Busy(holder)
         for name in names:  # all first: a fitted model holds its base's weights
             pool.unload(name)
-        asides = []
+        moved: list[tuple[Path, Path]] = []
+        try:  # every folder aside first; one that cannot move puts the others back
+            for name in names:
+                path = pool.specs[name].path
+                aside = path.with_name(f".{path.name}.{os.getpid()}.removing")
+                path.rename(aside)
+                moved.append((path, aside))
+        except OSError:
+            for path, aside in reversed(moved):
+                aside.rename(path)
+            raise
         for name in names:
-            path = pool.specs[name].path
             pool.remove(name)
-            aside = path.with_name(f".{path.name}.{os.getpid()}.removing")
-            path.rename(aside)
-            asides.append(aside)
-        return asides
+        return [aside for _, aside in moved]
 
     def _used_by_job(self, name: str) -> str | None:
         """The title of a job that has not ended and names the model."""

@@ -456,6 +456,15 @@ class Jobs:
         """This process's jobs, newest first (what a tab opened now shows)."""
         return [job.summary() for job in reversed(self.jobs.values())]
 
+    def writer(self, path: Path) -> str | None:
+        """The title of a job that has not ended and writes ``path`` (its letters'
+        case ignored, as macOS's disks do), or None."""
+        wanted = str(path).casefold()
+        for job in self.jobs.values():
+            if job.state != "ended" and any(str(out).casefold() == wanted for out in job.outputs):
+                return job.title
+        return None
+
     def list(self) -> list[dict[str, Any]]:
         """Every job's summary, newest first: this process's and those on disk."""
         found = {job_id: job.summary() for job_id, job in self.jobs.items()}

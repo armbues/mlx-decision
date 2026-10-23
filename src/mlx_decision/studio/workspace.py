@@ -3,6 +3,7 @@
 Layout (``README.md`` in the folder says the same for its readers)::
 
     workspace.json               the workspace's format ({"format": 1})
+    studio.lock                  held by the Studio using the workspace
     config.toml                  the config file (only read here)
     sets/<name>.json             question sets: request bodies for ``run -q``
     history/<name>.jsonl         one line per run of a set
@@ -31,6 +32,7 @@ The methods block on file work: the Studio calls them off the event loop.
 
 import base64
 import binascii
+import fcntl
 import hashlib
 import json
 import logging
@@ -39,13 +41,14 @@ import re
 import shutil
 import threading
 import uuid
+import weakref
 from collections.abc import Callable, Iterator
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..config import Config, home
+from ..config import HF_CACHE, Config, home
 from ..data.dataset import DATASET_FILE, DATASET_FORMAT, check_format, open_dataset
 from ..errors import DecisionError
 from ..images import check_data_urls
@@ -58,6 +61,13 @@ HISTORY_SUFFIX = ".jsonl"
 SPEED_SUFFIX = ".jsonl"
 IMAGES = "images"
 WORKSPACE_FILE = "workspace.json"
+# Locked by the Studio that uses the workspace, so a second one refuses to start.
+LOCK_FILE = "studio.lock"
+# What a folder may hold before it first becomes a workspace: the config file
+# and the Hugging Face cache of the mlx-decision home, which is the default
+# workspace, Finder's own file, and the workspace's folders (a model converted
+# into models/ from a terminal before the Studio first started).
+BEFORE_A_WORKSPACE = frozenset({"config.toml", HF_CACHE, ".DS_Store", LOCK_FILE, *FOLDERS})
 # The version of the workspace this one opens; written into WORKSPACE_FILE.
 WORKSPACE_FORMAT = 1
 JOB_FILE = "job.json"
@@ -85,6 +95,8 @@ README when it starts.
 - `workspace.json`: the version of this layout (`{"format": 1}`). A later
   Studio that changes the layout reads it to bring the files up to date;
   a Studio older than the workspace refuses to open it.
+- `studio.lock`: locked by the Studio using the workspace; a second Studio
+  started on it refuses and names the first one's address.
 - `config.toml`: defaults for the commands' flags; read by `run`, `chat`,
   `server`, `mcp`, `web`, `training` and `benchmark`. It lives in
   `~/.mlx-decision` (or `MLX_DECISION_HOME`), so it is not here when
@@ -185,6 +197,9 @@ class Workspace:
         self.root = Path(root).expanduser().resolve()
         self.lock = threading.Lock()
         self.on_change: Callable[[dict[str, str]], None] | None = None
+        # The title of a job that writes a path, if one does (set by the Studio).
+        self.writer: Callable[[Path], str | None] | None = None
+        self._held = None  # the open, locked studio.lock
 
     def changed(self, folder: str, name: str, action: str, **details: Any) -> None:
         if self.on_change is not None:
@@ -195,13 +210,19 @@ class Workspace:
 
     # Layout and paths
 
-    def open(self) -> list[Path]:
+    def open(self, holder: dict[str, Any] | None = None) -> list[Path]:
         """Create the layout, ``workspace.json`` and the README, then clean up after
-        a previous run: returns what ``clean_up`` removed. A workspace of a newer
-        format is refused (``ValueError``) before anything in it changes."""
+        a previous run: returns what ``clean_up`` removed. Refused (``ValueError``)
+        before anything in it changes: a workspace of a newer format, and a
+        folder that is not one yet but holds other files. With ``holder`` (what
+        names the Studio: its ``address``), the workspace is locked first, and a
+        workspace another process holds is refused naming it."""
         marker = self.root / WORKSPACE_FILE
         self.check_format(marker)
+        self.check_folder(marker)
         self.root.mkdir(parents=True, exist_ok=True)
+        if holder is not None:
+            self.hold(holder)
         if not marker.is_file():
             body = json.dumps({"format": WORKSPACE_FORMAT}) + "\n"
             self.write(marker, body.encode("utf-8"))
@@ -212,6 +233,72 @@ class Workspace:
         if not readme.is_file() or readme.read_text(encoding="utf-8") != README:
             self.write(readme, README.encode("utf-8"))
         return self.clean_up()
+
+    def check_folder(self, marker: Path) -> None:
+        """Refuse a folder that is not a workspace yet (no ``workspace.json``, no
+        workspace README) and holds files of its own: opening it would rewrite its
+        README and clean up its hidden files."""
+        if marker.is_file():
+            return
+        try:
+            readme = (self.root / "README.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            readme = ""
+        if readme.startswith(README.split("\n", 1)[0]):
+            return  # made by a Studio before workspace.json
+        others = sorted(
+            entry.name for entry in _entries(self.root) if entry.name not in BEFORE_A_WORKSPACE
+        )
+        if others:
+            listed = ", ".join(others[:3]) + (", ..." if len(others) > 3 else "")
+            raise ValueError(
+                f"{self.root} is not an mlx-decision workspace and holds other files "
+                f"({listed}); pass --workspace with an empty or new folder"
+            )
+
+    def hold(self, holder: dict[str, Any]) -> None:
+        """Lock ``studio.lock`` for this process (``ValueError`` naming the Studio
+        that holds it) and write ``holder`` into it. Within one process a later
+        ``Workspace`` on the same folder takes the lock over (tests, restarts)."""
+        key = str(self.root)
+        previous = _HOLDERS.get(key)
+        if self._held is None and previous is not None and previous._held is not None:
+            self._held, previous._held = previous._held, None
+        if self._held is None:
+            handle = open(self.root / LOCK_FILE, "a+", encoding="utf-8")  # noqa: SIM115
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                handle.seek(0)
+                text = handle.read()
+                handle.close()
+                try:
+                    other = json.loads(text)
+                except ValueError:
+                    other = {}
+                where = other.get("address") if isinstance(other, dict) else None
+                pid = other.get("pid") if isinstance(other, dict) else None
+                running = f"the Studio at {where}" if where else "another Studio"
+                if pid:
+                    running += f" (process {pid})"
+                raise ValueError(
+                    f"{self.root} is in use by {running}: open that one, stop it first, "
+                    "or pass --workspace with another folder"
+                ) from None
+            self._held = handle
+        self._held.seek(0)
+        self._held.truncate()
+        self._held.write(json.dumps({**holder, "pid": os.getpid()}) + "\n")
+        self._held.flush()
+        _HOLDERS[key] = self
+
+    def close(self) -> None:
+        """Let go of the workspace's lock (also when the process ends)."""
+        if self._held is not None:
+            self._held.close()
+            self._held = None
+            if _HOLDERS.get(str(self.root)) is self:
+                del _HOLDERS[str(self.root)]
 
     @staticmethod
     def check_format(marker: Path) -> None:
@@ -246,6 +333,14 @@ class Workspace:
         if resolved == self.root or not resolved.is_relative_to(self.root):
             raise WorkspaceError(f"not inside the workspace: {path}")
         return resolved
+
+    def _within(self, path: Path) -> bool:
+        """Whether ``path`` resolves inside the workspace (``inside`` would take it)."""
+        try:
+            self.inside(path)
+        except (WorkspaceError, OSError):
+            return False
+        return True
 
     def write(self, path: Path, data: bytes) -> None:
         """Write ``path`` whole: a hidden temporary file beside it, renamed over it."""
@@ -304,6 +399,17 @@ class Workspace:
         """Whether a dataset of ``name`` is there (a folder or a file)."""
         return self.dataset_folder(name).exists() or self.data_path(name).exists()
 
+    def data_conflict(self, name: str) -> str | None:
+        """Why ``name`` cannot name a new dataset: one is there (a folder or a file,
+        in any case of its letters), or a job writes it. None when it is free."""
+        if self.data_taken(name):
+            return f"a dataset named {name} exists already"
+        for path in (self.dataset_folder(name), self.data_path(name)):
+            title = self.writer(path) if self.writer is not None else None
+            if title is not None:
+                return f"{title} is writing {name}"
+        return None
+
     def dataset_location(self, name: str) -> Path:
         """The folder (else the plain file) of dataset ``name``; ``NotFound``."""
         folder = self.dataset_folder(name)
@@ -318,7 +424,7 @@ class Workspace:
         """The datasets, by name: each as ``dataset_summary`` gives it."""
         found = []
         for path in _entries(self.root / "data"):
-            if path.name.startswith("."):
+            if path.name.startswith(".") or not self._within(path):
                 continue
             if path.is_dir() and (path / DATASET_FILE).is_file() and NAME.fullmatch(path.name):
                 found.append(dataset_summary(path))
@@ -333,8 +439,8 @@ class Workspace:
         when a dataset of that name is there."""
         path = self.data_path(name)
         with self.lock:
-            if self.data_taken(name):
-                raise Conflict(f"a dataset named {name} exists already")
+            if (conflict := self.data_conflict(name)) is not None:
+                raise Conflict(conflict)
             self.write(path, data)
         self.changed("data", name, "saved")
         return path
@@ -422,6 +528,8 @@ class Workspace:
             name = path.name.removesuffix(SET_SUFFIX)
             if path.suffix != SET_SUFFIX or not NAME.fullmatch(name) or not path.is_file():
                 continue
+            if not self._within(path):
+                continue  # a link out of the workspace, which every route refuses
             stat = path.stat()
             sets.append({"name": name, "bytes": stat.st_size, "modified": stat.st_mtime})
         return sorted(sets, key=lambda entry: (entry["name"].lower(), entry["name"]))
@@ -804,6 +912,11 @@ def dataset_summary(path: Path) -> dict[str, Any]:
     summary["questions"] = list(asked) if isinstance(asked, dict) else []
     summary["source"] = dataset.source
     return summary
+
+
+# The workspaces this process holds, by root: a later ``Workspace`` on one takes
+# its lock over instead of being refused by its own process.
+_HOLDERS: "weakref.WeakValueDictionary[str, Workspace]" = weakref.WeakValueDictionary()
 
 
 def _entries(folder: Path) -> Iterator[Path]:
