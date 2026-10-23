@@ -17,6 +17,25 @@ preprocessing included), after a warm-up.
 
 ## Speed compared with PyTorch
 
+Median time per request, end to end, against each model's own PyTorch code
+on the same Mac (MPS; Apple M5 Pro with 64 GB); short requests are in the
+[model table](MODELS.md):
+
+| Model | Request | PyTorch | mlx-decision | Speedup |
+|---|---|---|---|---|
+| clef-flash (bf16) | 6,099 tokens, 20 questions | 12.96 s | 3.80 s | 3.4x |
+| clef-flash (bf16) | 16,384 tokens, 20 questions | 36.12 s | 11.39 s | 3.2x |
+| clef-flash (bf16) | 1024x768 image, 3 questions | 2.73 s | 1.01 s | 2.7x |
+| laya | 450-token state, 20 questions | 543 ms | 386 ms | 1.4x |
+| laya-multilingual | 1,000-token state, 20 questions | 558 ms | 337 ms | 1.7x |
+| d1-3B (bf16) | 3,400-token state, 1 question | 809 ms | 676 ms | 1.2x |
+| d1-3B (bf16) | 15,000-token state, 20 questions | 4.74 s | 4.01 s | 1.2x |
+| Julia-1 | 7,350-token state, 20 questions | 12.4 s | 2.0 s | 6.1x |
+
+clef-flash peaks at 19.0 GB against the reference's 23.9 GB.
+H2O-Lightning is not in the table: its release runs on vLLM, which needs
+CUDA. The full tables per model follow.
+
 ### clef-flash
 
 Cloudflare's reference code (`joint_schema_model.py` from the release) with
@@ -559,6 +578,29 @@ Notes:
   minute, d1-3B 3 minutes, H2O-Lightning 11, d3-flash 13, clef-flash 22,
   pplx v1.1 (8-bit) 44,
   Clef 27B (8-bit) 74.
+
+The three large models are level with Jev or ahead of it on four of the
+five benchmarks; on entailment pplx comes close to Jev, Clef does not.
+d3-flash, at 9B, is close behind pplx on entailment and science
+questions and level on sentiment, but trails the Clef models and pplx on
+answer type.
+H2O-Lightning, at 4B about a seventh of the size of the 27B models, trails them on
+answer type and science questions, is ahead of clef-flash on entailment
+and about level on sentiment, with the best calibrated scores of all
+(calibration error 1.6%). d1-3B, smaller still, is level with
+H2O-Lightning: ahead on answer type, offensive language and science
+questions, behind on entailment.
+The small models are near chance on entailment and science questions,
+as their model cards lead one to expect; Julia, made for emotion and
+routing, answers TREC almost only with its first two options and calls
+most tweets offensive. Each model matches its own
+reference code token for token on a fixed test set, with probabilities
+within 0.035 (clef-flash), 0.031 (clef), 0.038 (d3-flash), 0.020
+(H2O-Lightning), 0.030 (d1-3B), 0.004 (Laya), 0.018 (Julia) and 0.058
+(pplx-decider-flash-v1.2, on requests up to 4,096 tokens); pplx v1.1 and
+the v1.2 27B were compared on small random models in their layouts
+(within 0.00001), not on the full weights. pplx v1.2 and flash are not
+in the table yet.
 
 ```bash
 python scripts/accuracy_benchmark.py local --datasets DIR --model MODEL --out results.json

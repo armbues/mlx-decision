@@ -13,7 +13,7 @@ What works with 1.0 keeps working with every 1.x release.
 **Python.** The names `mlx_decision` exports:
 
 - `load(model, *, check_memory=True, **options)` and the options listed
-  in the README.
+  in [PYTHON.md](PYTHON.md#loading-options).
 - `DecisionModel`: `name`, `info()`, `decide(state, questions, *,
   images=None)`, `decide_request(request)` and `check(request)`. The
   `info()` method is stable; the contents of its dict are provisional.

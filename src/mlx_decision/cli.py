@@ -271,7 +271,7 @@ def undescribed_choices(model, questions: Any) -> list[str]:
     """Choice questions with an option left undescribed, if the model is Julia.
 
     Julia reads an option only through its description and answers much
-    worse with bare ids or one-word labels (README, Julia).
+    worse with bare ids or one-word labels (docs/MODELS.md, Julia).
     """
     if model.info()["family"] != "julia" or not isinstance(questions, dict):
         return []
