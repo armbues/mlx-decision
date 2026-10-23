@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import Config, home
-from ..data.dataset import DATASET_FILE, open_dataset
+from ..data.dataset import DATASET_FILE, DATASET_FORMAT, check_format, open_dataset
 from ..errors import DecisionError
 from ..images import check_data_urls
 
@@ -339,13 +339,18 @@ class Workspace:
                     f"{name}'s {DATASET_FILE} changed on disk since it was loaded", current
                 )
             body = json.loads(path.read_text(encoding="utf-8"))
-            ordered: dict[str, Any] = {}
+            check_format(path, body)
+            ordered: dict[str, Any] = {"format": body.get("format", DATASET_FORMAT)}
             if questions:
                 ordered["questions"] = questions
             if answers:
                 ordered["answers"] = answers
             ordered.update(
-                {key: value for key, value in body.items() if key not in ("questions", "answers")}
+                {
+                    key: value
+                    for key, value in body.items()
+                    if key not in ("format", "questions", "answers")
+                }
             )
             data = (json.dumps(ordered, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
             self.write(path, data)

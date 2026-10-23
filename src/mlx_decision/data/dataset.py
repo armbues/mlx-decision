@@ -3,6 +3,8 @@
 A dataset folder holds ``dataset.json`` and one JSON-lines file per split,
 named after the split (``train.jsonl``). ``dataset.json`` has:
 
+- ``format``: 1 (missing means 1); a higher one is from a newer version and
+  refused.
 - ``questions``: the questions every line is asked (as in a request body);
   left out while the dataset has none, or when every line has its own.
 - ``answers``: per question id, the ``column`` whose values answer it, its
@@ -15,6 +17,8 @@ named after the split (``train.jsonl``). ``dataset.json`` has:
   the ``sample`` and ``seed`` when sampled, the ``part`` when cut from a
   split.
 - ``source`` (where the rows came from) and ``created``.
+
+Keys it does not know are kept as they are when it is written again.
 
 A line holds ``id``, ``state`` and ``values`` (the raw values of the label
 columns, as text), or ``labels`` as a plain file has them, and ``questions``
@@ -35,6 +39,8 @@ from ..errors import DecisionError
 from .format import DataError, Example, _label_to_json, parse_example, parse_examples
 
 DATASET_FILE = "dataset.json"
+# The version of dataset.json this one writes and reads (missing means 1).
+DATASET_FORMAT = 1
 SPLIT_SUFFIX = ".jsonl"
 # What a split is for: training, the fit's report, Evaluate.
 ROLES = ("train", "report", "evaluate")
@@ -90,6 +96,8 @@ class Dataset:
     splits: dict[str, dict[str, Any]] = field(default_factory=dict)
     source: dict[str, Any] | None = None
     created: str | None = None
+    # The keys of dataset.json this version does not know, written back as they are.
+    extra: dict[str, Any] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -280,7 +288,7 @@ class Dataset:
         return f"{self.path} ({split} split)"
 
     def to_json(self) -> dict[str, Any]:
-        body: dict[str, Any] = {}
+        body: dict[str, Any] = {"format": DATASET_FORMAT}
         if self.questions:
             body["questions"] = self.questions
         if self.answers:
@@ -292,7 +300,26 @@ class Dataset:
             body["source"] = self.source
         if self.created is not None:
             body["created"] = self.created
+        body.update({key: value for key, value in self.extra.items() if key not in body})
         return body
+
+
+KNOWN_KEYS = ("format", "questions", "answers", "columns", "splits", "source", "created")
+
+
+def check_format(path: Path, loaded: dict[str, Any]) -> None:
+    """Refuse a ``dataset.json`` whose ``format`` this version does not read."""
+    from .. import __version__
+
+    version = loaded.get("format", DATASET_FORMAT)
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise DecisionError(f"{path}: format must be a whole number from 1")
+    if version > DATASET_FORMAT:
+        raise DecisionError(
+            f"{path}: its format is {version}, which mlx-decision {__version__} does not "
+            f"know (it reads format {DATASET_FORMAT}); a newer mlx-decision wrote this "
+            "dataset (upgrade to use it)"
+        )
 
 
 def _unasked(data: dict, line: int, values: dict[str, str] | None) -> Example:
@@ -325,6 +352,7 @@ def read_description(folder: Path) -> Dataset:
         raise DecisionError(f"cannot read {path}: {error}") from None
     if not isinstance(loaded, dict):
         raise DecisionError(f"{path} must hold an object")
+    check_format(path, loaded)
     kinds = {"questions": dict, "answers": dict, "columns": dict, "splits": dict, "source": dict}
     for key, kind in kinds.items():
         if loaded.get(key) is not None and not isinstance(loaded[key], kind):
@@ -371,6 +399,7 @@ def read_description(folder: Path) -> Dataset:
         {name: dict(meta or {}) for name, meta in splits.items()},
         loaded.get("source"),
         loaded.get("created"),
+        {key: value for key, value in loaded.items() if key not in KNOWN_KEYS},
     )
 
 

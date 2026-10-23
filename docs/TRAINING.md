@@ -125,6 +125,7 @@ questions and what each value means live once, in `dataset.json`:
 
 ```json
 {
+  "format": 1,
   "questions": {"topic": {"type": "choice", "instructions": "What is the tweet about?",
                           "criteria": {"earnings": "Earnings", "fed": "Fed, central banks"}}},
   "answers": {"topic": {"column": "label", "map": {"5": "earnings", "1": "fed"},
@@ -166,6 +167,11 @@ questions and what each value means live once, in `dataset.json`:
 - `--value-names "0=Analyst Update,1=Fed | Central Banks"` gives the
   label's values names, kept in `columns` beside their row counts (the
   Studio reads them from the dataset card when it lists them).
+- `format` is the version of `dataset.json` (a file without it is
+  format 1). A dataset written by a newer release with a higher format
+  is refused with a message naming it, by `training` and the Studio
+  alike. Keys this release does not know are kept when it writes the
+  file again (the Studio saving questions, for one).
 
 ### `data`: datasets to training files
 

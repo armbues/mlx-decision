@@ -116,7 +116,7 @@ def test_questions_and_answers_are_saved_into_the_folder(studio):
     assert topic["answered_by"] == "label" and topic["labelled"] == 12
     assert topic["labels"] == [["analyst", 4], ["fed", 4], ["other", 4]]
     written = json.loads((studio.folder / DATASET_FILE).read_text())
-    assert list(written)[:2] == ["questions", "answers"]  # first, the rest kept
+    assert list(written)[:3] == ["format", "questions", "answers"]  # first, the rest kept
     assert written["answers"]["topic"]["left_out"] == []
     assert written["columns"]["label"]["values"]["0"]["name"] == "Analyst Update"
     recent = [message for _, (_, message) in studio.app_state.hub.recent]
@@ -229,6 +229,7 @@ def test_rows_of_columns_are_uploaded_as_a_folder(studio):
     assert body["values"] == {"topic": [["analyst", 1], ["fed", 2]]}
     assert body["missing"] == ["it has no questions yet"]
     assert sorted(p.name for p in (studio.data / "mine").iterdir()) == [DATASET_FILE, "train.jsonl"]
+    assert json.loads((studio.data / "mine" / DATASET_FILE).read_text())["format"] == 1
     assert not [p for p in studio.data.iterdir() if p.name.startswith(".")]
     again = studio.post("/studio/api/data", json={
         "name": "mine", "text": csv, "format": "csv", "text_column": "text",
@@ -335,3 +336,27 @@ def test_a_plain_file_behind_a_folder_is_said(studio):
     (studio.data / "tweets.jsonl").write_text(json.dumps(plain) + "\n")
     [item] = studio.get("/studio/api/data").json()["files"]
     assert item["kind"] == "folder" and item["hides"] == "tweets.jsonl"
+
+
+def test_a_save_keeps_keys_it_does_not_know_and_writes_the_format(studio):
+    body = json.loads((studio.folder / DATASET_FILE).read_text())
+    del body["format"]  # as a dataset from before the field
+    body["mixes"] = {"weights": [1, 2]}
+    (studio.folder / DATASET_FILE).write_text(json.dumps(body))
+    saved = questions(studio, {"questions": {"topic": TOPIC}, "answers": ANSWERS})
+    assert saved.status_code == 200, saved.text
+    written = json.loads((studio.folder / DATASET_FILE).read_text())
+    assert written["format"] == 1 and written["mixes"] == {"weights": [1, 2]}
+
+
+def test_a_dataset_from_a_newer_version_is_listed_with_its_error_and_not_saved(studio):
+    body = json.loads((studio.folder / DATASET_FILE).read_text())
+    (studio.folder / DATASET_FILE).write_text(json.dumps({**body, "format": 2}))
+    before = (studio.folder / DATASET_FILE).read_text()
+    [item] = studio.get("/studio/api/data").json()["files"]
+    assert "its format is 2" in item["error"] and "a newer mlx-decision" in item["error"]
+    opened = studio.get("/studio/api/data/tweets")
+    assert opened.status_code >= 400 and "its format is 2" in opened.text
+    saved = questions(studio, {"questions": {"topic": TOPIC}, "answers": ANSWERS})
+    assert saved.status_code >= 400 and "its format is 2" in saved.text
+    assert (studio.folder / DATASET_FILE).read_text() == before

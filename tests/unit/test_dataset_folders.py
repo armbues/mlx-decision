@@ -503,3 +503,43 @@ def test_the_fit_says_which_split_it_read(ready, tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert f"from {ready} (train split)" in result.stderr
     assert f"report on {ready} (validation split)" in result.stderr
+
+
+# Versions
+
+
+def test_a_folder_is_written_with_its_format_first(ready):
+    assert list(described(ready))[0] == "format" and described(ready)["format"] == 1
+
+
+def test_keys_it_does_not_know_are_kept_when_written_again(ready, tmp_path):
+    body = described(ready)
+    del body["format"]  # missing means 1
+    body["mixes"] = {"sources": ["a", "b"]}
+    (ready / DATASET_FILE).write_text(json.dumps(body))
+    dataset, _ = open_dataset(ready)
+    assert dataset.extra == {"mixes": {"sources": ["a", "b"]}}
+    assert dataset.to_json()["mixes"] == {"sources": ["a", "b"]}
+    examples = dataset.read("train")
+    copy = write_dataset(tmp_path / "copy", dataset, [SplitOut("train", examples, {})])
+    assert described(copy)["mixes"] == {"sources": ["a", "b"]}
+    assert described(copy)["format"] == 1
+
+
+@pytest.mark.parametrize(
+    ("version", "message"),
+    [(2, "its format is 2, .*a newer mlx-decision wrote"), ("1", "format must be a whole")],
+)
+def test_a_format_it_does_not_read_is_refused(ready, tmp_path, version, message):
+    body = described(ready)
+    (ready / DATASET_FILE).write_text(json.dumps({**body, "format": version}))
+    with pytest.raises(DecisionError, match=message):
+        open_dataset(ready)
+    with pytest.raises(DecisionError, match=message):
+        read_for(ready / "train.jsonl")
+    base = write_model(tmp_path / "base")
+    result = run(
+        "training", "fit", "-m", str(base), "--data", str(ready), "-o", str(tmp_path / "f")
+    )
+    assert result.exit_code != 0
+    assert "format" in result.stderr and not (tmp_path / "f").exists()

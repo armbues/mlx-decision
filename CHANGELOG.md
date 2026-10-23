@@ -103,6 +103,10 @@ change the interface).
   naming it, instead of loading without the parts it does not know. Fits
   now record how their base's fingerprint was made; fits from 0.9 load
   as before.
+- `dataset.json` has a `format` (1; a file without it reads as 1). A
+  dataset from a newer release is refused with a message naming its
+  format, and keys this release does not know are kept when it writes
+  the file again.
 
 ### Fixed
 
