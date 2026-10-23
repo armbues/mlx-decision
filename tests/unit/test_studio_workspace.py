@@ -64,6 +64,36 @@ def test_open_creates_the_layout_and_the_readme(tmp_path):
     assert (files.root / "README.md").read_text() == README
     for folder in FOLDERS:
         assert f"`{folder}/`" in README
+    assert json.loads((files.root / "workspace.json").read_text()) == {"format": 1}
+    assert "`workspace.json`" in README
+
+
+def test_a_workspace_without_a_marker_gets_one_and_a_marker_is_kept(space):
+    marker = space.root / "workspace.json"
+    marker.unlink()  # as a workspace from before the marker
+    space.open()
+    assert json.loads(marker.read_text()) == {"format": 1}
+    marker.write_text('{"format": 1, "migrated": "later"}')
+    space.open()
+    assert json.loads(marker.read_text()) == {"format": 1, "migrated": "later"}
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ('{"format": 2}', "the workspace's format is 2, .*a newer mlx-decision"),
+        ('{"format": "1"}', "must hold"),
+        ("not json", "cannot read"),
+    ],
+)
+def test_a_marker_it_does_not_read_is_refused_before_anything_changes(space, body, message):
+    (space.root / "workspace.json").write_text(body)
+    (space.root / "README.md").write_text("from a later version")
+    (space.root / "sets" / ".a.json.tmp").write_text("{}")
+    with pytest.raises(ValueError, match=message):
+        space.open()
+    assert (space.root / "README.md").read_text() == "from a later version"
+    assert (space.root / "sets" / ".a.json.tmp").exists()  # not cleaned up either
 
 
 def test_the_readme_is_rewritten_but_other_files_are_kept(space):

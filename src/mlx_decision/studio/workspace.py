@@ -2,6 +2,7 @@
 
 Layout (``README.md`` in the folder says the same for its readers)::
 
+    workspace.json               the workspace's format ({"format": 1})
     config.toml                  the config file (only read here)
     sets/<name>.json             question sets: request bodies for ``run -q``
     history/<name>.jsonl         one line per run of a set
@@ -56,6 +57,9 @@ DATA_SUFFIX = ".jsonl"
 HISTORY_SUFFIX = ".jsonl"
 SPEED_SUFFIX = ".jsonl"
 IMAGES = "images"
+WORKSPACE_FILE = "workspace.json"
+# The version of the workspace this one opens; written into WORKSPACE_FILE.
+WORKSPACE_FORMAT = 1
 JOB_FILE = "job.json"
 # Speed records kept per model; the file is trimmed back to this once it is
 # a tenth longer, so not every request rewrites it.
@@ -78,6 +82,9 @@ The Studio (`mlx-decision web`) keeps its files here. Each one is a plain
 file in a format the command line reads as it is. The Studio rewrites this
 README when it starts.
 
+- `workspace.json`: the version of this layout (`{"format": 1}`). A later
+  Studio that changes the layout reads it to bring the files up to date;
+  a Studio older than the workspace refuses to open it.
 - `config.toml`: defaults for the commands' flags; read by `run`, `chat`,
   `server`, `mcp`, `web`, `training` and `benchmark`. It lives in
   `~/.mlx-decision` (or `MLX_DECISION_HOME`), so it is not here when
@@ -189,9 +196,15 @@ class Workspace:
     # Layout and paths
 
     def open(self) -> list[Path]:
-        """Create the layout and the README, then clean up after a previous run:
-        returns what ``clean_up`` removed."""
+        """Create the layout, ``workspace.json`` and the README, then clean up after
+        a previous run: returns what ``clean_up`` removed. A workspace of a newer
+        format is refused (``ValueError``) before anything in it changes."""
+        marker = self.root / WORKSPACE_FILE
+        self.check_format(marker)
         self.root.mkdir(parents=True, exist_ok=True)
+        if not marker.is_file():
+            body = json.dumps({"format": WORKSPACE_FORMAT}) + "\n"
+            self.write(marker, body.encode("utf-8"))
         for folder in FOLDERS:
             (self.root / folder).mkdir(exist_ok=True)
         (self.root / "history" / IMAGES).mkdir(exist_ok=True)
@@ -199,6 +212,28 @@ class Workspace:
         if not readme.is_file() or readme.read_text(encoding="utf-8") != README:
             self.write(readme, README.encode("utf-8"))
         return self.clean_up()
+
+    @staticmethod
+    def check_format(marker: Path) -> None:
+        """Refuse a ``workspace.json`` this version does not read (none is fine)."""
+        from .. import __version__
+
+        try:
+            body = json.loads(marker.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as error:
+            raise ValueError(f"cannot read {marker}: {error}") from None
+        version = body.get("format") if isinstance(body, dict) else None
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise ValueError(f'{marker} must hold {{"format": N}}, a whole number from 1')
+        if version > WORKSPACE_FORMAT:
+            raise ValueError(
+                f"{marker}: the workspace's format is {version}, which mlx-decision "
+                f"{__version__} does not know (it opens format {WORKSPACE_FORMAT}); a newer "
+                "mlx-decision has used this workspace (upgrade, or pass --workspace with "
+                "another folder)"
+            )
 
     def path(self, folder: str, name: str, suffix: str = "", what: str = "name") -> Path:
         """``folder/<name><suffix>``, checked to be inside the workspace."""

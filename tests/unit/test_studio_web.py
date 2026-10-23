@@ -345,6 +345,15 @@ def test_web_workspace_must_be_a_folder(web, tmp_path):
     assert result.exit_code != 0
 
 
+def test_web_refuses_a_workspace_of_a_newer_format(web, tmp_path):
+    (tmp_path / "ws").mkdir()
+    (tmp_path / "ws" / "workspace.json").write_text('{"format": 2}')
+    result, served, _ = web("--workspace", str(tmp_path / "ws"), "--no-browser")
+    assert result.exit_code == 1 and served is None
+    assert "workspace.json: the workspace's format is 2" in result.stderr
+    assert not (tmp_path / "ws" / "README.md").exists()
+
+
 def test_web_default_model(web, tmp_path):
     write_model(tmp_path / "models" / "a")
     write_model(tmp_path / "models" / "b")
