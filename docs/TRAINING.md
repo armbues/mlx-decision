@@ -2,7 +2,7 @@
 
 mlx-decision can fit a decision model to your own labelled examples, on
 the Mac it runs on, and serve the result like any other model. Four kinds
-of fit cover the six model families, from a calibration in seconds to
+of fit cover the seven model families, from a calibration in seconds to
 fine-tuning a whole encoder. None of them needs more than MLX.
 
 Training is newer than the rest of mlx-decision: the flags of `data` and
@@ -22,21 +22,26 @@ The workflow has four steps:
 4. **Use**: pass the folder to `-m` in `run`, `chat`, `server` or `mcp`,
    or to `mlx_decision.load`.
 
+The Studio does the same without the command line: its Datasets page
+downloads or adds a dataset, and Fit on It… and the Training page fit
+and evaluate ([Studio](STUDIO.md#training)).
+
 ```bash
 pip install "mlx-decision[training]"     # `data` reading from the Hugging Face Hub
 
 mlx-decision data --preset trec --split train --split test -o trec
 mlx-decision training fit -m SupersonicLabs/Julia-1 --data trec -o julia-trec
 mlx-decision training eval -m julia-trec --data trec --compare SupersonicLabs/Julia-1
-mlx-decision run -m julia-trec -s "Who wrote Hamlet?" -q questions.json
+mlx-decision run -m julia-trec -s "Who wrote Hamlet?" -q trec/dataset.json
 ```
 
 (`trec` is a [dataset folder](#dataset-folders) with one file per
 split: `training fit` trains on its train split and reports on its test
 split, `training eval` scores the test split.)
 
-(`questions.json` holds the question as the training file asks it, the
-`questions` object of any of its lines.)
+(`-q` takes the folder's `dataset.json`, which holds the questions the
+examples are asked; for a plain training file, the `questions` object of
+any of its lines.)
 
 Run in a terminal without flags, `data` and `training fit` ask for what
 they need in menus. When they finish, they print the command line that
@@ -163,9 +168,9 @@ questions and what each value means live once, in `dataset.json`:
   they replace the dataset's for that line.
 - Each split has a `role`: `train` (what a fit learns from), `report`
   (what a fit's report scores) or `evaluate` (what `training eval`
-  scores). `training fit --data FOLDER` trains on the train split and
-  reports on the report split (unless `--validation` or `--holdout` is
-  given); `training eval --data FOLDER` scores the evaluate split, else
+  scores). `training fit --data FOLDER` (and Python's `fit`) trains on
+  the train split and reports on the report split (unless
+  `--validation` or `--holdout` is given); `training eval --data FOLDER` scores the evaluate split, else
   the report split. Pass a split's file (`--data trec/test.jsonl`) to
   pick another.
 - A plain JSON-lines file works everywhere a folder does, as a dataset
@@ -287,7 +292,8 @@ mlx-decision training fit -m BASE --data FILE.jsonl [-o FOLDER] [--method KIND]
 
 BASE is any model `-m` takes: a folder or a repo id, in any precision. It
 can also be a fitted model; its fit is then replaced and its base kept.
-The output folder defaults to `<base>-<data name>` in the current folder.
+The output folder defaults to `<base>-<data name>` in the current folder;
+an existing one is replaced only with `--overwrite`.
 Progress goes to stderr and the report to stdout. The report shows, per
 question, accuracy, macro-F1 and ECE before and after, the kept epoch and
 the time taken. It is also saved in the folder as `training.json`.
@@ -297,8 +303,8 @@ the time taken. It is also saved in the folder as `training.json`.
 A fifth of the data (`--holdout 0.2`, stratified by label, seeded by
 `--seed`) is held out. It only scores the report: nothing is tuned on it.
 `--validation FILE` replaces the holdout with a file of its own. The rest
-is the training part. A tenth of it (at least 50 examples) is the *dev*
-part, which picks the readout fit's settings and the best epoch and fits
+is the training part. A tenth of it (at least 50 examples, at most half)
+is the *dev* part, which picks the readout fit's settings and the best epoch and fits
 the closing calibration. The rest is what the weights are trained on.
 
 Fewer than 50 training examples, or fewer than 10 for an option, is a
@@ -485,7 +491,7 @@ A fitted model is a folder:
 It loads anywhere a model does, and its name is the folder's name:
 
 ```bash
-mlx-decision run -m julia-trec -s "Who wrote Hamlet?" -q questions.json
+mlx-decision run -m julia-trec -s "Who wrote Hamlet?" -q trec/dataset.json
 mlx-decision chat -m julia-trec
 mlx-decision server -m ~/Models          # lists fitted models beside their bases
 mlx-decision mcp -m julia-trec
@@ -576,11 +582,11 @@ stop = threading.Event()            # stop.set() from another thread cancels
 
 result = fit(
     "SupersonicLabs/Julia-1",
-    "trec",                        # a dataset folder (its train split), a file,
-                                   # or a list of data.format.Example
+    "trec",                        # a dataset folder (trains on its train split,
+                                   # reports on its test split), a file, or a
+                                   # list of data.format.Example
     output="julia-trec",
     method="auto",                 # calibrate, readout, head, finetune
-    holdout=0.2,
     seed=0,
     epochs=3,
     on_event=lambda event: print(event.as_json()),
@@ -596,7 +602,10 @@ print(report.as_json())
 `mlx_decision.DataError` for a bad training file (with its `line`),
 and `mlx_decision.ModelTooLargeError` when the run does not fit (both
 are `DecisionError`s). Further
-options: `validation=`, `head_only=`, `early_stop=`, `overwrite=` and
+options: `validation=` and `holdout=` (as `--validation` and
+`--holdout`; with neither, data without a report split holds back a
+fifth),
+`head_only=`, `early_stop=`, `overwrite=` and
 the loader's options (`max_input_tokens=`).
 
 ## Not in this version

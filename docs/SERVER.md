@@ -69,8 +69,8 @@ mlx-decision server -m ~/Models --default-model clef-flash --memory-budget 30
 Models load on their first request and stay loaded while they fit in
 `--memory-budget` (in GB; default: the GPU's recommended working set);
 when the next one would not fit, the least recently used are unloaded
-first. Sizes are estimated from the weights, plus the memory Clef keeps
-for recent states. A request without a `model`, or with one the server
+first. Sizes are estimated from the weights, plus the memory Clef,
+H2O-Lightning and d1 keep for recent states. A request without a `model`, or with one the server
 does not have (such as the SDK's default `jev-latest`), goes to
 `--default-model`, which also loads at startup. With a single model that
 model is the default; with several and no `--default-model`, such

@@ -22,7 +22,7 @@ from . import plan as kinds_plan
 from .console import plan_lines
 
 EPOCH_KINDS = ("head", "finetune")
-DEFAULT_HOLDOUT = 0.2
+DEFAULT_HOLDOUT = kinds_plan.DEFAULT_HOLDOUT
 DEFAULT_EPOCHS = 3
 
 

@@ -132,7 +132,7 @@ def renamed(new_value, old_value, new: str, old: str):
         return new_value
     if new_value is not None:
         raise typer.BadParameter(f"{old} is the old name of {new}: pass one", param_hint=new)
-    typer.echo(f"warning: {old} is now {new}; the old name still works for now", err=True)
+    typer.echo(f"warning: {old} is now {new}; the old name works until 2.0", err=True)
     return old_value
 
 
@@ -1343,7 +1343,11 @@ def web(
         default = f"; default {pool.default}" if default_model is not None else ""
         typer.echo(f"models: {', '.join(pool.names)}{default}", err=True)
     else:
-        typer.echo("no models yet: download one (mlx-decision download) or pass -m MODEL", err=True)
+        typer.echo(
+            "no models yet: use Download a Model… in the Studio, "
+            "mlx-decision download, or pass -m MODEL",
+            err=True,
+        )
     typer.echo(f"workspace: {app.state.workspace.root}", err=True)
     typer.echo(f"Jev API: {home_address}/v1/systemone", err=True)
     if api_key:
@@ -1556,7 +1560,8 @@ def convert(
             min=2,
             max=8,
             help="Mixed precision: average bits per weight, allocated by measured "
-            "sensitivity (Clef, d3, H2O-Lightning; implies --quantize; takes a few minutes).",
+            "sensitivity (Clef, pplx v1.2, d3, H2O-Lightning; implies --quantize; "
+            "takes a few minutes).",
         ),
     ] = None,
     events: Annotated[

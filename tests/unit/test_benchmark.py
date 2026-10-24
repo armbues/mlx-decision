@@ -335,6 +335,7 @@ def test_output_and_its_old_name_out_which_warns(fake_model_path, tmp_path):
     old = CliRunner().invoke(app, [*args, "--out", str(tmp_path / "old.json")])
     assert old.exit_code == 0, old.output
     assert "warning: --out is now --output" in old.stderr
+    assert "the old name works until 2.0" in old.stderr
     assert json.loads((tmp_path / "old.json").read_text())["model"] == "fake"
     new = CliRunner().invoke(app, [*args, "-o", str(tmp_path / "new.json")])
     assert new.exit_code == 0 and "warning" not in new.stderr

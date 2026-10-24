@@ -73,6 +73,7 @@ mlx-decision run -m Cloudflare/clef-flash -q questions.json --states tickets.jso
 {"state": "My card was charged twice this month."}
 {"state": {"ticket": 4711, "text": "The app crashes on login."}}
 {"state": "Is this spam?", "questions": {"spam": {"type": "noul", "instructions": "Is it spam?"}}}
+{"questions": {"spam": {"type": "noul", "instructions": "Is it spam?"}}}
 ```
 
 Lines can carry images as file paths or data URLs
@@ -81,7 +82,7 @@ to lines without their own. A line that cannot be answered yields an
 error body with its line number, and the run goes on:
 
 ```
-{"error": {"message": "state is required", "type": "invalid_request_error", "param": "state"}, "line": 3}
+{"error": {"message": "state is required", "type": "invalid_request_error", "param": "state"}, "line": 4}
 ```
 
 ## Defaults in a config file
@@ -237,7 +238,10 @@ Without `-o` the folder is named after the model plus `-q<bits>`,
 `-mq<target>` or `-mlx` (no quantization). A converted folder loads like
 the original (`mlx_decision.load("clef-flash-q8")`). Only the text backbone
 is quantized; the decision head and the vision tower stay as released.
-With `--target-bits` the converter first measures, on a built-in
+`--group-size` sets how many weights share a scale (32, 64 or 128;
+default 64), and `--keep-output-embeddings` leaves the output embedding
+matrix unquantized (Clef and H2O-Lightning; H2O-Lightning shares it
+with its input embeddings). With `--target-bits` the converter first measures, on a built-in
 calibration set, how far the answers move when each block of the model is
 quantized alone (about 6 minutes), then gives the sensitive blocks more
 bits within the average you asked for.
@@ -297,7 +301,10 @@ mlx-decision benchmark -m Cloudflare/clef-flash
 It reports load time, peak memory and median / p95 time per request
 across state lengths (those that fit the model's limit) and numbers of
 questions; for Clef, H2O-Lightning and d1 also each request again on a
-state it has kept. As a rule of thumb, clef-flash reads about 1,700 tokens per
+state it has kept. `--lengths` and `--question-counts` pick the grid
+(comma-separated; by default 250, 1,000, 4,000 and 15,000 tokens, those
+below the model's limit, and 1, 5 and 20 questions), `--repeats` the
+timed runs per row (5), and `--json` prints the results as JSON. As a rule of thumb, clef-flash reads about 1,700 tokens per
 second and Clef 27B (8-bit) about 380; pplx v1.1 (8-bit) about 420;
 d3-flash about 1,150 to 1,800 and d3-mini about 1,600 to 2,800, counting
 the state once per question;

@@ -3,6 +3,7 @@
 The model families mlx-decision runs, what each reads and how much
 memory it needs. The README has a short version of this table.
 
+- [Which model to start with](#which-model-to-start-with)
 - [How they read a request](#how-they-read-a-request)
 - [Memory](#memory)
 - [Clef](#clef), [pplx](#pplx), [d3](#d3), [H2O-Lightning](#h2o-lightning),
@@ -32,6 +33,31 @@ an M2 Ultra; pplx's was not measured (v1.2 not yet on speed either), nor
 H2O-Lightning's, whose release runs on vLLM with CUDA. d3-flash's own runtime was compared over a whole
 test set, not per request: it took 2.9 times as long. How the models
 differ is [below](#how-they-read-a-request).
+
+## Which model to start with
+
+By your Mac's memory, among the models measured on the
+[benchmarks](BENCHMARKS.md#accuracy):
+
+- **16 GB**: d1-3B, small and fast (0.06 s a question), about level
+  with H2O-Lightning-4B on the benchmarks; check its licence before
+  commercial use. H2O-Lightning-4B for long states with many questions
+  (its 8-bit copy when the states are long).
+- **32 GB or more**: clef-flash, the most accurate on classification
+  and knowledge (TREC 96.8%, OpenBookQA 95.4%), with images; d3-flash
+  when entailment matters (ANLI round 3: 64.3% against 50.8%).
+- **48 GB or more**: an 8-bit copy of Clef 27B (a little ahead of
+  clef-flash on entailment and calibration) or of pplx-decider-v1.2
+  (not measured yet; its v1.1 was the only local model close to Jev on
+  entailment).
+- **Any Mac, many short texts**: laya for English topics,
+  laya-multilingual for other languages (89.8% on TREC, in
+  milliseconds); both are weak at entailment and science questions.
+
+pplx-decider-flash-v1.2, the model in the Studio's screenshots, fits
+16 GB Macs (9.1 GB) and asks all questions of a request in one pass,
+but it is not on the benchmarks yet, nor are d3's smaller sizes. Compare
+in the Studio, on your own examples, says more than any benchmark.
 
 ## How they read a request
 
@@ -64,13 +90,14 @@ are rejected) up to 16,384 tokens; a longer state is cut to fit.
 
 Each Clef model runs in bf16 as released or as a quantized copy. The fit
 check asks for the weights plus 10% within the GPU's working set, which
-is about two thirds of a Mac's memory on a 16 GB Mac and four fifths on a
-64 GB Mac (`mlx-decision benchmark` prints it):
+is about three quarters of a Mac's memory on a 16 GB Mac (12.7 GB) and
+four fifths on a 64 GB Mac (55.7 GB) (`mlx-decision benchmark` prints
+it):
 
 | Copy | clef-flash needs | Clef 27B needs |
 |---|---|---|
 | bf16 (as released) | 21.0 GB: 32 GB Macs and up | 60.5 GB: 96 GB Macs and up |
-| 8-bit | 11.7 GB: 24 GB Macs and up | 32.7 GB: 48 GB Macs and up |
+| 8-bit | 11.7 GB: 16 GB Macs and up | 32.7 GB: 48 GB Macs and up |
 | 4-bit | 6.8 GB: 16 GB Macs and up | 17.9 GB: 32 GB Macs and up |
 
 Peak memory at the full 16,384 tokens: clef-flash 19.0 GB in bf16 and
@@ -215,8 +242,9 @@ minutes.
 d3-flash peaks at 18.7 GB in bf16 and 11.7 GB in 8-bit on the default
 `benchmark` lengths (up to 29,450 tokens). The fit check counts the
 weights, not the input: on a 16 GB Mac the 8-bit copy passes it but
-long inputs take it past the GPU's working set, so use the 4-bit copy
-there (about 10 GB at the full 32,768 tokens). Five questions take five
+long inputs take it close to the GPU's working set (12.7 GB there), so
+the 4-bit copy is the safer choice for long inputs (about 10 GB at the
+full 32,768 tokens). Five questions take five
 times as long as one: 12.6 s for five about a 4,000-token state. The
 8-bit copy saves memory, not time (up to 30% slower). `download --bits`
 and [convert](CLI.md#quantizing-convert) write quantized copies, mixed
@@ -267,8 +295,9 @@ between 0.5 and 1 sets another floor. Other families refuse the option.
 | mixed 4.5 | 3.3 GB | 3.6 GB: 16 GB Macs and up | 7.2 GB |
 | 4-bit | 3.0 GB | 3.3 GB: 16 GB Macs and up | 7.0 GB |
 
-On a 16 GB Mac the full-size model fits, but long states take it past
-the GPU's working set; use the 8-bit copy there. `download --bits` and
+On a 16 GB Mac the full-size model fits, but long states take it to the
+edge of the GPU's working set (12.6 of 12.7 GB); use the 8-bit copy
+there for long states. `download --bits` and
 [convert](CLI.md#quantizing-convert) write the copies; the vision tower stays as
 released.
 
@@ -316,7 +345,7 @@ loading by repo id notes it on stderr when it downloads.
 
 It runs in bf16 as released (6.2 GB): the fit check needs 6.9 GB, so 16
 GB Macs and up, though its peak of 11.6 GB (29,450 tokens, twenty
-questions) is past a 16 GB Mac's working set. There are no quantized copies: they would save memory but no
+questions) comes close to a 16 GB Mac's working set (12.7 GB). There are no quantized copies: they would save memory but no
 time. One question about a 250-token state takes 62 ms, five 125 ms,
 twenty 245 ms; a 4,000-token state takes 0.77 s with one question and
 1.0 s with twenty, and twenty new questions on a kept state take 0.2 to

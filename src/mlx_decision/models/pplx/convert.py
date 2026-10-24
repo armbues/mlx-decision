@@ -37,4 +37,6 @@ def convert(path: Path, output: Path, source: str, **options) -> None:
             "pplx", JOINT_COPIED, _load_for_sweep, path, output, source, lm_head=False, **options
         )
     else:
+        if options.get("target_bits") is not None:
+            raise ValueError("pplx v1.1 models have no mixed precision (v1.2 has); use --bits")
         convert_qwen("pplx", COPIED, None, path, output, source, lm_head=False, **options)

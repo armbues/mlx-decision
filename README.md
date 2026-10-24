@@ -5,7 +5,7 @@ Run and fine-tune decision models locally on Apple Silicon with [MLX](https://gi
 A decision model reads a *state* (a message, a document, a screenshot,
 any JSON) and a set of typed *questions*: pick one of several options,
 rate on a scale, or answer yes or no. It returns a probability for every
-allowed answer in a single forward pass, without generating text, so an
+allowed answer in one pass over the input, without generating text, so an
 answer is always one you allowed and comes in a fraction of a second.
 
 mlx-decision is for anyone who classifies, routes, moderates or checks
@@ -13,8 +13,8 @@ text and images and wants to do it on their own Mac: no data leaves it,
 and there is no per-call cost. The **Studio**, a web app on your Mac,
 lets you write questions and try them, compare models, answer a whole
 dataset and fit a model to your own examples, without writing code;
-developers use it from Python, the command line, a Jev-compatible
-server and MCP.
+developers use it from Python, the command line, an HTTP server and
+MCP for AI agents.
 
 ![The Studio: a support ticket answered by a model, compared across three models, and a model trained on a dataset](https://raw.githubusercontent.com/armbues/mlx-decision/main/docs/images/studio.webp)
 
@@ -29,13 +29,28 @@ pip install mlx-decision
 mlx-decision web
 ```
 
-`web` starts the Studio and opens it in your browser. With no models
+New to Python? It needs Python 3.12 or newer, which macOS does not
+have. In Terminal, install [uv](https://docs.astral.sh/uv/), which
+brings its own Python, open a new Terminal window, and install
+mlx-decision with it:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install --python 3.13 mlx-decision
+mlx-decision web
+```
+
+`web` starts the Studio and opens it in your browser (it is tested with
+Chrome); keep the Terminal window open while you use it. With no models
 yet, it asks where models should go and offers three that fit your
 Mac's memory; download one, start a question set from a template such
-as Support triage, and press Run.
+as Support triage, and press Run All.
+[Your first decision](https://github.com/armbues/mlx-decision/blob/main/docs/STUDIO.md#your-first-decision)
+walks through it step by step.
 
-The same from the command line, with a model from Hugging Face
-(downloaded on first use, 9 GB):
+The same from the command line, with a yes/no question (`--noul`), a
+choice and a score, on a model from Hugging Face (downloaded on first
+use, 9 GB):
 
 ```bash
 mlx-decision run -m perplexity-ai/pplx-decider-flash-v1.2 \
@@ -120,10 +135,15 @@ JSONL or Parquet file into labelled examples; `training fit` fits a model
 to them in minutes, on the Mac it runs on, and `training eval` compares
 it with its base. The result is a small folder that loads like any
 model. On TREC, a fit takes d1-3B from 86.6% to 96.4% in 4 minutes on
-an M5 Pro.
+an M5 Pro. In the Studio, the Datasets and Training pages do the same
+without the command line.
 [docs/TRAINING.md](https://github.com/armbues/mlx-decision/blob/main/docs/TRAINING.md)
 
 ## Models
+
+Not sure which to pick?
+[Which model to start with](https://github.com/armbues/mlx-decision/blob/main/docs/MODELS.md#which-model-to-start-with)
+suggests one by your Mac's memory.
 
 | Model | Size | Input | Memory | Good at |
 |---|---|---|---|---|
@@ -139,9 +159,12 @@ an M5 Pro.
 | [laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | text, 100+ languages | 1.6 GB | topic classification in many languages |
 | Supersonic Labs' [Julia-1](https://huggingface.co/SupersonicLabs/Julia-1) | 144M | text, many languages | 1.4 GB | emotion and routing with 2 to 20 options, long states |
 
-A model loads only if its weights fit the GPU's working set, about
-three-quarters of the Mac's memory; the quantized copies are made by
-`download` or `convert`. Input limits, speed,
+Memory is the peak on the longest inputs measured (about 30,000 tokens,
+or each model's limit); loading and short states need less. A model
+loads if its weights plus 10% fit the GPU's working set, about
+three-quarters of the Mac's memory, which is what the Studio checks
+before a download; the quantized copies are made by `download` or
+`convert`. Input limits, speed,
 the speedup over each model's own PyTorch code, which copy fits which
 Mac and each family's details are in
 [docs/MODELS.md](https://github.com/armbues/mlx-decision/blob/main/docs/MODELS.md).
@@ -156,7 +179,7 @@ AI's hosted model, for comparison.
 |---|---|---|---|---|---|
 | clef-flash | **96.8** | 78.1 | 50.8 | 95.4 | 57.6 |
 | clef (8-bit) | 96.4 | **81.0** | 55.2 | 95.4 | 57.6 |
-| pplx v1.1 (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | **58.0** |
+| pplx v1.1 27B (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | **58.0** |
 | d3-flash | 85.8 | 77.7 | 64.3 | 95.2 | 57.2 |
 | H2O-Lightning-4B | 85.2 | 76.3 | 59.9 | 84.6 | 57.3 |
 | d1-3B | 86.6 | 78.7 | 55.7 | 86.2 | 56.8 |
@@ -172,7 +195,8 @@ of the most likely level. Clef and pplx v1.1 are level with Jev or
 ahead of it on four of the five; on entailment pplx comes close to Jev,
 Clef does not. The
 small models are near chance on entailment and science questions, as
-their model cards lead one to expect. pplx v1.2 and flash are not
+their model cards lead one to expect. pplx v1.1 is the earlier release
+of the 27B; v1.2 and flash, the releases in the model table, are not
 measured yet. Every cell's macro-F1 and calibration error, the other
 Laya models and how each model matches its own reference code are in
 [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md#accuracy).
@@ -181,7 +205,11 @@ Laya models and how each model matches its own reference code are in
 
 Requirements: a Mac with Apple Silicon (M1 or later) and macOS 14 or
 newer, Python 3.12 or 3.13 (later versions may work), and the memory the
-model needs.
+model needs. Without a Python of your own, [uv](https://docs.astral.sh/uv/)
+installs mlx-decision with its own Python, as in the
+[quick start](#quick-start): `uv tool install --python 3.13 mlx-decision`
+(with extras: `"mlx-decision[training]"`), later
+`uv tool upgrade mlx-decision`.
 
 ```bash
 pip install mlx-decision                    # library, command line, Studio, server, images

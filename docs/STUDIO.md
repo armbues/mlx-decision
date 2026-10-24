@@ -12,8 +12,13 @@ pip install mlx-decision
 mlx-decision web
 ```
 
-Datasets from the Hugging Face Hub need the `training` extra as well:
-`pip install "mlx-decision[training]"`.
+Without a Python 3.12 or newer of your own, install it with
+[uv](https://docs.astral.sh/uv/), which brings its own Python, as the
+README's [quick start](../README.md#quick-start) shows:
+`uv tool install --python 3.13 mlx-decision`. Datasets from the Hugging
+Face Hub need the `training` extra as well:
+`pip install "mlx-decision[training]"` (with uv:
+`uv tool install --python 3.13 "mlx-decision[training]"`).
 
 A few words used throughout: the **state** is what the model reads (a
 text, or any JSON value such as a ticket or a conversation), with one or
@@ -22,8 +27,18 @@ on an ordered scale) or a noul (yes or no). A **family** is a kind of
 model (Clef, pplx, d3, H2O-Lightning, d1, Laya, Julia; see
 [MODELS.md](MODELS.md)); each family has its own mark and colour in the
 Studio. **Jev** is TypeSafe AI's hosted decision service; the Studio
-answers the same API, so Jev's clients work against it.
+answers the same API, so Jev's clients work against it. A **token** is
+the unit a model reads text in, about three quarters of a word; input
+limits count them. A **quantized** copy (8-bit, 4-bit) stores the
+weights with fewer bits: less memory, answers close to the original's.
+Models come from the **Hugging Face Hub**, where each has a **repo id**
+such as `perplexity-ai/pplx-decider-flash-v1.2`; the **Hugging Face
+cache** is the folder on your Mac where downloads from it are kept. A
+dataset's **splits** are its parts (train, test); **JSON lines** is a
+file with one JSON value per line.
 
+- [Your first decision](#your-first-decision): from the first start to
+  the first answers
 - [Starting it](#starting-it): the first start, other machines, the
   config file
 - [The window](#the-window): layout and keys
@@ -37,6 +52,25 @@ answers the same API, so Jev's clients work against it.
 - [Jobs and the busy GPU](#jobs-and-the-busy-gpu)
 - [The workspace](#the-workspace): its files from a terminal
 - [Not in 1.0](#not-in-10)
+
+## Your first decision
+
+1. In Terminal, run `mlx-decision web`. The Studio opens in your
+   browser. Keep the Terminal window open while you use it: closing it
+   stops the Studio. The address holds a session token that changes on
+   every start, so open the Studio this way, not from a bookmark.
+2. "Where should models go?": keep the Hugging Face cache unless you
+   want the models in a folder of your own.
+3. Pick one of the three models offered. Download a Model opens with it
+   chosen; press Download. The download shows in the sidebar's Jobs
+   list; a model is several GB, so it takes a few minutes.
+4. On the Playground, the + by Question Sets (or ⌥⌘N) opens New
+   Question Set…: pick Support triage and press Create.
+5. Press Run All (⌘↩). The model loads, then answers each example; the
+   Answers tab shows a card per question ([Running](#running) says how
+   to read them).
+6. Change the state or a question and run again; Compare tries the same
+   on other models.
 
 ## Starting it
 
@@ -248,7 +282,9 @@ each question's answers side by side. Pick the models in the toolbar's
 menu (Compare With) or in the Answers tab's Compare view; fitted models
 and their bases are offered too. While models are ticked under Compare
 With, the main action is Compare (⌘↩; the target shows "MODEL + 1");
-untick them, or switch the Answers tab to One Model, to Run again. Stop
+to Run again, untick them and switch the Answers tab away from Compare
+(to One Model, or with several examples to This Example or All
+Examples). Stop
 ends it: the models not asked yet are not run.
 A Compare is one History entry.
 
@@ -345,7 +381,8 @@ size and whether it fits: within the memory budget, over it (it would
 not load until the budget is raised) or too large for this Mac), as
 [`download`](CLI.md#getting-a-model-download) offers them. A model with
 its own terms of use (d1-3B) shows them before it downloads. Other repo
-id takes any repository on the Hugging Face Hub (Check first). The
+id takes any repository of a supported family on the Hugging Face Hub
+(Check first). The
 sheet says where the model goes: into `models_dir`, or the Hugging Face
 cache. An 8-bit or 4-bit copy is quantized as it downloads: the
 full-size files are fetched one at a time, quantized and deleted, so

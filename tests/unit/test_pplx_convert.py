@@ -112,7 +112,7 @@ def test_8bit_stays_close_to_the_release(release, q8):
 
 
 @pytest.mark.parametrize(("options", "message"), [
-    ({"target_bits": 4.5}, "no mixed precision"),
+    ({"target_bits": 4.5}, "pplx v1.1 models have no mixed precision"),
     ({"bits": 4, "quantize_output_embeddings": False}, "no output embeddings"),
 ])  # fmt: skip
 def test_refused_options(release, tmp_path, options, message):

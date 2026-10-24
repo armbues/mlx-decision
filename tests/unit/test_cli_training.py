@@ -61,7 +61,7 @@ def test_fit_shows_the_plan_and_reports_before_and_after(tmp_path, base, data, c
     assert "labels: team: billing 8, sales 8, tech 64" in result.stderr
     assert "method: calibrate" in result.stderr
     assert "warning: question 'team'" in result.stderr
-    assert "team (20 holdout examples)" in result.stdout
+    assert "team (20 report examples)" in result.stdout
     assert "accuracy        10.0%       80.0%" in result.stdout
     assert "wrote base-tickets" in result.stdout
 

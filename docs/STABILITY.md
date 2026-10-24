@@ -117,8 +117,8 @@ speed records), log and message texts, and the modules not exported from
 A stable name that is renamed in 1.x keeps working under its old
 spelling until 2.0: the old flag or argument is hidden from `--help` and
 prints a warning on stderr when used (never as an event line). In 1.0,
-`benchmark --out` is now `-o` / `--output` and `data --config` is now
-`--subset`.
+`benchmark --out` is now `-o` / `--output`, `benchmark --questions` is
+now `--question-counts` and `data --config` is now `--subset`.
 
 ## Files from a later version
 

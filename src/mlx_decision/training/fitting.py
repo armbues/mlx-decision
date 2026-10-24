@@ -521,17 +521,30 @@ class Prepared:
         )
 
 
+def report_data(data, validation, holdout: float | None):
+    """What scores a fit's report, as ``(validation, holdout)``: either as given;
+    with neither, a dataset folder's report split if it has one, else a fifth
+    of the data (as ``training fit --data FOLDER`` does)."""
+    if validation is None and holdout is None and not isinstance(data, list):
+        from ..data.dataset import report_split
+
+        validation = report_split(data)
+    return validation, plan.DEFAULT_HOLDOUT if holdout is None else holdout
+
+
 def prepare(
     base: str | Path,
     data: str | Path | list[Example],
     *,
     validation: str | Path | list[Example] | None = None,
-    holdout: float = 0.2,
+    holdout: float | None = None,
     seed: int = 0,
     load_options: dict | None = None,
 ) -> Prepared:
-    """Read the data and find the base, as a fit's check stage does (no model loads)."""
+    """Read the data and find the base, as a fit's check stage does (no model
+    loads); ``validation`` and ``holdout`` as in ``fit``."""
     load_options = dict(load_options or {})
+    validation, holdout = report_data(data, validation, holdout)
     source = read_data(data)
     held = read_data(validation, "report") if validation is not None else None
     origin = _base(base)
@@ -584,7 +597,7 @@ def fit(
     output: str | Path,
     method: str = "auto",
     validation: str | Path | list[Example] | None = None,
-    holdout: float = 0.2,
+    holdout: float | None = None,
     seed: int = 0,
     epochs: int = 3,
     head_only: bool = False,
@@ -601,7 +614,8 @@ def fit(
     ``method`` is a kind (``calibrate``, ``readout``, ``head``, ``finetune``)
     or ``auto``, the family's usual kind; every run ends with a calibration.
     ``validation`` scores the report instead of a ``holdout`` share of the
-    data (seeded with ``seed``, stratified by label). ``epochs`` is for the
+    data (seeded with ``seed``, stratified by label); with neither, a
+    dataset folder's report split scores it, else a fifth of the data. ``epochs`` is for the
     kinds that train in epochs (at most: with ``early_stop`` an epoch worse on
     dev than the best before it ends the training; the best is kept either
     way); ``head_only`` fine-tunes the marker head without the encoder.
@@ -638,6 +652,7 @@ def fit(
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"{output} exists (pass overwrite to replace it)")
+    validation, holdout = report_data(data, validation, holdout)
     prepared = prepare(
         base, data, validation=validation, holdout=holdout, seed=seed, load_options=load_options
     )

@@ -319,6 +319,19 @@ def test_fit_on_a_folder_reports_on_its_report_split(ready, tmp_path, monkeypatc
     assert held_report["options"]["validation"] is None
 
 
+def test_python_fit_on_a_folder_reports_as_the_command_does(ready, tmp_path):
+    base = write_model(tmp_path / "base")
+    fit(base, ready, output=tmp_path / "default")
+    written = json.loads((tmp_path / "default" / "training.json").read_text())
+    assert written["options"]["validation"] == f"{ready} (validation split)"
+    assert written["data"]["holdout"] == 6
+    # An explicit holdout keeps the holdout of the train split.
+    fit(base, ready, output=tmp_path / "held", holdout=0.2)
+    held = json.loads((tmp_path / "held" / "training.json").read_text())
+    assert held["options"]["validation"] is None
+    assert held["options"]["holdout"] == 0.2
+
+
 def test_eval_on_a_folder_reads_its_evaluate_split(ready, tmp_path):
     base = write_model(tmp_path / "base")
     result = evaluate(base, ready)

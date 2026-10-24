@@ -155,11 +155,12 @@ def _rows(columns: list[dict[str, Any]], names: list[str]) -> list[str]:
 
 
 def format_fit(report: dict[str, Any], path: str) -> str:
-    """A fit's report: per question, the holdout's metrics before and after."""
+    """A fit's report: per question, the metrics before and after on the examples
+    that score the report (the holdout or the validation data)."""
     lines = []
     for question_id, entry in report["questions"].items():
         n = entry["before"]["n"]
-        lines.append(f"{question_id} ({n:,} holdout examples)")
+        lines.append(f"{question_id} ({n:,} report examples)")
         lines += _rows([entry["before"], entry["after"]], ["before", "after"])
         lines.append("")
     training = report.get("training") or {}

@@ -15,6 +15,8 @@ from ..data.format import Example, Splits
 from ..memory import required_bytes
 
 KINDS = ("calibrate", "readout", "head", "finetune")
+# The share of the data that scores a fit's report when nothing else does.
+DEFAULT_HOLDOUT = 0.2
 # The kind ``auto`` picks per family, followed by a calibration.
 MAIN_KIND = {
     "clef": "head",

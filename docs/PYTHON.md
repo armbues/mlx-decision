@@ -4,6 +4,7 @@ The Python API: `load` a model, then `decide`. Fitting a model from
 Python is in [TRAINING.md](TRAINING.md#python).
 
 - [Deciding](#deciding)
+- [Results and errors](#results-and-errors)
 - [Loading options](#loading-options)
 - [Images](#images)
 
@@ -63,10 +64,34 @@ raise `mlx_decision.DecisionError`, whose `param` names the offending field
 (building an invalid `Choice`, `Score` or `Noul` object directly raises
 pydantic's `ValidationError` instead). The state, instructions and criteria
 take any JSON data nested up to 100 levels deep, with finite numbers
-(no `NaN` or infinity). `result.truncated` tells you whether
-the state was cut to fit the model's input limit. The answer types
-(`ChoiceAnswer`, `ScoreAnswer`, `NoulAnswer`) and `Usage` can be imported
-from `mlx_decision`.
+(no `NaN` or infinity).
+
+## Results and errors
+
+`decide` and `decide_request` return a `Result`: `model` (the model's
+name, as `model.name`), `answers` (by question id), `usage`
+(`input_tokens`; `output_tokens` is always 0, as nothing is generated)
+and `truncated` (whether the state was cut to fit the model's input
+limit). `to_wire()` gives the response body as JSON data, the
+`Response` the server sends. Each answer has its question's `type`:
+
+- `ChoiceAnswer`: `choice` (the most likely option), `confidence` and
+  `probabilities` (option -> probability);
+- `ScoreAnswer`: `score` (the expected level, counted from 0),
+  `confidence`, `legend` (level -> its text, keys `"0"`, `"1"`, ...) and
+  `probabilities` (level -> probability);
+- `NoulAnswer`: `noul` (the probability of yes).
+
+These types, `Usage`, `Request` (what `check` returns) and `Response`
+can be imported from `mlx_decision`.
+
+An invalid request raises `DecisionError` (a `ValueError`) with
+`message`, `param` (the field at fault, such as
+`questions.team.criteria`, or `None`) and `code` (only for some errors,
+such as `unsupported_media`). `load` raises `FileNotFoundError` for a
+path that is neither a folder nor a model on the Hugging Face Hub,
+`ValueError` for an option the model's family does not take, and the
+errors below for memory and platform.
 
 ## Loading options
 
@@ -75,7 +100,8 @@ from `mlx_decision`.
 H2O-Lightning and d1 only lower),
 `strict_encoding=False` lets Julia cut what it would otherwise refuse,
 `dtype` sets Laya's and Julia's precision (default float16),
-`max_image_pixels` caps image size for Clef, d3 and pplx, `noul_floor` sets
+`max_image_pixels` caps image size for Clef, d3 and pplx (in pixels, at
+least 1,024; `None` keeps only the release's own maximum), `noul_floor` sets
 H2O-Lightning's [yes/no floor](MODELS.md#h2o-lightning), and `prefix_cache_gb` sets
 how much memory Clef, H2O-Lightning and d1 keep for
 [recent states](MODELS.md#reusing-a-state) (default 2, 0 turns it off).

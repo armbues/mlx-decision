@@ -155,8 +155,10 @@ written for 0.9 may need the changes listed first under Changed.
   label's classes, or nothing into a dataset folder.
 - `training fit --data FOLDER` trains on a dataset folder's train split
   and reports on its report split (unless `--validation` or `--holdout`
-  is given); `training eval --data FOLDER` scores its evaluate split.
-  A split's own file works too, and plain JSON-lines files as before.
+  is given), and so does Python's `fit` (its `holdout` now defaults to
+  None: the folder's report split, else a fifth as before);
+  `training eval --data FOLDER` scores its evaluate split. A split's
+  own file works too, and plain JSON-lines files as before.
   `training fit` says which split it trains on and reports on. Roles
   come from split names such as `train_r3`, `dev_r3` and `test_r3`, also
   for a folder whose `dataset.json` lists no splits. Into a folder,
