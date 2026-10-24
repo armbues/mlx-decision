@@ -308,9 +308,16 @@ def test_the_page_light_and_dark(support, page, theme, width):
     centre = page.locator(".centre")
     assert centre.evaluate("e => e.scrollWidth <= e.clientWidth")
     expect(page.locator(".ex-pager")).to_contain_text(" of ")  # laid out with its count
-    pager = page.locator(".ex-pager").bounding_box()
-    tools = page.locator(".ex-tools").bounding_box()
-    assert pager["x"] + pager["width"] <= tools["x"] + tools["width"] + 1
+    # The pager ends inside the tools row once the layout has settled (the
+    # inspector that a row opens narrows the centre a moment later).
+    page.wait_for_function(
+        """() => {
+          const pager = document.querySelector(".ex-pager").getBoundingClientRect();
+          const tools = document.querySelector(".ex-tools").getBoundingClientRect();
+          return pager.right <= tools.right + 1;
+        }""",
+        timeout=2_000,
+    )
     shot(page, f"datasets-{theme}-{width}")
 
 

@@ -6,11 +6,13 @@ import json
 import mlx.core as mx
 import pytest
 from mlx.utils import tree_flatten
-from mlx_lm.models import lfm2 as upstream
 
 from mlx_decision.backbones.lfm2.lfm2 import Model, ModelArgs
 from mlx_decision.backbones.lfm2.load import load_text_model
 from mlx_decision.backbones.qwen3_5.cache import fork_cache
+
+# The comparison is with mlx-lm's model, which is not a dependency.
+upstream = pytest.importorskip("mlx_lm.models.lfm2")
 
 CONFIG = {
     "model_type": "lfm2",

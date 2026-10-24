@@ -161,12 +161,12 @@ def test_probes_parse_sysctl_and_system_profiler(monkeypatch):
     import mlx_decision.machine as machine
 
     answers = {
-        ("sysctl", "-n", "hw.nperflevels"): "2",
-        ("sysctl", "-n", "hw.perflevel0.physicalcpu"): "6",
-        ("sysctl", "-n", "hw.perflevel0.name"): "Super",
-        ("sysctl", "-n", "hw.perflevel1.physicalcpu"): "12",
-        ("sysctl", "-n", "hw.perflevel1.name"): "Performance",
-        ("system_profiler", "SPDisplaysDataType", "-json"): json.dumps(
+        ("/usr/sbin/sysctl", "-n", "hw.nperflevels"): "2",
+        ("/usr/sbin/sysctl", "-n", "hw.perflevel0.physicalcpu"): "6",
+        ("/usr/sbin/sysctl", "-n", "hw.perflevel0.name"): "Super",
+        ("/usr/sbin/sysctl", "-n", "hw.perflevel1.physicalcpu"): "12",
+        ("/usr/sbin/sysctl", "-n", "hw.perflevel1.name"): "Performance",
+        ("/usr/sbin/system_profiler", "SPDisplaysDataType", "-json"): json.dumps(
             {"SPDisplaysDataType": [{"sppci_model": "Apple M5 Pro", "sppci_cores": "20"}]}
         ),
     }
@@ -176,7 +176,7 @@ def test_probes_parse_sysctl_and_system_profiler(monkeypatch):
         {"name": "Performance", "count": 12},
     ]
     assert machine.gpu_cores() == 20
-    answers[("system_profiler", "SPDisplaysDataType", "-json")] = "not json"
+    answers[("/usr/sbin/system_profiler", "SPDisplaysDataType", "-json")] = "not json"
     assert machine.gpu_cores() is None
 
 

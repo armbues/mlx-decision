@@ -162,7 +162,9 @@ def test_clef_fits_its_head_end_to_end(tmp_path, base, quick):
     assert stored[0].metrics["states_gb"] >= 0
     assert [p.name for p in (tmp_path / "out").iterdir()] == ["fitted"]  # states removed
     training = result.report["training"]
-    assert len(training["epochs"]) == 3 and 1 <= training["best_epoch"] <= 3
+    # At most 3 epochs: early stopping may end it sooner.
+    epochs = len(training["epochs"])
+    assert 1 <= epochs <= 3 and 1 <= training["best_epoch"] <= epochs
     assert set(result.metrics) == {"team", "urgent"}
     tensors = mx.load(str(result.path / FIT_FILE))
     backend = load(base)

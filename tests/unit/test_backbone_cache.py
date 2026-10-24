@@ -58,13 +58,14 @@ def test_continuing_from_a_cache_equals_one_pass(model, with_images, cuts):
 def test_single_token_parts_on_the_cpu(model, with_images, cuts):
     # On the GPU, float32 matmuls over several rows use TF32 and a single row
     # does not, so a one-token part differs by about 1e-3 with or without a
-    # cache; the CPU computes both exactly.
+    # cache; the CPU differs only in float32 rounding (up to 1.4e-5 on values
+    # near 3).
     ids = tokens()
     positions = image_positions() if with_images else None
     with mx.stream(mx.cpu):
         whole = model(ids, position_ids=positions)
         split, _ = split_pass(model, ids, cuts, positions)
-        assert mx.allclose(split, whole, atol=1e-5, rtol=1e-5).item()
+        assert mx.allclose(split, whole, atol=5e-5, rtol=1e-5).item()
 
 
 def test_a_forked_cache_serves_several_continuations(model):

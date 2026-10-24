@@ -30,6 +30,8 @@ and are skipped when they are missing:
 
 The token tests of pplx, d3, H2O-Lightning and d1 need only their
 release's small files (tokenizer and configs) in the Hugging Face cache.
+The LFM2 backbone (d1's) is compared with `mlx-lm`'s when it is
+installed (`pip install mlx-lm`; not a dependency).
 
 The parity fixtures are rebuilt with `scripts/make_parity_set.py` and
 `scripts/make_parity_reference.py` (runs Cloudflare's reference with

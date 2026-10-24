@@ -242,6 +242,9 @@ Other changes:
 
 ### Fixed
 
+- `benchmark` (and the Studio's speed) find the Mac's chip and cores
+  also when started with a `PATH` without `/usr/sbin`, as from launchd
+  or some editors; before, the chip was left out of `-o` files.
 - A fitted model with an unknown tensor in a known group (a later
   version's `calibration.0.scale`) is refused, naming it, instead of
   read as a bias.

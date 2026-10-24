@@ -22,7 +22,8 @@ def _command(*args: str) -> str | None:
 
 
 def sysctl(name: str) -> str | None:
-    return _command("sysctl", "-n", name)
+    # By full path: a minimal PATH (launchd, some editors) leaves out /usr/sbin.
+    return _command("/usr/sbin/sysctl", "-n", name)
 
 
 def _int(value: str | None) -> int | None:
@@ -51,7 +52,7 @@ def cpu_cores() -> list[dict] | None:
 
 
 def gpu_cores() -> int | None:
-    output = _command("system_profiler", "SPDisplaysDataType", "-json")
+    output = _command("/usr/sbin/system_profiler", "SPDisplaysDataType", "-json")
     try:
         displays = json.loads(output)["SPDisplaysDataType"] if output else []
     except (ValueError, KeyError, TypeError):

@@ -147,6 +147,9 @@ def test_laya_encoding_is_identical(laya_pair, name):
 @pytest.fixture(scope="module")
 def julia_pair(julia_path):
     pytest.importorskip("torch")
+    if not (julia_path / "julia").is_dir():
+        # A download through mlx-decision fetches the weights, not the code.
+        pytest.skip(f"Julia's code (julia/) is not in {julia_path}")
     from transformers import AutoTokenizer
 
     import mlx_decision
