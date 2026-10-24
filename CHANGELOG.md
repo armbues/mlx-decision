@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 [docs/STABILITY.md](docs/STABILITY.md) calls stable does not break before
 2.0 (before 1.0, minor versions could change the interface).
 
-## [Unreleased]
+## [1.0.0] - 2026-10-24
 
 The Studio: mlx-decision in the browser, for trying questions, comparing
 models, answering datasets and fitting models without the command line.
