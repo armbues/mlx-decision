@@ -90,7 +90,7 @@ precision, input limit, option limits and whether it takes images.
 
 ## Images
 
-With the `images` extra, Clef, pplx, d3 and H2O-Lightning take images as file
+Clef, pplx, d3 and H2O-Lightning take images as file
 paths, bytes, PIL images or data URLs:
 
 ```python

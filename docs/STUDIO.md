@@ -8,9 +8,12 @@ in its workspace that the command line reads as it is, and every page
 shows the command or API call that does the same.
 
 ```bash
-pip install "mlx-decision[web]"
+pip install mlx-decision
 mlx-decision web
 ```
+
+Datasets from the Hugging Face Hub need the `training` extra as well:
+`pip install "mlx-decision[training]"`.
 
 A few words used throughout: the **state** is what the model reads (a
 text, or any JSON value such as a ticket or a conversation), with one or
@@ -58,9 +61,7 @@ caps the memory loaded models may take (by default the GPU's
 recommended working set); the least recently used are unloaded to stay
 within it. The load options of `run` and `server` (`--max-input-tokens`,
 `--max-image-mp`, `--prefix-cache`, `--noul-floor`,
-`--no-memory-check`) apply to every model the Studio loads. Images in
-the Playground need the `images` extra, datasets from the Hugging Face
-Hub the `training` extra.
+`--no-memory-check`) apply to every model the Studio loads.
 
 The same process also serves the Jev-compatible API of
 [`server`](SERVER.md#server) (`POST /v1/systemone`, `GET /v1/models`,

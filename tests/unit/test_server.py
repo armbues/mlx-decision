@@ -590,8 +590,6 @@ def test_a_zstd_body_of_many_frames_is_refused_quickly(client):
 
     from mlx_decision.server import MAX_ZSTD_FRAMES, zstd
 
-    if zstd is None:
-        pytest.skip("no zstd module")
     body = json.dumps(BODY).encode()
     frames = zstd.compress(body[:10]) + b"".join(
         zstd.compress(body[i : i + 1]) for i in range(10, 10 + MAX_ZSTD_FRAMES)

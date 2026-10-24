@@ -31,7 +31,7 @@ def prefix_key(input_ids: Sequence[int], images: Sequence[Any] = ()) -> str:
     limit is part of the key. Each image's patch grid is too: the same
     patches laid out on another grid (a plain image turned on its side) get
     other positions. ``images`` are ``PreparedImage``s (NumPy pixels; NumPy
-    comes with the images extra, so it is not imported here).
+    is loaded only for images, so it is not imported here).
     """
     digest = hashlib.sha256(array("q", input_ids).tobytes())
     for image in images:

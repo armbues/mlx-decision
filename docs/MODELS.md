@@ -88,7 +88,7 @@ on an M2 Ultra, where it is 3.7 times faster than the reference); the
 
 ### Images
 
-Images need the `images` extra. The Python API takes file paths,
+The Python API takes images as file paths,
 bytes, PIL images or data URLs; `run` and `chat` take files (`--image`,
 `/image`); the server takes data URLs only. They must be PNG, JPEG or WebP,
 at most about 89 million pixels. Each image is resized the way Cloudflare's
@@ -160,7 +160,7 @@ in the release, so a state cannot fake a marker.
 `download --bits 8` or `--bits 4` stores a copy without keeping the
 full-size files, and [convert](CLI.md#quantizing-convert) writes one from a
 full download (also mixed precision); the decision head and the vision
-tower stay as released. Images need the `images` extra; each is scaled
+tower stay as released. Each image is scaled
 to at most 1.6 megapixels (about 1,600 tokens), the release's maximum,
 which `--max-image-mp` lowers. The vision tower loads with the first
 image request.
@@ -222,7 +222,7 @@ times as long as one: 12.6 s for five about a 4,000-token state. The
 and [convert](CLI.md#quantizing-convert) write quantized copies, mixed
 precision included; prefer 8-bit for the smallest models.
 
-Images, as for Clef, need the `images` extra: any number per request,
+Images, as for Clef: any number per request,
 each scaled to between 65,536 and 1,638,400 pixels (64 to 1,600 tokens)
 as in the release; `--max-image-mp` (Python: `max_image_pixels`) lowers
 the maximum. Videos, which the release also reads, are refused. The
@@ -278,7 +278,7 @@ and 0.69 s for five new questions once the state is kept. As for Clef,
 the quantized copies save memory, not time: from 1,000 tokens on they
 are 5-17% slower.
 
-Images, as for Clef, need the `images` extra: up to 4 per request, each
+Images, as for Clef: up to 4 per request, each
 scaled to at most 1,048,576 pixels as in the release (`--max-image-mp`
 does not apply), placed ahead of the text. The vision tower loads with
 the first image request.

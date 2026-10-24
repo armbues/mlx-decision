@@ -1,7 +1,8 @@
 # Development
 
 From source: clone the [repository](https://github.com/armbues/mlx-decision)
-and run `pip install -e ".[server,images,mcp]"` in it.
+and run `pip install -e ".[dev]"` in it (what `make setup` does: the
+package with every extra and the tools for tests, lint and builds).
 
 ```bash
 make setup   # editable install with dev tools

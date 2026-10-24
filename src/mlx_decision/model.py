@@ -55,7 +55,7 @@ class DecisionModel:
         """Answer ``questions`` (dicts or ``Choice``/``Score``/``Noul``) about ``state``.
 
         ``images`` may hold file paths, image bytes, PIL images or data URLs
-        (``data:image/png;base64,...``); they need the ``images`` extra.
+        (``data:image/png;base64,...``).
         """
         if not isinstance(questions, Mapping):
             raise DecisionError(

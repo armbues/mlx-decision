@@ -46,9 +46,6 @@ def image_config(path, max_pixels: int | None):
     """The release's image settings; ``max_pixels`` lowers its maximum (None keeps it)."""
     from dataclasses import replace
 
-    from ..images import require_pillow
-
-    require_pillow()  # before the preprocessing module imports NumPy
     from ..backbones.qwen3_5.preprocess import ImageConfig
 
     config = ImageConfig.from_folder(path)
@@ -61,7 +58,7 @@ def image_config(path, max_pixels: int | None):
 
 def image_pixel_limit(path, max_pixels: int | None) -> int:
     """The pixels ``image_config(path, max_pixels)`` scales larger images down
-    to, read without the images extra (as ``ImageConfig.from_folder`` reads it)."""
+    to, read without loading NumPy or Pillow (as ``ImageConfig.from_folder`` reads it)."""
     path = Path(path)
     if (file := path / "processor_config.json").exists():
         settings = json.loads(file.read_text()).get("image_processor", {})

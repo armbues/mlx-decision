@@ -2,7 +2,6 @@
 
 import base64
 import io
-import sys
 
 import pytest
 from PIL import Image
@@ -76,14 +75,6 @@ def test_paths_can_be_refused(tmp_path):
     assert load_image(data_url(RED), 0, allow_paths=False).size == (8, 4)
 
 
-def test_without_pillow_there_is_an_install_hint(monkeypatch):
-    monkeypatch.setitem(sys.modules, "PIL", None)
-    with pytest.raises(DecisionError) as caught:
-        load_image(b"", 0)
-    assert caught.value.code == "unsupported_media"
-    assert "mlx-decision[images]" in caught.value.message
-
-
 def test_only_png_jpeg_and_webp_are_decoded():
     # A TIFF behind a PNG data URL never reaches Pillow's TIFF decoder.
     for fmt in ("TIFF", "BMP", "GIF"):
@@ -104,10 +95,3 @@ def test_oversized_images_are_refused_before_decoding(monkeypatch):
     monkeypatch.setattr(PIL.Image, "MAX_IMAGE_PIXELS", 16)
     with pytest.raises(DecisionError, match="too large: 8x4 pixels"):
         load_image(data_url(RED), 0)
-
-
-def test_without_numpy_there_is_the_same_hint(monkeypatch):
-    monkeypatch.setitem(sys.modules, "numpy", None)
-    with pytest.raises(DecisionError) as caught:
-        load_image(b"", 0)
-    assert "Pillow and NumPy" in caught.value.message

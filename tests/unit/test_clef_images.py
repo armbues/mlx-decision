@@ -100,7 +100,7 @@ def test_a_folder_without_vision_weights_refuses_images(tmp_path):
 
 
 def test_text_only_use_needs_neither_numpy_nor_pillow(tmp_path):
-    """The images extra is optional: without it Clef still loads and answers text."""
+    """Text-only use loads neither NumPy nor Pillow."""
     import subprocess
     import sys
 

@@ -44,17 +44,25 @@ dependencies = [
     "prompt_toolkit>=3.0.52",
     "pydantic>=2.7",
     "typer>=0.27",
+    # The server and the Studio (mlx-decision server, web); zstd for request
+    # bodies the Jev SDK compresses, in the standard library from 3.14.
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "backports.zstd>=1.0; python_version < '3.14'",
+    # Image input.
+    "pillow>=10",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
-# zstd for request bodies the Jev SDK compresses; in the standard library from 3.14.
-server = ["fastapi>=0.110", "uvicorn>=0.29", "backports.zstd>=1.0; python_version < '3.14'"]
-# The Studio (mlx-decision web): the server's packages; its frontend ships in the package.
-web = ["fastapi>=0.110", "uvicorn>=0.29", "backports.zstd>=1.0; python_version < '3.14'"]
-images = ["pillow>=10", "numpy>=1.26"]
 mcp = ["mcp>=2.3,<3"]
 training = ["datasets>=3.0"]
-dev = ["mlx-decision[server,web,images,mcp,training]", "pytest", "pyte", "playwright", "ruff", "build", "twine"]
+all = ["mlx-decision[mcp,training]"]
+# Part of the base install since 1.0; kept empty so older install lines still work.
+server = []
+web = []
+images = []
+dev = ["mlx-decision[all]", "pytest", "pyte", "playwright", "ruff", "build", "twine"]
 
 [project.urls]
 Homepage = "https://github.com/armbues/mlx-decision"

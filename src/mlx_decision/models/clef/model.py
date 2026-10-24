@@ -74,7 +74,7 @@ class ClefBackend:
     def load_vision(self):
         """The vision tower, loaded on first use (it stays in its stored precision)."""
         if self.vision is None:
-            # Imported here: the vision code needs numpy (the images extra).
+            # Imported here: the vision code needs NumPy, loaded only for images.
             from ...backbones.qwen3_5.vision import load_vision_model
 
             self.vision = load_vision_model(self.path)

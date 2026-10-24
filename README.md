@@ -26,7 +26,7 @@ d3-nano, and d3-edge trained on TREC.*
 ## Quick start
 
 ```bash
-pip install "mlx-decision[web]"
+pip install mlx-decision
 mlx-decision web
 ```
 
@@ -83,7 +83,7 @@ print(result.answers["team"].choice, round(result.answers["refund"].noul, 2))  #
 
 ## Interfaces
 
-**Studio.** `mlx-decision web` (the `web` extra). The Playground holds
+**Studio.** `mlx-decision web`. The Playground holds
 question sets with several examples, runs them on one model or compares
 up to three, and keeps every run in a history. Batches answer a
 dataset's rows and show accuracy, a confusion matrix and how well the
@@ -185,14 +185,17 @@ newer, Python 3.12 or 3.13 (later versions may work), and the memory the
 model needs.
 
 ```bash
-pip install mlx-decision                    # library and the mlx-decision command
-pip install "mlx-decision[web]"             # plus the Studio
-pip install "mlx-decision[images]"          # plus image input (Pillow, NumPy)
-pip install "mlx-decision[server]"          # plus the HTTP server (FastAPI, uvicorn)
+pip install mlx-decision                    # library, command line, Studio, server, images
+pip install "mlx-decision[training]"        # plus datasets from the Hugging Face Hub
 pip install "mlx-decision[mcp]"             # plus the MCP server for agents
-pip install "mlx-decision[training]"        # plus Hugging Face datasets for `data`
-pip install "mlx-decision[web,images]"      # several extras at once
+pip install "mlx-decision[all]"             # both
 ```
+
+Training needs no extra for CSV and JSONL files; the `training` extra
+adds Hub datasets, Parquet files and saved `datasets` folders, in the
+Studio and for `data`. The `web`, `server` and `images` extras of
+earlier versions are part of the base install now; install lines that
+name them still work.
 
 MLX also has builds for Linux and Windows, so pip may install
 mlx-decision there, but loading a model stops with an error: the models

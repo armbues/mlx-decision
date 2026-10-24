@@ -16,7 +16,7 @@ written for 0.9 may need the changes listed first under Changed.
 
 ### Added
 
-- **The Studio**, `mlx-decision web` (the new `web` extra): one process
+- **The Studio**, `mlx-decision web`: one process
   on your Mac that serves the Studio's page and, at the same address,
   the Jev-compatible API of `server`, with the same models and memory
   budget. It lists the models `-m`, the config file, the workspace and
@@ -212,6 +212,11 @@ what to do:
 
 Other changes:
 
+- `pip install mlx-decision` is the whole install for the Studio, the
+  server and images: FastAPI, uvicorn, Pillow and NumPy are now
+  dependencies. The `server` and `images` extras (and `web`) are empty
+  and still accepted, so existing install lines work. `mcp` and
+  `training` stay extras; the new `all` extra installs both.
 - The README is shorter and starts with the Studio and a quick start;
   the reference it held moved, unchanged, into the topic files in
   `docs/`.
@@ -279,8 +284,8 @@ Other changes:
   (`Content-Encoding: zstd`), which Jev's Python SDK sends for bodies of
   1 KB or more on Python 3.14 or with its `zstd` extra; such requests
   used to fail. The 64 MB limit applies to the decoded body; other
-  encodings get `415`. The `server` extra adds `backports.zstd` before
-  Python 3.14.
+  encodings get `415`. Before Python 3.14 the package installs
+  `backports.zstd` for it.
 
 ## [0.9.1] - 2026-10-15
 

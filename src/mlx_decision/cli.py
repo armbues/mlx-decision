@@ -444,8 +444,7 @@ ImageOption = Annotated[
     list[Path] | None,
     typer.Option(
         "--image",
-        help="An image file to ask about, with every state. Repeatable. "
-        "Needs the images extra: pip install 'mlx-decision\\[images]'.",
+        help="An image file to ask about, with every state. Repeatable.",
     ),
 ]
 
@@ -538,12 +537,6 @@ def image_options(max_image_mp: float | None) -> dict[str, Any]:
 def add_images(body: dict[str, Any], images: list[Path] | None) -> dict[str, Any]:
     """Append ``--image`` files to the body's images, checking that they exist."""
     if images:
-        from .images import require_pillow
-
-        try:
-            require_pillow()  # before the model loads, not with the first state
-        except DecisionError as error:
-            fail(f"--image: {error.message}")
         for path in images:
             if not path.is_file():
                 fail(f"--image: no such file: {path}")
@@ -1163,13 +1156,10 @@ def server(
     request (the default model at startup) and are unloaded, least recently
     used first, when the next one would exceed the memory budget.
     """
-    try:
-        import uvicorn
+    import uvicorn
 
-        from .server import create_app
-    except ImportError:
-        fail("the server needs extra packages: pip install 'mlx-decision[server]'")
     from .pool import ModelPool, discover
+    from .server import create_app
 
     log_to_stderr()
     config = read_config()
@@ -1271,19 +1261,13 @@ def web(
     config file names, the Studio's own in the workspace's models/ and the
     known families' downloads in the Hugging Face cache.
     """
-    try:
-        import fastapi  # noqa: F401
-        import uvicorn  # noqa: F401
-
-        from .studio import create_studio
-        from .studio import server as studio_server
-        from .studio.catalog import Catalog, studio_models
-        from .studio.routes.status import address
-        from .studio.security import Session, check_bind, is_loopback
-    except ImportError:
-        fail("the Studio needs extra packages: pip install 'mlx-decision[web]'")
     from .config import home
     from .pool import ModelPool
+    from .studio import create_studio
+    from .studio import server as studio_server
+    from .studio.catalog import Catalog, studio_models
+    from .studio.routes.status import address
+    from .studio.security import Session, check_bind, is_loopback
 
     log_to_stderr()
     config = read_config()

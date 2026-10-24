@@ -1,6 +1,6 @@
 """An HTTP server with an API compatible with Jev's: ``POST /v1/systemone``.
 
-Needs the ``server`` extra (FastAPI, uvicorn). The models come from a
+The models come from a
 ``ModelPool``; the request's ``model`` field picks one. All model work,
 loading included, runs on the ``Gpu``'s one worker thread; requests wait
 their turn there, and get a 503 while something holds the GPU (never
@@ -12,6 +12,7 @@ mounted (a mount or a proxy's root path).
 import asyncio
 import hmac
 import logging
+import sys
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -28,13 +29,10 @@ from .memory import ModelTooLargeError
 from .pool import ModelPool
 from .types import Result, decode_json, parse_request
 
-try:  # Python 3.14's standard library, else the backport (the server extra's)
+if sys.version_info >= (3, 14):
     from compression import zstd
-except ImportError:
-    try:
-        from backports import zstd
-    except ImportError:
-        zstd = None
+else:
+    from backports import zstd
 
 TRUNCATED_HEADER = "X-MLX-Decision-Truncated"
 # Room for several large images as data URLs; for a compressed body, the decoded size.
@@ -123,8 +121,6 @@ def decode_zstd(data: bytes, limit: int) -> bytes | None:
     """The bytes of one or more zstd frames (at most ``MAX_ZSTD_FRAMES``), or None
     when they decode to more than ``limit`` bytes (decoding stops there). Raises
     ``DecisionError`` for data that is not zstd, is cut short or has more frames."""
-    if zstd is None:
-        raise UnsupportedEncoding("zstd (pip install backports.zstd)")
     parts, size, rest, frames = [], 0, data, 0
     try:
         while rest:

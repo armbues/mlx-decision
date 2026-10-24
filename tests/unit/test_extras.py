@@ -1,21 +1,23 @@
-"""Optional extras: each feature behind one says what to install when it is missing.
+"""Optional extras: each feature behind one says what to install when it is missing,
+and packages a feature needs are imported only when it is used.
 
-Every case runs in a fresh interpreter with the extra's modules blocked, so
-nothing imported earlier in the test session hides a missing import.
+Every case runs in a fresh interpreter with the modules blocked, so nothing
+imported earlier in the test session hides a missing import.
 """
 
-import base64
 import io
 import json
 import subprocess
 import sys
+import tomllib
+from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from tiny_models import write_clef
 
-HINT = "pip install 'mlx-decision[images]'"
+PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
 QUESTIONS = {"q": {"type": "noul", "instructions": "Is it red?"}}
 
 
@@ -42,42 +44,6 @@ def run_without(blocked: list[str], code: str) -> dict:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-@pytest.mark.parametrize("blocked", [["PIL"], ["numpy"], ["PIL", "numpy"]])
-def test_python_api_image_requests_get_the_hint(folder, png, blocked):
-    out = run_without(
-        blocked,
-        f"""
-import mlx_decision
-model = mlx_decision.load({str(folder)!r})
-try:
-    model.decide("x", {QUESTIONS!r}, images=[{str(png)!r}])
-    print(json.dumps({{"error": None}}))
-except mlx_decision.DecisionError as error:
-    print(json.dumps({{"error": error.message, "param": error.param, "code": error.code}}))
-""",
-    )
-    assert HINT in out["error"]
-    assert (out["param"], out["code"]) == ("images", "unsupported_media")
-
-
-def test_server_answers_422_with_the_hint(folder, png):
-    url = "data:image/png;base64," + base64.b64encode(png.read_bytes()).decode()
-    body = {"state": "x", "questions": QUESTIONS, "images": [url]}
-    out = run_without(
-        ["PIL", "numpy"],
-        f"""
-from fastapi.testclient import TestClient
-from mlx_decision.pool import ModelPool, discover
-from mlx_decision.server import create_app
-with TestClient(create_app(ModelPool(discover([{str(folder)!r}])))) as client:
-    response = client.post("/v1/systemone", json={body!r})
-print(json.dumps({{"status": response.status_code, "body": response.json()}}))
-""",
-    )
-    assert out["status"] == 422
-    assert HINT in out["body"]["error"]["message"]
-
-
 def cli(blocked: list[str], args: list[str]) -> dict:
     return run_without(
         blocked,
@@ -88,19 +54,6 @@ result = CliRunner().invoke(app, {args!r})
 print(json.dumps({{"code": result.exit_code, "err": result.stderr}}))
 """,
     )
-
-
-def test_run_with_image_names_the_extra_before_loading(folder, png):
-    # A missing model folder would fail at load; the hint comes first.
-    out = cli(["PIL"], ["run", "-m", "./no-model", "-s", "x", "--noul", "q?", "--image", str(png)])
-    assert out["code"] == 1
-    assert f"error: --image: images need Pillow and NumPy: {HINT}" in out["err"]
-
-
-def test_server_command_names_the_extra(folder):
-    out = cli(["fastapi", "uvicorn", "mlx_decision.server"], ["server", "-m", str(folder)])
-    assert out["code"] == 1
-    assert "pip install 'mlx-decision[server]'" in out["err"]
 
 
 def test_data_from_the_hub_names_the_training_extra():
@@ -138,7 +91,7 @@ print(json.dumps({{"out": str(convert({str(folder)!r}, {str(tmp_path / "q8")!r},
     assert 0 <= result.answers["q"].noul <= 1
 
 
-def test_the_base_install_imports_no_extra(folder):
+def test_text_only_use_imports_no_image_server_or_training_package(folder):
     out = run_without(
         ["numpy", "PIL", "fastapi", "uvicorn", "datasets"],
         f"""
@@ -149,3 +102,15 @@ print(json.dumps({{"ok": True}}))
 """,
     )
     assert out["ok"]
+
+
+def test_the_extras_now_in_the_base_install_still_exist():
+    # Older install lines such as pip install "mlx-decision[web]" keep working
+    # without pip's warning about an unknown extra.
+    extras = tomllib.loads(PYPROJECT.read_text())["project"]["optional-dependencies"]
+    assert {name: extras[name] for name in ("server", "web", "images")} == {
+        "server": [],
+        "web": [],
+        "images": [],
+    }
+    assert extras["all"] == ["mlx-decision[mcp,training]"]

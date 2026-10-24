@@ -1,10 +1,9 @@
 """The Studio: the Jev API, the Studio's pages and its own API in one app.
 
-Needs the ``web`` extra (FastAPI, uvicorn). One ``Gpu`` serves both APIs,
-so the Studio's runs and the Jev API's requests share one worker and one
-model pool. ``security`` holds what every request goes through;
-``workspace`` the files the Studio keeps; ``stream`` the messages that
-keep every open tab up to date.
+One ``Gpu`` serves both APIs, so the Studio's runs and the Jev API's
+requests share one worker and one model pool. ``security`` holds what
+every request goes through; ``workspace`` the files the Studio keeps;
+``stream`` the messages that keep every open tab up to date.
 """
 
 import asyncio

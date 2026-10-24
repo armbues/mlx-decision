@@ -343,11 +343,6 @@ def test_server_checks_the_model_before_starting(tmp_path):
     assert "not a supported decision model" in result.stderr
 
 
-def test_help_shows_the_images_extra():
-    result = CliRunner().invoke(app, ["run", "--help"], terminal_width=200)
-    assert "mlx-decision[images]" in result.output
-
-
 def test_run_checks_questions_before_loading(tmp_path, monkeypatch):
     import mlx_decision.model
 

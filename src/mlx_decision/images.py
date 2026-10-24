@@ -1,7 +1,7 @@
 """Images in requests: data URLs, file paths, bytes or PIL images, read into RGB.
 
-Pillow comes with the ``images`` extra; it is imported only when a request
-carries images. Nothing is fetched from the network.
+Pillow is imported only when a request carries images, so text-only use
+never loads it. Nothing is fetched from the network.
 """
 
 import base64
@@ -14,7 +14,6 @@ from typing import Any
 
 from .errors import DecisionError
 
-INSTALL_HINT = "images need Pillow and NumPy: pip install 'mlx-decision[images]'"
 DATA_URL = re.compile(
     r"data:image/(png|jpeg|jpg|webp)((?:;[^;,]*)*?);base64,(.*)", re.DOTALL | re.IGNORECASE
 )
@@ -22,13 +21,10 @@ DATA_URL = re.compile(
 FORMATS = ("PNG", "JPEG", "WEBP")
 
 
-def require_pillow():
-    try:
-        import numpy  # noqa: F401  (the preprocessing needs it)
-        import PIL.Image
-        import PIL.ImageOps
-    except ImportError:
-        raise DecisionError(INSTALL_HINT, param="images", code="unsupported_media") from None
+def _pil():
+    import PIL.Image
+    import PIL.ImageOps
+
     return PIL
 
 
@@ -58,7 +54,7 @@ def open_image(value: Any, index: int, allow_paths: bool = True):
     Images above Pillow's decompression-bomb threshold (about 89 MP) are
     refused. Errors name ``images.<index>``.
     """
-    PIL = require_pillow()
+    PIL = _pil()
     where = f"images.{index}"
     if isinstance(value, PIL.Image.Image):
         return value
@@ -93,7 +89,7 @@ def load_image(value: Any, index: int, allow_paths: bool = True):
 
 def decode_image(image, index: int):
     """An image from ``open_image`` decoded, upright and in RGB."""
-    PIL = require_pillow()
+    PIL = _pil()
     try:
         image.load()
     except (OSError, ValueError):
