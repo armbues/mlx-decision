@@ -250,8 +250,8 @@ def test_family_lines():
     from mlx_decision.cli import family_line, size_range
     from mlx_decision.registry import get_family
 
-    assert family_line(get_family("d3")) == "6 models, 1.2-52 GB"
-    assert family_line(get_family("h2o")) == "h2oai/h2o-lightning-4b, 9 GB"
+    assert family_line(get_family("d3")) == "6 models, 1.2-52.2 GB"
+    assert family_line(get_family("h2o")) == "h2oai/h2o-lightning-4b, 9.3 GB"
     assert family_line(get_family("laya")) == "3 models, 678-846 MB"
     assert size_range(["843 MB", "1.2 GB"]) == "843 MB-1.2 GB"
     assert all(f.listing for f in families() if f.known_models)

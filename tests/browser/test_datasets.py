@@ -436,6 +436,11 @@ def test_a_folder_with_an_unmapped_value(studio, page):
     topic = page.locator(".ds-question", has_text="topic")
     expect(topic).to_contain_text("Answered by the values of label")
     expect(topic.locator(".label-counts li", has_text="analyst").locator(".num")).to_have_text("3")
+    # The Rows filter lists the question's labels, not the label column's
+    # values again (they answer the question).
+    rows_filter = page.locator(".ex-filter")
+    expect(rows_filter.locator("option", has_text="analyst")).to_have_count(1)
+    expect(rows_filter.locator("optgroup")).to_have_count(0)
 
 
 def test_add_rows_of_columns(studio, page, tmp_path):
@@ -454,6 +459,7 @@ def test_add_rows_of_columns(studio, page, tmp_path):
     )
     expect(page).to_have_url(f"{studio.base}/#/datasets/topics")
     expect(page.locator(".ds-banner")).to_contain_text("it has no questions yet")
+    expect(page.locator(".ds-source .tag")).to_contain_text("Added ")  # not "Downloaded"
     assert (studio.workspace / "data" / "topics" / "dataset.json").exists()
     # JSON lines that are not training data: added as rows the same way.
     jsonl = tmp_path / "plain.jsonl"

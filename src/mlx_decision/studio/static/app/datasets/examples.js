@@ -113,7 +113,12 @@ function Filter({ summary }) {
   let value = "";
   if (current.question != null) value = JSON.stringify(["q", current.question, current.label]);
   else if (current.column != null) value = JSON.stringify(["v", current.column, current.value]);
-  const columns = Object.entries(summary.values ?? {});
+  // A column that answers a question would list the same rows again under its
+  // raw values; Label values above still picks those.
+  const answering = new Set(summary.questions.map((question) => question.answered_by).filter(Boolean));
+  const columns = Object.entries(summary.values ?? {}).filter(
+    ([column]) => !answering.has(column) || current.column === column,
+  );
   return html`
     <select class="ex-filter" aria-label="Label" value=${value}
             onChange=${(event) => {

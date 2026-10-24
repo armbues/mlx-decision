@@ -69,7 +69,7 @@ TITLES = {
 def change(page, key):
     page.locator(f".kv.setting[data-key='{key}']").get_by_role("button", name="Change…").click()
     sheet = page.locator(".sheet")
-    expect(sheet.locator("h2")).to_have_text(f"Change the {TITLES[key]}")
+    expect(sheet.locator("h2")).to_have_text(f"Change {TITLES[key]}")
     expect(sheet).to_contain_text(f"as {key}.")  # the note names the key
     return sheet
 
@@ -227,5 +227,5 @@ def test_settings_name_each_key_in_words_and_the_sidebar_opens_the_budget(studio
     expect(row.locator("code")).to_have_text("memory_budget_gb")
     page.goto(f"{studio.base}/#/playground")
     page.locator(".sidebar .mem-link").click()
-    expect(page.locator(".sheet h2")).to_have_text("Change the Memory Budget")
+    expect(page.locator(".sheet h2")).to_have_text("Change Memory Budget")
     expect(page).to_have_url(re.compile(r"#/settings$"))

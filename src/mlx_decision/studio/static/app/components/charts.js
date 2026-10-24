@@ -58,7 +58,7 @@ export function Confusion({ question, name, names = {}, onCell = null }) {
   `;
 }
 
-const DIAGRAM = { size: 220, left: 34, right: 10, top: 10, bottom: 30 };
+const DIAGRAM = { size: 220, left: 34, right: 16, top: 10, bottom: 30 };
 
 // Accuracy against confidence in equal bins (``bins``: [{low, high, n,
 // accuracy, confidence}]): a bar per bin with answers, the diagonal of a

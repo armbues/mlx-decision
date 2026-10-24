@@ -8,7 +8,6 @@ import { useEffect } from "preact/hooks";
 import { api } from "../api.js";
 import { StatusIcon } from "../components/icons.js";
 import { markOf } from "../families.js";
-import { gigabytes } from "../format.js";
 import { toast } from "../store/ui.js";
 import { openDownload } from "./download.js";
 
@@ -87,7 +86,7 @@ function Pick({ pick }) {
       <span class="ficon" style=${`background:${colour}`} aria-hidden="true">${text}</span>
       <b class="mono">${pick.repo.split("/")[1]}</b>
       <span class="desc">${pick.description}</span>
-      <span class="num">${pick.size} download · about ${gigabytes(pick.memory_bytes)} to run</span>
+      <span class="num">${pick.size} download · fits this Mac</span>
     </button>
   `;
 }

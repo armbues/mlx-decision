@@ -344,12 +344,15 @@ def _finetune(
     if not isinstance(backend, Trainable):
         raise ValueError(f"{backend.name} cannot be fine-tuned")
 
+    refusals: list[DecisionError] = []
+
     def items(examples: list[Example]) -> list[Item]:
         result = []
         for example in examples:
             try:
                 by_question = backend.items(model.check(example.request))
-            except DecisionError:
+            except DecisionError as error:
+                refusals.append(error)
                 continue  # refused, as scoring would
             for question_id, label in example.labels.items():
                 item = by_question[question_id]
@@ -358,6 +361,13 @@ def _finetune(
 
     emit(Event("train", message="preparing the training examples"))
     fit_items, dev_items = items(splits.fit), items(splits.dev)
+    if not fit_items and refusals:
+        first = refusals[0]
+        where = f" ({first.param})" if first.param else ""
+        raise ValueError(
+            f"no training examples to fine-tune on: {backend.name} refused all "
+            f"{len(splits.fit)} training examples, the first with: {first.message}{where}"
+        )
     on_step, on_epoch = _reporters(emit, rest)
     return train(
         backend,

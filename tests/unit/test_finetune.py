@@ -229,3 +229,15 @@ def test_an_epoch_worse_on_dev_stops_the_run(base, monkeypatch):
     monkeypatch.setattr("mlx_decision.training.finetune.dev_loss", lambda *a: next(again))
     trained = train(model.backend, data[:12], data[12:], epochs=3, head_only=True)
     assert (trained.best, trained.stopped, len(trained.epochs)) == (3, False, 3)
+
+
+def test_a_question_no_example_fits_names_the_cause(tmp_path):
+    # Julia refuses a question longer than its budget (Laya cuts it).
+    base = write_marker(tmp_path / "tiny-julia", "julia")
+    long = dict(TEAM, instructions=" ".join(["which team should handle this"] * 12))
+    examples = [
+        Example(e.id, {**e.request, "questions": {"team": long}}, e.labels) for e in labelled()
+    ]
+    with pytest.raises(ValueError, match=r"refused all \d+ training examples, the first with: "
+                       r"the question and its options need more than"):  # fmt: skip
+        fit(base, examples, output=tmp_path / "out", method="finetune")

@@ -98,6 +98,7 @@ def test_download_a_preset(studio, page):
     expect(tabs.nth(1)).to_contain_text("Report")
     source = page.locator(".ds-source")
     expect(source).to_contain_text("The sst5 preset: fake/sst5")
+    expect(source.locator(".tag")).to_contain_text("Downloaded ")
     shot(page, "datasets-downloaded")
 
 

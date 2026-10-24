@@ -111,6 +111,13 @@ def test_a_batch_shows_its_answers_metrics_and_rows(tweets, page):
     expect(question.locator(".metric", has_text="Accuracy")).to_be_visible()
     expect(question.locator(".confusion-table")).to_be_visible()
     expect(question.locator(".reliability svg .rel-bar").first).to_be_visible()
+    # Every tick label inside the diagram ("100%" under its right edge too).
+    overflow = question.locator(".reliability svg").evaluate(
+        """svg => { const box = svg.viewBox.baseVal;
+            return [...svg.querySelectorAll("text")].map((t) => t.getBBox())
+              .filter((b) => b.x < box.x || b.x + b.width > box.x + box.width).length; }"""
+    )
+    assert overflow == 0
     rows = page.locator(".batch-rows .ex-rows .batch-row")
     expect(rows).to_have_count(30)
     expect(page.locator(".batch-rows .ex-pager")).to_contain_text("1–30 of 30")

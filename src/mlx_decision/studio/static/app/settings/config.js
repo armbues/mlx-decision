@@ -223,7 +223,7 @@ export function openChange(item) {
   problem.value = null;
   const key = item.key;
   openSheet({
-    title: `Change the ${KEYS[key].title}`,
+    title: `Change ${KEYS[key].title}`,
     purpose: KEYS[key].help,
     Body: () => html`<${Editor} item=${item} />`,
     note: `Written to ${listed.value?.config.display ?? "the config file"} as ${key}.`,

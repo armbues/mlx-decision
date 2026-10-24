@@ -216,6 +216,9 @@ def test_rename_moves_the_file_and_its_history_and_keeps_the_answers(studio, pag
     put_set(page, studio, "to-rename", studio.set_file("ticket-triage"))
     run_set(page, studio, "to-rename")
     pick(page, MORE, "Rename…")
+    # The set's own name is not taken: no problem before anything is typed.
+    expect(page.locator(".sheet-input")).to_have_value("to-rename")
+    expect(page.locator(".sheet .sheet-problem")).to_have_count(0)
     page.locator(".sheet-input").fill("renamed-set")
     page.keyboard.press("Enter")
     at(page, studio, "renamed-set")

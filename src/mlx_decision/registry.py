@@ -202,13 +202,13 @@ register_family(
         KnownModel(
             "Cloudflare/clef-flash",
             "Clef flash: Cloudflare's 9B decision model (Qwen3.5), text and images",
-            "19 GB",
+            "19.1 GB",
         ),
         KnownModel(
             "Cloudflare/clef",
             "Clef: Cloudflare's 27B decision model (Qwen3.5), text and images; "
             "below 96 GB of memory it runs quantized (offered after picking it)",
-            "55 GB",
+            "55.0 GB",
         ),
     ),
     # Weights, head, tokenizer and configs; not the reference code or chat template.
@@ -298,7 +298,7 @@ register_family(
             "perplexity-ai/pplx-decider-v1.2",
             "pplx decider: Perplexity's 27B decision model (Qwen3.5), text and images; "
             "below 96 GB of memory it runs quantized (offered after picking it)",
-            "52 GB",
+            "52.2 GB",
         ),
     ),
     # Not the training and evaluation files or the reference code.
@@ -333,18 +333,18 @@ register_family(
         KnownModel(
             "vllm-sr/d3-flash",
             "d3 flash: vLLM Semantic Router's 9B decision model (Qwen3.5), text and images",
-            "17 GB",
+            "16.8 GB",
         ),
         KnownModel(
             "vllm-sr/d3",
             "d3: vLLM Semantic Router's 27B decision model (Qwen3.5), text and images; "
             "below 96 GB of memory it runs quantized (offered after picking it)",
-            "52 GB",
+            "52.2 GB",
         ),
         KnownModel(
             "vllm-sr/d3-mini",
             "d3 mini: 4B (Qwen3.5), text and images",
-            "9 GB",
+            "9.1 GB",
         ),
         KnownModel(
             "vllm-sr/d3-nano",
@@ -403,7 +403,7 @@ register_family(
         KnownModel(
             "h2oai/h2o-lightning-4b",
             "H2O-Lightning: H2O.ai's 4B decision model (Qwen3.5), text and images",
-            "9 GB",
+            "9.3 GB",
         ),
     ),
     # Not the serving shim, its tests, the adapter or the chart images.
@@ -447,7 +447,7 @@ register_family(
         KnownModel(
             "LiquidAI/d1-3B",
             "d1: LiquidAI's 3B decision model (LFM2.5), text",
-            "6 GB",
+            "6.3 GB",
         ),
     ),
     licence=(
@@ -507,7 +507,7 @@ register_family(
         KnownModel(
             "SupersonicLabs/Julia-1",
             "Julia 1: multilingual decision model (mmBERT-small, 144M), 2-20 options",
-            "577 MB",
+            "612 MB",
         ),
     ),
     files=(*_MARKER_FILES, "config.json", "julia_config.json", "inference-policy.json"),

@@ -76,7 +76,7 @@ def test_the_memory_card_and_the_estimates(sized, page):
     link.click()
     # Settings, with the budget's sheet open.
     expect(page.locator(".centre h1")).to_have_text("Settings")
-    expect(page.locator(".sheet h2")).to_have_text("Change the Memory Budget")
+    expect(page.locator(".sheet h2")).to_have_text("Change Memory Budget")
 
 
 @pytest.mark.parametrize("width", [1440, 1100])

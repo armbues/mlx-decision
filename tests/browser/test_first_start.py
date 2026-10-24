@@ -50,7 +50,7 @@ def test_an_empty_studio_asks_where_models_go_then_offers_three(empty, page):
 
     picks = card.locator(".first-pick")
     expect(picks.locator(".tier")).to_have_text(["Small", "Medium", "Large"])
-    expect(picks.nth(0)).to_contain_text("download · about")
+    expect(picks.nth(0)).to_contain_text("download · fits this Mac")  # its memory: in the sheet
     repo = picks.nth(1).get_attribute("data-repo")
     picks.nth(1).click()
     sheet = page.locator(".sheet")

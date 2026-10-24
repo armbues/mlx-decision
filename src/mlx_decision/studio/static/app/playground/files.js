@@ -87,7 +87,7 @@ export function nameFromFile(fileName) {
 function nameProblem(name) {
   if (name === "") return "Give the set a name";
   if (!NAME.test(name)) return "Use letters, digits, '.', '_' and '-' (not starting with '.'), at most 80";
-  if (takenNames().has(name)) return `A set named ${name} exists already`;
+  if (name !== ownName.value && takenNames().has(name)) return `A set named ${name} exists already`;
   return null;
 }
 
@@ -95,6 +95,8 @@ function nameProblem(name) {
 
 const nameText = signal("");
 const nameError = signal(null);
+// The set being renamed: its own name is not taken.
+const ownName = signal(null);
 
 function NameField() {
   const problem = nameError.value ?? (nameText.value ? nameProblem(nameText.value) : null);
@@ -113,14 +115,19 @@ function NameField() {
 }
 
 // `Extra` is shown under the name field (New's template list).
-function askName({ title, purpose, initial, action, onName, Extra = null }) {
+function askName({ title, purpose, initial, action, onName, own = null, Extra = null }) {
   nameText.value = initial;
   nameError.value = null;
+  ownName.value = own;
   const submit = async () => {
     const name = nameText.value.trim();
     const problem = nameProblem(name);
     if (problem) {
       nameError.value = problem;
+      return;
+    }
+    if (name === own) {
+      closeSheet(); // renamed to its own name: nothing to do
       return;
     }
     try {
@@ -387,6 +394,7 @@ export function renameSet() {
     title: "Rename Question Set",
     purpose: "Its history moves with it; unsaved edits stay unsaved.",
     initial: from,
+    own: from,
     action: "Rename",
     onName: async (name) => {
       const value = drafts.value[from] ?? null;

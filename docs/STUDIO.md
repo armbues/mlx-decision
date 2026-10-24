@@ -117,7 +117,8 @@ Hugging Face cache, which is preselected. The answer is added to
 `config.toml` as `models_dir` and not asked again; Settings changes it
 later. Then it offers three models that fit this Mac's memory (a small,
 a medium and a large one, picked at random among those that fit), each
-with its size; a pick opens Download a Model with it chosen, and
+with its download size; a pick opens Download a Model with it chosen
+(with the memory it needs to run), and
 Download a Model… there offers the rest. On a Mac where none fits at
 full size, Download a Model offers them quantized.
 

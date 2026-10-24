@@ -191,9 +191,15 @@ def describe_table(table: Table) -> dict[str, Any]:
     labels = [column["name"] for column in label_columns]
     text = next((name for name in text_columns if name not in labels), None)
     text = next((name for name in ("text", "sentence", "content") if name in text_columns), text)
+    if text is None and text_columns:
+        # Every text column repeats its values (a small file): the one with the
+        # most is the state.
+        values = {column["name"]: len(column["classes"]) for column in label_columns}
+        text = max(text_columns, key=lambda name: values.get(name, MAX_CLASSES + 1))
+    others = [name for name in labels if name != text]
     label = next(
-        (name for name in ("label", "labels", "class", "category") if name in labels),
-        labels[0] if labels else None,
+        (name for name in ("label", "labels", "class", "category") if name in others),
+        others[0] if others else None,
     )
     return {
         "rows": table.length,

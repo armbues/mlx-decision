@@ -213,6 +213,14 @@ def test_fits_and_evaluations_take_a_dataset_and_its_split(studio):
         "model": "fake", "data": "tweets", "split": "dev"}).status_code == 404  # fmt: skip
 
 
+def test_a_small_file_whose_texts_repeat_gets_two_columns(studio):
+    rows = ["My card was charged twice,billing", "The app crashes,technical",
+            "How much is pro?,sales", "Refund please,billing"] * 3  # fmt: skip
+    csv = "message,team\n" + "\n".join(rows) + "\n"
+    body = studio.post("/studio/api/data/columns", json={"text": csv, "format": "csv"}).json()
+    assert (body["text"], body["label"]) == ("message", "team")
+
+
 def test_rows_of_columns_are_uploaded_as_a_folder(studio):
     csv = "text,topic\nrates rise,fed\nbuy apple,analyst\nfed holds,fed\nno label,\n"
     described = studio.post("/studio/api/data/columns", json={"text": csv, "format": "csv"})

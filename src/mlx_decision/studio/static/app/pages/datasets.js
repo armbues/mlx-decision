@@ -124,7 +124,7 @@ function Source({ summary }) {
   if (meta.part) taken = html`${Math.round(meta.part * 100)}% of ${meta.split ? html`<code>${meta.split}</code>` : "the rows"}, drawn by label`;
   else if (meta.sample) taken = `a random sample of ${meta.sample.toLocaleString("en")} rows (seed ${meta.seed ?? 0})`;
   return html`
-    <section class="gsec ds-source"><div class="gsec-head"><h2>Where it came from</h2>${summary.created && html`<span class="tag">Downloaded ${day(summary.created)}</span>`}</div>
+    <section class="gsec ds-source"><div class="gsec-head"><h2>Where it came from</h2>${summary.created && html`<span class="tag">${hub ? "Downloaded" : source.source === "upload" ? "Added" : "Made"} ${day(summary.created)}</span>`}</div>
       <div class="group"><dl>
         ${repo &&
         html`<div class="kv"><dt>Dataset</dt><dd>
