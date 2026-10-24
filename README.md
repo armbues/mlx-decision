@@ -8,14 +8,13 @@ rate on a scale, or answer yes or no. It returns a probability for every
 allowed answer in a single forward pass, without generating text, so an
 answer is always one you allowed and comes in a fraction of a second.
 
-mlx-decision is for developers who classify, route, moderate or check
-text and images and want to do it on their own Mac: no data leaves it,
-and there is no per-call cost. It runs the open decision models of
-Cloudflare, Perplexity, vLLM Semantic Router, H2O.ai, LiquidAI, Convai
-Innovations and Supersonic Labs, and is to them what `mlx-lm` is to
-LLMs. The **Studio**, a web app on your Mac, lets you write questions
-and try them, compare models, answer a whole dataset and fit a model to
-your own examples, without writing code.
+mlx-decision is for anyone who classifies, routes, moderates or checks
+text and images and wants to do it on their own Mac: no data leaves it,
+and there is no per-call cost. The **Studio**, a web app on your Mac,
+lets you write questions and try them, compare models, answer a whole
+dataset and fit a model to your own examples, without writing code;
+developers use it from Python, the command line, a Jev-compatible
+server and MCP.
 
 ![The Studio: a support ticket answered by a model, compared across three models, and a model trained on a dataset](https://raw.githubusercontent.com/armbues/mlx-decision/main/docs/images/studio.webp)
 

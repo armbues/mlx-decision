@@ -29,6 +29,7 @@ classifiers = [
     "Environment :: GPU",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
     "Intended Audience :: Science/Research",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
