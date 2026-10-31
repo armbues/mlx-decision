@@ -1902,8 +1902,8 @@ def training_fit(
         typer.Option(
             "--method",
             help="auto (the family's own kind, then calibrate; the default), calibrate (every "
-            "family), head (Clef), readout (pplx, d3, H2O-Lightning, d1) or finetune (Laya, "
-            "Julia).",
+            "family), head (Clef), readout (pplx, d3, Base Labs, H2O-Lightning, d1) or "
+            "finetune (Laya, Julia).",
         ),
     ] = None,
     validation: Annotated[

@@ -504,6 +504,7 @@ BASELABS_FILES = (
 )
 BASELABS_WORDS = ["[UNK]", "system", "user", "assistant", "<state>", "</state>", "Question"]
 BASELABS_WORDS += ["Options", ":", "billing", "technical", "sales", "refund", "please"]
+BASELABS_WORDS += ["crash", "now"]
 # Every one- and two-letter code, a superset of the release's 256.
 BASELABS_CODES = [chr(65 + i) for i in range(26)]
 BASELABS_CODES += [a + b for a in BASELABS_CODES for b in BASELABS_CODES]

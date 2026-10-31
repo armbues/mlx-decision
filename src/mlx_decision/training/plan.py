@@ -22,6 +22,7 @@ MAIN_KIND = {
     "clef": "head",
     "pplx": "readout",
     "d3": "readout",
+    "baselabs": "readout",
     "h2o": "readout",
     "d1": "readout",
     "laya": "finetune",

@@ -1,5 +1,5 @@
-"""The readout fit: the search on synthetic features, and pplx, d3, H2O and d1 end to end
-on their tiny models."""
+"""The readout fit: the search on synthetic features, and pplx, d3, Base Labs, H2O and d1
+end to end on their tiny models."""
 
 import json
 import threading
@@ -17,7 +17,7 @@ from mlx_decision.training.fitting import _readouts
 from mlx_decision.training.readout import fit_readout, search_steps
 from mlx_decision.training.scoring import Scored, reread, score
 from mlx_decision.types import parse_request
-from tiny_models import write_d1, write_d3, write_h2o, write_pplx
+from tiny_models import write_baselabs, write_d1, write_d3, write_h2o, write_pplx
 
 TEAM = {"type": "choice", "criteria": {"billing": "refund", "technical": "crash"}}
 URGENT = {"type": "noul", "instructions": "Is it urgent?"}
@@ -28,6 +28,7 @@ WRITERS = {
     "pplx": write_pplx,
     "pplx-v1.2": lambda folder: write_pplx(folder, joint="flash"),
     "d3": write_d3,
+    "baselabs": write_baselabs,
 }
 
 

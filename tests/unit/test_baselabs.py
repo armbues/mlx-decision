@@ -318,3 +318,23 @@ def test_images_inside_the_state_are_read_as_text(model):
     picture = "data:image/png;base64," + "iVBORw0KGgo" + "A" * 80
     result = model.decide({"note": "see", "photo": picture}, {"refund": QUESTIONS["refund"]})
     assert 0 < result.answers["refund"].noul < 1
+
+
+def test_the_release_rows_as_a_fitted_readout_answer_as_the_release(folder):
+    from mlx_decision.backend import Readable
+    from mlx_decision.models.readout import Readout
+
+    backend = load_backend(folder, prefix_cache_gb=0)
+    assert isinstance(backend, Readable)
+    request = parse(QUESTIONS)
+    features = backend.features(request)
+    readouts = {
+        qid: Readout(f.option_ids, f.rows, mx.zeros(len(f.option_ids)))
+        for qid, f in features.items()
+    }
+    with mx.stream(mx.cpu):
+        plain = backend.score(request).probabilities
+        fitted = backend.score(request, readouts=readouts).probabilities
+    for qid, values in plain.items():
+        assert fitted[qid] == pytest.approx(values, abs=1e-6)
+    assert backend.finish(request.questions["refund"], plain["refund"]) == plain["refund"]
