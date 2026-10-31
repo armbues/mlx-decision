@@ -472,6 +472,161 @@ def write_h2o(folder: Path, seed: int = 0, files_from: Path | None = None) -> Pa
     return folder
 
 
+# Base Labs: elephant-1 has Qwen3.5-9B's head ratios (attention 16 : 4 key-value
+# heads, linear attention 32 : 16), mammoth-1 Qwen3.5-27B's (24 : 4, 48 : 16).
+BASELABS_SHAPES = {
+    "elephant": {
+        "num_attention_heads": 4,
+        "num_key_value_heads": 1,
+        "linear_num_value_heads": 4,
+        "linear_num_key_heads": 2,
+    },
+    "mammoth": {
+        "num_attention_heads": 6,
+        "num_key_value_heads": 1,
+        "linear_num_value_heads": 6,
+        "linear_num_key_heads": 2,
+    },
+}
+BASELABS_OVERRIDES = {
+    "attention": {"full_attention": "block_bidirectional", "linear_attention": "causal"},
+    "readout": "slot_lm",
+    "head_dim": 256,
+    "n_slots": 256,
+}
+BASELABS_READOUT = {"readout": "slot_lm", "head_dim": 256, "n_slots": 256}
+# The release's small files that describe its prompt (readout.json is written).
+BASELABS_FILES = (
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "chat_template.jinja",
+    "processor_config.json",
+)
+BASELABS_WORDS = ["[UNK]", "system", "user", "assistant", "<state>", "</state>", "Question"]
+BASELABS_WORDS += ["Options", ":", "billing", "technical", "sales", "refund", "please"]
+# Every one- and two-letter code, a superset of the release's 256.
+BASELABS_CODES = [chr(65 + i) for i in range(26)]
+BASELABS_CODES += [a + b for a in BASELABS_CODES for b in BASELABS_CODES]
+
+
+def baselabs_config(shape: str = "elephant") -> dict:
+    """A Base Labs release's ``config.json`` with a tiny backbone in ``shape``'s
+    head ratios (``BASELABS_SHAPES``): the release's keys, among them the
+    ``modeling_overrides``, an MTP layer count without MTP weights and a
+    vision tower."""
+    text = {
+        **PPLX_CONFIG["text_config"],
+        **BASELABS_SHAPES[shape],
+        "tie_word_embeddings": False,
+        "mtp_num_hidden_layers": 1,
+        "mamba_ssm_dtype": "float32",
+        "eos_token_id": 248044,
+        "dtype": "float32",
+    }
+    return {
+        "architectures": ["Qwen3_5ForConditionalGeneration"],
+        "dtype": "float32",
+        "image_token_id": 248056,
+        "model_type": "qwen3_5",
+        "text_config": text,
+        "tie_word_embeddings": False,
+        "use_cache": True,
+        "video_token_id": 248057,
+        "vision_config": PPLX_VISION,
+        "vision_end_token_id": 248054,
+        "vision_start_token_id": 248053,
+        "modeling_overrides": BASELABS_OVERRIDES,
+    }
+
+
+def write_baselabs_tokenizer(folder: Path) -> None:
+    """A word-level tokenizer for a Base Labs folder without release files."""
+    words = BASELABS_WORDS + PPLX_SPECIAL + BASELABS_CODES
+    tokenizer = Tokenizer(
+        models.WordLevel({word: i for i, word in enumerate(words)}, unk_token="[UNK]")
+    )
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.add_special_tokens(PPLX_SPECIAL)
+    tokenizer.save(str(folder / "tokenizer.json"))
+
+
+def write_baselabs(
+    folder: Path, seed: int = 0, shape: str = "elephant", files_from: Path | None = None
+) -> Path:
+    """A Base Labs release folder (elephant-1 or mammoth-1): tiny backbone with
+    vision tower, float32.
+
+    As the release: transformers' names (``model.language_model.*``,
+    ``model.visual.*``), PyTorch's convolution kernels, an untied ``lm_head``
+    over the release's vocabulary, ``config.json`` with the
+    ``modeling_overrides`` and ``readout.json``. ``shape`` gives the head
+    ratios and the files: elephant one ``model.safetensors``, mammoth two
+    shards with an index (``lm_head``, the embeddings and the first layers in
+    the first). ``files_from`` (a release folder) supplies the tokenizer,
+    chat template and processor; without it the folder gets a word-level
+    tokenizer (``BASELABS_WORDS``, the special tokens and every one- and
+    two-letter code).
+    """
+    import shutil
+
+    from mlx.utils import tree_flatten
+
+    from mlx_decision.backbones.qwen3_5.vision import VisionArgs, VisionModel
+
+    config = baselabs_config(shape)
+    # Lazily built: only the names and shapes are used, nothing is allocated.
+    text_args = {"model_type": "qwen3_5", "text_config": config["text_config"]}
+    text = Model(ModelArgs.from_dict(text_args))
+    vision = VisionModel(VisionArgs.from_config(config))
+    shapes = {}
+    for name, value in tree_flatten(text.parameters()):
+        shape_ = tuple(value.shape)
+        if "conv1d.weight" in name:
+            shape_ = (shape_[0], shape_[2], shape_[1])
+        if name == "language_model.lm_head.weight":
+            shapes["lm_head.weight"] = shape_
+            continue
+        shapes[name.replace("language_model.model.", "model.language_model.", 1)] = shape_
+    assert "lm_head.weight" in shapes
+    for name, value in tree_flatten(vision.parameters()):
+        shape_ = tuple(value.shape)
+        if name == "patch_embed.proj.weight":
+            v = PPLX_VISION
+            patch = (v["in_channels"], v["temporal_patch_size"], v["patch_size"], v["patch_size"])
+            shape_ = (shape_[0], *patch)
+        shapes[f"model.visual.{name}"] = shape_
+    folder.mkdir(parents=True, exist_ok=True)
+    names = sorted(shapes)
+    if shape == "elephant":
+        shards = {"model.safetensors": names}
+    else:
+        layers = [n for n in names if n.startswith("model.language_model.layers.")]
+        first = {"lm_head.weight", "model.language_model.embed_tokens.weight"}
+        first |= set(layers[: len(layers) * 3 // 4])
+        shards = {
+            "model-00001-of-00002.safetensors": sorted(first),
+            "model-00002-of-00002.safetensors": sorted(set(names) - first),
+        }
+    weight_map, total = {}, 0
+    for file, part in shards.items():
+        tensors = {name: mx.array(_random(name, shapes[name], seed)) for name in part}
+        mx.save_safetensors(str(folder / file), tensors, metadata={"format": "pt"})
+        weight_map.update(dict.fromkeys(part, file))
+        total += sum(t.nbytes for t in tensors.values())
+    if len(shards) > 1:
+        index = {"metadata": {"total_size": total}, "weight_map": dict(sorted(weight_map.items()))}
+        (folder / "model.safetensors.index.json").write_text(json.dumps(index, indent=2) + "\n")
+    (folder / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    (folder / "readout.json").write_text(json.dumps(BASELABS_READOUT, indent=2))
+    if files_from:
+        for name in BASELABS_FILES:
+            shutil.copy(Path(files_from) / name, folder / name)
+    else:
+        write_baselabs_tokenizer(folder)
+    (folder / "LICENSE").write_text("test licence\n")
+    return folder
+
+
 MODERNBERT = {
     "vocab_size": 64,
     "hidden_size": 64,
