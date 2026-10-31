@@ -263,7 +263,9 @@ def test_flash_bf16_answers_as_the_release():
 
     Measured 2026-10-22 on an M2: max 0.058 (large_image_two_questions,
     a 1.6 MP image), mean 0.0023; three changed top answers, all near ties
-    (margins 0.03, 0 and 0). The largest difference is over the 0.04 of the
+    (margins 0.03, 0 and 0). Measured 2026-10-31 on an M5 Pro (25 s, 9.7 GB
+    peak): max 0.051 (the same question), mean 0.0020, the same three near
+    ties changed. The largest difference is over the 0.04 of the
     other families: the release's own reference path differs by up to 0.059
     between two runs (its evaluation/inference-verification.json), so the
     tolerance here is 0.06.
