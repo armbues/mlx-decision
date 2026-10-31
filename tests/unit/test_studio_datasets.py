@@ -231,6 +231,7 @@ def hub(monkeypatch):
     monkeypatch.setattr(sources, "hub_configs", configs)
     monkeypatch.setattr(sources, "hub_splits", splits)
     monkeypatch.setattr(sources, "load_hub", load)
+    monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: None)
 
 
 def preview(studio, **body):
@@ -368,6 +369,7 @@ def mmlu(monkeypatch):
     monkeypatch.setattr(sources, "hub_configs", lambda repo, revision=None: ["all"])
     monkeypatch.setattr(sources, "hub_splits", lambda repo, config=None, revision=None: ["test"])
     monkeypatch.setattr(sources, "load_hub", load)
+    monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: None)
 
 
 def test_the_preview_guesses_the_shape(studio, hub, mmlu):

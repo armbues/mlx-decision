@@ -5,6 +5,7 @@ sub-folder per model, e.g. ``clef-flash``), then in the Hugging Face cache.
 """
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,25 @@ def mlx_decision_home(tmp_path_factory, monkeypatch) -> Path:
     home = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("MLX_DECISION_HOME", str(home))
     return home
+
+
+@pytest.fixture(autouse=True)
+def no_hub(tmp_path_factory, monkeypatch) -> None:
+    """No test reaches the Hugging Face Hub or writes to the user's caches.
+
+    Hub requests fail as offline (reading the cache still works), in this
+    process and the commands it starts; datasets builds its tables (a local
+    Parquet file's too) in a scratch folder.
+    """
+    import huggingface_hub.constants
+
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", True)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    cache = tmp_path_factory.getbasetemp() / "datasets-cache"
+    monkeypatch.setenv("HF_DATASETS_CACHE", str(cache))
+    config = sys.modules.get("datasets.config")
+    if config is not None:  # imported earlier: it read the variable then
+        monkeypatch.setattr(config, "HF_DATASETS_CACHE", cache)
 
 
 @pytest.fixture
