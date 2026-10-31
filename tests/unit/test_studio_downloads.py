@@ -52,7 +52,7 @@ def check(studio, repo):
 def test_the_families_in_the_public_order_with_their_models(make_studio):
     offered = make_studio().get("/studio/api/downloads").json()
     titles = [family["title"] for family in offered["families"]]
-    assert titles == ["Clef", "pplx", "d3", "H2O-Lightning", "d1", "Laya", "Julia"]
+    assert titles == ["Clef", "pplx", "d3", "Base Labs", "H2O-Lightning", "d1", "Laya", "Julia"]
     clef = offered["families"][0]
     assert clef["maker"] and clef["summary"]
     assert clef["models"][0]["repo"] == "Cloudflare/clef-flash"

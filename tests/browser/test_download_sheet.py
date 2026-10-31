@@ -13,7 +13,7 @@ expect = pytest.importorskip("playwright.sync_api").expect
 pytestmark = pytest.mark.browser
 
 GB = 10**9
-FAMILIES = ["Clef", "pplx", "d3", "H2O-Lightning", "d1", "Laya", "Julia"]
+FAMILIES = ["Clef", "pplx", "d3", "Base Labs", "H2O-Lightning", "d1", "Laya", "Julia"]
 
 
 def fake_check(repo_id: str) -> RepoCheck:

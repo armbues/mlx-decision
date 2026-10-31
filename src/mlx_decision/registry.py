@@ -393,6 +393,34 @@ register_family(
     detect=_baselabs_detect,
     loader="mlx_decision.models.baselabs.model:load",
     capabilities="mlx_decision.models.baselabs.model:capabilities",
+    listing=Listing("Base Labs", "Baseten", "answer codes over Qwen3.5, 9B and 27B; text"),
+    converter="mlx_decision.models.baselabs.convert:convert",
+    known_models=(
+        KnownModel(
+            "baselabs/elephant-1",
+            "elephant-1: Base Labs' 9B decision model (Qwen3.5), text",
+            "18.8 GB",
+        ),
+        KnownModel(
+            "baselabs/mammoth-1",
+            "mammoth-1: Base Labs' 27B decision model (Qwen3.5), text; "
+            "below 96 GB of memory it runs quantized (offered after picking it)",
+            "54.7 GB",
+        ),
+    ),
+    # Not the release's runtime patch, setup, engine, pins, chat template or card images.
+    files=(
+        "config.json",
+        "readout.json",
+        "model.safetensors.index.json",
+        "processor_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "model*.safetensors",
+        "answer_rows.safetensors",
+        "LICENSE*",
+        "README.md",
+    ),
     weight_files="mlx_decision.models.baselabs.model:weight_files",
     quantizable=_qwen_text_matrix,
 )

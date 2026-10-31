@@ -85,6 +85,7 @@ def test_download_menu_goes_from_family_to_model_and_back(tmp_path, monkeypatch)
     term = Terminal(["download", "--local-dir", str(tmp_path / "models")], tmp_path)
     screen = term.expect("Other...")
     assert "d3             vLLM Semantic Router" in screen and "6 models, 1.2-52.2 GB" in screen
+    assert "Base Labs      Baseten" in screen and "2 models, 18.8-54.7 GB" in screen
     term.send(DOWN * 2 + ENTER)  # d3
     screen = term.expect("Back")
     assert "d3 model:" in screen and "vllm-sr/d3-edge" in screen

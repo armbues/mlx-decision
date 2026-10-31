@@ -42,6 +42,8 @@ MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 10
 REQUIRED_FILES = ("config.json", "tokenizer.json", "readout.json")
 HEAD = "lm_head.weight"
+# A converted copy's answer-code rows (float32) and their token ids, instead of the head.
+ROWS_FILE = "answer_rows.safetensors"
 # Tokens one batch of questions holds at most: its rows times the prefix and
 # the longest question (the prefix's cache is repeated per row).
 BATCH_TOKENS = 32768
@@ -253,7 +255,20 @@ class BaseLabsBackend:
 def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     """The weight files ``load`` reads from, kept as stored (it skips the vision
     tower and all but a few rows of the LM head)."""
-    return [(file, None) for file in sorted(path.glob("model*.safetensors"))]
+    files = sorted(path.glob("model*.safetensors")) + [path / ROWS_FILE]
+    return [(file, None) for file in files if file.exists()]
+
+
+def answer_rows(path: Path, ids: list[int]) -> mx.array:
+    """The answer codes' rows (float32): a converted copy's, checked against the
+    tokenizer's code ids, or read from the release's LM head."""
+    file = path / ROWS_FILE
+    if not file.exists():
+        return read_rows(head_file(path), HEAD, ids)
+    stored = mx.load(str(file))
+    if stored["token_ids"].tolist() != ids:
+        raise ValueError(f"{path}: {ROWS_FILE} is for other answer-code tokens")
+    return stored["rows"].astype(mx.float32)
 
 
 def _capabilities(max_input_tokens: int) -> Capabilities:
@@ -285,7 +300,7 @@ def load(
     max_input_tokens: int | None = None,
     prefix_cache_gb: float = DEFAULT_PREFIX_CACHE_GB,
 ) -> BaseLabsBackend:
-    """Load elephant-1 or mammoth-1 from a release folder.
+    """Load elephant-1 or mammoth-1 from a release folder or a converted copy.
 
     ``max_input_tokens`` sets the limit per question (the state and that
     question's tokens): 16,384 by default, the models' training length, up
@@ -306,7 +321,7 @@ def load(
         raise FileNotFoundError(f"{path}: no model*.safetensors weights")
     check_config(path)
     tokenizer = load_tokenizer(path)
-    rows = read_rows(head_file(path), HEAD, code_token_ids(tokenizer))
+    rows = answer_rows(path, code_token_ids(tokenizer))
     backbone = load_text_model(path, lm_head=False, causal=False)
     if rows.shape[1] != backbone.language_model.args.hidden_size:
         raise ValueError(f"{path}: the LM head does not match the backbone's width")

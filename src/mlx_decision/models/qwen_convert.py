@@ -1,8 +1,9 @@
-"""Write a Qwen3.5 decision model (Clef, pplx, d3, H2O-Lightning) as an MLX folder.
+"""Write a Qwen3.5 decision model (Clef, pplx, d3, Base Labs, H2O-Lightning) as an MLX folder.
 
 The backbone is optionally quantized, uniformly or in mixed precision; the
 family's own files (Clef's joint schema head, the letter readout of pplx
-and d3, H2O-Lightning's serve config) are copied as released. The vision
+and d3, Base Labs' readout settings, H2O-Lightning's serve config) are
+copied as released. The vision
 tower, when the release has one, is kept in its stored precision (bf16): it
 is small next to the text model and not worth the risk.
 """

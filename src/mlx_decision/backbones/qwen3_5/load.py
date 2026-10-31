@@ -268,10 +268,11 @@ def convert_text_weights(
     ``SHARD_BYTES`` as it goes, so the full model is never in memory; the
     tensors equal those of ``load_text_model`` + ``quantize_text_model`` +
     ``save_text_model``. ``shards`` may be a generator (a shard fetched just
-    before it is read). ``lm_head=False`` for models saved without output
-    embeddings. Returns the config's ``quantization`` entry, or None.
-    ``on_step(done, total)`` hears each output tensor; once ``cancelled()``
-    is true, the next source tensor raises ``Cancelled``.
+    before it is read). ``lm_head=False`` writes no output embeddings (for
+    models saved without them, or an untied head left out). Returns the
+    config's ``quantization`` entry, or None. ``on_step(done, total)`` hears
+    each output tensor; once ``cancelled()`` is true, the next source tensor
+    raises ``Cancelled``.
     """
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -306,6 +307,9 @@ def convert_text_weights(
         if release is None:
             release = _safetensors_format(shard) != "mlx"
         weights = model.sanitize(mx.load(str(shard)), release=release)
+        if not lm_head:
+            # An untied LM head is left out (and, loaded lazily, never read).
+            weights.pop("language_model.lm_head.weight", None)
         for name, value in weights.items():
             if cancelled is not None and cancelled():
                 raise Cancelled()

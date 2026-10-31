@@ -338,3 +338,116 @@ def test_the_release_rows_as_a_fitted_readout_answer_as_the_release(folder):
     for qid, values in plain.items():
         assert fitted[qid] == pytest.approx(values, abs=1e-6)
     assert backend.finish(request.questions["refund"], plain["refund"]) == plain["refund"]
+
+
+@pytest.mark.parametrize("bits", [8, 4])
+def test_a_quantized_copy_answers_like_the_release(folder, tmp_path, bits):
+    from mlx_decision.backbones.qwen3_5.load import has_vision_weights, read_vision_weights
+    from mlx_decision.convert import convert
+    from mlx_decision.model import DecisionModel
+    from mlx_decision.models.baselabs.model import ROWS_FILE
+    from mlx_decision.registry import MARKER_FILE
+
+    out = convert(folder, tmp_path / f"q{bits}", bits=bits)
+    marker = json.loads((out / MARKER_FILE).read_text())
+    assert marker["family"] == "baselabs" and marker["vision"]
+    assert marker["quantization"]["bits"] == bits
+    assert detect_family(out).name == "baselabs"
+    for name in ("readout.json", "tokenizer.json", "LICENSE"):
+        assert (out / name).read_bytes() == (folder / name).read_bytes(), name
+    config = json.loads((out / "config.json").read_text())
+    assert (
+        config["modeling_overrides"]
+        == json.loads((folder / "config.json").read_text())["modeling_overrides"]
+    )
+    # No LM head; its answer-code rows in float32 beside the weights.
+    names = set().union(*(mx.load(str(f)).keys() for f in out.glob("model*.safetensors")))
+    assert not any("lm_head" in name for name in names)
+    # The vision tower as stored, for images later.
+    assert has_vision_weights(out)
+    tower = read_vision_weights(out)
+    assert all(v.dtype == mx.float32 for v in tower.values())
+    base = load_backend(folder, prefix_cache_gb=0)
+    copy = load_backend(out, prefix_cache_gb=0)
+    assert (out / ROWS_FILE).exists() and copy.rows.dtype == mx.float32
+    assert mx.array_equal(copy.rows, base.rows)
+    assert copy.precision == f"{bits}-bit"
+    a = DecisionModel(base).decide("billing refund please now", QUESTIONS).answers
+    b = DecisionModel(copy).decide("billing refund please now", QUESTIONS).answers
+    error = max(abs(a["team"].probabilities[k] - p) for k, p in b["team"].probabilities.items())
+    assert error < (0.02 if bits == 8 else 0.15)
+
+
+def test_a_conversion_from_shards_fetched_in_turn_keeps_the_rows(folder, tmp_path):
+    """As a quantized download: each shard is deleted once the next is asked for."""
+    from mlx_decision.backbones.qwen3_5.load import source_shards
+    from mlx_decision.models.baselabs.convert import convert
+
+    source = shutil.copytree(folder, tmp_path / "source")
+
+    def fetched():
+        for shard in source_shards(source):
+            yield shard
+            shard.unlink()
+
+    convert(source, tmp_path / "out", "tiny", bits=8, shards=fetched())
+    assert not list(source.glob("model*.safetensors"))
+    copy = load_backend(tmp_path / "out", prefix_cache_gb=0)
+    assert mx.array_equal(copy.rows, load_backend(folder, prefix_cache_gb=0).rows)
+
+
+def test_mixed_precision(folder, tmp_path, monkeypatch):
+    from mlx_decision.convert import convert
+    from mlx_decision.models import qwen_convert
+    from mlx_decision.models.qwen_convert import SENSITIVITY_FILE
+
+    monkeypatch.setattr(
+        qwen_convert,
+        "calibration_requests",
+        lambda: [{"state": "billing refund please now", "questions": QUESTIONS}],
+    )
+    out = convert(folder, tmp_path / "mixed", target_bits=4.5, group_size=32)
+    report = json.loads((out / SENSITIVITY_FILE).read_text())
+    assert report["average_bits"] <= 4.5
+    copy = load_backend(out, prefix_cache_gb=0)
+    assert copy.precision == "mixed 4.5-bit"
+    assert mx.array_equal(copy.rows, load_backend(folder, prefix_cache_gb=0).rows)
+
+
+def test_rows_for_other_tokens_are_refused(folder, tmp_path):
+    from mlx_decision.convert import convert
+    from mlx_decision.models.baselabs.model import ROWS_FILE
+
+    out = convert(folder, tmp_path / "q8", bits=8)
+    stored = mx.load(str(out / ROWS_FILE))
+    stored["token_ids"] = stored["token_ids"] + 1
+    mx.save_safetensors(str(out / ROWS_FILE), stored)
+    with pytest.raises(ValueError, match="for other answer-code tokens"):
+        load_backend(out)
+
+
+def test_a_download_fetches_only_what_loading_and_converting_read():
+    from huggingface_hub.utils import filter_repo_objects
+
+    from mlx_decision.registry import get_family
+
+    # mammoth-1's files at revision 61cec44 (elephant-1 has one model.safetensors).
+    release = [".gitattributes", "README.md", "assets/banner.png", "chat_template.jinja"]
+    release += ["config.json", "constraints.txt", "engine.py", "generation_config.json"]
+    release += ["model.safetensors.index.json", "processor_config.json", "readout.json"]
+    release += ["serve.patch", "setup.sh", "tokenizer.json", "tokenizer_config.json"]
+    release += ["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]
+    family = get_family("baselabs")
+    fetched = set(filter_repo_objects(release, allow_patterns=family.files))
+    assert set(release) - fetched == {
+        ".gitattributes",
+        "assets/banner.png",
+        "chat_template.jinja",
+        "constraints.txt",
+        "engine.py",
+        "generation_config.json",
+        "serve.patch",
+        "setup.sh",
+    }
+    assert [m.repo_id for m in family.known_models] == ["baselabs/elephant-1", "baselabs/mammoth-1"]
+    assert family.listing.title == "Base Labs"
