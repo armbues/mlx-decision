@@ -200,3 +200,28 @@ def test_end_to_end_as_the_release(released, case_id):
         want = mx.softmax(mx.array(entry["logits"][shape])).tolist()
         got = list(output.probabilities[qid].values())
         assert got == pytest.approx(want, abs=TOLERANCE), qid
+
+
+@pytest.mark.parametrize("case_id", ["ticket", "bl_every_type_twice", "twenty_mixed"])
+def test_answers_as_the_release(released, case_id):
+    """The answers' formulas on top (noul, choice, score and their confidence);
+    the release rounds them to 6 decimals."""
+    import mlx.core as mx
+
+    from mlx_decision.model import DecisionModel
+
+    shape, backend = released
+    with mx.stream(mx.cpu):
+        result = DecisionModel(backend).decide_request(REQUESTS[case_id])
+    assert result.usage.input_tokens == REFERENCE[case_id]["tokens"]
+    for qid, entry in REFERENCE[case_id]["questions"].items():
+        want = entry["answer"][shape]
+        got = result.answers[qid].model_dump()
+        assert got["type"] == want["type"], qid
+        for key, value in want.items():
+            if isinstance(value, float):
+                assert got[key] == pytest.approx(value, abs=2e-6), f"{qid}.{key}"
+            elif key == "probabilities":
+                assert got[key] == pytest.approx(value, abs=2e-6), qid
+            else:
+                assert got[key] == value, f"{qid}.{key}"

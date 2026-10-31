@@ -255,3 +255,66 @@ def test_batches_stay_under_the_token_budget(folder, monkeypatch):
     assert backend.batches(20, encoded) == [[0, 1], [2], [3], [4], [5]]
     # A question over the budget still runs, alone.
     assert backend.batches(200, encoded[:2]) == [[0], [1]]
+
+
+@pytest.fixture(scope="module")
+def model(folder):
+    from mlx_decision.model import DecisionModel
+
+    return DecisionModel(load_backend(folder))
+
+
+def test_answers_and_tokens(model):
+    result = model.decide("billing refund please now", QUESTIONS)
+    assert set(result.answers) == set(QUESTIONS)
+    assert 0 < result.answers["refund"].noul < 1
+    assert result.answers["team"].choice in ("billing", "technical")
+    assert 0 <= result.answers["level"].score <= 3
+    prefix, encoded = model.backend.encode(parse(QUESTIONS))
+    assert result.usage.input_tokens == len(prefix) + sum(len(q.suffix) for q in encoded)
+
+
+def test_over_the_input_limit_is_refused_never_cut(folder, model):
+    from mlx_decision.errors import DecisionError
+    from mlx_decision.model import DecisionModel
+
+    questions = {"short": QUESTIONS["refund"], "long": QUESTIONS["many"]}
+    prefix, encoded = model.backend.encode(parse(questions))
+    short, long = (len(prefix) + len(q.suffix) for q in encoded)
+    assert short < long
+    exact = DecisionModel(load_backend(folder, max_input_tokens=long))
+    exact.decide("billing refund please now", questions)
+    small = DecisionModel(load_backend(folder, max_input_tokens=long - 1))
+    with pytest.raises(
+        DecisionError, match=f"needs {long} tokens; the limit is {long - 1}"
+    ) as error:
+        small.decide("billing refund please now", questions)
+    assert error.value.param == "questions.long"
+    assert small.decide("billing refund please now", {"short": QUESTIONS["refund"]}).answers
+
+
+def test_option_level_and_image_limits(model):
+    from mlx_decision.errors import DecisionError
+
+    many = {f"o{i}": None for i in range(256)}
+    with pytest.raises(DecisionError, match="at most 255 options"):
+        model.decide("x", {"q": {"type": "choice", "criteria": many}})
+    model.check(
+        {
+            "state": "x",
+            "questions": {"q": {"type": "choice", "criteria": dict(list(many.items())[:255])}},
+        }
+    )
+    levels = [f"l{i}" for i in range(11)]
+    with pytest.raises(DecisionError, match="at most 10 levels"):
+        model.decide("x", {"q": {"type": "score", "criteria": levels}})
+    with pytest.raises(DecisionError, match="does not support images") as error:
+        model.decide_request({"state": "x", "questions": QUESTIONS, "images": ["data:x"]})
+    assert error.value.param == "images"
+
+
+def test_images_inside_the_state_are_read_as_text(model):
+    """Text only, as d1: nothing is lifted out of the state, so nothing is refused."""
+    picture = "data:image/png;base64," + "iVBORw0KGgo" + "A" * 80
+    result = model.decide({"note": "see", "photo": picture}, {"refund": QUESTIONS["refund"]})
+    assert 0 < result.answers["refund"].noul < 1

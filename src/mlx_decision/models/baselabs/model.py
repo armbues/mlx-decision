@@ -27,6 +27,7 @@ from ...backbones.qwen3_5.cache import repeat_cache
 from ...backbones.qwen3_5.load import load_text_model
 from ...backbones.qwen3_5.tokenizer import load_tokenizer
 from ...backend import BackendOutput, Capabilities
+from ...errors import DecisionError
 from ...types import Request
 from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
 from ..qwen import precision
@@ -140,7 +141,8 @@ class BaseLabsBackend:
         self.capabilities = _capabilities(max_input_tokens)
 
     def encode(self, request: Request) -> tuple[list[int], list[Encoded]]:
-        """The shared prefix's tokens and each question's tokens after it."""
+        """The shared prefix's tokens and each question's tokens after it. Refuses
+        the request if a question with the state is over the input limit."""
         questions = request.questions
         found = layout(
             self.tokenizer, request.state, [render_question(q) for q in questions.values()]
@@ -151,6 +153,15 @@ class BaseLabsBackend:
                 questions.items(), found.suffixes, strict=True
             )
         ]
+        limit = self.capabilities.max_input_tokens
+        for question in encoded:
+            tokens = len(found.prefix) + len(question.suffix)
+            if tokens > limit:
+                raise DecisionError(
+                    f"the question with its state needs {tokens} tokens; "
+                    f"the limit is {limit} and input is not cut",
+                    param=f"questions.{question.question_id}",
+                )
         return found.prefix, encoded
 
     def prefix_state(self, prefix: list[int]):
