@@ -17,7 +17,10 @@ row), so only the quantized copies need to run here. H2O-Lightning:
 in states lifted out; answers compared before the yes/no floor). d3:
 ``--reference tests/parity/d3/reference-bf16.json`` (its parity set; the
 questions the release refuses left out; the input limit raised to the
-backbone's context for the 40k request).
+backbone's context for the 40k request). Base Labs: ``--reference
+tests/parity/baselabs/reference-bf16.json`` (the text parity set and the
+Base Labs set at the release's 32,768-token limit; what the wire format
+refuses left out).
 """
 
 import argparse
@@ -38,6 +41,7 @@ SETS = {
     "clef": ["requests.json"],
     "h2o": ["requests.json", "marker/requests.json", "h2o/requests.json"],
     "d3": ["requests.json", "marker/requests.json", "d3/requests.json"],
+    "baselabs": ["requests.json", "baselabs/requests.json"],
 }
 
 
@@ -105,6 +109,44 @@ def d3_reference(fixture: dict) -> dict:
     return reference
 
 
+def baselabs_reference(fixture: dict) -> dict:
+    """Base Labs' reference in the shape of Clef's: each question's option ids and
+    the softmax of the release's answer-code logits; what the release or the
+    wire format refuses left out."""
+    import math
+
+    from mlx_decision.errors import DecisionError
+    from mlx_decision.models.baselabs.prompt import options
+    from mlx_decision.types import parse_request
+
+    cases = {}
+    for name in SETS["baselabs"]:
+        cases |= {case["id"]: case for case in json.loads((PARITY / name).read_text())}
+    reference = {}
+    for case_id, entry in fixture["results"].items():
+        if "refused" in entry:
+            continue
+        case = cases[case_id]
+        try:
+            request = parse_request({"state": case["state"], "questions": case["questions"]})
+        except DecisionError:
+            continue
+        questions = []
+        for question_id, result in entry["questions"].items():
+            logits = result["logits"]["elephant"]
+            top = max(logits)
+            exps = [math.exp(x - top) for x in logits]
+            questions.append(
+                {
+                    "id": question_id,
+                    "option_ids": options(request.questions[question_id])[0],
+                    "probabilities": [e / sum(exps) for e in exps],
+                }
+            )
+        reference[case_id] = {"questions": questions}
+    return reference
+
+
 def answerable(loaded, request):
     """The request without the questions the model refuses, or None if none is left."""
     from mlx_decision.errors import DecisionError
@@ -145,6 +187,7 @@ def run_model(model: str, out: Path, kind: str = "clef") -> None:
         "clef": {"max_image_pixels": None},
         "h2o": {"noul_floor": 0},
         "d3": {"max_input_tokens": 262144},
+        "baselabs": {"max_input_tokens": 32768},
     }.get(family, {})
     start = time.perf_counter()
     loaded = mlx_decision.load(model, **options)
@@ -161,11 +204,13 @@ def run_model(model: str, out: Path, kind: str = "clef") -> None:
     }
     if kind == "clef":
         requests = {case_id: parse_request(body) for case_id, body in bodies.items()}
-    elif kind == "d3":
+    elif kind in ("d3", "baselabs"):
+        # What the model refuses (over its limit; Base Labs: images too), left out.
+        check = loaded.check if kind == "baselabs" else parse_request
         requests = {}
         for case_id, body in bodies.items():
             try:
-                request = answerable(loaded, parse_request(body))
+                request = answerable(loaded, check(body))
             except DecisionError:
                 continue
             if request is not None:
@@ -176,7 +221,8 @@ def run_model(model: str, out: Path, kind: str = "clef") -> None:
         for case_id, body in bodies.items():
             try:
                 request = loaded.check(body)
-                loaded.backend.open_images(request)
+                if hasattr(loaded.backend, "open_images"):  # a text-only family has none
+                    loaded.backend.open_images(request)
             except DecisionError:
                 continue
             requests[case_id] = request
@@ -277,10 +323,14 @@ def main() -> None:
     fixture = json.loads(args.reference.read_text())
     repo_id = fixture.get("meta", {}).get("repo_id", "")
     kind = {"h2oai/h2o-lightning-4b": "h2o"}.get(repo_id, "d3" if "/d3" in repo_id else "clef")
+    if "elephant" in fixture.get("meta", {}).get("releases", {}):
+        kind = "baselabs"
     if kind == "h2o":
         fixture = {"results": h2o_reference(fixture)}
     elif kind == "d3":
         fixture = {"results": d3_reference(fixture)}
+    elif kind == "baselabs":
+        fixture = {"results": baselabs_reference(fixture)}
     if (
         "requests_sha256" in fixture
         and fixture["requests_sha256"]

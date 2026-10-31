@@ -1,6 +1,7 @@
 """Run Base Labs' serving code on the parity set; store prompts, token ids and answers.
 
 usage: python scripts/make_baselabs_reference.py [--onejev DIR] [--only ID,ID]
+       python scripts/make_baselabs_reference.py --model PATH [--only ID,ID]
 
 The parity set is the text requests of tests/parity/requests.json and
 tests/parity/baselabs/requests.json (Base Labs' edge cases). Needs torch
@@ -32,6 +33,14 @@ answer-code logits and the release's answer. Every request is answered
 both batched (the releases' mode) and one question at a time; the largest
 difference between the two, per shape, goes into the meta. Existing entries are kept,
 so a run can be continued with --only.
+
+With --model (elephant-1's release folder with its weights, at the pinned
+revision) the real model runs instead, as the release's engine.py serves
+it: bfloat16 on MPS, the LM head in float32, the engine's own choice of
+batched or sequential branches. It answers every request within the
+release's limits and writes tests/parity/baselabs/reference-bf16.json with,
+per question, the token count and digests, the answer-code logits and the
+release's answer (no prompts or ids), after every request.
 """
 
 import argparse
@@ -56,6 +65,7 @@ IDS_TOKENS = 4096  # longer questions keep digests only
 SEED = 0
 # The release's batched and sequential paths in float32 (its docstring: 3e-4 on Qwen3.5-4B).
 FORK_TOLERANCE = 1e-4
+MEMORY_FRACTION = 0.7  # of the GPU's working set, on MPS (--model)
 
 
 def parity_set() -> list[dict]:
@@ -104,12 +114,18 @@ def check_onejev(onejev: Path, patch: Path) -> str:
 
 
 class Reference:
-    """The release's engine on a tiny model in ``folder``, CPU, float32."""
+    """The release's engine on a tiny model in ``folder`` (CPU, float32), or with
+    ``real`` on the release's own weights as its engine.py serves them (bfloat16
+    on ``device``, the head in float32, the engine's own fork mode)."""
 
-    def __init__(self, folder: Path):
+    def __init__(self, folder: Path, real: bool = False, device: str = "cpu"):
         from qev.engine import DecisionEngine
 
-        # The releases' engine.py passes only the model and the device.
+        self.real = real
+        if real:
+            # The releases' engine.py passes only the model and the device.
+            self.engine = DecisionEngine(str(folder), device=device)
+            return
         self.engine = DecisionEngine(str(folder), device="cpu", dtype="float32")
         if self.engine.info.fork_mode != "batched":
             raise SystemExit(f"the release's fork check failed: {self.engine.info}")
@@ -133,6 +149,10 @@ class Reference:
         engine = self.engine
         response, meta = engine.decide(request, debug=True)
         diagnostics = meta["diagnostics"]
+        logits = {qid: entry["slot_logits"][0] for qid, entry in diagnostics.items()}
+        answers = {qid: a.model_dump(exclude_none=True) for qid, a in response.answers.items()}
+        if self.real:
+            return logits, answers, None
         engine.info.fork_mode = "sequential"
         try:
             _, sequential = engine.decide(request, debug=True)
@@ -143,8 +163,6 @@ class Reference:
             a = softmax(entry["slot_logits"][0], 1.0)
             b = softmax(sequential["diagnostics"][qid]["slot_logits"][0], 1.0)
             difference = max(difference, max(abs(x - y) for x, y in zip(a, b, strict=True)))
-        logits = {qid: entry["slot_logits"][0] for qid, entry in diagnostics.items()}
-        answers = {qid: a.model_dump(exclude_none=True) for qid, a in response.answers.items()}
         return logits, answers, difference
 
 
@@ -179,7 +197,7 @@ def run_case(case: dict, references: dict[str, Reference]) -> dict:
             "ids_sha256": sha256(ids),
             "prompt_sha256": sha256(prompt),
         }
-        if len(ids) <= IDS_TOKENS:
+        if len(ids) <= IDS_TOKENS and not first.real:
             entry |= {"prompt": prompt, "ids": ids}
         questions[r.qid] = entry
     result = {"prefix_tokens": len(prefix), "tokens": len(prefix) + sum(map(len, suffixes))}
@@ -190,7 +208,8 @@ def run_case(case: dict, references: dict[str, Reference]) -> dict:
         except ValueError as error:  # over the release's limits
             result["refused"] = str(error)
             break
-        differences[shape] = difference
+        if difference is not None:
+            differences[shape] = difference
         for qid, entry in questions.items():
             entry.setdefault("logits", {})[shape] = logits[qid]
             entry.setdefault("answer", {})[shape] = answers[qid]
@@ -203,8 +222,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--onejev", type=Path, default=ROOT / "_reference" / "onejev")
     parser.add_argument("--only", help="comma-separated request ids")
-    parser.add_argument("--out", type=Path, default=PARITY / "baselabs" / "reference.json")
+    parser.add_argument("--model", type=Path, help="run the real model in this release folder")
+    parser.add_argument("--device", default="mps", help="device for --model (default: mps)")
+    parser.add_argument("--out", type=Path)
     args = parser.parse_args()
+    name = "reference-bf16.json" if args.model else "reference.json"
+    args.out = args.out or PARITY / "baselabs" / name
     import torch
     import transformers
 
@@ -212,6 +235,8 @@ def main() -> None:
     from tiny_models import write_baselabs
 
     torch.set_grad_enabled(False)
+    if args.model and args.device == "mps":
+        torch.mps.set_per_process_memory_fraction(MEMORY_FRACTION)
     snapshots = {shape: fetch(*release) for shape, release in RELEASES.items()}
     patches = {(path / "serve.patch").read_bytes() for path in snapshots.values()}
     if len(patches) != 1:
@@ -229,11 +254,39 @@ def main() -> None:
         wanted = set(args.only.split(","))
         cases = [c for c in cases if c["id"] in wanted]
     with tempfile.TemporaryDirectory() as scratch:
-        references = {}
-        for shape, snapshot in snapshots.items():
-            folder = write_baselabs(Path(scratch) / shape, SEED, shape, files_from=snapshot)
-            references[shape] = Reference(folder)
+        if args.model:
+            references = {"elephant": Reference(args.model.resolve(), True, args.device)}
+        else:
+            references = {}
+            for shape, snapshot in snapshots.items():
+                folder = write_baselabs(Path(scratch) / shape, SEED, shape, files_from=snapshot)
+                references[shape] = Reference(folder)
         engine = references["elephant"].engine
+        meta = {
+            "releases": {s: {"repo_id": r, "revision": v} for s, (r, v) in RELEASES.items()},
+            "onejev": {"commit": ONEJEV_COMMIT, "serve_patch_sha256": patch_sha256},
+            "prompt_version": PROMPT_VERSION,
+            **({"model": "elephant-1 release"} if args.model else {"seed": SEED}),
+            **({} if args.model else {"ids_tokens": IDS_TOKENS}),
+            "max_branch_tokens": engine.max_branch_tokens,
+            "max_request_tokens": engine.max_request_tokens,
+            "slot_ids": engine.slot_ids,
+            "device": str(engine.device),
+            "dtype": engine.info.dtype,
+            "head_dtype": engine.head_dtype,
+            "fork_mode": engine.info.fork_mode,
+            "torch": torch.__version__,
+            "transformers": transformers.__version__,
+        }
+
+        def write() -> None:
+            ordered = {c["id"]: results[c["id"]] for c in parity_set() if c["id"] in results}
+            if not args.model:
+                meta["fork_max_difference"] = fork
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(dump({"meta": meta, "results": ordered}) + "\n")
+            return ordered
+
         for case in cases:
             start = time.perf_counter()
             result = run_case(case, references)
@@ -241,27 +294,12 @@ def main() -> None:
                 fork[shape] = max(fork.get(shape, 0.0), difference)
             results[case["id"]] = result
             print(f"{case['id']}: {time.perf_counter() - start:.1f} s", flush=True)
+            if args.model:
+                write()  # a long run can be continued with --only
         worst = max(fork.values(), default=0.0)
         if worst > FORK_TOLERANCE:
             raise SystemExit(f"batched and sequential differ by {worst:.2e}, over {FORK_TOLERANCE}")
-        meta = {
-            "releases": {s: {"repo_id": r, "revision": v} for s, (r, v) in RELEASES.items()},
-            "onejev": {"commit": ONEJEV_COMMIT, "serve_patch_sha256": patch_sha256},
-            "prompt_version": PROMPT_VERSION,
-            "seed": SEED,
-            "ids_tokens": IDS_TOKENS,
-            "max_branch_tokens": engine.max_branch_tokens,
-            "max_request_tokens": engine.max_request_tokens,
-            "slot_ids": engine.slot_ids,
-            "device": "cpu",
-            "dtype": "float32",
-            "fork_max_difference": fork,
-            "torch": torch.__version__,
-            "transformers": transformers.__version__,
-        }
-    ordered = {c["id"]: results[c["id"]] for c in parity_set() if c["id"] in results}
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(dump({"meta": meta, "results": ordered}) + "\n")
+        ordered = write()
     print(f"wrote {len(ordered)} results to {args.out}; batched vs sequential at most {worst:.2e}")
 
 

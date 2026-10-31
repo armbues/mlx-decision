@@ -11,6 +11,7 @@ fetches them) and skip otherwise.
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -225,3 +226,64 @@ def test_answers_as_the_release(released, case_id):
                 assert got[key] == pytest.approx(value, abs=2e-6), qid
             else:
                 assert got[key] == value, f"{qid}.{key}"
+
+
+BF16_FILE = HERE / "baselabs" / "reference-bf16.json"
+# Measured: see the docstring.
+BF16_TOLERANCE = 0.05
+
+
+@pytest.mark.slow
+@pytest.mark.weights
+def test_bf16_answers_as_the_release():
+    """About 2 minutes: the release folder (elephant-1, bf16) answers the text
+    parity set and the Base Labs set (68 requests, 166 questions) as the
+    release's engine does in bf16 on MPS (the LM head in float32 on both
+    sides), at the release's per-question limit (32,768).
+
+    Measured 2026-10-31 on an M5 Pro (MLX 0.32.4): max 0.039
+    (ledger_3k.largest_vendor, a near tie: margin 0.003), next 0.026, mean
+    0.0010; no changed top answers, near ties included. 112 s, 23.4 GB peak
+    (the release's engine: 398 s, 46.5 GB). The limit is 0.05, as d3's: the
+    worst case is a near tie, and those move with MLX versions.
+    """
+    import os
+
+    from test_parity import MARGIN, MEAN_TOLERANCE
+
+    import mlx_decision
+
+    root = os.environ.get("MLX_DECISION_MODELS")
+    path = Path(root) / "elephant-1" if root else None
+    if path is None or not path.is_dir():
+        pytest.skip("no elephant-1 in MLX_DECISION_MODELS")
+    if not BF16_FILE.exists():
+        pytest.skip("no reference-bf16.json (make_baselabs_reference.py --model)")
+    reference = json.loads(BF16_FILE.read_text())["results"]
+    model = mlx_decision.load(path, max_input_tokens=32768)
+    differences, worst, decided_flips = [], (0.0, None), []
+    for case_id, expected in reference.items():
+        if "refused" in expected or case_id in WIRE_REFUSED:
+            continue
+        result = model.decide_request(REQUESTS[case_id])
+        assert result.usage.input_tokens == expected["tokens"], case_id
+        for qid, entry in expected["questions"].items():
+            logits = entry["logits"]["elephant"]
+            top = max(logits)
+            exps = [math.exp(x - top) for x in logits]
+            want = [e / sum(exps) for e in exps]
+            answer = result.answers[qid]
+            if answer.type == "noul":
+                got = [answer.noul, 1 - answer.noul]
+            else:
+                got = list(answer.probabilities.values())
+            pairs = list(zip(got, want, strict=True))
+            differences += [abs(a - b) for a, b in pairs]
+            worst = max(worst, (max(abs(a - b) for a, b in pairs), f"{case_id}.{qid}"))
+            first, second = [*sorted(want, reverse=True), 0.0][:2]
+            if first - second > MARGIN and got.index(max(got)) != want.index(first):
+                decided_flips.append(f"{case_id}.{qid}")
+    mean = sum(differences) / len(differences)
+    assert worst[0] <= BF16_TOLERANCE, f"max |dp| {worst[0]:.4f} at {worst[1]}"
+    assert mean <= MEAN_TOLERANCE, f"mean |dp| {mean:.5f}"
+    assert not decided_flips
