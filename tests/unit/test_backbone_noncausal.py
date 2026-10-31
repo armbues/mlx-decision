@@ -39,9 +39,44 @@ def test_full_attention_sees_later_tokens(folder, noncausal):
         assert (mx.abs(before - after).max().item() > 1e-4) == sees_later
 
 
-def test_noncausal_refuses_a_cache(noncausal):
-    with pytest.raises(ValueError, match="cache"):
-        noncausal(mx.array([[1, 2, 3]]), cache=noncausal.make_cache())
+def test_noncausal_continues_from_a_cache_as_a_block(noncausal):
+    """The new tokens see the cached ones and each other both ways; the cached ones
+    never see them."""
+    from mlx_decision.backbones.qwen3_5.cache import fork_cache
+
+    prefix = noncausal.make_cache()
+    first = noncausal(mx.array([[11, 12, 13, 14]]), cache=prefix)
+    block = noncausal(mx.array([[21, 22, 23]]), cache=fork_cache(prefix))
+    changed = noncausal(mx.array([[21, 22, 99]]), cache=fork_cache(prefix))
+    # The first block token sees the last one, so changing it moves the first.
+    assert mx.abs(block[0, 0] - changed[0, 0]).max().item() > 1e-4
+    # The prefix's own pass is the same with or without what follows.
+    assert mx.array_equal(first, noncausal(mx.array([[11, 12, 13, 14]])))
+
+
+def test_padding_needs_the_noncausal_mode(folder):
+    causal = load_text_model(folder, lm_head=False)
+    with pytest.raises(ValueError, match="non-causal"):
+        causal(mx.array([[1, 2]]), lengths=mx.array([1]))
+
+
+def test_padded_rows_answer_as_alone(noncausal):
+    """A batch of right-padded rows off a repeated cache: each row's real tokens
+    come out as that row run alone."""
+    from mlx_decision.backbones.qwen3_5.cache import fork_cache, repeat_cache
+
+    prefix = noncausal.make_cache()
+    noncausal(mx.array([[11, 12, 13, 14]]), cache=prefix)
+    rows = [[21, 22, 23, 24, 25], [31, 32], [41, 42, 43]]
+    ids = mx.array([row + [0] * (5 - len(row)) for row in rows])
+    with mx.stream(mx.cpu):
+        batch = noncausal(ids, cache=repeat_cache(prefix, 3), lengths=mx.array([5, 2, 3]))
+        for index, row in enumerate(rows):
+            alone = noncausal(mx.array([row]), cache=fork_cache(prefix))
+            got = batch[index, : len(row)]
+            assert mx.abs(got - alone[0]).max().item() < 1e-5, index
+    # The cache the rows continued from is left as it was.
+    assert prefix[noncausal.language_model.model.fa_idx].keys.shape[0] == 1
 
 
 def test_long_attention_runs_in_blocks_of_queries(folder, noncausal, monkeypatch):
@@ -83,3 +118,21 @@ def test_layer_types_set_the_full_attention_layers():
     assert model.fa_idx == 1
     with pytest.raises(ValueError, match="layer_types"):
         TextModelArgs.from_dict({**PPLX_TEXT, "layer_types": pruned})
+
+
+def test_attention_hiding_keys_runs_in_blocks_too(monkeypatch):
+    from mlx_decision.backbones.qwen3_5 import base
+
+    queries, keys, values = (mx.random.normal((2, 4, n, 16)) for n in (100, 130, 130))
+    mask = (mx.arange(130)[None] < mx.array([[130], [90]]))[:, None, None, :]
+    assert base.is_key_mask(mask) and not base.is_key_mask(mask[0, 0])
+    with mx.stream(mx.cpu):
+        whole = base.scaled_dot_product_attention(queries, keys, values, None, 0.25, mask)
+        monkeypatch.setattr(base, "SCORE_BUDGET", 64 * 2 * 4 * 130)
+        blocks = base.scaled_dot_product_attention(queries, keys, values, None, 0.25, mask)
+        hidden = mx.fast.scaled_dot_product_attention(
+            queries[1:], keys[1:, :, :90], values[1:, :, :90], scale=0.25
+        )
+    assert mx.abs(blocks - whole).max().item() < 1e-5
+    # The second row's last 40 keys are hidden: as if they were not there.
+    assert mx.abs(whole[1:] - hidden).max().item() < 1e-5

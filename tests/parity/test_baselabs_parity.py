@@ -17,7 +17,7 @@ import pytest
 
 from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
-from mlx_decision.models.baselabs.model import code_token_ids
+from mlx_decision.models.baselabs.model import code_token_ids, head_file, read_rows
 from mlx_decision.models.baselabs.prompt import layout, render, render_question
 from mlx_decision.types import parse_request
 
@@ -102,3 +102,101 @@ def test_prompts_and_tokens_equal_the_release(tokenizer, case_id):
         assert sha256(prompt) == entry["prompt_sha256"], qid
         assert sha256(ids) == entry["ids_sha256"], qid
         assert len(ids) == entry["tokens"], qid
+
+
+# Largest allowed difference of a logit against the reference (CPU, float32).
+LOGIT_TOLERANCE = 1e-4
+# Largest allowed difference of a probability.
+TOLERANCE = 1e-5
+STORED = [
+    case_id
+    for case_id in IDS
+    if "refused" not in REFERENCE[case_id]
+    and all("ids" in q for q in REFERENCE[case_id].get("questions", {}).values())
+    and REFERENCE[case_id].get("questions")
+]
+
+
+@pytest.fixture(scope="module", params=["elephant", "mammoth"])
+def tiny(request, tmp_path_factory):
+    """The reference's tiny model (same seed), with a word-level tokenizer: the
+    stored token ids are fed in, so no release files are needed."""
+    from mlx_decision.registry import load_backend
+    from tiny_models import write_baselabs
+
+    folder = write_baselabs(tmp_path_factory.mktemp(request.param) / "tiny", shape=request.param)
+    backend = load_backend(folder, prefix_cache_gb=0)
+    # The word-level tokenizer numbers the codes otherwise: the release's ids.
+    backend.rows = read_rows(head_file(folder), "lm_head.weight", FIXTURE["meta"]["slot_ids"])
+    return request.param, backend
+
+
+def test_tiny_models_answer_as_the_release(tiny):
+    """Every question of at most 4,096 tokens: the stored prefix runs once, the
+    questions in batches off it, and the answer codes' logits are the release's."""
+    import mlx.core as mx
+
+    from mlx_decision.models.baselabs.model import Encoded
+
+    shape, backend = tiny
+    with mx.stream(mx.cpu):
+        for case_id in STORED:
+            expected = REFERENCE[case_id]
+            count = expected["prefix_tokens"]
+            questions = expected["questions"]
+            prefix = next(iter(questions.values()))["ids"][:count]
+            encoded = [
+                Encoded(qid, [str(i) for i in range(q["options"])], q["ids"][count:])
+                for qid, q in questions.items()
+            ]
+            assert all(q["ids"][:count] == prefix for q in questions.values())
+            hidden = backend.last_hidden(prefix, encoded)
+            for question, last in zip(encoded, hidden, strict=True):
+                entry = questions[question.question_id]
+                rows = backend.rows[: entry["options"]]
+                got = rows @ last
+                want = mx.array(entry["logits"][shape])
+                error = mx.abs(got - want).max().item()
+                assert error < LOGIT_TOLERANCE, f"{case_id}.{question.question_id}: {error:.2e}"
+                p_error = mx.abs(mx.softmax(got) - mx.softmax(want)).max().item()
+                assert p_error < TOLERANCE, f"{case_id}.{question.question_id}: {p_error:.2e}"
+    assert len(STORED) > 50
+
+
+# The full path with the real tokenizer: prompt shapes, several questions,
+# questions over 4,096 tokens (no stored ids) and a request near the default limit.
+END_TO_END = [
+    "ticket",
+    "bl_every_type_twice",
+    "bl_choice_27_options",
+    "special_tokens_in_state",
+    "twenty_mixed",
+    "ledger_6k",
+    "log_16k_near_limit",
+]
+
+
+@pytest.fixture(scope="module", params=["elephant", "mammoth"])
+def released(request, tmp_path_factory, release):
+    """The reference's tiny model with the release's tokenizer."""
+    from mlx_decision.registry import load_backend
+    from tiny_models import write_baselabs
+
+    folder = tmp_path_factory.mktemp(request.param) / "tiny"
+    write_baselabs(folder, shape=request.param, files_from=release)
+    return request.param, load_backend(folder, max_input_tokens=32768, prefix_cache_gb=0)
+
+
+@pytest.mark.parametrize("case_id", END_TO_END)
+def test_end_to_end_as_the_release(released, case_id):
+    import mlx.core as mx
+
+    shape, backend = released
+    expected = REFERENCE[case_id]
+    with mx.stream(mx.cpu):
+        output = backend.score(request(case_id))
+    assert output.input_tokens == expected["tokens"]
+    for qid, entry in expected["questions"].items():
+        want = mx.softmax(mx.array(entry["logits"][shape])).tolist()
+        got = list(output.probabilities[qid].values())
+        assert got == pytest.approx(want, abs=TOLERANCE), qid

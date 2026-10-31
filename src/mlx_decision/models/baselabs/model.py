@@ -7,20 +7,32 @@ attention in the full-attention layers, causal Gated DeltaNet layers, and
 the LM head's logits at the answer codes as the readout (``slot_lm``). Only
 the answer codes' rows of the LM head are read, in float32 (the release
 upcasts the head); the rest of it stays on disk.
+
+Every question's prompt starts with the same tokens up to the end of the
+state block (``prompt``). That prefix runs once per request, its
+full-attention layers seeing it both ways, or comes from the kept prefixes
+(``prefix``); the questions then run off copies of its cache, right-padded
+in batches, each seeing the prefix and itself both ways but not the other
+questions. A question's answer is the last token's hidden state times the
+answer codes' rows of its options, normalized.
 """
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import mlx.core as mx
 
+from ...backbones.qwen3_5.cache import repeat_cache
 from ...backbones.qwen3_5.load import load_text_model
 from ...backbones.qwen3_5.tokenizer import load_tokenizer
-from ...backend import Capabilities
-from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache
+from ...backend import BackendOutput, Capabilities
+from ...types import Request
+from ..prefix import DEFAULT_PREFIX_CACHE_GB, PrefixCache, prefix_key
 from ..qwen import precision
+from ..readout import Features, Readout, pick, read_out, singletons
 from .config import check_config
-from .prompt import CODES
+from .prompt import CODES, layout, options, render_question
 
 # The card's training length: a question with the state over it is refused.
 MAX_INPUT_TOKENS = 16384
@@ -29,6 +41,16 @@ MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 10
 REQUIRED_FILES = ("config.json", "tokenizer.json", "readout.json")
 HEAD = "lm_head.weight"
+# Tokens one batch of questions holds at most: its rows times the prefix and
+# the longest question (the prefix's cache is repeated per row).
+BATCH_TOKENS = 32768
+
+
+@dataclass
+class Encoded:
+    question_id: str
+    option_ids: list[str]
+    suffix: list[int]  # the question's tokens after the shared prefix
 
 
 def code_token_ids(tokenizer) -> list[int]:
@@ -117,6 +139,105 @@ class BaseLabsBackend:
         )
         self.capabilities = _capabilities(max_input_tokens)
 
+    def encode(self, request: Request) -> tuple[list[int], list[Encoded]]:
+        """The shared prefix's tokens and each question's tokens after it."""
+        questions = request.questions
+        found = layout(
+            self.tokenizer, request.state, [render_question(q) for q in questions.values()]
+        )
+        encoded = [
+            Encoded(question_id, options(question)[0], suffix)
+            for (question_id, question), suffix in zip(
+                questions.items(), found.suffixes, strict=True
+            )
+        ]
+        return found.prefix, encoded
+
+    def prefix_state(self, prefix: list[int]):
+        """The backbone's cache after ``prefix``: kept from an earlier request, or computed."""
+        key = None
+        if self.prefix_cache is not None:
+            key = prefix_key(prefix)
+            if (entry := self.prefix_cache.get(key)) is not None:
+                return entry.cache
+        cache = self.backbone.make_cache()
+        self.backbone(mx.array(prefix)[None], cache=cache)
+        mx.eval([c.state for c in cache])
+        if key is not None:
+            self.prefix_cache.put(key, cache)
+        return cache
+
+    def batches(self, prefix: int, encoded: list[Encoded]) -> list[list[int]]:
+        """The questions (by index, in order) in batches of at most ``BATCH_TOKENS``
+        tokens (rows times the prefix and the longest question); at least one per batch."""
+        batches: list[list[int]] = []
+        width = 0
+        for index, question in enumerate(encoded):
+            wider = max(width, len(question.suffix))
+            if batches and (len(batches[-1]) + 1) * (prefix + wider) <= BATCH_TOKENS:
+                batches[-1].append(index)
+                width = wider
+            else:
+                batches.append([index])
+                width = len(question.suffix)
+        return batches
+
+    def last_hidden(self, prefix: list[int], encoded: list[Encoded]) -> list[mx.array]:
+        """Every question's final hidden state at its last token, in float32."""
+        cache = self.prefix_state(prefix)
+        hidden: list[mx.array] = [None] * len(encoded)
+        for batch in self.batches(len(prefix), encoded):
+            rows = [encoded[index].suffix for index in batch]
+            width = max(len(row) for row in rows)
+            ids = mx.array([row + [0] * (width - len(row)) for row in rows])
+            padded = any(len(row) < width for row in rows)
+            lengths = mx.array([len(row) for row in rows]) if padded else None
+            states = self.backbone(ids, cache=repeat_cache(cache, len(rows)), lengths=lengths)
+            for row, index in enumerate(batch):
+                hidden[index] = states[row, len(rows[row]) - 1].astype(mx.float32)
+            mx.eval([hidden[index] for index in batch])
+        return hidden
+
+    def passes(self, request: Request) -> tuple[list[int], list[Encoded], list[mx.array]]:
+        prefix, encoded = self.encode(request)
+        return prefix, encoded, self.last_hidden(prefix, encoded)
+
+    def question_features(self, question: Encoded, hidden: mx.array) -> Features:
+        count = len(question.option_ids)
+        return Features(question.option_ids, hidden, self.rows[:count], singletons(count), 1.0)
+
+    def features(self, request: Request) -> dict[str, Features]:
+        """What each question's readout reads, before the readout."""
+        _, encoded, hidden = self.passes(request)
+        return {
+            q.question_id: self.question_features(q, last)
+            for q, last in zip(encoded, hidden, strict=True)
+        }
+
+    def finish(self, question, probabilities: dict[str, float]) -> dict[str, float]:
+        """Nothing follows the readout."""
+        return probabilities
+
+    def score(
+        self,
+        request: Request,
+        readouts: dict[str, Readout] | None = None,
+        finish: bool = True,
+    ) -> BackendOutput:
+        """``readouts`` replace the answer codes' rows of the questions (by id) with
+        the same options."""
+        prefix, encoded, hidden = self.passes(request)
+        probabilities = {}
+        for question, last in zip(encoded, hidden, strict=True):
+            features = self.question_features(question, last)
+            readout = pick(readouts, question.question_id, question.option_ids)
+            values = read_out(features, readout)
+            probabilities[question.question_id] = dict(
+                zip(question.option_ids, values, strict=True)
+            )
+        tokens = len(prefix) + sum(len(q.suffix) for q in encoded)
+        return BackendOutput(probabilities=probabilities, input_tokens=tokens)
+
 
 def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
     """The weight files ``load`` reads from, kept as stored (it skips the vision
@@ -175,7 +296,7 @@ def load(
     check_config(path)
     tokenizer = load_tokenizer(path)
     rows = read_rows(head_file(path), HEAD, code_token_ids(tokenizer))
-    backbone = load_text_model(path, lm_head=False)
+    backbone = load_text_model(path, lm_head=False, causal=False)
     if rows.shape[1] != backbone.language_model.args.hidden_size:
         raise ValueError(f"{path}: the LM head does not match the backbone's width")
     mx.eval(rows)

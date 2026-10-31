@@ -181,3 +181,77 @@ def test_a_tokenizer_without_a_code_is_refused(copy):
     tokenizer.save(str(copy / "tokenizer.json"))
     with pytest.raises(ValueError, match="answer code 'AB' is not a single token"):
         load_backend(copy)
+
+
+QUESTIONS = {
+    "refund": {"type": "noul", "instructions": "refund please"},
+    "team": {
+        "type": "choice",
+        "instructions": "billing",
+        "criteria": {"billing": None, "technical": "crash"},
+    },
+    "level": {"type": "score", "instructions": "how", "criteria": ["a", "b", "c", "d"]},
+    "many": {"type": "choice", "criteria": {f"o{i}": f"option {i}" for i in range(30)}},
+}
+
+
+def probabilities(backend, questions=QUESTIONS, state="billing refund please now"):
+    from mlx_decision.types import parse_request
+
+    request = parse_request({"state": state, "questions": questions})
+    return backend.score(request).probabilities
+
+
+def test_batched_questions_answer_as_one_by_one(folder, monkeypatch):
+    import mlx_decision.models.baselabs.model as model
+
+    backend = load_backend(folder, prefix_cache_gb=0)
+    with mx.stream(mx.cpu):
+        batched = probabilities(backend)
+        assert len(backend.batches(10, backend.encode(parse(QUESTIONS))[1])) == 1
+        monkeypatch.setattr(model, "BATCH_TOKENS", 1)
+        alone = probabilities(backend)
+    for question_id, values in batched.items():
+        for option, value in values.items():
+            assert value == pytest.approx(alone[question_id][option], abs=1e-6)
+    assert list(batched["refund"]) == ["true", "false"]
+    assert list(batched["level"]) == ["0", "1", "2", "3"]
+
+
+def parse(questions):
+    from mlx_decision.types import parse_request
+
+    return parse_request({"state": "billing refund please now", "questions": questions})
+
+
+def test_a_kept_prefix_answers_as_a_fresh_one(folder):
+    cold = load_backend(folder, prefix_cache_gb=0)
+    warm = load_backend(folder, prefix_cache_gb=1)
+    with mx.stream(mx.cpu):
+        fresh = probabilities(cold)
+        first = probabilities(warm)
+        assert len(warm.prefix_cache) == 1
+        # Other questions on the same state continue from the kept prefix.
+        again = probabilities(warm, {"team": QUESTIONS["team"], "x": QUESTIONS["refund"]})
+        assert len(warm.prefix_cache) == 1
+    for got, want in [
+        (first["team"], fresh["team"]),
+        (first["refund"], fresh["refund"]),
+        (again["team"], fresh["team"]),
+        (again["x"], fresh["refund"]),
+    ]:
+        assert got == pytest.approx(want, abs=1e-6)
+
+
+def test_batches_stay_under_the_token_budget(folder, monkeypatch):
+    import mlx_decision.models.baselabs.model as model
+    from mlx_decision.models.baselabs.model import Encoded
+
+    backend = load_backend(folder, prefix_cache_gb=0)
+    monkeypatch.setattr(model, "BATCH_TOKENS", 100)
+    encoded = [Encoded(str(i), ["a"], [1] * n) for i, n in enumerate([10, 20, 5, 60, 70, 1])]
+    # Rows times (prefix 20 + the widest) up to 100: 2 x 40; then a third row
+    # would make 3 x 40; 60 and 70 alone; 1 after 70 would make 2 x 90.
+    assert backend.batches(20, encoded) == [[0, 1], [2], [3], [4], [5]]
+    # A question over the budget still runs, alone.
+    assert backend.batches(200, encoded[:2]) == [[0], [1]]

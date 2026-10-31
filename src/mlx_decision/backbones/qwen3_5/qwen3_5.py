@@ -11,7 +11,9 @@
 # Added: optional per-axis position ids for image and video tokens, and a row
 # lookup into the output embeddings that also works when they are quantized,
 # and sanitizing a part of the weights (one shard) with the layout given; a
-# non-causal mode for the full-attention layers, a model without lm_head,
+# non-causal mode for the full-attention layers (continuing from a cache as
+# a block that sees the cached tokens, with right padding masked per row), a
+# model without lm_head,
 # and the weight names of checkpoints saved without the ``model.`` prefix;
 # the config's ``layer_types``, when given, sets which layers are full
 # attention (pruned models break the every-fourth-layer pattern).
@@ -257,6 +259,7 @@ class Qwen3_5TextModel(nn.Module):
         input_embeddings: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
         cache: Optional[Any] = None,
+        lengths: Optional[mx.array] = None,
     ) -> mx.array:
         """Final hidden states (after the last norm) for token ids ``[B, L]``.
 
@@ -266,6 +269,13 @@ class Qwen3_5TextModel(nn.Module):
         numbered in order, which is right for text. ``cache`` (from
         ``make_cache``) holds the state after earlier tokens of the same
         sequence; the pass continues from it and updates it.
+
+        Non-causal, the full-attention layers see the whole of ``inputs`` and
+        the cached tokens both ways: a block after the cached ones, which never
+        see it. ``lengths`` (``[B]``, non-causal only) holds each row's real
+        tokens; the rest of a row is padding, which no token attends to (the
+        Gated DeltaNet layers are causal, so padding after a row's last token
+        leaves its state alone).
         """
         if input_embeddings is not None:
             hidden_states = input_embeddings
@@ -273,11 +283,16 @@ class Qwen3_5TextModel(nn.Module):
             hidden_states = self.embed_tokens(inputs)
         if cache is None:
             cache = [None] * len(self.layers)
-        elif not self.causal:
-            raise ValueError("a non-causal pass cannot continue from a cache")
         mask = None
         if self.causal:
+            if lengths is not None:
+                raise ValueError("padded rows need the non-causal mode")
             mask = create_attention_mask(hidden_states, cache[self.fa_idx])
+        elif lengths is not None:
+            first = cache[self.fa_idx]
+            offset = 0 if first is None else first.offset
+            keys = mx.arange(offset + hidden_states.shape[1])
+            mask = (keys[None] < offset + lengths[:, None])[:, None, None, :]
         for layer, c in zip(self.layers, cache):
             hidden_states = layer(
                 hidden_states, mask=mask, position_ids=position_ids, cache=c
@@ -305,8 +320,9 @@ class TextModel(nn.Module):
         input_embeddings: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
         cache: Optional[Any] = None,
+        lengths: Optional[mx.array] = None,
     ) -> mx.array:
-        return self.model(inputs, input_embeddings, position_ids, cache)
+        return self.model(inputs, input_embeddings, position_ids, cache, lengths)
 
     @property
     def layers(self):
@@ -397,8 +413,9 @@ class Model(nn.Module):
         input_embeddings: Optional[mx.array] = None,
         position_ids: Optional[mx.array] = None,
         cache: Optional[Any] = None,
+        lengths: Optional[mx.array] = None,
     ) -> mx.array:
-        return self.language_model(inputs, input_embeddings, position_ids, cache)
+        return self.language_model(inputs, input_embeddings, position_ids, cache, lengths)
 
     def make_cache(self):
         return self.language_model.make_cache()

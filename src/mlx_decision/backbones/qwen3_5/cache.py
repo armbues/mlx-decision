@@ -9,7 +9,9 @@
 # layers and ArraysCache for Gated DeltaNet layers. Removed: the other cache
 # types, batching (padding, lengths, filter, extend, merge), trimming and
 # saving. Both caches replace arrays instead of writing into them, so a
-# cache's arrays can be shared by several caches (see ``fork``).
+# cache's arrays can be shared by several caches (see ``fork``). Added: a
+# one-sequence cache repeated for a batch of sequences that continue from it
+# (``repeat_cache``).
 
 from typing import List, Optional
 
@@ -111,3 +113,19 @@ Cache = ConcatenateKVCache | ArraysCache
 def fork_cache(cache: List[Cache]) -> List[Cache]:
     """A copy of a model's cache that shares its arrays (they are never written into)."""
     return [c.fork() for c in cache]
+
+
+def repeat_cache(cache: List[Cache], count: int) -> List[Cache]:
+    """A copy of a one-sequence cache for ``count`` sequences that each continue
+    from it (a batch); the original is left as it is."""
+    forked = fork_cache(cache)
+    if count == 1:
+        return forked
+    for c in forked:
+        if isinstance(c, ConcatenateKVCache):
+            if c.keys is not None:
+                c.keys = mx.repeat(c.keys, count, axis=0)
+                c.values = mx.repeat(c.values, count, axis=0)
+        else:
+            c.cache = [None if a is None else mx.repeat(a, count, axis=0) for a in c.cache]
+    return forked

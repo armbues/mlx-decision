@@ -4,8 +4,9 @@
 # mlx_lm/models/base.py at commit 5cfec4cb39deba54210b3ff4d86f2337c7bc10b5,
 # under the MIT License. See LICENSES/mlx-lm-MIT.txt.
 #
-# Modified for mlx-decision: attention without a mask (a non-causal pass)
-# runs in blocks of queries when its scores would be large.
+# Modified for mlx-decision: attention without a mask (a non-causal pass),
+# or with one that only hides keys (padding), runs in blocks of queries when
+# its scores would be large.
 
 import inspect
 from dataclasses import dataclass
@@ -120,21 +121,32 @@ def quantized_scaled_dot_product_attention(
 SCORE_BUDGET = 2**28
 
 
-def blockwise_attention(queries, keys, values, scale: float) -> mx.array:
-    """Attention without a mask, a block of queries at a time.
+def is_key_mask(mask) -> bool:
+    """A boolean mask that hides keys alike for every query: ``[batch, 1, 1, keys]``."""
+    return (
+        isinstance(mask, mx.array)
+        and mask.dtype == mx.bool_
+        and mask.ndim == 4
+        and mask.shape[1:3] == (1, 1)
+    )
 
-    Each query's softmax is over all keys either way, so the blocks give the
+
+def blockwise_attention(queries, keys, values, scale: float, mask=None) -> mx.array:
+    """Attention a block of queries at a time, without a mask or with one that
+    hides keys alike for every query (``[batch, 1, 1, keys]``).
+
+    Each query's softmax is over the same keys either way, so the blocks give the
     same result as one call. Each block is evaluated before the next starts:
     left lazy, the whole graph would hold every block's scores at once.
     """
     batch, heads, length, _ = queries.shape
     block = max(64, SCORE_BUDGET // (batch * heads * keys.shape[-2]) // 64 * 64)
     if block >= length:
-        return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale)
+        return mx.fast.scaled_dot_product_attention(queries, keys, values, scale=scale, mask=mask)
     outputs = []
     for start in range(0, length, block):
         output = mx.fast.scaled_dot_product_attention(
-            queries[:, :, start : start + block], keys, values, scale=scale
+            queries[:, :, start : start + block], keys, values, scale=scale, mask=mask
         )
         mx.eval(output)
         outputs.append(output)
@@ -162,8 +174,8 @@ def scaled_dot_product_attention(
             group_size=cache.group_size,
             bits=cache.bits,
         )
-    elif mask is None and sinks is None:
-        return blockwise_attention(queries, keys, values, scale)
+    elif sinks is None and (mask is None or is_key_mask(mask)):
+        return blockwise_attention(queries, keys, values, scale, mask)
     else:
         return mx.fast.scaled_dot_product_attention(
             queries,
