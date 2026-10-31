@@ -380,6 +380,24 @@ register_family(
 )
 
 
+def _baselabs_detect(path: Path) -> bool:
+    """A Qwen3.5 ``config.json`` whose ``modeling_overrides`` name a readout (the
+    JSON alone, for ``download``)."""
+    from .models.baselabs.config import overrides
+
+    return overrides(path) is not None
+
+
+register_family(
+    "baselabs",
+    detect=_baselabs_detect,
+    loader="mlx_decision.models.baselabs.model:load",
+    capabilities="mlx_decision.models.baselabs.model:capabilities",
+    weight_files="mlx_decision.models.baselabs.model:weight_files",
+    quantizable=_qwen_text_matrix,
+)
+
+
 def _h2o_detect(path: Path) -> bool:
     """``serve_config.json`` with the option labels (the JSON alone, for ``download``)."""
     file = path / "serve_config.json"

@@ -23,7 +23,8 @@ def load_text_model(path: str | Path, lm_head: bool = True, causal: bool = True)
     Vision weights in the folder are ignored. Weights keep the precision they
     are stored in. A folder written by ``save_text_model`` with quantization
     has a ``quantization`` entry in its config; layers are quantized where
-    the saved weights have scales. ``lm_head`` and ``causal`` as for ``Model``.
+    the saved weights have scales. ``lm_head`` and ``causal`` as for ``Model``;
+    without ``lm_head`` an untied LM head in the folder is left unread.
     """
     path = Path(path)
     config = json.loads((path / "config.json").read_text())
@@ -37,6 +38,9 @@ def load_text_model(path: str | Path, lm_head: bool = True, causal: bool = True)
         weights.update(mx.load(str(file)))
 
     weights = model.sanitize(weights)
+    if not lm_head:
+        # Loaded lazily: a tensor dropped here is never read from disk.
+        weights.pop("language_model.lm_head.weight", None)
     if (quantization := config.get("quantization")) is not None:
         quantize_like(model, quantization, weights)
     model.load_weights(list(weights.items()), strict=True)

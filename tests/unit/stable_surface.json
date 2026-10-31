@@ -1074,6 +1074,18 @@
   }
  },
  "load_options": {
+  "baselabs": {
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "prefix_cache_gb": {
+    "default": 2.0,
+    "kind": "positional_or_keyword",
+    "position": 2
+   }
+  },
   "clef": {
    "max_image_pixels": {
     "default": 2097152,
