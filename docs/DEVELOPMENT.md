@@ -28,7 +28,7 @@ and are skipped when they are missing:
   2 min) and `d1-3B` (about 1.5 min), each against its release's
   reference in bf16.
 
-The token tests of pplx, d3, H2O-Lightning and d1 need only their
+The token tests of pplx, d3, Base Labs, H2O-Lightning and d1 need only their
 release's small files (tokenizer and configs) in the Hugging Face cache.
 The LFM2 backbone (d1's) is compared with `mlx-lm`'s when it is
 installed (`pip install mlx-lm`; not a dependency).
@@ -51,7 +51,13 @@ there; `--model` for the slow test, from `$MLX_DECISION_MODELS/d1-3B`).
 d3's comes from `scripts/make_d3_reference.py`, which runs the release's
 runtime on a small random model with the release's files; with `--model`
 it runs d3-flash's weights in bf16 for the slow test, which takes the
-release from `$MLX_DECISION_MODELS/d3-flash`.
+release from `$MLX_DECISION_MODELS/d3-flash`. Base Labs' comes from
+`scripts/make_baselabs_reference.py`, which runs the releases' engine
+(OneJev's `qev`, from a checkout at the pinned commit with the releases'
+`serve.patch` applied: `--onejev DIR`; the script checks both) on small
+random models in both releases' shapes; with `--model` it runs
+elephant-1's weights in bf16 for the slow test, which takes the release
+from `$MLX_DECISION_MODELS/elephant-1`.
 
 The reference scripts run the families' own code, so they need packages
 that `make setup` does not install: `torch` and `transformers` for all

@@ -467,9 +467,10 @@ MaxInputOption = Annotated[
         min=16,
         help="Input limit in tokens; longer states are cut (or refused by models that do not "
         "cut; pplx v1.2 answers a longer request in parts). Default: the model's own (Clef "
-        "16,384; pplx v1.2 32,768 per request, v1.1 8,192; d3 32,768; H2O-Lightning 40,960; "
-        "d1 32,768; Laya 512 or 1,024; Julia 8,192). d3 and pplx v1.2 take up to 262,144, "
-        "Laya and Julia up to 8,192; pplx v1.1, H2O-Lightning and d1 only a lower limit.",
+        "16,384; pplx v1.2 32,768 per request, v1.1 8,192; d3 32,768; Base Labs 16,384; "
+        "H2O-Lightning 40,960; d1 32,768; Laya 512 or 1,024; Julia 8,192). d3, Base Labs and "
+        "pplx v1.2 take up to 262,144, Laya and Julia up to 8,192; pplx v1.1, H2O-Lightning "
+        "and d1 only a lower limit.",
     ),
 ]
 
@@ -480,7 +481,8 @@ PrefixCacheOption = Annotated[
         "--prefix-cache",
         min=0,
         metavar="GB",
-        help="Memory for kept states (Clef, H2O-Lightning, d1): a request whose state came "
+        help="Memory for kept states (Clef, Base Labs, H2O-Lightning, d1): a request whose "
+        "state came "
         "recently, with other questions, computes only the questions. Default 2; 0 turns "
         "it off.",
     ),
@@ -1560,7 +1562,7 @@ def convert(
             min=2,
             max=8,
             help="Mixed precision: average bits per weight, allocated by measured "
-            "sensitivity (Clef, pplx v1.2, d3, H2O-Lightning; implies --quantize; "
+            "sensitivity (Clef, pplx v1.2, d3, Base Labs, H2O-Lightning; implies --quantize; "
             "takes a few minutes).",
         ),
     ] = None,
@@ -1780,8 +1782,8 @@ def benchmark(
 ) -> None:
     """Measure load time and latency per request across state length and question count.
 
-    For Clef, H2O-Lightning and d1, each row is also timed with its state's computed prefix kept
-    (the warm columns), as a later request on the same state would run.
+    For Clef, Base Labs, H2O-Lightning and d1, each row is also timed with its state's
+    computed prefix kept (the warm columns), as a later request on the same state would run.
     """
     from .benchmark import benchmark as run_benchmark
     from .benchmark import format_report, to_dict

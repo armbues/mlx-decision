@@ -24,7 +24,7 @@ A few words used throughout: the **state** is what the model reads (a
 text, or any JSON value such as a ticket or a conversation), with one or
 more **questions**: a choice (one of several options), a score (a level
 on an ordered scale) or a noul (yes or no). A **family** is a kind of
-model (Clef, pplx, d3, H2O-Lightning, d1, Laya, Julia; see
+model (Clef, pplx, d3, Base Labs, H2O-Lightning, d1, Laya, Julia; see
 [MODELS.md](MODELS.md)); each family has its own mark and colour in the
 Studio. **Jev** is TypeSafe AI's hosted decision service; the Studio
 answers the same API, so Jev's clients work against it. A **token** is
@@ -377,7 +377,7 @@ own folders (`models_dir` and the config file's `models`, or `-m`).
 
 Download a Model… (⌘D, on every page) opens a sheet with the families,
 then the picked family's models with their sizes, then for Clef, pplx,
-d3 and H2O-Lightning Download as Original, 8-bit or 4-bit (each with its
+d3, Base Labs and H2O-Lightning Download as Original, 8-bit or 4-bit (each with its
 size and whether it fits: within the memory budget, over it (it would
 not load until the budget is raised) or too large for this Mac), as
 [`download`](CLI.md#getting-a-model-download) offers them. A model with
@@ -397,7 +397,7 @@ half model behind. The model joins the list when it is complete.
 ### Convert
 
 Convert… (in the inspector and a row's menu) writes an 8-bit or 4-bit
-copy of a Clef, pplx, d3 or H2O-Lightning model into the workspace's
+copy of a Clef, pplx, d3, Base Labs or H2O-Lightning model into the workspace's
 `models/`, as [`convert`](CLI.md#quantizing-convert) does, with its
 estimated size and a name (by default the model's with `-q8` or `-q4`).
 A conversion holds the GPU while it runs ([Jobs](#jobs-and-the-busy-gpu)).

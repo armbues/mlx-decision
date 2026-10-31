@@ -101,6 +101,17 @@ need CUDA, so on a Mac transformers runs its plain PyTorch code for
 them, as for Clef. On one request with three questions of about 16,000
 tokens each: 113 s against 31 s.
 
+### Base Labs
+
+Compared over the whole parity set (68 text requests, 166 questions, up
+to 32,768 tokens per question): the release's engine (OneJev's `qev` at
+the pinned commit with Base Labs' `serve.patch`, elephant-1 in bf16 on
+MPS, the LM head in float32; transformers 5.19.0) took 6.6 minutes and
+46.5 GB at its peak, mlx-decision in bf16 112 s and 23.4 GB, 3.6x. As
+for Clef and d3, the release's linear-attention kernels need CUDA, so
+on a Mac transformers runs its plain PyTorch code for them. mammoth-1
+was not run against the release.
+
 ### H2O-Lightning
 
 Not compared: the release runs on vLLM, which needs CUDA. For the parity
@@ -256,6 +267,27 @@ and 16.2 GB, 33,032 tokens 27.6 s and 19.1 GB, 131,855 tokens 317 s and
 31.9 GB. Above the weights (14.8 GB) memory grows by about 136 KB a
 token.
 
+elephant-1 in bf16 and as an 8-bit copy (`--question-counts 1,5`; the
+longest length, 15,000, stays under the default 16,384-token limit). The
+state is computed once per request and its questions run together off
+it, so input tokens count the state once; warm: the same request again
+with the state kept:
+
+| State tokens | Questions | Input tokens | bf16 | 8-bit | bf16 warm |
+|---|---|---|---|---|---|
+| 250 | 1 | 354 | 0.293 s | 0.314 s | 0.068 s |
+| 250 | 5 | 619 | 0.488 s | 0.535 s | 0.269 s |
+| 1,000 | 1 | 1,103 | 0.686 s | 0.841 s | 0.070 s |
+| 1,000 | 5 | 1,368 | 0.872 s | 1.05 s | 0.272 s |
+| 4,000 | 1 | 4,102 | 2.37 s | 2.93 s | 0.080 s |
+| 4,000 | 5 | 4,367 | 2.71 s | 3.11 s | 0.305 s |
+| 15,000 | 1 | 15,098 | 10.6 s | 11.7 s | 0.123 s |
+| 15,000 | 5 | 15,363 | 11.4 s | 12.5 s | 0.567 s |
+| Peak memory | | | 17.6 GB | 10.7 GB | |
+
+The 8-bit copy is 7-24% slower; its warm times are within 0.05 s of
+bf16's.
+
 H2O-Lightning in bf16, as an 8-bit and as a uniform 4-bit copy
 (`--question-counts 1,5`). Each question is its own sequence, but they share
 the system prompt and the state, which are computed once per request;
@@ -343,6 +375,10 @@ Clef 27B as an 8-bit copy, with a state of 15,000 tokens: 40.4 s the
 first time, 0.48 s with one question on the kept state, 1.89 s with five
 and 6.05 s with twenty.
 
+elephant-1 keeps states the same way (2 GB by default): with a
+15,000-token state, 10.6 s the first time and 0.12 s for one question on
+the kept state, 0.57 s for five (bf16, table above).
+
 H2O-Lightning keeps states the same way (2 GB by default): with a
 28,800-token state, 12.2 s the first time and 0.20 s for one question on
 the kept state, 0.69 s for five (bf16, table above).
@@ -413,6 +449,23 @@ uniform 4-bit moves probabilities by up to 0.567 (mean 0.046) and
 changes 35 of 276 top answers, 30 of them clear ones; keep the smallest
 models at full size or 8-bit.
 
+elephant-1 copies on its parity set (the 67 answered requests below, 166
+questions, up to 32,768 tokens), against the release's engine in bf16
+on MPS; brackets as above. mlx-decision in bf16 is the first row:
+
+| Model | Disk | Peak memory | Mean / max probability difference | Changed answers |
+|---|---|---|---|---|
+| bf16 (as released) | 17.5 GB | 20.0 GB | 0.001 / 0.039 | 0 (0) |
+| 8-bit (`-q`) | 8.7 GB | 13.3 GB | 0.002 / 0.025 | 0 (0) |
+| uniform 4-bit (`-q --bits 4`) | 5.0 GB | 9.6 GB | 0.016 / 0.336 | 9 (8) |
+
+mammoth-1 was stored as an 8-bit copy by `download --bits 8` (26.2 GB,
+33.3 GB at its peak on the same set): its top answers agree with
+elephant-1 in bf16 on 153 of the 166 questions; the other 13 are
+judgement calls (sentiment, adjacent levels, urgency, the language of
+a mixed thread). Making the copy took about 57 GB of memory, since the
+release's first weight file (49.8 GB) is read at once.
+
 H2O-Lightning copies on its parity set (the 100 answered requests below,
 271 questions, the answers before the yes/no floor), against the release's code in bf16 on
 MPS; brackets as above. mlx-decision in bf16 is the first row:
@@ -482,6 +535,19 @@ probability.
   d3-lite 0.027, d3-edge 0.030, d3-nano 0.058 (one 255-option question
   where its release moves 0.026 between MPS and CPU; elsewhere within
   0.025). d3 27B was not run.
+- Base Labs: 71 requests (the 50 text requests of the 63 above plus 21
+  of its own: every question type twice in one request, no
+  instructions, empty and partial yes/no criteria, 1, 26, 27 and 256
+  options, 11 levels, states ending in a space, newlines, `<` or
+  `</state`, chat markup in the state) against the release's engine.
+  The prompt, token ids and the shared prefix's length are the same for
+  every question; the release refuses the same three requests (over
+  32,768 tokens, 256 options, 11 levels), and mlx-decision's wire format
+  also a one-level score, which the release takes. In bf16 on MPS, as
+  the release batches them: 166 questions, largest difference 0.039 (a
+  near tie), mean 0.0010, no changed answer. On small random models in
+  both releases' shapes with their files, on the CPU: within 0.000001.
+  mammoth-1 was not run against the release.
 - H2O-Lightning: 102 requests (the 97 above plus 5 of its own: empty
   instructions, empty option descriptions, images inside the state, five
   images, a yes/no question with `yes` / `no` option ids) against the
@@ -548,18 +614,18 @@ Accuracy / macro-F1 / ECE (expected calibration error of the top
 probability, lower is better), in percent; for SST-5 also the mean
 absolute error of the expected level, in levels. A `noul` answer counts
 as yes at a probability of 0.5 or more; a `score` answer's most likely
-level is its prediction. clef-flash, d3-flash, H2O-Lightning and d1-3B ran in bf16, Clef
+level is its prediction. clef-flash, d3-flash, elephant-1, H2O-Lightning and d1-3B ran in bf16, Clef
 27B and pplx v1.1 as 8-bit copies; H2O-Lightning with its yes/no floor on, as
 released (it moves Offensive's probabilities, never an answer); Jev is TypeSafe AI's hosted model (`typesafe/jev-1.14.0`, run on
 2026-10-20), and its column needs a Jev account.
 
-| Benchmark | clef-flash | clef (8-bit) | pplx v1.1 (8-bit) | d3-flash | H2O-Lightning-4B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 85.8 / 87.3 / 3.5 | 85.2 / 86.8 / 4.7 | 86.6 / 86.8 / 5.5 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.6 / 3.6 |
-| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 83.8 / 77.7 / 3.6 | 82.1 / 76.3 / 5.0 | 83.1 / 78.7 / 5.3 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.0 / 77.3 / 4.0 |
-| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 64.3 / 64.5 / 11.4 | 59.9 / 59.9 / 18.3 | 55.7 / 55.8 / 16.6 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 70.2 / 70.5 / 11.2 |
-| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 95.2 / 95.2 / 2.4 | 84.6 / 84.6 / 6.1 | 86.2 / 85.9 / 4.5 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 2.3 |
-| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 57.2 / 52.4 / 2.5 / 0.50 | 57.3 / 52.2 / 1.6 / 0.52 | 56.8 / 54.3 / 1.6 / 0.54 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.2 / 55.1 / 16.2 / 0.50 |
+| Benchmark | clef-flash | clef (8-bit) | pplx v1.1 (8-bit) | d3-flash | elephant-1 | H2O-Lightning-4B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 85.8 / 87.3 / 3.5 | 89.6 / 89.3 / 3.3 | 85.2 / 86.8 / 4.7 | 86.6 / 86.8 / 5.5 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.6 / 3.6 |
+| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 83.8 / 77.7 / 3.6 | 82.4 / 75.9 / 5.0 | 82.1 / 76.3 / 5.0 | 83.1 / 78.7 / 5.3 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.0 / 77.3 / 4.0 |
+| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 64.3 / 64.5 / 11.4 | 74.5 / 74.4 / 5.9 | 59.9 / 59.9 / 18.3 | 55.7 / 55.8 / 16.6 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 70.2 / 70.5 / 11.2 |
+| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 95.2 / 95.2 / 2.4 | 96.8 / 96.8 / 1.7 | 84.6 / 84.6 / 6.1 | 86.2 / 85.9 / 4.5 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 2.3 |
+| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 57.2 / 52.4 / 2.5 / 0.50 | 53.9 / 51.2 / 10.0 / 0.52 | 57.3 / 52.2 / 1.6 / 0.52 | 56.8 / 54.3 / 1.6 / 0.54 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.2 / 55.1 / 16.2 / 0.50 |
 
 Notes:
 - No model refused an example or had its input cut: every state fits
@@ -571,11 +637,19 @@ Notes:
   models on TREC and OpenBookQA; d1-3B, at 3B, is level with it (ahead
   on TREC, Offensive and OpenBookQA, behind on ANLI round 3). The two
   share the lowest calibration error on SST-5 (1.6).
+- elephant-1, at 9B, is the only local model ahead of Jev on ANLI round 3
+  (74.5 against 70.2, with the best calibration there, 5.9), level with
+  pplx v1.1 on OpenBookQA and between d3-flash and the Clef models on
+  TREC; it trails all the large models on SST-5 (53.9). Its model card
+  lists public decision data among the training data without naming
+  the datasets, so whether ANLI's training split was among them is not
+  known.
 - About 28% of the Offensive tweets are offensive. Laya marks too few of
   them (laya: 65 of 860), Julia too many (726 of 860). On TREC, Julia
   answers 453 of 500 questions with its first two options.
 - Run times on the M5 Pro, for the whole suite: Laya and Julia under a
-  minute, d1-3B 3 minutes, H2O-Lightning 11, d3-flash 13, clef-flash 22,
+  minute, d1-3B 3 minutes, H2O-Lightning 11, d3-flash 13, elephant-1 19,
+  clef-flash 22,
   pplx v1.1 (8-bit) 44,
   Clef 27B (8-bit) 74.
 

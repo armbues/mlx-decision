@@ -6,6 +6,35 @@ All notable changes to this project are documented here. The format follows
 [docs/STABILITY.md](docs/STABILITY.md) calls stable does not break before
 2.0 (before 1.0, minor versions could change the interface).
 
+## [Unreleased]
+
+### Added
+
+- Base Labs' decision models (Baseten): `baselabs/elephant-1` (9B) and
+  `baselabs/mammoth-1` (27B), text only, through the same API, `run`,
+  `chat`, `server`, `mcp`, `benchmark`, `training` and the Studio, and
+  in the `download` menu after d3. A request's state is read once, its
+  attention looking both ways over it as the models were trained; the
+  questions then run together off it, each seeing the state and itself
+  but not the other questions, and the answer is read out under letter
+  codes. Recent states are kept, as for Clef, so new questions on a
+  recent state cost a fraction of a second. Up to 255 options and 2 to
+  10 score levels; the input limit is per question, 16,384 tokens by
+  default (the length they were trained on), raised up to 262,144 with
+  `--max-input-tokens`; longer input is refused, never cut. Images are
+  refused. `convert` writes 8-bit, 4-bit and mixed-precision copies and
+  `download --bits` stores 8-bit or 4-bit ones; only the LM head's rows
+  for the answer codes are kept, in float32. The prompt matches the
+  release's runtime token for token on the whole test set; elephant-1
+  in bf16 is within 0.039 of that runtime in bf16, no answer changed, and
+  3.6 times as fast. On the five benchmarks elephant-1 is the best local
+  model on entailment, ahead of Jev (ANLI round 3: 74.5%), and level with
+  pplx's 27B on science questions (OpenBookQA: 96.8%). mammoth-1 was only
+  checked as an 8-bit copy.
+- The readout fit (`training fit --method readout`, `auto`'s choice)
+  trains Base Labs' answer-code rows, as for pplx, d3, H2O-Lightning and
+  d1.
+
 ## [1.0.0] - 2026-10-24
 
 The Studio: mlx-decision in the browser, for trying questions, comparing

@@ -152,6 +152,8 @@ suggests one by your Mac's memory.
 | Perplexity's [pplx-decider-flash-v1.2](https://huggingface.co/perplexity-ai/pplx-decider-flash-v1.2) | 4B | text, images | 9.1 GB (8-bit: 5.1 GB, 4-bit: 3.0 GB) | all questions of a request in one pass; distilled from the 27B |
 | Perplexity's [pplx-decider-v1.2](https://huggingface.co/perplexity-ai/pplx-decider-v1.2) | 27B | text, images | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | as flash, and more accurate |
 | vLLM Semantic Router's [d3-flash](https://huggingface.co/vllm-sr/d3-flash) | 9B | text, images | 19 GB (8-bit: 12 GB) | entailment, knowledge, calibrated scores; five more sizes from 0.6B to 27B |
+| Base Labs' [elephant-1](https://huggingface.co/baselabs/elephant-1) | 9B | text | 18 GB (8-bit: 11 GB) | entailment and knowledge, calibrated; a request's questions share one pass over the state |
+| Base Labs' [mammoth-1](https://huggingface.co/baselabs/mammoth-1) | 27B | text | 8-bit: 33 GB | as elephant-1; not measured here beyond a check of its 8-bit copy |
 | H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 13 GB (8-bit: 9 GB, 4-bit: 7 GB) | long states and many questions, calibrated scores |
 | LiquidAI's [d1-3B](https://huggingface.co/LiquidAI/d1-3B) | 3B | text, many languages | 12 GB | small and fast, many questions on one state; commercial use limited by its licence |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 1.8 GB | topic classification of English text |
@@ -181,11 +183,12 @@ AI's hosted model, for comparison.
 | clef (8-bit) | 96.4 | **81.0** | 55.2 | 95.4 | 57.6 |
 | pplx v1.1 27B (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | **58.0** |
 | d3-flash | 85.8 | 77.7 | 64.3 | 95.2 | 57.2 |
+| elephant-1 | 89.6 | 75.9 | **74.5** | **96.8** | 53.9 |
 | H2O-Lightning-4B | 85.2 | 76.3 | 59.9 | 84.6 | 57.3 |
 | d1-3B | 86.6 | 78.7 | 55.7 | 86.2 | 56.8 |
 | laya | 79.0 | 61.9 | 39.5 | 39.2 | 35.1 |
 | Julia-1 | 16.0 | 37.9 | 33.2 | 33.2 | 36.7 |
-| Jev | 92.8 | 77.3 | **70.2** | 96.0 | 57.2 |
+| Jev | 92.8 | 77.3 | 70.2 | 96.0 | 57.2 |
 
 TREC (the kind of answer a question asks for, 6 options), ANLI
 (entailment, 3) and OpenBookQA (science, 4) are choices, scored by
@@ -193,7 +196,10 @@ accuracy in percent; TweetEval Offensive is a yes/no question, scored
 by macro-F1; SST-5 rates sentiment on 5 levels, scored by the accuracy
 of the most likely level. Clef and pplx v1.1 are level with Jev or
 ahead of it on four of the five; on entailment pplx comes close to Jev,
-Clef does not. The
+Clef does not. elephant-1, a 9B model, is the best on entailment, ahead
+of Jev, and level with the 27B pplx on science questions (its model card
+lists public decision data among its training data without naming the
+datasets). The
 small models are near chance on entailment and science questions, as
 their model cards lead one to expect. pplx v1.1 is the earlier release
 of the 27B; v1.2 and flash, the releases in the model table, are not
@@ -269,12 +275,13 @@ Questions and bug reports go to the
 
 mlx-decision is an independent open-source project, not affiliated with or
 endorsed by Cloudflare, Perplexity, the vLLM Semantic Router project,
-H2O.ai, LiquidAI, TypeSafe AI, Convai Innovations or Supersonic Labs. Its server speaks a request and response format
+Baseten (Base Labs), the OneJev project, H2O.ai, LiquidAI, TypeSafe AI, Convai Innovations or Supersonic Labs. Its server speaks a request and response format
 compatible with TypeSafe AI's public Jev API. Clef and clef-flash
 (Cloudflare), pplx-decider (Perplexity), the d3 models (vLLM Semantic
 Router), H2O-Lightning (H2O.ai), Laya
 (Convai Innovations) and Julia 1 (Supersonic Labs) are used under their
-Apache-2.0 licences, d1-3B (LiquidAI) under the LFM Open License v1.0;
+Apache-2.0 licences, elephant-1 and mammoth-1 (Base Labs) under the MIT
+licence, d1-3B (LiquidAI) under the LFM Open License v1.0;
 this package downloads them from Hugging Face and does not ship their
 weights.
 
@@ -288,7 +295,8 @@ preprocessing, vision tower, image positions and the ModernBERT encoder
 are ported from [transformers](https://github.com/huggingface/transformers);
 the pplx prompts are ported from pplx-decider's releases (v1.1, and v1.2's
 joint request format), the d3 prompt from
-d3-flash's; the H2O-Lightning
+d3-flash's, the Base Labs prompt from [OneJev](https://github.com/OmniJev/OneJev),
+which serves Base Labs' models; the H2O-Lightning
 prompt and the lifting of images out of the state from H2O-Lightning's
 release; the d1 prompt and answer reading were written from d1-3B's
 documented and observed behaviour, without its release's code; the Laya and Julia
@@ -300,4 +308,5 @@ Apache-2.0). The Studio's page ships
 [htm](https://github.com/developit/htm) (Apache-2.0). Their licence texts are in `LICENSES/`. The test photos are
 public domain or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep
 their own licence (Clef, clef-flash, pplx-decider, d3, H2O-Lightning,
-Laya, Julia 1: Apache-2.0; d1-3B: LFM Open License v1.0).
+Laya, Julia 1: Apache-2.0; elephant-1, mammoth-1: MIT; d1-3B: LFM Open
+License v1.0).

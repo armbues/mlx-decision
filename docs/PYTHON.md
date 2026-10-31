@@ -96,7 +96,7 @@ errors below for memory and platform.
 ## Loading options
 
 `load` takes options per model: `max_input_tokens` changes the input limit
-(Laya and Julia up to 8,192, d3 and pplx v1.2 up to 262,144; pplx v1.1,
+(Laya and Julia up to 8,192, d3, Base Labs and pplx v1.2 up to 262,144; pplx v1.1,
 H2O-Lightning and d1 only lower),
 `strict_encoding=False` lets Julia cut what it would otherwise refuse,
 `dtype` sets Laya's and Julia's precision (default float16),

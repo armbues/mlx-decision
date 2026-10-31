@@ -6,6 +6,7 @@ const FAMILIES = {
   clef: ["Cf", "#e8730c"],
   pplx: ["px", "#1f8a8a"],
   d3: ["d3", "#5b5bd6"],
+  baselabs: ["BL", "#8a5a33"],
   h2o: ["H2", "#d4a20b"],
   d1: ["d1", "#2f7dd1"],
   laya: ["La", "#2e9d5b"],

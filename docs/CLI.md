@@ -52,7 +52,7 @@ it as JSON), and questions from a JSON file with `-q questions.json`
 response body. `--image FILE` (repeatable) sends images along with the
 state (Clef, pplx, d3, H2O-Lightning). `--max-input-tokens N` (also on `chat`,
 `server` and `mcp`) changes the model's input limit, e.g. to give Laya up
-to 8,192 tokens or d3 and pplx v1.2 up to 262,144; `--noul-floor` changes H2O-Lightning's
+to 8,192 tokens or d3, Base Labs and pplx v1.2 up to 262,144; `--noul-floor` changes H2O-Lightning's
 [yes/no floor](MODELS.md#h2o-lightning).
 
 `mlx-decision --version` prints the installed version.
@@ -201,7 +201,7 @@ and the next download of the model resumes them). `--events` prints the
 progress as JSON lines for other programs, as [`training fit`](TRAINING.md#progress-events-cancel)
 does, and asks nothing.
 
-Clef, pplx, d3 and H2O-Lightning models can also be stored quantized. After the model, the menu asks
+Clef, pplx, d3, Base Labs and H2O-Lightning models can also be stored quantized. After the model, the menu asks
 for full size, 8-bit or 4-bit, with the size of each and which of them fit
 in the Mac's memory (the largest that fits is the default); `--bits 8` or
 `--bits 4` chooses without asking:
@@ -214,7 +214,9 @@ mlx-decision run -m Cloudflare/clef -s "My card was charged twice." --noul "Is i
 The full-size weight files are then fetched one at a time, quantized and
 deleted, so the full-size model never has to fit in memory or on disk:
 Clef 27B in 8-bit takes about 30 GB on disk, plus one 5 GB file while
-the download runs. The result is the same as running
+the download runs. Each file is read whole, so memory must hold the
+largest one: mammoth-1's first file is 49.8 GB, and storing it quantized
+takes about 57 GB of memory. The result is the same as running
 [convert](#quantizing-convert) on a full download. In the Hugging
 Face cache it takes the place of the repo's files, so `-m
 Cloudflare/clef` loads it without fetching anything. `hf cache ls` and
@@ -223,7 +225,7 @@ as changed, since it no longer holds the repo's files.
 
 ## Quantizing: `convert`
 
-Laya, Julia and d1 load as released. Clef, pplx, d3 and H2O-Lightning can be
+Laya, Julia and d1 load as released. Clef, pplx, d3, Base Labs and H2O-Lightning can be
 written as a smaller copy:
 
 ```bash
