@@ -65,7 +65,6 @@ END_TO_END = [
     "d3_falsy_instructions",
     "d3_noul_empty_false",
     "d3_choice_empty_description",
-    "d3_score_mixed_levels",
     "d3_image_null_state",
     "image_dog_claim",
     "image_tall_painting",
@@ -74,6 +73,9 @@ END_TO_END = [
     "image_enlarged",
     "image_tiny",
 ]
+# Requests the release answers and mlx-decision refuses, as the Jev API does:
+# score levels that are not text, an object or a list.
+REFUSED_HERE = {"d3_score_mixed_levels": ("questions.q.criteria.0", "a score level is text")}
 
 
 @pytest.fixture(scope="module")
@@ -125,7 +127,7 @@ def test_codes_are_the_releases(release):
     assert (temperature, causal) == (1.0, False)
 
 
-@pytest.mark.parametrize("case_id", CASE_IDS)
+@pytest.mark.parametrize("case_id", [c for c in CASE_IDS if c not in REFUSED_HERE])
 def test_token_ids_equal_the_release(encoder, case_id):
     """Token ids as the release's runtime makes them, image grids included."""
     expected = REFERENCE[case_id]
@@ -154,6 +156,14 @@ def test_token_ids_equal_the_release(encoder, case_id):
         assert len(question.input_ids) == reference["tokens"], question.question_id
         assert digest(question.input_ids) == reference["ids_sha256"], question.question_id
         assert len(question.option_ids) == reference["options"]
+
+
+@pytest.mark.parametrize("case_id", sorted(REFUSED_HERE))
+def test_refuses_what_jev_refuses(case_id):
+    param, message = REFUSED_HERE[case_id]
+    with pytest.raises(DecisionError, match=message) as error:
+        request(case_id)
+    assert error.value.param == param
 
 
 @pytest.fixture(scope="module")
@@ -249,7 +259,7 @@ def test_bf16_answers_as_the_release():
     model = mlx_decision.load(path, max_input_tokens=INPUT_TOKEN_LIMIT)
     differences, worst, decided_flips = [], (0.0, None), []
     for case_id, expected in reference.items():
-        if "refused" in expected:
+        if "refused" in expected or case_id in REFUSED_HERE:
             continue
         # Questions the release refuses are left out (the token test checks them).
         expected = {q: e for q, e in expected.items() if "refused" not in e}

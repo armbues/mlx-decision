@@ -651,14 +651,19 @@ def test_speed_comes_from_the_records_on_this_chip(studio):
         assert time.monotonic() < deadline, speed("fake")
         time.sleep(0.02)
     measured = speed("fake")
-    assert measured["count"] == 2 and measured["median_ms"] > 0
+    # The fake answers in well under 0.05 ms on a fast chip, so the median
+    # (rounded to 0.1 ms) can be 0.0; the records keep the measured time.
+    assert measured["count"] == 2 and measured["median_ms"] >= 0
     assert measured["tokens_min"] <= measured["tokens_max"]
     from mlx_decision.machine import sysctl
 
     assert measured["chip"] == sysctl("machdep.cpu.brand_string")
-    # A record from another Mac (a synced workspace) does not count here.
     models = studio.app_state.workspace
-    fingerprint = next(iter((models.root / "speed").glob("*.jsonl"))).stem
+    records = next(iter((models.root / "speed").glob("*.jsonl")))
+    lines = [json.loads(text) for text in records.read_text().splitlines()]
+    assert len(lines) == 2 and all(entry["latency_ms"] > 0 for entry in lines)
+    # A record from another Mac (a synced workspace) does not count here.
+    fingerprint = records.stem
     models.record_speed(fingerprint, {"chip": "Apple M1", "latency_ms": 1.0, "input_tokens": 3})
     assert speed("fake")["count"] == 2
     assert speed("seeing") is None
