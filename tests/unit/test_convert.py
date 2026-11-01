@@ -396,7 +396,9 @@ def test_a_shard_is_never_held_whole(release, tmp_path, monkeypatch):
     with mx.stream(mx.cpu):
         mx.clear_cache()
         mx.reset_peak_memory()
+        # Models other tests loaded stay in memory: count only what converting adds.
+        before = mx.get_active_memory()
         qwen_load.convert_text_weights(config, tmp_path / "out", [shard], bits=8)
-        peak = mx.get_peak_memory()
+        peak = mx.get_peak_memory() - before
     assert len(sizes) > 20
     assert peak < 2 * max(sizes) < sum(sizes) / 4
