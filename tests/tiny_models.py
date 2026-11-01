@@ -866,13 +866,13 @@ LFM3_VISION = {
 }
 
 
-def lfm3_vl_config(text: dict | None = None) -> dict:
+def lfm3_vl_config(text: dict | None = None, vision: dict | None = None) -> dict:
     """A tiny LFM3-VL ``config.json`` in the release's layout."""
     return {
         "architectures": ["Lfm3VlForConditionalGeneration"],
         "model_type": "lfm3_vl",
         "text_config": text or LFM3_TEXT,
-        "vision_config": LFM3_VISION,
+        "vision_config": vision or LFM3_VISION,
         "downsample_factor": 2,
         "projector_hidden_size": 48,
         "projector_hidden_act": "gelu",
@@ -884,9 +884,12 @@ def lfm3_vl_config(text: dict | None = None) -> dict:
     }
 
 
-def write_lfm3_vl(folder: Path, seed: int = 0, text: dict | None = None) -> Path:
+def write_lfm3_vl(
+    folder: Path, seed: int = 0, text: dict | None = None, config: dict | None = None
+) -> Path:
     """An LFM3-VL folder: tiny text model, vision tower and projector, float32,
-    under the release's names (PyTorch's convolution kernels, tied embeddings)."""
+    under the release's names (PyTorch's convolution kernels, tied embeddings).
+    ``config`` replaces the whole ``config.json`` (its sizes must be tiny)."""
     from mlx.utils import tree_flatten
 
     from mlx_decision.backbones.lfm3.language import Model as Lfm3Model
@@ -895,7 +898,7 @@ def write_lfm3_vl(folder: Path, seed: int = 0, text: dict | None = None) -> Path
     from mlx_decision.backbones.lfm3.vl_config import TextConfig as Lfm3TextConfig
 
     folder.mkdir(parents=True, exist_ok=True)
-    config = lfm3_vl_config(text)
+    config = config or lfm3_vl_config(text)
     shapes = {}
     # Lazily built: only the names and shapes are used, nothing is allocated.
     for name, value in tree_flatten(
@@ -914,3 +917,35 @@ def write_lfm3_vl(folder: Path, seed: int = 0, text: dict | None = None) -> Path
     mx.save_safetensors(str(folder / "model.safetensors"), tensors, metadata={"format": "pt"})
     (folder / "config.json").write_text(json.dumps(config, indent=2) + "\n")
     return folder
+
+
+D1LFM3_FILES = (
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "processor_config.json",
+    "calibration.json",
+)
+
+
+def write_d1lfm3(folder: Path, files_from: Path, seed: int = 0) -> Path:
+    """A d1-2B release folder: tiny LFM3 text model and vision tower, float32.
+
+    ``files_from`` (a release folder, or its small files) supplies
+    ``config.json`` and the tokenizer, processor and calibration files; the
+    config keeps the release's settings (the ``d1_*`` fields, special and image
+    token ids, the 128,000-token vocabulary, the processor's 16-pixel patches)
+    with the text model, tower and projector shrunk to ``LFM3_TEXT`` and
+    ``LFM3_VISION`` sizes.
+    """
+    import shutil
+
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in D1LFM3_FILES:
+        shutil.copy(Path(files_from) / name, folder / name)
+    config = json.loads((Path(files_from) / "config.json").read_text())
+    release = config["text_config"]
+    keep = ("vocab_size", "pad_token_id", "bos_token_id", "eos_token_id", "max_position_embeddings")
+    config["text_config"] = {**LFM3_TEXT, **{key: release[key] for key in keep if key in release}}
+    config["vision_config"] = {**LFM3_VISION, "patch_size": config["vision_config"]["patch_size"]}
+    config["projector_hidden_size"] = 48
+    return write_lfm3_vl(folder, seed=seed, config=config)
