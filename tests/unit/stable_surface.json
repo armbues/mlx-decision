@@ -1120,6 +1120,23 @@
     "position": 2
    }
   },
+  "d1lfm3": {
+   "max_image_pixels": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 3
+   },
+   "max_input_tokens": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 1
+   },
+   "vision": {
+    "default": false,
+    "kind": "positional_or_keyword",
+    "position": 2
+   }
+  },
   "d3": {
    "max_image_pixels": {
     "default": null,

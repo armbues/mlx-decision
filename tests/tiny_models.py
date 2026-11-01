@@ -927,7 +927,43 @@ D1LFM3_FILES = (
 )
 
 
-def write_d1lfm3(folder: Path, files_from: Path, seed: int = 0) -> Path:
+D1LFM3_SPECIAL = [
+    "<|pad|>",
+    "<|startoftext|>",
+    "<|im_start|>",
+    "<|im_end|>",
+    "<|vision_start|>",
+    "<|image|>",
+    "<|vision_end|>",
+    "<|video|>",
+]
+D1LFM3_WORDS = ["[UNK]", "user", "assistant", "QUESTION", ":", "Reply", "with", "yes", "no"]
+D1LFM3_WORDS += ["Yes", "No", "YES", "NO", "the", "option", "code", "only", "Options", "think"]
+D1LFM3_WORDS += ["<", ">", "/", ".", "-", "a", "single", "digit", "or", "billing", "technical"]
+D1LFM3_SETTINGS = {
+    "d1_attention": "set",
+    "d1_codes": 2,
+    "d1_set_size": 16,
+    "d1_vision_max_pixels": 1638400,
+    "auto_map": {"AutoModel": "modeling_d1_lfm3_vl.D1Model"},
+}
+
+
+def write_d1lfm3_tokenizer(folder: Path) -> dict[str, int]:
+    """A word-level tokenizer for a d1 LFM3 folder without release files; the
+    special tokens' ids."""
+    codes = [chr(c) for c in range(65, 91)] + [chr(c) for c in range(97, 123)]
+    codes += [str(i) for i in range(10)] + [f"{i:02d}" for i in range(100)]
+    words = list(dict.fromkeys(D1LFM3_WORDS + codes + D1LFM3_SPECIAL))
+    vocab = {word: i for i, word in enumerate(words)}
+    tokenizer = Tokenizer(models.WordLevel(vocab, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.add_special_tokens(D1LFM3_SPECIAL)
+    tokenizer.save(str(folder / "tokenizer.json"))
+    return {token: vocab[token] for token in D1LFM3_SPECIAL} | {"vocab": len(vocab)}
+
+
+def write_d1lfm3(folder: Path, files_from: Path | None = None, seed: int = 0) -> Path:
     """A d1-2B release folder: tiny LFM3 text model and vision tower, float32.
 
     ``files_from`` (a release folder, or its small files) supplies
@@ -935,11 +971,40 @@ def write_d1lfm3(folder: Path, files_from: Path, seed: int = 0) -> Path:
     config keeps the release's settings (the ``d1_*`` fields, special and image
     token ids, the 128,000-token vocabulary, the processor's 16-pixel patches)
     with the text model, tower and projector shrunk to ``LFM3_TEXT`` and
-    ``LFM3_VISION`` sizes.
+    ``LFM3_VISION`` sizes. Without it: a word-level tokenizer
+    (``D1LFM3_WORDS``, the codes and special tokens), the release's settings
+    (``D1LFM3_SETTINGS``), its temperature and a processor for the tiny tower.
     """
     import shutil
 
     folder.mkdir(parents=True, exist_ok=True)
+    if files_from is None:
+        ids = write_d1lfm3_tokenizer(folder)
+        text = {**LFM3_TEXT, "vocab_size": ids["vocab"], "pad_token_id": ids["<|pad|>"]}
+        text |= {"bos_token_id": ids["<|startoftext|>"], "eos_token_id": ids["<|im_end|>"]}
+        config = lfm3_vl_config(text) | D1LFM3_SETTINGS
+        config |= {"image_token_id": ids["<|image|>"], "video_token_id": ids["<|video|>"]}
+        config |= {
+            "vision_start_token_id": ids["<|vision_start|>"],
+            "vision_end_token_id": ids["<|vision_end|>"],
+            "architectures": ["D1Model"],
+        }
+        calibration = {"default": 1.337398453966105, "temperatures": {}, "tables": {}}
+        (folder / "calibration.json").write_text(json.dumps(calibration) + "\n")
+        processor = {
+            "image_processor": {
+                "patch_size": LFM3_VISION["patch_size"],
+                "merge_size": 2,
+                "temporal_patch_size": 2,
+                "size": {"longest_edge": 16777216, "shortest_edge": 1024},
+                "image_mean": [0.5, 0.5, 0.5],
+                "image_std": [0.5, 0.5, 0.5],
+                "rescale_factor": 1 / 255,
+            }
+        }
+        (folder / "processor_config.json").write_text(json.dumps(processor) + "\n")
+        (folder / "LICENSE").write_text("test licence\n")
+        return write_lfm3_vl(folder, seed=seed, config=config)
     for name in D1LFM3_FILES:
         shutil.copy(Path(files_from) / name, folder / name)
     config = json.loads((Path(files_from) / "config.json").read_text())

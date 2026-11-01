@@ -16,6 +16,7 @@ from tiny_models import (
     write_baselabs,
     write_clef,
     write_d1,
+    write_d1lfm3,
     write_d3,
     write_h2o,
     write_marker,
@@ -31,6 +32,7 @@ def _models(root: Path) -> dict[str, Path]:
         "d3": write_d3(root / "d3"),
         "baselabs": write_baselabs(root / "baselabs"),
         "h2o": write_h2o(root / "h2o"),
+        "d1lfm3": write_d1lfm3(root / "d1lfm3"),
         "d1": write_d1(root / "d1"),
         "laya": write_marker(root / "laya", "laya"),
         "julia": write_marker(root / "julia", "julia"),
@@ -69,6 +71,8 @@ CASES = [
     ("baselabs-8bit", {}),
     ("h2o", {}),
     ("h2o", {"max_input_tokens": 1000, "noul_floor": 0, "prefix_cache_gb": 0}),
+    ("d1lfm3", {}),
+    ("d1lfm3", {"max_input_tokens": 100_000, "max_image_pixels": 100_000, "vision": True}),
     ("d1", {}),
     ("d1", {"max_input_tokens": 1000}),
     ("laya", {}),
@@ -118,6 +122,8 @@ def test_image_limits(models):
     assert limits("d3", max_image_pixels=70000) == (70000, None)
     # H2O: the serve config's image block.
     assert limits("h2o") == (1048576, 4)
+    assert limits("d1lfm3") == (1638400, None)
+    assert limits("d1lfm3", max_image_pixels=100_000) == (100_000, None)
     assert limits("baselabs") == limits("d1") == limits("laya") == (None, None)
 
 
@@ -137,6 +143,8 @@ REFUSED = [
     ("d3", {"max_input_tokens": 0}),
     ("baselabs", {"max_input_tokens": 262145}),
     ("h2o", {"max_input_tokens": 50000}),
+    ("d1lfm3", {"max_input_tokens": 128_001}),
+    ("d1lfm3", {"max_image_pixels": 1000}),
     ("d1", {"max_input_tokens": 40000}),
     ("laya", {"max_input_tokens": 8}),
     ("julia", {"max_input_tokens": 100000}),

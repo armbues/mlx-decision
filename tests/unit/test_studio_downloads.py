@@ -52,7 +52,9 @@ def check(studio, repo):
 def test_the_families_in_the_public_order_with_their_models(make_studio):
     offered = make_studio().get("/studio/api/downloads").json()
     titles = [family["title"] for family in offered["families"]]
-    assert titles == ["Clef", "pplx", "d3", "Base Labs", "H2O-Lightning", "d1", "Laya", "Julia"]
+    assert titles == [
+        "Clef", "pplx", "d3", "Base Labs", "H2O-Lightning", "d1 LFM3", "d1", "Laya", "Julia"
+    ]  # fmt: skip
     clef = offered["families"][0]
     assert clef["maker"] and clef["summary"]
     assert clef["models"][0]["repo"] == "Cloudflare/clef-flash"
@@ -204,7 +206,7 @@ def test_first_picks_one_small_one_medium_one_large_that_fit():
         "SupersonicLabs/Julia-1", "convaiinnovations/laya", "convaiinnovations/laya-multilingual",
         "convaiinnovations/laya-typed-decisions", "vllm-sr/d3-edge", "vllm-sr/d3-lite",
     }  # fmt: skip
-    assert seen["medium"] == {"vllm-sr/d3-nano", "LiquidAI/d1-3B"}
+    assert seen["medium"] == {"vllm-sr/d3-nano", "LiquidAI/d1-2B", "LiquidAI/d1-3B"}
     assert seen["large"] == {
         "vllm-sr/d3-mini", "h2oai/h2o-lightning-4b", "perplexity-ai/pplx-decider-flash-v1.2"
     }  # fmt: skip

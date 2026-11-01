@@ -467,6 +467,50 @@ register_family(
 )
 
 
+# d1's weights and code (d1-3B, d1-2B) are under the LFM Open License.
+LFM_LICENCE = (
+    "d1's weights are under the LFM Open License v1.0: commercial use is licensed only "
+    "to organisations with less than $10 million in annual revenue (see the LICENSE "
+    "file of the model's repository)."
+)
+
+
+def _d1lfm3_detect(path: Path) -> bool:
+    """An LFM3-VL ``config.json`` whose ``auto_map`` names the d1 model (the JSON alone,
+    for ``download``)."""
+    from .models.d1lfm3.config import is_d1lfm3
+
+    return is_d1lfm3(path)
+
+
+register_family(
+    "d1lfm3",
+    detect=_d1lfm3_detect,
+    loader="mlx_decision.models.d1lfm3.model:load",
+    capabilities="mlx_decision.models.d1lfm3.model:capabilities",
+    listing=Listing("d1 LFM3", "Liquid AI", "LFM3 with questions read in sets; text and images"),
+    known_models=(
+        KnownModel(
+            "LiquidAI/d1-2B",
+            "d1-2B: LiquidAI's 2B decision model (LFM3-VL), text and images",
+            "3.9 GB",
+        ),
+    ),
+    licence=LFM_LICENCE,
+    # Not the release's code, chat template, video settings or evaluation results.
+    files=(
+        "config.json",
+        "calibration.json",
+        "processor_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "model*.safetensors",
+        "LICENSE",
+        "README.md",
+    ),
+)
+
+
 def _d1_detect(path: Path) -> bool:
     """An LFM2-VL ``config.json`` whose ``auto_map`` names the d1 model (the JSON alone,
     for ``download``)."""
@@ -496,11 +540,7 @@ register_family(
             "6.3 GB",
         ),
     ),
-    licence=(
-        "d1's weights are under the LFM Open License v1.0: commercial use is licensed only "
-        "to organisations with less than $10 million in annual revenue (see the LICENSE "
-        "file of the model's repository)."
-    ),
+    licence=LFM_LICENCE,
     # Not the release's code, chat template or image settings (text only).
     files=(
         "config.json",

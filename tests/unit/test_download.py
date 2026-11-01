@@ -132,7 +132,7 @@ def test_an_unsupported_model_needs_yes(hub):
     result = invoke("Qwen/Qwen3.5-9B")
     assert result.exit_code == 1
     assert "not a supported decision model" in result.stderr
-    assert "known families: clef, pplx, d3, baselabs, h2o, d1, laya, julia" in result.stderr
+    assert "known families: clef, pplx, d3, baselabs, h2o, d1lfm3, d1, laya, julia" in result.stderr
     assert len(hub) == 1  # only the JSON files
     result = invoke("Qwen/Qwen3.5-9B", "--yes")
     assert result.exit_code == 0
@@ -221,6 +221,7 @@ def test_the_menu_lists_known_models_and_other():
         "baselabs/elephant-1",
         "baselabs/mammoth-1",
         "h2oai/h2o-lightning-4b",
+        "LiquidAI/d1-2B",
         "LiquidAI/d1-3B",
         "convaiinnovations/laya",
         "convaiinnovations/laya-multilingual",
@@ -228,7 +229,7 @@ def test_the_menu_lists_known_models_and_other():
         "SupersonicLabs/Julia-1",
     ]
     down = "\x1b[B"
-    # Families: Clef, pplx, d3, Base Labs, H2O-Lightning, d1, Laya, Julia, then "Other...".
+    # Families: Clef, pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1, Laya, Julia, then "Other...".
     for typed, expected in [
         ("\r\r", "Cloudflare/clef-flash"),  # Clef, its first model
         (down + "\r\r", "perplexity-ai/pplx-decider-flash-v1.2"),
@@ -236,10 +237,12 @@ def test_the_menu_lists_known_models_and_other():
         (down * 3 + "\r\r", "baselabs/elephant-1"),
         (down * 3 + "\r" + down + "\r", "baselabs/mammoth-1"),
         (down * 4 + "\r", "h2oai/h2o-lightning-4b"),  # one model: no second menu
+        (down * 5 + "\r", "LiquidAI/d1-2B"),
+        (down * 6 + "\r", "LiquidAI/d1-3B"),
         (down * 2 + "\r" + down * 5 + "\r", "vllm-sr/d3-edge"),
         # d3, "Back" (its seventh entry), d3 again (still selected), its second model.
         (down * 2 + "\r" + down * 6 + "\r" + "\r" + down + "\r", "vllm-sr/d3"),
-        (down * 8 + "\rorg/model\r", "org/model"),
+        (down * 9 + "\rorg/model\r", "org/model"),
     ]:
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             pipe.send_text(typed)
