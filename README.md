@@ -182,7 +182,8 @@ AI's hosted model, for comparison.
 |---|---|---|---|---|---|
 | clef-flash | **96.8** | 78.1 | 50.8 | 95.4 | 57.6 |
 | clef (8-bit) | 96.4 | **81.0** | 55.2 | 95.4 | 57.6 |
-| pplx v1.1 27B (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | **58.0** |
+| pplx v1.1 27B (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | 58.0 |
+| pplx-decider-flash-v1.2 | 93.6 | 77.9 | 61.8 | 93.8 | **60.6** |
 | d3-flash | 85.8 | 77.7 | 64.3 | 95.2 | 57.2 |
 | elephant-1 | 89.6 | 75.9 | **74.5** | **96.8** | 53.9 |
 | H2O-Lightning-4B | 85.2 | 76.3 | 59.9 | 84.6 | 57.3 |
@@ -203,9 +204,10 @@ of Jev, and level with the 27B pplx on science questions (its model card
 lists public decision data among its training data without naming the
 datasets). d1-2B, at 1.9B, is level with d1-3B. The
 small models are near chance on entailment and science questions, as
-their model cards lead one to expect. pplx v1.1 is the earlier release
-of the 27B; v1.2 and flash, the releases in the model table, are not
-measured yet. Every cell's macro-F1 and calibration error, the other
+their model cards lead one to expect. pplx-decider-flash-v1.2, at 4B,
+is close to the 27B on answer type and the best of all on sentiment
+(SST-5). pplx v1.1 is the earlier release of the 27B; v1.2 27B, the
+release in the model table, is not measured yet. Every cell's macro-F1 and calibration error, the other
 Laya models and how each model matches its own reference code are in
 [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md#accuracy).
 

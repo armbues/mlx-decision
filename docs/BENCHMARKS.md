@@ -695,18 +695,18 @@ Accuracy / macro-F1 / ECE (expected calibration error of the top
 probability, lower is better), in percent; for SST-5 also the mean
 absolute error of the expected level, in levels. A `noul` answer counts
 as yes at a probability of 0.5 or more; a `score` answer's most likely
-level is its prediction. clef-flash, d3-flash, elephant-1, H2O-Lightning, d1-2B and d1-3B ran in bf16, Clef
+level is its prediction. clef-flash, pplx-decider-flash-v1.2, d3-flash, elephant-1, H2O-Lightning, d1-2B and d1-3B ran in bf16, Clef
 27B and pplx v1.1 as 8-bit copies; H2O-Lightning with its yes/no floor on, as
 released (it moves Offensive's probabilities, never an answer); Jev is TypeSafe AI's hosted model (`typesafe/jev-1.14.0`, run on
 2026-10-20), and its column needs a Jev account.
 
-| Benchmark | clef-flash | clef (8-bit) | pplx v1.1 (8-bit) | d3-flash | elephant-1 | H2O-Lightning-4B | d1-2B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 85.8 / 87.3 / 3.5 | 89.6 / 89.3 / 3.3 | 85.2 / 86.8 / 4.7 | 88.2 / 87.9 / 5.9 | 86.6 / 86.8 / 5.5 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.6 / 3.6 |
-| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 83.8 / 77.7 / 3.6 | 82.4 / 75.9 / 5.0 | 82.1 / 76.3 / 5.0 | 84.9 / 80.7 / 3.5 | 83.1 / 78.7 / 5.3 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.0 / 77.3 / 4.0 |
-| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 64.3 / 64.5 / 11.4 | 74.5 / 74.4 / 5.9 | 59.9 / 59.9 / 18.3 | 52.2 / 52.4 / 12.5 | 55.7 / 55.8 / 16.6 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 70.2 / 70.5 / 11.2 |
-| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 95.2 / 95.2 / 2.4 | 96.8 / 96.8 / 1.7 | 84.6 / 84.6 / 6.1 | 86.2 / 86.3 / 6.6 | 86.2 / 85.9 / 4.5 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 2.3 |
-| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 57.2 / 52.4 / 2.5 / 0.50 | 53.9 / 51.2 / 10.0 / 0.52 | 57.3 / 52.2 / 1.6 / 0.52 | 56.3 / 52.8 / 2.3 / 0.54 | 56.8 / 54.3 / 1.6 / 0.54 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.2 / 55.1 / 16.2 / 0.50 |
+| Benchmark | clef-flash | clef (8-bit) | pplx v1.1 (8-bit) | pplx-decider-flash-v1.2 | d3-flash | elephant-1 | H2O-Lightning-4B | d1-2B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 93.6 / 92.3 / 5.1 | 85.8 / 87.3 / 3.5 | 89.6 / 89.3 / 3.3 | 85.2 / 86.8 / 4.7 | 88.2 / 87.9 / 5.9 | 86.6 / 86.8 / 5.5 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.6 / 3.6 |
+| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 83.7 / 77.9 / 3.5 | 83.8 / 77.7 / 3.6 | 82.4 / 75.9 / 5.0 | 82.1 / 76.3 / 5.0 | 84.9 / 80.7 / 3.5 | 83.1 / 78.7 / 5.3 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.0 / 77.3 / 4.0 |
+| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 61.8 / 61.8 / 15.4 | 64.3 / 64.5 / 11.4 | 74.5 / 74.4 / 5.9 | 59.9 / 59.9 / 18.3 | 52.2 / 52.4 / 12.5 | 55.7 / 55.8 / 16.6 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 70.2 / 70.5 / 11.2 |
+| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 93.8 / 93.7 / 2.5 | 95.2 / 95.2 / 2.4 | 96.8 / 96.8 / 1.7 | 84.6 / 84.6 / 6.1 | 86.2 / 86.3 / 6.6 | 86.2 / 85.9 / 4.5 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 2.3 |
+| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 60.6 / 59.7 / 13.5 / 0.50 | 57.2 / 52.4 / 2.5 / 0.50 | 53.9 / 51.2 / 10.0 / 0.52 | 57.3 / 52.2 / 1.6 / 0.52 | 56.3 / 52.8 / 2.3 / 0.54 | 56.8 / 54.3 / 1.6 / 0.54 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.2 / 55.1 / 16.2 / 0.50 |
 
 Notes:
 - No model refused an example or had its input cut: every state fits
@@ -724,6 +724,12 @@ Notes:
   round 3 (52.2 against 55.7). Its answers depend on which questions
   share a set of 16 and their order (each question here was asked
   alone).
+- pplx-decider-flash-v1.2, at 4B, is close to the 27B pplx v1.1 on TREC
+  (93.6 against 94.0) and the best of all on SST-5 (60.6, macro-F1 59.7),
+  though less well calibrated there (13.5); it trails the 27B by 5 points
+  on ANLI round 3 and 3 on OpenBookQA. Each example was asked as a request
+  with one question, so its joint reading of several questions plays no
+  part here.
 - elephant-1, at 9B, is the only local model ahead of Jev on ANLI round 3
   (74.5 against 70.2, with the best calibration there, 5.9), level with
   pplx v1.1 on OpenBookQA and between d3-flash and the Clef models on
@@ -735,7 +741,7 @@ Notes:
   them (laya: 65 of 860), Julia too many (726 of 860). On TREC, Julia
   answers 453 of 500 questions with its first two options.
 - Run times on the M5 Pro, for the whole suite: Laya and Julia under a
-  minute, d1-2B 2 minutes, d1-3B 3, H2O-Lightning 11, d3-flash 13, elephant-1 19,
+  minute, d1-2B 2 minutes, d1-3B 3, pplx-decider-flash-v1.2 6, H2O-Lightning 11, d3-flash 13, elephant-1 19,
   clef-flash 22,
   pplx v1.1 (8-bit) 44,
   Clef 27B (8-bit) 74.
@@ -762,8 +768,8 @@ within 0.035 (clef-flash), 0.031 (clef), 0.038 (d3-flash), 0.020
 (H2O-Lightning), 0.035 (d1-2B), 0.030 (d1-3B), 0.004 (Laya), 0.018 (Julia) and 0.058
 (pplx-decider-flash-v1.2, on requests up to 4,096 tokens); pplx v1.1 and
 the v1.2 27B were compared on small random models in their layouts
-(within 0.00001), not on the full weights. pplx v1.2 and flash are not
-in the table yet.
+(within 0.00001), not on the full weights. pplx v1.2 27B is not in the
+table yet.
 
 ```bash
 python scripts/accuracy_benchmark.py local --datasets DIR --model MODEL --out results.json

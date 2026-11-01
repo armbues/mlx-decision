@@ -63,8 +63,10 @@ By your Mac's memory, among the models measured on the
   milliseconds); both are weak at entailment and science questions.
 
 pplx-decider-flash-v1.2, the model in the Studio's screenshots, fits
-16 GB Macs (9.1 GB) and asks all questions of a request in one pass,
-but it is not on the benchmarks yet, nor are d3's smaller sizes. Compare
+16 GB Macs (9.1 GB) and asks all questions of a request in one pass; on
+the benchmarks it is close to the 27B pplx v1.1 on answer type (TREC
+93.6%) and the best of all on sentiment (SST-5 60.6%). d3's smaller
+sizes are not on the benchmarks yet. Compare
 in the Studio, on your own examples, says more than any benchmark.
 
 ## How they read a request
@@ -211,8 +213,12 @@ small random models in their layouts, and flash also on its weights:
 in bf16 against the release's code in bf16, the largest difference was
 0.058 per probability (mean 0.002), about what the release's own code
 varies between two runs, and the 8-bit copy chose the same answer for
-296 of 299 questions (the other three near ties). Speed and the
-[accuracy benchmarks](BENCHMARKS.md#accuracy) have not been measured for them yet.
+296 of 299 questions (the other three near ties). On the
+[accuracy benchmarks](BENCHMARKS.md#accuracy) flash (bf16) is close to the 27B
+pplx v1.1 on answer type (TREC 93.6% against 94.0%) and the best of all
+models on sentiment (SST-5 60.6%), behind it on entailment (61.8% against
+66.8%) and science questions (93.8% against 96.8%). Speed against the
+release, and the v1.2 27B on the benchmarks, have not been measured yet.
 
 ### pplx v1.1
 
