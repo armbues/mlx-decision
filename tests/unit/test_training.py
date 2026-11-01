@@ -17,7 +17,15 @@ from mlx_decision.registry import MARKER_FILE
 from mlx_decision.training import Cancelled, Event, fit, plan
 from mlx_decision.training.calibrate import fit_calibration
 from mlx_decision.training.loss import decision_loss
-from tiny_models import write_clef, write_d1, write_d3, write_h2o, write_marker, write_pplx
+from tiny_models import (
+    write_baselabs,
+    write_clef,
+    write_d1,
+    write_d3,
+    write_h2o,
+    write_marker,
+    write_pplx,
+)
 
 URGENT = {"type": "noul", "instructions": "Is it urgent?"}
 
@@ -260,6 +268,7 @@ WRITERS = {
     "pplx": write_pplx,
     "pplx-v1.2": lambda folder: write_pplx(folder, joint="flash"),
     "d3": write_d3,
+    "baselabs": write_baselabs,
     "h2o": write_h2o,
     "d1": write_d1,
     "laya": lambda folder: write_marker(folder, "laya"),

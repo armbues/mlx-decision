@@ -12,7 +12,15 @@ from mlx_decision import DecisionError
 from mlx_decision.convert import convert
 from mlx_decision.model import DecisionModel, check_request
 from mlx_decision.registry import load_backend, static_capabilities
-from tiny_models import write_clef, write_d1, write_d3, write_h2o, write_marker, write_pplx
+from tiny_models import (
+    write_baselabs,
+    write_clef,
+    write_d1,
+    write_d3,
+    write_h2o,
+    write_marker,
+    write_pplx,
+)
 
 
 def _models(root: Path) -> dict[str, Path]:
@@ -21,6 +29,7 @@ def _models(root: Path) -> dict[str, Path]:
         "clef-vision": write_clef(root / "clef-vision", vision=True),
         "pplx": write_pplx(root / "pplx"),
         "d3": write_d3(root / "d3"),
+        "baselabs": write_baselabs(root / "baselabs"),
         "h2o": write_h2o(root / "h2o"),
         "d1": write_d1(root / "d1"),
         "laya": write_marker(root / "laya", "laya"),
@@ -29,8 +38,10 @@ def _models(root: Path) -> dict[str, Path]:
     }
     models["clef-8bit"] = convert(models["clef-vision"], root / "clef-8bit", bits=8)
     models["d3-8bit"] = convert(models["d3"], root / "d3-8bit", bits=8)
+    models["baselabs-8bit"] = convert(models["baselabs"], root / "baselabs-8bit", bits=8)
     models["laya-fit"] = write_fitted(root / "laya-fit", models["laya"])
     models["h2o-fit"] = write_fitted(root / "h2o-fit", models["h2o"])
+    models["baselabs-fit"] = write_fitted(root / "baselabs-fit", models["baselabs"])
     return models
 
 
@@ -53,6 +64,9 @@ CASES = [
     ("d3", {}),
     ("d3", {"max_input_tokens": 100, "max_image_pixels": 70000}),
     ("d3-8bit", {}),
+    ("baselabs", {}),
+    ("baselabs", {"max_input_tokens": 100_000, "prefix_cache_gb": 0}),
+    ("baselabs-8bit", {}),
     ("h2o", {}),
     ("h2o", {"max_input_tokens": 1000, "noul_floor": 0, "prefix_cache_gb": 0}),
     ("d1", {}),
@@ -64,6 +78,7 @@ CASES = [
     ("laya-fit", {}),
     ("laya-fit", {"max_input_tokens": 32}),
     ("h2o-fit", {}),
+    ("baselabs-fit", {"max_input_tokens": 32}),
     ("fake", {}),
     ("fake", {"max_choice_options": 4, "truncates_input": False}),
 ]
@@ -103,7 +118,7 @@ def test_image_limits(models):
     assert limits("d3", max_image_pixels=70000) == (70000, None)
     # H2O: the serve config's image block.
     assert limits("h2o") == (1048576, 4)
-    assert limits("d1") == limits("laya") == (None, None)
+    assert limits("baselabs") == limits("d1") == limits("laya") == (None, None)
 
 
 def test_no_weights_are_read(models, monkeypatch):
@@ -120,6 +135,7 @@ REFUSED = [
     ("clef", {"vision": True}),
     ("pplx", {"max_input_tokens": 9000}),
     ("d3", {"max_input_tokens": 0}),
+    ("baselabs", {"max_input_tokens": 262145}),
     ("h2o", {"max_input_tokens": 50000}),
     ("d1", {"max_input_tokens": 40000}),
     ("laya", {"max_input_tokens": 8}),
