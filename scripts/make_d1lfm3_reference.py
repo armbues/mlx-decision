@@ -130,11 +130,36 @@ def pictures(engine, media_module, media, seqs) -> list[dict]:
                 "size": list(image.size),
                 "capped": list(capped.size),
                 "grid": grid,
-                "patch_means": [round(float(m), 6) for m in means],
+                "patch_means": [round(float(m), 4) for m in means],
             }
         )
         at += patches
     return out
+
+
+# Picture sizes and limits for the release's cap, beyond the parity pictures.
+CAP_SIZES = [(2048, 1364), (4000, 3000), (1281, 1280), (1280, 1281), (5000, 200), (200, 9000)]
+CAP_SIZES += [(1280, 1280), (1279, 1281), (3, 7), (999, 1001)]
+CAP_LIMITS = [None, 1_000_000, 65_536]
+
+
+def picture_caps(media_module, served: int) -> list[dict]:
+    """The release's cap on blank pictures of ``CAP_SIZES`` under each limit."""
+    from PIL import Image
+
+    caps = []
+    for limit in CAP_LIMITS:
+        for width, height in CAP_SIZES:
+            image = Image.new("RGB", (width, height))
+            capped = media_module.cap_pixels(image, limit or served)
+            caps.append(
+                {
+                    "size": [width, height],
+                    "max_pixels": limit or served,
+                    "capped": list(capped.size),
+                }
+            )
+    return caps
 
 
 def record(engine, prompt, media_module, r, max_tokens: int, layouts: bool) -> dict:
@@ -168,10 +193,44 @@ def record(engine, prompt, media_module, r, max_tokens: int, layouts: bool) -> d
             pictures=pictures(engine, media_module, media, seqs),
         )
     if max(len(seq[2]) for seq in seqs) <= max_tokens:
-        ((probabilities, tokens),) = engine.run([request])
+        slots = {}
+        readouts = engine._readouts
+
+        def keep(qs, logz, tempered):
+            # Each question's log-probabilities at its answer slot, as the readout gets them.
+            for q, row in zip(qs, logz, strict=True):
+                slots[id(q)] = row
+            return readouts(qs, logz, tempered)
+
+        engine._readouts = keep
+        try:
+            ((probabilities, tokens),) = engine.run([request])
+        finally:
+            del engine._readouts
         entry["probabilities"] = dict(zip(r["questions"], probabilities, strict=True))
         entry["input_tokens"] = tokens
+        if layouts:
+            entry["logprobs"] = {
+                question_id: logprobs_at(slots[id(q)], groups, engine.tokenizer)
+                for question_id, q, groups in zip(
+                    r["questions"], questions, entry["groups"], strict=True
+                )
+            }
     return entry
+
+
+def logprobs_at(row, groups: list[list[int]], tokenizer) -> dict[str, float]:
+    """A slot's log-probabilities for the scored tokens and other single-token codes
+    (letters, two-letter codes up to AZ, digits, yes and no forms), by token id."""
+    texts = [chr(c) for c in range(65, 91)] + [f"A{chr(c)}" for c in range(65, 91)]
+    texts += [str(i) for i in range(10)] + ["yes", "no", "Yes", "No", " yes", " no"]
+    texts += [" " + chr(c) for c in range(65, 91)]
+    ids = {token for group in groups for token in group}
+    for text in texts:
+        encoded = tokenizer.encode(text, add_special_tokens=False)
+        if len(encoded) == 1:
+            ids.add(encoded[0])
+    return {str(i): float(row[i]) for i in sorted(ids)}
 
 
 def main() -> None:
@@ -209,6 +268,7 @@ def main() -> None:
             "lead": engine.lead,
             "max_pixels": engine.max_pixels,
         }
+        caps = picture_caps(media_module, engine.max_pixels)
         result = {}
         started = time.perf_counter()
         for r in every:
@@ -252,6 +312,7 @@ def main() -> None:
         "settings": settings,
         "max_tokens": args.max_tokens,
         "batched_vs_alone": gap,
+        "picture_caps": caps,
         "requests": result,
     }
     out = OUT / ("reference-bf16.json" if args.model else "reference.json")
