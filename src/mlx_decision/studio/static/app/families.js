@@ -8,6 +8,7 @@ const FAMILIES = {
   d3: ["d3", "#5b5bd6"],
   baselabs: ["BL", "#8a5a33"],
   h2o: ["H2", "#d4a20b"],
+  d1lfm3: ["dL", "#1d5c9e"],
   d1: ["d1", "#2f7dd1"],
   laya: ["La", "#2e9d5b"],
   julia: ["Ju", "#c2417a"],

@@ -50,9 +50,9 @@ The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body. `--image FILE` (repeatable) sends images along with the
-state (Clef, pplx, d3, H2O-Lightning). `--max-input-tokens N` (also on `chat`,
+state (Clef, pplx, d3, H2O-Lightning, d1 LFM3). `--max-input-tokens N` (also on `chat`,
 `server` and `mcp`) changes the model's input limit, e.g. to give Laya up
-to 8,192 tokens or d3, Base Labs and pplx v1.2 up to 262,144; `--noul-floor` changes H2O-Lightning's
+to 8,192 tokens, d1-2B up to 128,000 per set of questions, or d3, Base Labs and pplx v1.2 up to 262,144; `--noul-floor` changes H2O-Lightning's
 [yes/no floor](MODELS.md#h2o-lightning).
 
 `mlx-decision --version` prints the installed version.
@@ -192,7 +192,7 @@ download into (the model goes into a folder named after the repo inside
 it, which you then pass to `-m`; an empty answer keeps the Hugging Face
 cache); `--local-dir` names the folder directly. It warns before
 downloading a repository no supported model family can load, and shows a
-model's own terms of use where it has them (d1-3B: commercial use only
+model's own terms of use where it has them (d1-2B and d1-3B: commercial use only
 below $10 million annual revenue), asking before it downloads; `--yes`
 skips both questions. Private or gated repos need `HF_TOKEN`. Ctrl-C
 stops the download and removes the model's new folder, so no half model
@@ -225,7 +225,7 @@ as changed, since it no longer holds the repo's files.
 
 ## Quantizing: `convert`
 
-Laya, Julia and d1 load as released. Clef, pplx, d3, Base Labs and H2O-Lightning can be
+Laya, Julia, d1 LFM3 and d1 load as released. Clef, pplx, d3, Base Labs and H2O-Lightning can be
 written as a smaller copy:
 
 ```bash
@@ -311,7 +311,8 @@ second and Clef 27B (8-bit) about 380; pplx v1.1 (8-bit) about 420;
 d3-flash about 1,150 to 1,800 and d3-mini about 1,600 to 2,800, counting
 the state once per question;
 H2O-Lightning about 2,400 to 3,100 for one question, and more questions
-add little since they share the state; d1-3B about 4,400 to 5,200 for
+add little since they share the state; d1-2B about 4,700 to 8,200
+(a set of 16 questions shares the state); d1-3B about 4,400 to 5,200 for
 one question, likewise; laya about 25,000,
 laya-multilingual about 60,000 and Julia-1 about 100,000, counting the
 state once per question. `-o FILE` (`--output`) also

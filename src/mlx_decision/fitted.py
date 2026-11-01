@@ -168,7 +168,7 @@ class FittedBackend:
         if fit.readouts and not isinstance(base, Readable):
             raise ValueError(
                 f"{name}: a readout fit needs a family that reads out "
-                "(pplx, d3, Base Labs, H2O, d1)"
+                "(pplx, d3, Base Labs, H2O, d1 LFM3, d1)"
             )
         self.name = name
         self.base = base

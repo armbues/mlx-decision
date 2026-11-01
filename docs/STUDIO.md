@@ -24,7 +24,7 @@ A few words used throughout: the **state** is what the model reads (a
 text, or any JSON value such as a ticket or a conversation), with one or
 more **questions**: a choice (one of several options), a score (a level
 on an ordered scale) or a noul (yes or no). A **family** is a kind of
-model (Clef, pplx, d3, Base Labs, H2O-Lightning, d1, Laya, Julia; see
+model (Clef, pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1, Laya, Julia; see
 [MODELS.md](MODELS.md)); each family has its own mark and colour in the
 Studio. **Jev** is TypeSafe AI's hosted decision service; the Studio
 answers the same API, so Jev's clients work against it. A **token** is

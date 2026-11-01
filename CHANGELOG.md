@@ -31,9 +31,29 @@ All notable changes to this project are documented here. The format follows
   model on entailment, ahead of Jev (ANLI round 3: 74.5%), and level with
   pplx's 27B on science questions (OpenBookQA: 96.8%). mammoth-1 was only
   checked as an 8-bit copy.
+- LiquidAI's d1-2B (`LiquidAI/d1-2B`, 1.9B, on LFM3-VL-2B) as the
+  family "d1 LFM3": noul, choice and score questions about text and
+  pictures, through the same API, `run`, `chat`, `server`, `mcp`,
+  `benchmark`, `training` and the Studio, and in the `download` menu
+  before d1. A request's questions are read in sets of 16, as the model
+  was trained: each set is one pass with the pictures and the state, the
+  state seeing the set's questions and each question the state and
+  itself, so answers depend on which questions share a set and their
+  order, and nothing is kept between requests (`--prefix-cache` is
+  refused). The input limit is per set, 32,768 tokens by default and up
+  to 128,000 with `--max-input-tokens`; a longer state is cut, keeping
+  its start and end. Pictures over 1.6 MP are shrunk, as the release
+  does. bf16 only (3.8 GB); no `convert` or quantized download. The
+  prompt and answer reading were written in a clean room from the
+  release's behaviour; prompts, packed sets and scored tokens match the
+  release's code for every request of the test set, and in bf16 the
+  answers are within 0.035 of it, no answer changed, at 1.4 to 1.9 times
+  its speed. On the five benchmarks it is level with d1-3B. Its weights
+  are under the LFM Open License v1.0, as d1-3B's: `download` shows it
+  and asks first.
 - The readout fit (`training fit --method readout`, `auto`'s choice)
-  trains Base Labs' answer-code rows, as for pplx, d3, H2O-Lightning and
-  d1.
+  trains Base Labs' answer-code rows and d1-2B's code rows, as for pplx,
+  d3, H2O-Lightning and d1.
 
 ## [1.0.0] - 2026-10-24
 

@@ -61,7 +61,7 @@ class Backend(Protocol):
 @runtime_checkable
 class Readable(Protocol):
     """A family that reads its answers from the last hidden state (pplx, d3, Base
-    Labs, H2O, d1), so a readout can be fitted on its features and applied per call.
+    Labs, H2O, d1 LFM3, d1), so a readout can be fitted on its features and applied per call.
 
     ``score(request, readouts, finish)`` uses a ``Readout`` instead of the
     release's rows for each question (by id) whose options it matches;

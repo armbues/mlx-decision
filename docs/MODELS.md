@@ -7,7 +7,8 @@ memory it needs. The README has a short version of this table.
 - [How they read a request](#how-they-read-a-request)
 - [Memory](#memory)
 - [Clef](#clef), [pplx](#pplx), [d3](#d3), [Base Labs](#base-labs),
-  [H2O-Lightning](#h2o-lightning), [d1](#d1), [Laya](#laya), [Julia](#julia)
+  [H2O-Lightning](#h2o-lightning), [d1 LFM3](#d1-lfm3), [d1](#d1), [Laya](#laya),
+  [Julia](#julia)
 
 | Model | Size | Input | Limit | Memory | Short request | Speedup | Good at |
 |---|---|---|---|---|---|---|---|
@@ -19,6 +20,7 @@ memory it needs. The README has a short version of this table.
 | Base Labs' [elephant-1](https://huggingface.co/baselabs/elephant-1) | 9B | text | 16,384 tokens per question (up to 262,144) | 18 GB (8-bit: 11 GB) | 0.29 s | - | entailment and science questions, calibrated; a request's questions share one pass over the state |
 | Base Labs' [mammoth-1](https://huggingface.co/baselabs/mammoth-1) | 27B | text | 16,384 tokens per question (up to 262,144) | 8-bit: 33 GB | - | - | as elephant-1; checked only as an 8-bit copy |
 | H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 40,960 tokens per question | 13 GB (8-bit: 9 GB, 4-bit: 7 GB) | 0.18 s | - | fast with long states and many questions, images, calibrated scores |
+| LiquidAI's [d1-2B](https://huggingface.co/LiquidAI/d1-2B) | 1.9B | text, images, many languages | 32,768 tokens per set of 16 questions (up to 128,000) | 5.3 GB | 0.04 s | 1.4x | small and fast, images; answers depend on which questions are asked together; commercial use limited by its licence |
 | LiquidAI's [d1-3B](https://huggingface.co/LiquidAI/d1-3B) | 3B | text, many languages | 32,768 tokens per question | 12 GB | 0.06 s | 1.1x | small and fast, many questions on one state; commercial use limited by its licence |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
 | [laya-typed-decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | English text | 1,024 tokens per question | 1.7 GB | 16 ms | 2.9x | as laya, tuned for typed decision workflows |
@@ -43,8 +45,9 @@ By your Mac's memory, among the models measured on the
 [benchmarks](BENCHMARKS.md#accuracy):
 
 - **16 GB**: d1-3B, small and fast (0.06 s a question), about level
-  with H2O-Lightning-4B on the benchmarks; check its licence before
-  commercial use. H2O-Lightning-4B for long states with many questions
+  with H2O-Lightning-4B on the benchmarks, or d1-2B, smaller and faster
+  still (0.04 s), with pictures, level with d1-3B; check their licence
+  before commercial use. H2O-Lightning-4B for long states with many questions
   (its 8-bit copy when the states are long).
 - **32 GB or more**: clef-flash, the most accurate on classification
   (TREC 96.8%), with images; elephant-1 when entailment matters (ANLI
@@ -77,7 +80,10 @@ H2O-Lightning and d1 also read each question on its own, but after the
 state, which they compute once per request, so more questions cost
 little. Base Labs computes the state once too, reading it both ways, and
 then runs the questions together in one batch: each sees the state and
-itself, never the other questions.
+itself, never the other questions. d1 LFM3 reads the questions in sets of
+16, each set one sequence with the whole state, in which the state's
+tokens also see the set's questions; so its answers depend on which
+questions share a set and in what order.
 
 ## Memory
 
@@ -150,8 +156,8 @@ are the same as without reuse, within the parity tolerance.
 `--prefix-cache GB` on `run`, `chat`, `server` and `mcp` (Python:
 `prefix_cache_gb`) changes the amount; 0 turns it off. Base Labs,
 H2O-Lightning and d1 keep recent states the same way (d1 only states long enough to be
-worth it). pplx, d3, Laya and Julia read the state together with the
-questions, so they have nothing to reuse.
+worth it). pplx, d3, d1 LFM3, Laya and Julia read the state together with
+the questions, so they have nothing to reuse.
 
 ## pplx
 
@@ -376,6 +382,74 @@ release's code (its shim, with transformers in place of vLLM) for every
 question of the test set; in bf16 its probabilities are within 0.020 of
 that code run in bf16 on the same Mac (mean 0.0014), and the 3 answers
 that changed of 271 were near ties.
+
+## d1 LFM3
+
+LiquidAI's d1-2B (1.9B), built on LFM3-VL-2B (LFM3: gated short
+convolutions with sliding-window and full attention layers), reads text
+in many languages and pictures (videos are refused). It answers up to 255
+options and 2 to 10 score levels.
+
+It reads a request's questions in their order in sets of 16 (the size it
+was trained with; the last set may be smaller). Each set is one sequence:
+the pictures and the state, then the set's questions. On the full
+attention layers the state's tokens see every question of the set, and
+each question sees the state and itself, not the other questions. So:
+
+- answers depend on which questions share a set and on their order: the
+  same question asked alone or after other questions can get a somewhat
+  different answer (in LiquidAI's release too: on our test set, alone
+  against within a set, by 0.07 per probability on average);
+- with more than 16 questions the state is read once per set (twenty
+  questions read it twice);
+- nothing is kept between requests: the state's computed form depends on
+  its set's questions, so there is no state reuse (`--prefix-cache` is
+  refused).
+
+The input limit applies per set (the state, its pictures and the set's
+questions): 32,768 tokens by default, up to 128,000 (the model's context)
+with `--max-input-tokens`. A state too long for the request's largest
+set is cut, keeping its start and end around a `...` line (`truncated` is
+set); a set whose questions and pictures alone do not fit is refused,
+naming its first question. LiquidAI's card finds answers less reliable
+past about 64,000 tokens of state. A question without instructions (or
+with empty ones) uses its id, and score levels given as objects are read
+as their text, as for d1; the release itself refuses both.
+
+Pictures (in `images` or inside the state) larger than 1.6 megapixels
+are shrunk to that size, as the release does (`--max-image-mp`, Python:
+`max_image_pixels`, lowers the cap); each costs one token per 32x32
+pixels, so a 1 MP picture is about 1,024 tokens. The vision tower (0.2B)
+loads with the first picture and runs once per request; every set reads
+the pictures as part of the state. A 384 x 384 picture with one question
+takes 44 ms.
+
+Its weights are under the LFM Open License v1.0, as d1-3B's, which
+licenses commercial use only to organisations with less than $10 million
+in annual revenue; read it before using the model. `download` shows this
+and asks before downloading (`--yes` skips the question), and loading by
+repo id notes it on stderr when it downloads.
+
+It runs in bf16 as released (3.8 GB): the fit check needs 4.2 GB, so 16
+GB Macs and up; there are no quantized copies. Its peak is 5.3 GB at
+29,450 tokens with twenty questions, and 11.8 GB for one question on a
+128,000-token state (123 s). One question about a 250-token state takes
+43 ms, twenty 202 ms; a 4,000-token state takes 0.51 s with one question
+and 1.15 s with twenty. That is 1.4 to 1.9 times as fast as its release's
+own PyTorch code on the same Mac (not compiled), with probabilities
+within 0.010.
+
+On the [accuracy benchmarks](BENCHMARKS.md#accuracy) it is level with d1-3B at under
+two thirds of its size: ahead on answer type (TREC 88.2% against 86.6%)
+and offensive language, level on science questions and sentiment, behind
+on entailment (ANLI round 3: 52.2% against 55.7%). Its prompts, the
+packed sets and token ids match the release's code for every request of
+the test set (pictures included); in bf16 its probabilities are within
+0.035 of that code run in bf16 on the same Mac (mean 0.0030), with no
+clear answer changed. The prompt and answer reading were written in a
+clean room from the release's documented and observed behaviour; the
+release's own code (under the LFM licence) is not part of mlx-decision.
+The readout fit and calibration (`training fit`) work as for d1, on text.
 
 ## d1
 

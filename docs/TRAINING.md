@@ -318,7 +318,7 @@ with a calibration:
 | Family | `auto` | What is trained | Written to the fitted folder | Also available |
 |---|---|---|---|---|
 | Clef | `head` | the decision head on top of the frozen backbone | the head (clef-flash: 244 MB) | `calibrate` |
-| pplx, d3, Base Labs, H2O-Lightning, d1 | `readout` | each option's readout row and a bias, on the frozen network | rows and biases (kilobytes) | `calibrate` |
+| pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1 | `readout` | each option's readout row and a bias, on the frozen network | rows and biases (kilobytes) | `calibrate` |
 | Laya, Julia | `finetune` | the whole encoder and the marker head (`--head-only`: the head alone) | the encoder and head (Julia 0.3 GB, laya 0.8 GB) | `calibrate` |
 
 - **`calibrate`** (every family): one temperature per question, and one
@@ -326,7 +326,7 @@ with a calibration:
   It is fitted to the model's probabilities by minimum log loss, in under
   a second after one scoring pass. Accuracy changes only through the
   biases. The probabilities then match how often the model is right.
-- **`readout`** (pplx, d3, Base Labs, H2O-Lightning, d1): these models read an
+- **`readout`** (pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1): these models read an
   answer from the last hidden state through one row per option (of the
   language model's output layer, or pplx's and d3's own readout). The fit
   trains those rows plus a bias per
@@ -610,7 +610,7 @@ the loader's options (`max_input_tokens=`).
 
 ## Not in this version
 
-- LoRA or full fine-tuning of Clef, pplx, d3, Base Labs, H2O-Lightning or d1. Their
+- LoRA or full fine-tuning of Clef, pplx, d3, Base Labs, H2O-Lightning, d1 LFM3 or d1. Their
   networks stay frozen, and only the head or the readout rows train.
 - Images in training data.
 - Multi-label tasks (several correct options for one question).
