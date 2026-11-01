@@ -3,10 +3,16 @@
 import json
 import shutil
 
+import mlx.core as mx
 import pytest
+from PIL import Image
 
+import mlx_decision
 from mlx_decision.convert import convert
-from mlx_decision.models.d1lfm3.model import INPUT_TOKEN_LIMIT, MAX_INPUT_TOKENS
+from mlx_decision.errors import DecisionError
+from mlx_decision.models.d1lfm3 import model as module
+from mlx_decision.models.d1lfm3.model import INPUT_TOKEN_LIMIT, MAX_INPUT_TOKENS, question_dict
+from mlx_decision.models.d1lfm3.prompt import suffix
 from mlx_decision.registry import (
     check_options,
     detect_family,
@@ -15,6 +21,7 @@ from mlx_decision.registry import (
     load_backend,
     static_capabilities,
 )
+from mlx_decision.types import parse_request
 from tiny_models import write_baselabs, write_clef, write_d1, write_d1lfm3, write_h2o, write_pplx
 
 
@@ -153,3 +160,127 @@ def test_the_download_lists_it_with_d1s_licence_and_its_files():
     assert not any(pattern.endswith((".py", ".jinja")) for pattern in family.files)
     names = [f.name for f in families()]
     assert names.index("d1lfm3") == names.index("d1") - 1
+
+
+# The backend on the word-level tiny folder (the parity tests use the real tokenizer).
+
+QUESTIONS = {
+    "team": {
+        "type": "choice",
+        "instructions": "Which team?",
+        "criteria": {"billing": "Payments", "technical": None, "sales": "Plans"},
+    },
+    "urgency": {"type": "score", "instructions": "How urgent?", "criteria": ["low", "mid", "high"]},
+    "refund": {"type": "noul", "instructions": "Does the customer want a refund?"},
+}
+STATE = "my invoice is wrong please refund the billing"
+
+
+@pytest.fixture(scope="module")
+def model(folder):
+    return mlx_decision.load(folder)
+
+
+def many(count: int) -> dict:
+    """``count`` questions, the three kinds in turn."""
+    kinds = list(QUESTIONS.values())
+    return {f"q{i:02d}": kinds[i % 3] for i in range(count)}
+
+
+def test_answers_every_question_type(model):
+    result = model.decide(STATE, QUESTIONS)
+    assert set(result.answers) == set(QUESTIONS)
+    assert 0 < result.answers["refund"].noul < 1
+    assert list(result.answers["team"].probabilities) == ["billing", "technical", "sales"]
+    assert sum(result.answers["urgency"].probabilities.values()) == pytest.approx(1)
+    assert not result.truncated
+
+
+def test_input_tokens_count_every_set(model):
+    request = parse_request({"state": STATE, "questions": many(17)})
+    encoded = model.backend.encode(request)
+    assert [len(p.question_ids) for p in encoded.sets] == [16, 1]
+    result = model.decide(STATE, many(17))
+    assert result.usage.input_tokens == sum(len(p.ids) for p in encoded.sets)
+
+
+def test_batches_within_the_token_budget(folder, monkeypatch):
+    model = mlx_decision.load(folder)
+    with mx.stream(mx.cpu):
+        together = model.decide(STATE, many(33))
+        monkeypatch.setattr(module, "BATCH_TOKENS", 1)  # one set per batch
+        apart = model.decide(STATE, many(33))
+    for qid, answer in together.answers.items():
+        a, b = answer.model_dump(), apart.answers[qid].model_dump()
+        assert a.keys() == b.keys()
+        for key in ("noul", "probabilities"):
+            if key in a:
+                got = a[key] if key == "noul" else list(a[key].values())
+                want = b[key] if key == "noul" else list(b[key].values())
+                assert got == pytest.approx(want, abs=1e-5), qid
+
+
+@pytest.mark.parametrize(
+    ("question", "same_as"),
+    [
+        ({"type": "noul"}, {"type": "noul", "instructions": "refund"}),
+        ({"type": "noul", "instructions": "  "}, {"type": "noul", "instructions": "refund"}),
+        (
+            {"type": "score", "instructions": "x", "criteria": [{"level": "low"}, ["high"]]},
+            {"type": "score", "instructions": "x", "criteria": ["{'level': 'low'}", "['high']"]},
+        ),
+    ],
+)
+def test_requests_the_release_refuses_are_adapted(model, question, same_as):
+    asked = parse_request({"state": STATE, "questions": {"refund": question}})
+    meant = parse_request({"state": STATE, "questions": {"refund": same_as}})
+    tokenizer = model.backend.tokenizer
+    assert suffix(question_dict("refund", asked.questions["refund"]), tokenizer) == suffix(
+        question_dict("refund", meant.questions["refund"]), tokenizer
+    )
+
+
+def test_a_long_state_is_cut_to_fit_keeping_its_start_and_end(folder):
+    model = mlx_decision.load(folder, max_input_tokens=200)
+    # Words the tiny vocabulary has (unknown ones decode as "[UNK]", three tokens).
+    words = " ".join(["billing"] * 150 + ["technical"] * 150)
+    assert model.decide(words, QUESTIONS).truncated
+    encoded = model.backend.encode(parse_request({"state": words, "questions": QUESTIONS}))
+    assert encoded.truncated and all(len(p.ids) <= 200 for p in encoded.sets)
+    kept = model.backend.tokenizer.decode(encoded.sets[0].ids[: encoded.sets[0].state_length])
+    assert "billing" in kept.split()[:10] and "technical" in kept.split()[-10:]
+    assert model.decide("billing technical", QUESTIONS).truncated is False
+
+
+def test_a_set_too_long_without_its_state_is_refused_naming_its_first_question(folder):
+    model = mlx_decision.load(folder, max_input_tokens=60)
+    with pytest.raises(DecisionError, match="the limit is 60") as error:
+        model.decide(STATE, many(3))
+    assert error.value.param == "questions.q00"
+    with pytest.raises(DecisionError, match="questions read together"):
+        model.decide(None, many(3))
+
+
+def test_pictures_are_read(model):
+    picture = Image.new("RGB", (300, 200), (200, 30, 30))
+    other = Image.new("RGB", (300, 200), (30, 30, 200))
+    with_red = model.decide(STATE, QUESTIONS, images=[picture])
+    with_blue = model.decide(STATE, QUESTIONS, images=[other])
+    without = model.decide(STATE, QUESTIONS)
+    assert with_red.usage.input_tokens > without.usage.input_tokens
+    assert with_red.answers["refund"].noul != with_blue.answers["refund"].noul
+    assert model.backend._vision is not None
+
+
+def test_pictures_are_capped_before_the_processor(folder):
+    model = mlx_decision.load(folder, max_image_pixels=65536)
+    picture = Image.new("RGB", (1000, 500))
+    _, pictures = model.backend.open_pictures(
+        parse_request({"state": STATE, "questions": QUESTIONS, "images": [picture]})
+    )
+    capped = mlx_decision.load(folder).backend.open_pictures(
+        parse_request(
+            {"state": STATE, "questions": QUESTIONS, "images": [picture.resize((362, 181))]}
+        )
+    )[1]
+    assert pictures.tokens == capped.tokens

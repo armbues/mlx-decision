@@ -84,8 +84,11 @@ mlx-decision = "mlx_decision.cli:entry"
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
-# Copied from mlx-lm and mlx-vlm; kept close to upstream so they can be diffed.
+# Copied from mlx-lm and mlx-vlm, and d1-2B's prompt and readout from their own
+# project; kept close to their sources so they can be diffed.
 extend-exclude = [
+    "src/mlx_decision/models/d1lfm3/prompt.py",
+    "src/mlx_decision/models/d1lfm3/readout.py",
     "src/mlx_decision/backbones/lfm2/lfm2.py",
     "src/mlx_decision/backbones/lfm3/config.py",
     "src/mlx_decision/backbones/lfm3/language.py",

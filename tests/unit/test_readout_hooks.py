@@ -7,7 +7,7 @@ import pytest
 import mlx_decision
 from mlx_decision.models.readout import Features, Readout, option_logits, read_out
 from mlx_decision.types import parse_request
-from tiny_models import write_baselabs, write_d1, write_h2o, write_pplx
+from tiny_models import write_baselabs, write_d1, write_d1lfm3, write_h2o, write_pplx
 
 QUESTIONS = {
     "team": {
@@ -22,6 +22,7 @@ REQUEST = parse_request({"state": "My invoice is wrong, please refund me", "ques
 WRITERS = {
     "baselabs": write_baselabs,
     "h2o": write_h2o,
+    "d1lfm3": write_d1lfm3,
     "d1": write_d1,
     "pplx": write_pplx,
     "pplx-v1.2": lambda folder: write_pplx(folder, joint="flash"),

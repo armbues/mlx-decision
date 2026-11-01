@@ -9,7 +9,7 @@ from PIL import Image
 import mlx_decision
 from mlx_decision import DecisionError
 from mlx_decision.state_images import lift_images
-from tiny_models import write_clef, write_h2o, write_marker, write_pplx
+from tiny_models import write_clef, write_d1lfm3, write_h2o, write_marker, write_pplx
 
 QUESTIONS = {"team": {"type": "choice", "criteria": {"billing": None, "sales": None}}}
 
@@ -119,7 +119,12 @@ def h2o(tmp_path_factory):
     return mlx_decision.load(write_h2o(tmp_path_factory.mktemp("h2o") / "h2o"))
 
 
-@pytest.mark.parametrize("family", ["clef", "pplx", "h2o"])
+@pytest.fixture(scope="module")
+def d1lfm3(tmp_path_factory):
+    return mlx_decision.load(write_d1lfm3(tmp_path_factory.mktemp("d1lfm3") / "d1lfm3"))
+
+
+@pytest.mark.parametrize("family", ["clef", "pplx", "h2o", "d1lfm3"])
 def test_a_lifted_image_answers_as_the_same_image_in_images(family, request):
     model = request.getfixturevalue(family)
     other = image(color=(20, 200, 30))
