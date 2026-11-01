@@ -65,8 +65,9 @@ By your Mac's memory, among the models measured on the
 pplx-decider-flash-v1.2, the model in the Studio's screenshots, fits
 16 GB Macs (9.1 GB) and asks all questions of a request in one pass; on
 the benchmarks it is close to the 27B pplx v1.1 on answer type (TREC
-93.6%) and the best of all on sentiment (SST-5 60.6%). d3's smaller
-sizes are not on the benchmarks yet. Compare
+93.6%) and the best of all on sentiment (SST-5 60.6%). d3-mini (4B, 9.1
+GB) is level with d3-flash at under half its size (ahead on answer type
+and sentiment, 5 points behind on entailment). Compare
 in the Studio, on your own examples, says more than any benchmark.
 
 ## How they read a request
@@ -278,6 +279,11 @@ vision tower loads with the first image request.
 On the [accuracy benchmarks](BENCHMARKS.md#accuracy) d3-flash comes close to pplx
 v1.1 on entailment (ANLI round 3: 64.3% against 66.8%) and science
 questions, at a third of its size, with well calibrated probabilities.
+d3-mini (4B) is level with d3-flash (TREC 86.2%, ANLI round 3 59.2%,
+OpenBookQA 93.8%, SST-5 58.5%); d3-nano (2B) keeps most of it on answer
+type and science questions (80.4%, 88.2%) but not on entailment (48.1%);
+d3-lite and d3-edge are near chance on entailment
+([all sizes](BENCHMARKS.md#accuracy)).
 vLLM Semantic Router reports a Jev Decision Index of 55.8 for d3-flash
 (text board 0.3.2). Its prompt and token ids match the release's runtime
 for every question of the test set; in bf16 its probabilities are within

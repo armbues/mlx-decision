@@ -746,6 +746,23 @@ Notes:
   pplx v1.1 (8-bit) 44,
   Clef 27B (8-bit) 74.
 
+d3's smaller sizes, in bf16 as released, beside d3-flash (same metrics;
+whole suite in 6 minutes for d3-mini, 3 for d3-nano, 1.3 for d3-lite,
+under a minute for d3-edge):
+
+| Benchmark | d3-flash (9B) | d3-mini (4B) | d3-nano (2B) | d3-lite (0.8B) | d3-edge (0.6B) |
+|---|---|---|---|---|---|
+| TREC | 85.8 / 87.3 / 3.5 | 86.2 / 86.3 / 3.2 | 80.4 / 82.4 / 6.4 | 67.4 / 72.0 / 17.8 | 73.8 / 72.3 / 8.0 |
+| TweetEval Offensive | 83.8 / 77.7 / 3.6 | 84.4 / 78.5 / 2.9 | 83.1 / 76.3 / 5.3 | 82.7 / 77.3 / 1.9 | 77.2 / 73.8 / 3.2 |
+| ANLI round 3 | 64.3 / 64.5 / 11.4 | 59.2 / 59.5 / 16.3 | 48.1 / 48.1 / 28.8 | 41.1 / 41.0 / 31.9 | 37.9 / 36.4 / 35.2 |
+| OpenBookQA | 95.2 / 95.2 / 2.4 | 93.8 / 93.7 / 2.5 | 88.2 / 88.0 / 3.1 | 73.8 / 73.5 / 8.0 | 57.8 / 57.6 / 17.3 |
+| SST-5 | 57.2 / 52.4 / 2.5 / 0.50 | 58.5 / 56.4 / 4.5 / 0.50 | 52.1 / 47.5 / 3.9 / 0.56 | 47.6 / 40.7 / 4.5 / 0.60 | 42.5 / 34.7 / 8.3 / 0.69 |
+
+d3-mini, at under half of d3-flash's size, is level with it: ahead on
+answer type, offensive language and sentiment, behind on entailment (5
+points) and science questions. Below it, entailment and science questions
+fall away first; offensive language holds up down to d3-lite.
+
 The three large models are level with Jev or ahead of it on four of the
 five benchmarks; on entailment pplx comes close to Jev, Clef does not.
 d3-flash, at 9B, is close behind pplx on entailment and science
