@@ -1,4 +1,4 @@
-"""Compare the speed of mlx-decision with d1-3B's own PyTorch code on the same requests.
+"""Compare the speed of mlx-decision with the d1 releases' own PyTorch code on the same requests.
 
 usage:
   python scripts/d1_reference_speed.py torch --model PATH --out reference.json
@@ -8,12 +8,14 @@ usage:
 Run each side in its own process. The ``torch`` side needs torch and
 transformers (not dependencies of the package) and runs the release's own
 code from the model folder (``trust_remote_code``), as its model card shows:
-``system_one`` in bfloat16 on MPS. The ``mlx`` side loads the model with its
-defaults (bfloat16, prefix cache on but cleared before every request).
+``system_one`` in bfloat16 on MPS (not compiled). The ``mlx`` side loads the
+model with its defaults (bfloat16; d1-3B's prefix cache on but cleared before
+every request).
 
-Both sides answer the model card's text cases (one question, three questions
-in one request, a 3,400-token state) and the text grid of ``mlx-decision
-benchmark`` (250 to 15,000 tokens x 1, 5 and 20 questions). Each request is
+Both sides answer the model card's cases (one question, three questions in one
+request, a long state: 3,400 tokens for d1-3B; for d1-2B 5,000 tokens and a
+384 x 384 picture) and the text grid of ``mlx-decision benchmark`` (250 to
+15,000 tokens x 1, 5 and 20 questions). Each request is
 timed end to end, from the request to the probabilities, once as a warm-up
 and then ``--repeats`` times; the median counts. ``report`` prints a Markdown
 table with the speedup and the largest probability difference.
@@ -29,6 +31,9 @@ import time
 from datetime import date
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+# The picture of d1-2B's card case, scaled to 384 x 384 on both sides.
+PICTURE = ROOT / "tests" / "parity" / "images" / "dog.jpg"
 QUESTION_COUNTS = (1, 5, 20)
 LENGTHS = (250, 1000, 4000, 15000)
 TICKET = "I was charged twice this month, please refund one of them."
@@ -51,6 +56,11 @@ CARD_QUESTIONS = {
 }
 
 
+def is_lfm3(path: Path) -> bool:
+    """d1-2B (an LFM3-VL release) rather than d1-3B."""
+    return json.loads((path / "config.json").read_text()).get("model_type") == "lfm3_vl"
+
+
 def make_cases(path: Path) -> list[dict]:
     """The requests, identical on both sides."""
     from tokenizers import Tokenizer
@@ -60,15 +70,29 @@ def make_cases(path: Path) -> list[dict]:
     tokenizer = Tokenizer.from_file(str(path / "tokenizer.json"))
     rate = len(tokenizer.encode(make_state(1000)).ids) / 1000
     one = {"refund": CARD_QUESTIONS["refund"]}
+    long = 5000 if is_lfm3(path) else 3400
     cases = [
         {"id": "card: one question", "state": TICKET, "questions": one},
         {"id": "card: three questions", "state": TICKET, "questions": CARD_QUESTIONS},
         {
-            "id": "card: 3,400-token state",
-            "state": make_state(round(3400 / rate)),
+            "id": f"card: {long:,}-token state",
+            "state": make_state(round(long / rate)),
             "questions": one,
         },
     ]
+    if is_lfm3(path):
+        from PIL import Image
+
+        picture = Image.open(PICTURE).convert("RGB").resize((384, 384), Image.Resampling.BICUBIC)
+        question = {"animal": {"type": "noul", "instructions": "Is there an animal?"}}
+        cases.append(
+            {
+                "id": "card: 384 px picture",
+                "state": None,
+                "questions": question,
+                "images": [picture],
+            }  # fmt: skip
+        )
     for length in LENGTHS:
         state = make_state(round(length / rate))
         for count in QUESTION_COUNTS:
@@ -117,23 +141,26 @@ def run_torch(args) -> dict:
     model = model.to("mps")
 
     def run(case):
-        result = model.system_one(case["state"], case["questions"])["answers"]
+        # Only d1-2B's cases have pictures (d1-3B's system_one takes none).
+        media = {"media": case["images"]} if case.get("images") else {}
+        result = model.system_one(case["state"], case["questions"], **media)["answers"]
         torch.mps.synchronize()
         return result
 
-    return measure(args, run, f"d1-3B's code, torch {torch.__version__} (MPS, bf16)")
+    name = args.model.resolve().name
+    return measure(args, run, f"{name}'s code, torch {torch.__version__} (MPS, bf16)")
 
 
 def run_mlx(args) -> dict:
     import mlx_decision
 
     model = mlx_decision.load(args.model)
-    cache = model.backend.prefix_cache
+    cache = getattr(model.backend, "prefix_cache", None)
 
     def run(case):
         if cache is not None:
             cache.clear()  # every request as a new one
-        result = model.decide(case["state"], case["questions"])
+        result = model.decide(case["state"], case["questions"], images=case.get("images"))
         return {qid: a.model_dump() for qid, a in result.answers.items()}
 
     return measure(args, run, f"mlx-decision {mlx_decision.__version__} (bf16)")

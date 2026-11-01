@@ -28,6 +28,8 @@ on the same Mac (MPS; Apple M5 Pro with 64 GB); short requests are in the
 | clef-flash (bf16) | 1024x768 image, 3 questions | 2.73 s | 1.01 s | 2.7x |
 | laya | 450-token state, 20 questions | 543 ms | 386 ms | 1.4x |
 | laya-multilingual | 1,000-token state, 20 questions | 558 ms | 337 ms | 1.7x |
+| d1-2B (bf16) | 5,000-token state, 1 question | 957 ms | 649 ms | 1.5x |
+| d1-2B (bf16) | 15,000-token state, 20 questions | 7.68 s | 5.25 s | 1.5x |
 | d1-3B (bf16) | 3,400-token state, 1 question | 809 ms | 676 ms | 1.2x |
 | d1-3B (bf16) | 15,000-token state, 20 questions | 4.74 s | 4.01 s | 1.2x |
 | Julia-1 | 7,350-token state, 20 questions | 12.4 s | 2.0 s | 6.1x |
@@ -119,6 +121,37 @@ tests below its shim ran with transformers in vLLM's place, in bf16 on
 MPS, one pass per question as the shim sends them; that took 20.5 minutes
 for the 271 questions of the parity set, mlx-decision in bf16 94 s. That
 run is not how the release is meant to be served, so it is no speedup.
+
+### d1-2B
+
+The release's own code (`system_one`, loaded with `trust_remote_code`, as
+its model card shows, not compiled) in bf16 on MPS, against mlx-decision in
+bf16. The card's cases (the picture: 384 x 384 pixels), then the
+`benchmark` grid; median of 3 runs. Both read the questions in sets of 16
+with the state; the release peaks at 12.8 GB, mlx-decision at 11.8 GB
+(process footprints):
+
+| Request | PyTorch bf16 | mlx-decision bf16 | Speedup | Max probability difference |
+|---|---|---|---|---|
+| card: one question | 28 ms | 14 ms | 1.9x | 0.000 |
+| card: three questions | 35 ms | 24 ms | 1.4x | 0.004 |
+| card: 5,000-token state | 957 ms | 649 ms | 1.5x | 0.001 |
+| card: 384 px picture | 63 ms | 44 ms | 1.4x | 0.000 |
+| 250 x 1 | 59 ms | 42 ms | 1.4x | 0.002 |
+| 250 x 5 | 85 ms | 58 ms | 1.5x | 0.003 |
+| 250 x 20 | 305 ms | 202 ms | 1.5x | 0.008 |
+| 1,000 x 1 | 187 ms | 128 ms | 1.5x | 0.001 |
+| 1,000 x 5 | 212 ms | 143 ms | 1.5x | 0.005 |
+| 1,000 x 20 | 586 ms | 381 ms | 1.5x | 0.008 |
+| 4,000 x 1 | 745 ms | 519 ms | 1.4x | 0.001 |
+| 4,000 x 5 | 782 ms | 538 ms | 1.5x | 0.003 |
+| 4,000 x 20 | 1,815 ms | 1,189 ms | 1.5x | 0.009 |
+| 15,000 x 1 | 3,539 ms | 2,428 ms | 1.5x | 0.003 |
+| 15,000 x 5 | 3,617 ms | 2,500 ms | 1.4x | 0.002 |
+| 15,000 x 20 | 7,677 ms | 5,248 ms | 1.5x | 0.010 |
+
+The model card's own M5 Pro times (18.6 ms for one question, 45.2 ms for
+the picture) are for compiled warm calls.
 
 ### d1-3B
 
@@ -312,6 +345,35 @@ same request again with the state kept:
 The quantized copies are 5-17% slower from 1,000 tokens on; their warm
 times are within 0.03 s of bf16's.
 
+d1-2B in bf16 (the default grid; the longest length, 29,450, is 90% of its
+default 32,768-token limit per set). The questions go in sets of 16, each
+set one pass with the whole state, so 20 questions read the state twice;
+the input tokens count both sets. Nothing is kept between requests (the
+state's hidden states depend on its set's questions), so there is no warm
+column:
+
+| State tokens | Questions | Input tokens | Median |
+|---|---|---|---|
+| 250 | 1 | 278 | 43 ms |
+| 250 | 5 | 432 | 58 ms |
+| 250 | 20 | 1,252 | 202 ms |
+| 1,000 | 1 | 1,027 | 127 ms |
+| 1,000 | 5 | 1,181 | 143 ms |
+| 1,000 | 20 | 2,750 | 378 ms |
+| 4,000 | 1 | 4,026 | 513 ms |
+| 4,000 | 5 | 4,180 | 531 ms |
+| 4,000 | 20 | 8,748 | 1.15 s |
+| 15,000 | 1 | 15,022 | 2.33 s |
+| 15,000 | 5 | 15,176 | 2.39 s |
+| 15,000 | 20 | 30,740 | 5.14 s |
+| 29,450 | 1 | 29,465 | 6.19 s |
+| 29,450 | 5 | 29,619 | 6.25 s |
+| 29,450 | 20 | 59,626 | 12.7 s |
+| Peak memory | | | 5.3 GB |
+
+With `--max-input-tokens 128000`, one question on a 127,774-token state
+takes 123 s at a peak of 11.8 GB.
+
 d1-3B in bf16 (the default grid; the longest length, 29,450, is 90% of its
 32,768-token limit). A request's questions run in one pass; a state shared
 by enough questions is computed once, and kept (warm: the same request
@@ -352,7 +414,8 @@ Throughput: clef-flash about 1,550-1,850 tokens per second, Clef 27B
 d3-flash about 1,150-1,800 (bf16) and 1,050-1,450 (8-bit), d3-mini
 about 1,600-2,800,
 H2O-Lightning about 2,400-3,100 for one question (bf16; more questions
-share the state), d1-3B about 4,400-5,200 (likewise), laya and
+share the state), d1-2B about 4,700-8,200 (a set's questions share the
+state), d1-3B about 4,400-5,200 (likewise), laya and
 laya-typed-decisions about 24,000-26,000, laya-multilingual about 60,000,
 Julia-1 about 100,000.
 
@@ -560,6 +623,24 @@ probability.
   release computes them: largest difference 0.020, mean 0.0014, 3
   changed answers, all near ties (top two within 0.04). On a small
   random model in the release's layout, on the CPU: within 0.00001.
+- d1-2B: 118 requests (the 63 of the set above, 13 with pictures; the 34
+  text requests below; 21 of its own: 16, 17 and 33 questions, the same
+  questions in two orders, 26 / 27 / 54 / 255 options, single-letter and
+  digit keys, chat markup in states and questions, a null state, two
+  pictures without state text, empty instructions and others) against the
+  release's own code. Prompt texts, the packed sets (token ids, where each
+  question starts and ends, where its answer is read) and the tokens each
+  option is scored by are the same for all 110 requests the release
+  takes; pictures are cut into the same patches (within one 8-bit level).
+  The release refuses 8: 7 for missing or empty instructions or score
+  levels that are not text, which mlx-decision fills in as for d1-3B
+  (instructions from the question id, levels as text), and one with a
+  single score level, which mlx-decision refuses too. On a small random
+  model in the release's layout with its tokenizer, on the CPU: within
+  0.00001 for 107 requests (343 questions, text and pictures). In bf16,
+  every request as served (sets of 16) against the release in bf16 on
+  MPS: 343 questions, largest difference 0.035, mean 0.0030, no changed
+  answer where the release's top two are more than 0.04 apart.
 - d1-3B: 110 text requests (the 50 text requests of the set above, the
   34 below, and 26 of its own: letter keys, 26 / 27 / 100 / 101 options, missing
   descriptions, criteria on one side, a null state, missing instructions
@@ -614,18 +695,18 @@ Accuracy / macro-F1 / ECE (expected calibration error of the top
 probability, lower is better), in percent; for SST-5 also the mean
 absolute error of the expected level, in levels. A `noul` answer counts
 as yes at a probability of 0.5 or more; a `score` answer's most likely
-level is its prediction. clef-flash, d3-flash, elephant-1, H2O-Lightning and d1-3B ran in bf16, Clef
+level is its prediction. clef-flash, d3-flash, elephant-1, H2O-Lightning, d1-2B and d1-3B ran in bf16, Clef
 27B and pplx v1.1 as 8-bit copies; H2O-Lightning with its yes/no floor on, as
 released (it moves Offensive's probabilities, never an answer); Jev is TypeSafe AI's hosted model (`typesafe/jev-1.14.0`, run on
 2026-10-20), and its column needs a Jev account.
 
-| Benchmark | clef-flash | clef (8-bit) | pplx v1.1 (8-bit) | d3-flash | elephant-1 | H2O-Lightning-4B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 85.8 / 87.3 / 3.5 | 89.6 / 89.3 / 3.3 | 85.2 / 86.8 / 4.7 | 86.6 / 86.8 / 5.5 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.6 / 3.6 |
-| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 83.8 / 77.7 / 3.6 | 82.4 / 75.9 / 5.0 | 82.1 / 76.3 / 5.0 | 83.1 / 78.7 / 5.3 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.0 / 77.3 / 4.0 |
-| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 64.3 / 64.5 / 11.4 | 74.5 / 74.4 / 5.9 | 59.9 / 59.9 / 18.3 | 55.7 / 55.8 / 16.6 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 70.2 / 70.5 / 11.2 |
-| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 95.2 / 95.2 / 2.4 | 96.8 / 96.8 / 1.7 | 84.6 / 84.6 / 6.1 | 86.2 / 85.9 / 4.5 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 2.3 |
-| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 57.2 / 52.4 / 2.5 / 0.50 | 53.9 / 51.2 / 10.0 / 0.52 | 57.3 / 52.2 / 1.6 / 0.52 | 56.8 / 54.3 / 1.6 / 0.54 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.2 / 55.1 / 16.2 / 0.50 |
+| Benchmark | clef-flash | clef (8-bit) | pplx v1.1 (8-bit) | d3-flash | elephant-1 | H2O-Lightning-4B | d1-2B | d1-3B | laya | laya-typed-decisions | laya-multilingual | Julia-1 | Jev |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| TREC | 96.8 / 95.5 / 4.5 | 96.4 / 94.5 / 2.8 | 94.0 / 93.7 / 3.3 | 85.8 / 87.3 / 3.5 | 89.6 / 89.3 / 3.3 | 85.2 / 86.8 / 4.7 | 88.2 / 87.9 / 5.9 | 86.6 / 86.8 / 5.5 | 79.0 / 76.9 / 2.9 | 78.8 / 77.2 / 14.3 | 89.8 / 87.2 / 4.0 | 16.0 / 14.0 / 63.1 | 92.8 / 92.6 / 3.6 |
+| TweetEval Offensive | 84.0 / 78.1 / 9.5 | 84.8 / 81.0 / 8.0 | 84.9 / 79.6 / 4.0 | 83.8 / 77.7 / 3.6 | 82.4 / 75.9 / 5.0 | 82.1 / 76.3 / 5.0 | 84.9 / 80.7 / 3.5 | 83.1 / 78.7 / 5.3 | 77.8 / 61.9 / 7.7 | 80.1 / 68.4 / 7.3 | 79.2 / 71.9 / 4.1 | 38.8 / 37.9 / 43.0 | 80.0 / 77.3 / 4.0 |
+| ANLI round 3 | 50.8 / 50.5 / 20.7 | 55.2 / 54.7 / 16.8 | 66.8 / 67.0 / 9.4 | 64.3 / 64.5 / 11.4 | 74.5 / 74.4 / 5.9 | 59.9 / 59.9 / 18.3 | 52.2 / 52.4 / 12.5 | 55.7 / 55.8 / 16.6 | 39.5 / 39.4 / 42.0 | 38.5 / 37.8 / 32.2 | 35.5 / 35.3 / 50.8 | 33.2 / 31.3 / 51.3 | 70.2 / 70.5 / 11.2 |
+| OpenBookQA | 95.4 / 95.4 / 3.8 | 95.4 / 95.4 / 2.9 | 96.8 / 96.7 / 1.4 | 95.2 / 95.2 / 2.4 | 96.8 / 96.8 / 1.7 | 84.6 / 84.6 / 6.1 | 86.2 / 86.3 / 6.6 | 86.2 / 85.9 / 4.5 | 39.2 / 38.3 / 11.5 | 41.4 / 40.9 / 3.2 | 29.2 / 28.8 / 19.8 | 33.2 / 32.8 / 48.2 | 96.0 / 95.9 / 2.3 |
+| SST-5 | 57.6 / 55.1 / 10.9 / 0.51 | 57.6 / 53.3 / 3.5 / 0.51 | 58.0 / 52.9 / 5.2 / 0.47 | 57.2 / 52.4 / 2.5 / 0.50 | 53.9 / 51.2 / 10.0 / 0.52 | 57.3 / 52.2 / 1.6 / 0.52 | 56.3 / 52.8 / 2.3 / 0.54 | 56.8 / 54.3 / 1.6 / 0.54 | 35.1 / 27.6 / 31.2 / 0.99 | 44.3 / 38.4 / 7.0 / 0.68 | 27.7 / 16.8 / 58.4 / 1.40 | 36.7 / 32.2 / 41.7 / 0.82 | 57.2 / 55.1 / 16.2 / 0.50 |
 
 Notes:
 - No model refused an example or had its input cut: every state fits
@@ -637,6 +718,12 @@ Notes:
   models on TREC and OpenBookQA; d1-3B, at 3B, is level with it (ahead
   on TREC, Offensive and OpenBookQA, behind on ANLI round 3). The two
   share the lowest calibration error on SST-5 (1.6).
+- d1-2B, at 1.9B, is level with d1-3B: ahead on TREC (88.2 against 86.6)
+  and Offensive (84.9, the best of all with pplx v1.1, and the best
+  calibrated there, 3.5), level on OpenBookQA and SST-5, behind on ANLI
+  round 3 (52.2 against 55.7). Its answers depend on which questions
+  share a set of 16 and their order (each question here was asked
+  alone).
 - elephant-1, at 9B, is the only local model ahead of Jev on ANLI round 3
   (74.5 against 70.2, with the best calibration there, 5.9), level with
   pplx v1.1 on OpenBookQA and between d3-flash and the Clef models on
@@ -648,7 +735,7 @@ Notes:
   them (laya: 65 of 860), Julia too many (726 of 860). On TREC, Julia
   answers 453 of 500 questions with its first two options.
 - Run times on the M5 Pro, for the whole suite: Laya and Julia under a
-  minute, d1-3B 3 minutes, H2O-Lightning 11, d3-flash 13, elephant-1 19,
+  minute, d1-2B 2 minutes, d1-3B 3, H2O-Lightning 11, d3-flash 13, elephant-1 19,
   clef-flash 22,
   pplx v1.1 (8-bit) 44,
   Clef 27B (8-bit) 74.
@@ -663,14 +750,16 @@ answer type and science questions, is ahead of clef-flash on entailment
 and about level on sentiment, with the best calibrated scores of all
 (calibration error 1.6%). d1-3B, smaller still, is level with
 H2O-Lightning: ahead on answer type, offensive language and science
-questions, behind on entailment.
+questions, behind on entailment. d1-2B, under two thirds of d1-3B's
+size, is level with it: ahead on answer type and offensive language,
+behind on entailment.
 The small models are near chance on entailment and science questions,
 as their model cards lead one to expect; Julia, made for emotion and
 routing, answers TREC almost only with its first two options and calls
 most tweets offensive. Each model matches its own
 reference code token for token on a fixed test set, with probabilities
 within 0.035 (clef-flash), 0.031 (clef), 0.038 (d3-flash), 0.020
-(H2O-Lightning), 0.030 (d1-3B), 0.004 (Laya), 0.018 (Julia) and 0.058
+(H2O-Lightning), 0.035 (d1-2B), 0.030 (d1-3B), 0.004 (Laya), 0.018 (Julia) and 0.058
 (pplx-decider-flash-v1.2, on requests up to 4,096 tokens); pplx v1.1 and
 the v1.2 27B were compared on small random models in their layouts
 (within 0.00001), not on the full weights. pplx v1.2 and flash are not
