@@ -310,7 +310,11 @@ def convert_text_weights(
         if not lm_head:
             # An untied LM head is left out (and, loaded lazily, never read).
             weights.pop("language_model.lm_head.weight", None)
-        for name, value in weights.items():
+        # The shard's tensors load lazily; each is dropped from ``weights``
+        # once taken, so only the one being written is held, never the
+        # whole shard (a single-file release can be larger than memory).
+        for name in list(weights):
+            value = weights.pop(name)
             if cancelled is not None and cancelled():
                 raise Cancelled()
             layer = name.removesuffix(".weight")

@@ -380,3 +380,23 @@ def test_streaming_reads_each_shard_once_when_it_is_handed_over(tmp_path, monkey
     load.convert_text_weights(config, tmp_path / "out", shards(), bits=8)
     names = [f"model-{i:05d}-of-00004.safetensors" for i in range(1, 5)]
     assert events == [(kind, name) for name in names for kind in ("handed", "read")]
+
+
+def test_a_shard_is_never_held_whole(release, tmp_path, monkeypatch):
+    """Source tensors load lazily and are dropped once written, so converting
+    a single-file release peaks near its largest tensor, not the file."""
+    import mlx.core as mx
+
+    from mlx_decision.backbones.qwen3_5 import load as qwen_load
+
+    monkeypatch.setattr(qwen_load, "SHARD_BYTES", 1)  # write each tensor at once
+    config = json.loads((release / "config.json").read_text())
+    (shard,) = qwen_load.source_shards(release)
+    sizes = [value.nbytes for value in mx.load(str(shard)).values()]
+    with mx.stream(mx.cpu):
+        mx.clear_cache()
+        mx.reset_peak_memory()
+        qwen_load.convert_text_weights(config, tmp_path / "out", [shard], bits=8)
+        peak = mx.get_peak_memory()
+    assert len(sizes) > 20
+    assert peak < 2 * max(sizes) < sum(sizes) / 4

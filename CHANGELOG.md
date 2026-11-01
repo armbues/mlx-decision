@@ -55,6 +55,18 @@ All notable changes to this project are documented here. The format follows
   trains Base Labs' answer-code rows and d1-2B's code rows, as for pplx,
   d3, H2O-Lightning and d1.
 
+### Changed
+
+- Requires MLX 0.32.4 or newer, the version this release was tested
+  with.
+
+### Fixed
+
+- `convert` and `download --bits` hold one tensor of a weight file at a
+  time instead of the whole file, so a release stored as one large file
+  converts on a Mac with less memory than the file: elephant-1's 8-bit
+  copy (one 18.8 GB file) now peaks at 10 GB instead of 23 GB.
+
 ## [1.0.0] - 2026-10-24
 
 The Studio: mlx-decision in the browser, for trying questions, comparing
