@@ -24,6 +24,7 @@ MAIN_KIND = {
     "d3": "readout",
     "baselabs": "readout",
     "h2o": "readout",
+    "d1lfm3": "readout",
     "d1": "readout",
     "laya": "finetune",
     "julia": "finetune",

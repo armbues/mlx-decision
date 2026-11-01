@@ -940,6 +940,8 @@ D1LFM3_SPECIAL = [
 D1LFM3_WORDS = ["[UNK]", "user", "assistant", "QUESTION", ":", "Reply", "with", "yes", "no"]
 D1LFM3_WORDS += ["Yes", "No", "YES", "NO", "the", "option", "code", "only", "Options", "think"]
 D1LFM3_WORDS += ["<", ">", "/", ".", "-", "a", "single", "digit", "or", "billing", "technical"]
+# The training tests' states and questions.
+D1LFM3_WORDS += ["please", "refund", "crash", "now", "Is", "it", "urgent", "?", "team"]
 D1LFM3_SETTINGS = {
     "d1_attention": "set",
     "d1_codes": 2,

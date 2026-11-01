@@ -17,13 +17,14 @@ from mlx_decision.training.fitting import _readouts
 from mlx_decision.training.readout import fit_readout, search_steps
 from mlx_decision.training.scoring import Scored, reread, score
 from mlx_decision.types import parse_request
-from tiny_models import write_baselabs, write_d1, write_d3, write_h2o, write_pplx
+from tiny_models import write_baselabs, write_d1, write_d1lfm3, write_d3, write_h2o, write_pplx
 
 TEAM = {"type": "choice", "criteria": {"billing": "refund", "technical": "crash"}}
 URGENT = {"type": "noul", "instructions": "Is it urgent?"}
 STATES = ["please refund", "crash now", "refund now please", "crash"]
 WRITERS = {
     "h2o": write_h2o,
+    "d1lfm3": write_d1lfm3,
     "d1": write_d1,
     "pplx": write_pplx,
     "pplx-v1.2": lambda folder: write_pplx(folder, joint="flash"),
