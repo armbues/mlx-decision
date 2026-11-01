@@ -9,13 +9,18 @@ picture's size after the cap with its patch grid and patch means, and the
 answers of the tiny random model of ``tiny_models.write_d1lfm3`` with the
 release's tokenizer (CPU, float32; sets over 16,384 tokens not run). The
 tests need the release's small files in the Hugging Face cache (the script
-fetches them) and skip otherwise.
+fetches them) and skip otherwise. With ``--model`` the script runs the
+release's weights in bf16 on MPS over the same requests and writes
+``d1lfm3/reference-bf16.json`` (answers only); the slow test compares the
+release folder ``$MLX_DECISION_MODELS/d1-2B`` with it.
 
 The tiny model runs on the CPU here: on the GPU, float32 matmuls use TF32.
 """
 
 import hashlib
 import json
+import os
+import statistics
 from pathlib import Path
 
 import mlx.core as mx
@@ -55,6 +60,9 @@ TOLERANCE = 1e-5
 # Pixels within one 8-bit level of the release's processor (torchvision there,
 # Pillow here; mean and std 0.5), plus the fixture's rounding.
 PIXEL_TOLERANCE = 2 / 255 + 1e-4
+BF16_FILE = HERE / "d1lfm3" / "reference-bf16.json"
+# Against the release in bf16 (LF-8, R26's family tolerance).
+BF16_MAX, BF16_MEAN, BF16_MARGIN = 0.05, 0.005, 0.04
 
 
 @pytest.fixture(scope="module")
@@ -275,3 +283,47 @@ def test_long_states_are_cut_to_fit_and_keep_their_ends(release, encoder, limit)
         assert len(packed.ids) > limit - 64, rid
     assert cuts > 0
     print(f"limit {limit}: {cuts} cut, {refused} refused")
+
+
+def test_the_bf16_fixture_is_for_the_same_requests():
+    if not BF16_FILE.exists():
+        pytest.skip("no reference-bf16.json (scripts/make_d1lfm3_reference.py --model)")
+    bf16 = json.loads(BF16_FILE.read_text())
+    assert bf16["source"]["revision"] == FIXTURE["source"]["revision"]
+    assert set(bf16["requests"]) == set(RESULTS)
+
+
+@pytest.mark.slow
+@pytest.mark.weights
+def test_bf16_answers_as_the_release():
+    """About two minutes: the release folder answers every request as served (sets
+    of 16), against the release's own code in bf16 on MPS."""
+    root = os.environ.get("MLX_DECISION_MODELS")
+    path = Path(root) / "d1-2B" if root else None
+    if path is None or not path.is_dir():
+        pytest.skip("no d1-2B in MLX_DECISION_MODELS")
+    if not BF16_FILE.exists():
+        pytest.skip("no reference-bf16.json (scripts/make_d1lfm3_reference.py --model)")
+    reference = json.loads(BF16_FILE.read_text())["requests"]
+    model = mlx_decision.load(path)
+    differences, worst, decided = [], (0.0, None), []
+    for rid, entry in reference.items():
+        if "probabilities" not in entry:
+            continue
+        result = model.decide_request(body(rid))
+        assert not result.truncated, rid
+        for qid, expected in entry["probabilities"].items():
+            got = answer_values(result.answers[qid])
+            difference = max(abs(a - b) for a, b in zip(got, expected, strict=True))
+            differences.append(difference)
+            worst = max(worst, (difference, f"{rid}.{qid}"))
+            ranked = sorted(expected, reverse=True)
+            if got.index(max(got)) != expected.index(max(expected)) and (
+                ranked[0] - ranked[1] > BF16_MARGIN
+            ):
+                decided.append(f"{rid}.{qid}")
+    mean = statistics.mean(differences)
+    print(f"{len(differences)} questions: max {worst[0]:.4f} ({worst[1]}), mean {mean:.4f}")
+    assert worst[0] <= BF16_MAX, worst
+    assert mean <= BF16_MEAN, mean
+    assert not decided, decided
