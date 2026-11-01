@@ -813,3 +813,104 @@ def write_d1(folder: Path, seed: int = 0, files_from: Path | None = None) -> Pat
     (folder / "config.json").write_text(json.dumps(config, indent=2) + "\n")
     (folder / "LICENSE").write_text("test licence\n")
     return folder
+
+
+LFM3_TEXT = {
+    "model_type": "lfm3",
+    "vocab_size": 320,
+    "hidden_size": 64,
+    "intermediate_size": 96,
+    "num_hidden_layers": 6,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "head_dim": 16,
+    "norm_eps": 1e-5,
+    "conv_L_cache": 7,
+    "conv_bias": False,
+    "layer_types": [
+        "conv",
+        "full_attention",
+        "sliding_attention",
+        "conv",
+        "full_attention",
+        "sliding_attention",
+    ],
+    "rope_parameters": {
+        "full_attention": {"partial_rotary_factor": 0.5, "rope_theta": 1e6, "rope_type": "default"},
+        "sliding_attention": {"rope_theta": 1e4, "rope_type": "default"},
+    },
+    # Small, so the window matters at the tests' lengths.
+    "sliding_window": 8,
+    "use_sandwich_norm": True,
+    "tie_word_embeddings": True,
+    "max_position_embeddings": 128000,
+    "pad_token_id": 0,
+    "bos_token_id": 1,
+    "eos_token_id": 2,
+}
+LFM3_VISION = {
+    "model_type": "lfm3_vl_vision",
+    "hidden_size": 32,
+    "intermediate_size": 48,
+    "num_hidden_layers": 4,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "in_channels": 3,
+    "patch_size": 4,
+    "temporal_patch_size": 2,
+    "spatial_merge_size": 2,
+    "conv_kernel_size": 3,
+    "norm_eps": 1e-5,
+    "layer_types": ["conv", "full_attention", "conv", "full_attention"],
+    "rope_parameters": {"rope_theta": 1e6, "rope_type": "axial"},
+}
+
+
+def lfm3_vl_config(text: dict | None = None) -> dict:
+    """A tiny LFM3-VL ``config.json`` in the release's layout."""
+    return {
+        "architectures": ["Lfm3VlForConditionalGeneration"],
+        "model_type": "lfm3_vl",
+        "text_config": text or LFM3_TEXT,
+        "vision_config": LFM3_VISION,
+        "downsample_factor": 2,
+        "projector_hidden_size": 48,
+        "projector_hidden_act": "gelu",
+        "projector_bias": True,
+        "projector_layer_norm_eps": 1e-6,
+        "image_token_id": 300,
+        "video_token_id": 301,
+        "tie_word_embeddings": True,
+    }
+
+
+def write_lfm3_vl(folder: Path, seed: int = 0, text: dict | None = None) -> Path:
+    """An LFM3-VL folder: tiny text model, vision tower and projector, float32,
+    under the release's names (PyTorch's convolution kernels, tied embeddings)."""
+    from mlx.utils import tree_flatten
+
+    from mlx_decision.backbones.lfm3.language import Model as Lfm3Model
+    from mlx_decision.backbones.lfm3.lfm3_vl import Vision
+    from mlx_decision.backbones.lfm3.vl_config import ModelConfig as Lfm3VlConfig
+    from mlx_decision.backbones.lfm3.vl_config import TextConfig as Lfm3TextConfig
+
+    folder.mkdir(parents=True, exist_ok=True)
+    config = lfm3_vl_config(text)
+    shapes = {}
+    # Lazily built: only the names and shapes are used, nothing is allocated.
+    for name, value in tree_flatten(
+        Lfm3Model(Lfm3TextConfig.from_dict(config["text_config"])).parameters()
+    ):
+        shape = tuple(value.shape)
+        if name.endswith("conv.conv.weight"):
+            shape = (shape[0], shape[2], shape[1])
+        shapes["model.language_model." + name[len("model.") :]] = shape
+    for name, value in tree_flatten(Vision(Lfm3VlConfig.from_dict(config)).parameters()):
+        shape = tuple(value.shape)
+        if name.endswith("spatial_conv.weight"):
+            shape = (shape[0], shape[3], shape[1], shape[2])
+        shapes["model." + name] = shape
+    tensors = {name: mx.array(_random(name, shape, seed)) for name, shape in sorted(shapes.items())}
+    mx.save_safetensors(str(folder / "model.safetensors"), tensors, metadata={"format": "pt"})
+    (folder / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    return folder

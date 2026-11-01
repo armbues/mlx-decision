@@ -7,12 +7,14 @@
 # mlx_vlm/models/lfm3_vl/vision.py at commit 527c513a0768245644a70266a22126d880767b18
 # (v0.7.11), under the Apache License 2.0. See
 # LICENSES/mlx-vlm-lfm3-Apache-2.0.txt.
+#
+# Modified for mlx-decision: ``MLP`` imported from this folder.
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from ..lfm3.language import MLP
+from .language import MLP
 
 
 def grid_positions(height, width, merge):

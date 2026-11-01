@@ -7,15 +7,18 @@
 # mlx_vlm/models/lfm3/config.py at commit 527c513a0768245644a70266a22126d880767b18
 # (v0.7.11), under the Apache License 2.0. See
 # LICENSES/mlx-vlm-lfm3-Apache-2.0.txt.
+#
+# Modified for mlx-decision: built on the Qwen3.5 copy's ``BaseModelArgs``
+# (mlx-vlm's ``BaseModelConfig`` is not copied).
 
 from dataclasses import dataclass
 from typing import Optional
 
-from ..base import BaseModelConfig
+from ..qwen3_5.base import BaseModelArgs
 
 
 @dataclass
-class ModelConfig(BaseModelConfig):
+class ModelConfig(BaseModelArgs):
     model_type: str = "lfm3"
     hidden_size: int = 2048
     intermediate_size: int = 7680

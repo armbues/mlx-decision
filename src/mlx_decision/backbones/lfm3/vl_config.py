@@ -7,16 +7,20 @@
 # mlx_vlm/models/lfm3_vl/config.py at commit 527c513a0768245644a70266a22126d880767b18
 # (v0.7.11), under the Apache License 2.0. See
 # LICENSES/mlx-vlm-lfm3-Apache-2.0.txt.
+#
+# Modified for mlx-decision: built on the Qwen3.5 copy's ``BaseModelArgs``
+# (mlx-vlm's ``BaseModelConfig`` is not copied); the text config imported
+# from this folder.
 
 from dataclasses import dataclass
 from typing import Optional
 
-from ..base import BaseModelConfig
-from ..lfm3.config import ModelConfig as TextConfig
+from ..qwen3_5.base import BaseModelArgs
+from .config import ModelConfig as TextConfig
 
 
 @dataclass
-class VisionConfig(BaseModelConfig):
+class VisionConfig(BaseModelArgs):
     model_type: str = "lfm3_vl_vision"
     hidden_size: int = 1024
     intermediate_size: int = 2560
@@ -46,7 +50,7 @@ class VisionConfig(BaseModelConfig):
 
 
 @dataclass
-class ModelConfig(BaseModelConfig):
+class ModelConfig(BaseModelArgs):
     text_config: TextConfig
     vision_config: VisionConfig
     model_type: str = "lfm3_vl"
