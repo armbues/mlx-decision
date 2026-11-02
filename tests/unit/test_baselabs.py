@@ -84,7 +84,9 @@ def test_loads_the_answer_code_rows_in_float32(folder):
     width = backend.backbone.language_model.args.hidden_size
     assert backend.rows.shape == (256, width)
     assert not hasattr(backend.backbone.language_model, "lm_head")
-    assert not backend.capabilities.supports_images
+    # Images: the vision tower loads with the first one.
+    assert backend.capabilities.supports_images and backend.vision is None
+    assert backend.capabilities.max_image_pixels == 16777216
     assert not backend.capabilities.truncates_input
 
 
@@ -349,16 +351,67 @@ def test_option_level_and_image_limits(model):
     levels = [f"l{i}" for i in range(11)]
     with pytest.raises(DecisionError, match="at most 10 levels"):
         model.decide("x", {"q": {"type": "score", "criteria": levels}})
-    with pytest.raises(DecisionError, match="does not support images") as error:
-        model.decide_request({"state": "x", "questions": QUESTIONS, "images": ["data:x"]})
-    assert error.value.param == "images"
 
 
-def test_images_inside_the_state_are_read_as_text(model):
-    """Text only, as d1: nothing is lifted out of the state, so nothing is refused."""
-    picture = "data:image/png;base64," + "iVBORw0KGgo" + "A" * 80
-    result = model.decide({"note": "see", "photo": picture}, {"refund": QUESTIONS["refund"]})
+def png(width: int = 64, height: int = 48) -> str:
+    import base64
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (200, 30, 30)).save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def test_images_in_the_state_and_beside_it_are_answered(model):
+    """The tiny tokenizer has the vision markers, so the whole image path runs."""
+    import mlx.core as mx
+
+    with mx.stream(mx.cpu):
+        result = model.decide_request(
+            {"state": {"note": "see", "photo": png()}, "questions": QUESTIONS, "images": [png()]}
+        )
     assert 0 < result.answers["refund"].noul < 1
+    text = model.decide_request({"state": {"note": "see"}, "questions": QUESTIONS})
+    # Each 64 x 48 image is scaled up to the releases' minimum of 65,536 pixels:
+    # 64 tokens after the 2 x 2 merge of 16-pixel patches, in the shared prefix.
+    assert result.usage.input_tokens >= text.usage.input_tokens + 2 * 64
+    assert model.backend.vision is not None
+
+
+@pytest.fixture(scope="module")
+def without_vision(tmp_path_factory):
+    """A tiny folder without the vision tower's weights."""
+    folder = write_baselabs(tmp_path_factory.mktemp("text") / "tiny")
+    file = folder / "model.safetensors"
+    weights = {k: v for k, v in mx.load(str(file)).items() if not k.startswith("model.visual.")}
+    mx.save_safetensors(str(file), weights, metadata={"format": "pt"})
+    return folder
+
+
+def test_without_vision_weights_images_are_refused_and_state_images_are_text(without_vision):
+    from mlx_decision.errors import DecisionError
+    from mlx_decision.model import DecisionModel
+
+    assert not static_capabilities(without_vision).supports_images
+    with pytest.raises(ValueError, match="no vision weights"):
+        static_capabilities(without_vision, vision=True)
+    model = DecisionModel(load_backend(without_vision))
+    with pytest.raises(DecisionError, match="does not support images") as error:
+        model.decide_request({"state": "x", "questions": QUESTIONS, "images": [png()]})
+    assert error.value.param == "images"
+    # Nothing is lifted out of the state, so nothing is refused.
+    result = model.decide({"note": "see", "photo": png()}, {"refund": QUESTIONS["refund"]})
+    assert 0 < result.answers["refund"].noul < 1
+
+
+def test_the_image_limit_can_be_lowered(folder):
+    limited = static_capabilities(folder, max_image_pixels=2**20)
+    assert limited.supports_images and limited.max_image_pixels == 2**20
+    backend = load_backend(folder, max_image_pixels=2**20, vision=True)
+    assert backend.capabilities.max_image_pixels == 2**20 and backend.vision is not None
+    assert backend.image_config().max_pixels == 2**20
 
 
 def test_the_release_rows_as_a_fitted_readout_answer_as_the_release(folder):

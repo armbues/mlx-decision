@@ -302,6 +302,81 @@ def test_answers_as_the_release(released, case_id):
 # Per release: its folder in MLX_DECISION_MODELS, the fixture
 # make_baselabs_reference.py --model writes, the largest allowed difference
 # of a probability (measured: see the test's docstring).
+@pytest.mark.parametrize("case_id", list(IMAGE_CASES))
+def test_tiny_models_answer_images_as_the_reference(released, case_id):
+    """Every image question: the prefix with its images runs once (the vision
+    tower fills the pads, the full-attention layers see the image tokens both
+    ways), the questions continue from it; the answer codes' logits and the
+    probabilities are the releases' training-side scoring's."""
+    import mlx.core as mx
+
+    shape, backend = released
+    request = image_request(case_id)
+    expected = IMAGE_FIXTURE["results"][case_id]["questions"]
+    with mx.stream(mx.cpu):
+        prefix, encoded, hidden = backend.passes(request)
+    for question, last in zip(encoded, hidden, strict=True):
+        entry = expected[question.question_id]
+        assert len(prefix) + len(question.suffix) == entry["tokens"], question.question_id
+        got = backend.rows[: entry["options"]] @ last
+        want = mx.array(entry["logits"][shape])
+        error = mx.abs(got - want).max().item()
+        assert error < LOGIT_TOLERANCE, f"{case_id}.{question.question_id}: {error:.2e}"
+        p_error = mx.abs(mx.softmax(got) - mx.softmax(want)).max().item()
+        assert p_error < TOLERANCE, f"{case_id}.{question.question_id}: {p_error:.2e}"
+
+
+def test_image_questions_batched_answer_as_one_by_one(released, monkeypatch):
+    import mlx.core as mx
+
+    from mlx_decision.models.baselabs import model as baselabs_model
+
+    _, backend = released
+    request = image_request("image_error_ticket")
+    with mx.stream(mx.cpu):
+        _, _, batched = backend.passes(request)
+        monkeypatch.setattr(baselabs_model, "BATCH_TOKENS", 1)
+        _, _, single = backend.passes(request)
+    for a, b in zip(batched, single, strict=True):
+        assert mx.abs(a - b).max().item() < 1e-5
+
+
+def test_a_kept_prefix_with_images_answers_as_a_fresh_one(released, tmp_path):
+    import mlx.core as mx
+
+    from mlx_decision.registry import load_backend
+
+    shape, backend = released
+    keeping = load_backend(backend.path, max_input_tokens=32768, prefix_cache_gb=1)
+    request = image_request("bl_top_level_and_state_images")
+    with mx.stream(mx.cpu):
+        fresh = backend.score(request).probabilities
+        first = keeping.score(request).probabilities
+        kept = keeping.score(request).probabilities
+        other = keeping.score(image_request("bl_image_value")).probabilities
+    assert len(keeping.prefix_cache) == 2  # other images: another prefix
+    for qid, values in fresh.items():
+        assert first[qid] == pytest.approx(values, abs=1e-6), qid
+        assert kept[qid] == pytest.approx(values, abs=1e-6), qid
+    assert other
+
+
+def test_image_markers_in_the_text_of_a_request_with_images_are_refused(released):
+    from mlx_decision.errors import DecisionError
+
+    _, backend = released
+    request = image_request("bl_image_value")
+    marked = request.model_copy(update={"state": {**request.state, "note": "<|image_pad|>"}})
+    with pytest.raises(DecisionError, match="image markers") as error:
+        backend.score(marked)
+    assert error.value.param == "state"
+    question = next(iter(request.questions.values()))
+    asked = question.model_copy(update={"instructions": "Is <|vision_start|> shown?"})
+    with pytest.raises(DecisionError, match="image markers") as error:
+        backend.score(request.model_copy(update={"questions": {"q": asked}}))
+    assert error.value.param == "questions.q"
+
+
 BF16 = {
     "elephant": ("elephant-1", "reference-bf16.json", 0.05),
     "joey": ("joey-1", "reference-joey-bf16.json", 0.03),

@@ -124,7 +124,10 @@ def test_image_limits(models):
     assert limits("h2o") == (1048576, 4)
     assert limits("d1lfm3") == (1638400, None)
     assert limits("d1lfm3", max_image_pixels=100_000) == (100_000, None)
-    assert limits("baselabs") == limits("d1") == limits("laya") == (None, None)
+    # Base Labs: the releases' processor maximum (training-side images, D234).
+    assert limits("baselabs") == (16777216, None)
+    assert limits("baselabs", max_image_pixels=2**20) == (2**20, None)
+    assert limits("d1") == limits("laya") == (None, None)
 
 
 def test_no_weights_are_read(models, monkeypatch):

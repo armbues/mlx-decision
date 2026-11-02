@@ -1075,6 +1075,11 @@
  },
  "load_options": {
   "baselabs": {
+   "max_image_pixels": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 4
+   },
    "max_input_tokens": {
     "default": null,
     "kind": "positional_or_keyword",
@@ -1084,6 +1089,11 @@
     "default": 2.0,
     "kind": "positional_or_keyword",
     "position": 2
+   },
+   "vision": {
+    "default": false,
+    "kind": "positional_or_keyword",
+    "position": 3
    }
   },
   "clef": {
