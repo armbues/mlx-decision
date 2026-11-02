@@ -1,0 +1,242 @@
+[
+ {
+  "id": "bl_image_value",
+  "state": {
+   "screen": {
+    "image_file": "error-dialog.png"
+   },
+   "task": "Pay the open invoice."
+  },
+  "questions": {
+   "shows": {
+    "type": "choice",
+    "instructions": "What does the picture show?",
+    "criteria": {
+     "animal": "An animal",
+     "landscape": "A landscape",
+     "screen": "A computer screen or chart",
+     "device": "A device"
+    }
+   },
+   "error": {
+    "type": "noul",
+    "instructions": "Is an error message visible?"
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this ticket?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Today",
+     "Now",
+     "Emergency"
+    ]
+   }
+  }
+ },
+ {
+  "id": "bl_image_between_texts",
+  "state": [
+   "Customer wrote: it fails when I pay.",
+   {
+    "image_file": "error-dialog.png"
+   },
+   "Please help, this is the third time."
+  ],
+  "questions": {
+   "error": {
+    "type": "noul",
+    "instructions": "Is an error message visible?"
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this ticket?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Today",
+     "Now",
+     "Emergency"
+    ]
+   }
+  }
+ },
+ {
+  "id": "bl_two_images_in_a_list",
+  "state": {
+   "photos": [
+    {
+     "image_file": "dog.jpg"
+    },
+    {
+     "image_file": "lake.jpg"
+    }
+   ],
+   "note": "Sent by the same customer."
+  },
+  "questions": {
+   "shows": {
+    "type": "choice",
+    "instructions": "What does the picture show?",
+    "criteria": {
+     "animal": "An animal",
+     "landscape": "A landscape",
+     "screen": "A computer screen or chart",
+     "device": "A device"
+    }
+   },
+   "same": {
+    "type": "noul",
+    "instructions": "Do the photos show the same place?"
+   }
+  }
+ },
+ {
+  "id": "bl_image_only_state",
+  "state": {
+   "image_file": "chart.png"
+  },
+  "questions": {
+   "shows": {
+    "type": "choice",
+    "instructions": "What does the picture show?",
+    "criteria": {
+     "animal": "An animal",
+     "landscape": "A landscape",
+     "screen": "A computer screen or chart",
+     "device": "A device"
+    }
+   }
+  }
+ },
+ {
+  "id": "bl_image_part",
+  "state": {
+   "text": "Screenshot from the checkout page.",
+   "attachments": [
+    {
+     "type": "image_url",
+     "image_url": {
+      "url": {
+       "image_file": "error-dialog.png"
+      }
+     }
+    }
+   ]
+  },
+  "questions": {
+   "error": {
+    "type": "noul",
+    "instructions": "Is an error message visible?"
+   }
+  }
+ },
+ {
+  "id": "bl_top_level_with_dict_state",
+  "images": [
+   "laptop.jpg"
+  ],
+  "state": {
+   "ticket": "The screen flickers since the last update.",
+   "device": "laptop"
+  },
+  "questions": {
+   "shows": {
+    "type": "choice",
+    "instructions": "What does the picture show?",
+    "criteria": {
+     "animal": "An animal",
+     "landscape": "A landscape",
+     "screen": "A computer screen or chart",
+     "device": "A device"
+    }
+   },
+   "urgency": {
+    "type": "score",
+    "instructions": "How urgent is this ticket?",
+    "criteria": [
+     "Not urgent",
+     "Soon",
+     "Today",
+     "Now",
+     "Emergency"
+    ]
+   }
+  }
+ },
+ {
+  "id": "bl_top_level_and_state_images",
+  "images": [
+   "chart.png"
+  ],
+  "state": {
+   "report": {
+    "image_file": "error-dialog.png"
+   },
+   "note": "Both came with the same ticket."
+  },
+  "questions": {
+   "shows": {
+    "type": "choice",
+    "instructions": "What does the picture show?",
+    "criteria": {
+     "animal": "An animal",
+     "landscape": "A landscape",
+     "screen": "A computer screen or chart",
+     "device": "A device"
+    }
+   },
+   "error": {
+    "type": "noul",
+    "instructions": "Is an error message visible?"
+   }
+  }
+ },
+ {
+  "id": "bl_top_level_with_null_state",
+  "images": [
+   "dog.jpg"
+  ],
+  "state": null,
+  "questions": {
+   "shows": {
+    "type": "choice",
+    "instructions": "What does the picture show?",
+    "criteria": {
+     "animal": "An animal",
+     "landscape": "A landscape",
+     "screen": "A computer screen or chart",
+     "device": "A device"
+    }
+   }
+  }
+ },
+ {
+  "id": "bl_small_image_in_state",
+  "state": {
+   "thumbnail": {
+    "image_file": {
+     "file": "lake.jpg",
+     "size": [
+      64,
+      40
+     ]
+    }
+   },
+   "caption": "Holiday photo."
+  },
+  "questions": {
+   "shows": {
+    "type": "choice",
+    "instructions": "What does the picture show?",
+    "criteria": {
+     "animal": "An animal",
+     "landscape": "A landscape",
+     "screen": "A computer screen or chart",
+     "device": "A device"
+    }
+   }
+  }
+ }
+]

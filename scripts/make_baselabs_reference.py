@@ -2,6 +2,7 @@
 
 usage: python scripts/make_baselabs_reference.py [--onejev DIR] [--only ID,ID]
        python scripts/make_baselabs_reference.py --model PATH [--only ID,ID]
+       python scripts/make_baselabs_reference.py --images [--only ID,ID]
 
 The parity set is the text requests of tests/parity/requests.json and
 tests/parity/baselabs/requests.json (Base Labs' edge cases). Needs torch
@@ -47,6 +48,23 @@ tests/parity/baselabs/reference-bf16.json (elephant-1) or
 reference-<shape>-bf16.json (joey-1: reference-joey-bf16.json) with, per
 question, the token count and digests, the answer-code logits and the
 release's answer (no prompts or ids), after every request.
+
+With --images the image requests run instead: the parity set's and
+tests/parity/baselabs/image-requests.json (images inside the state as
+{"image_file": ...}, see tests/parity/parity_images.py). The releases serve
+text only, so the reference is their training-side scoring, which the
+serve.patch routes through train.common.batch_scores: train.sft.collect_mm
+with the multimodal bundle and the block mask, one question per row with its
+whole prompt, on the three tiny models (CPU, float32). A request is mapped to
+the releases' convention: images inside the state become <image:N>
+placeholders in place, top-level images placeholders at the start of the
+state block, before its text (numbered first). First, text requests run
+through the same path and must score as the text fixture (the serving
+engine). Writes tests/parity/baselabs/reference-images.json with, per
+request, the mapped state and media, and per question the prompt, the
+expanded token ids (up to IDS_TOKENS) and digests, the prefix length (to the
+end of the state block, image tokens included), the image grids and the
+logits per shape.
 """
 
 import argparse
@@ -237,14 +255,178 @@ def run_case(case: dict, references: dict[str, Reference]) -> dict:
     return result
 
 
+# --images: the parity set's image requests and Base Labs' own, scored by the
+# releases' training-side code (D234); text requests run through the same path
+# to check it against the text fixture.
+IMAGE_TEXT_CHECK = ["ticket", "bl_every_type_twice", "special_tokens_in_state"]
+# Largest allowed logit difference of that check (R31: 5.7e-7).
+IMAGE_TEXT_TOLERANCE = 1e-4
+
+
+def image_set() -> list[dict]:
+    cases = [c for c in json.loads((PARITY / "requests.json").read_text()) if c.get("images")]
+    return cases + json.loads((PARITY / "baselabs" / "image-requests.json").read_text())
+
+
+class ImageReference:
+    """The releases' training-side scoring on a tiny model in ``folder`` (CPU,
+    float32): ``train.sft.collect_mm``, so ``train.common.batch_scores`` with the
+    multimodal bundle and the block mask, one question per row, as
+    ``train.eval_mm`` scores a checkpoint."""
+
+    def __init__(self, folder: Path):
+        from qev.readout import Readout, ReadoutConfig
+        from train import common
+
+        self.bundle = common.load_bundle(
+            str(folder), device="cpu", dtype="float32", multimodal=True
+        )
+        config = ReadoutConfig.load(str(folder))
+        if not config.noncausal or config.head:
+            raise SystemExit(f"{folder}: not the releases' readout ({config})")
+        self.bundle.readout = Readout.attach(
+            self.bundle.model, config, slot_ids=self.bundle.slot_ids
+        )
+
+    def rows(self, state, questions: dict, media: list[dict]) -> list[dict]:
+        """One row per question, its target on the first option (the scores do not use it)."""
+        from qev.prompt import render_question
+        from train import common
+
+        rows = []
+        for qid, question in questions.items():
+            labels = render_question("q", common.build_question(question)).labels
+            row = {"id": qid, "state": state, "question": question, "target": {labels[0]: 1.0}}
+            rows.append(row | ({"media": media} if media else {}))
+        return rows
+
+    def layout(self, row: dict) -> dict:
+        """A row's prompt, its expanded token ids, the prefix length (to the end
+        of the state block, the images' tokens included) and the image grids."""
+        from qev import readout as ro
+        from train import common, mm
+
+        bundle = self.bundle
+        example = common.render_example(row, bundle.template_for(row), 0, seed=None, augment=False)
+        _, prefix, _ = ro.token_layout(bundle.tokenizer, example.prompt, example.suffix_start, None)
+        media = row.get("media") or []
+        inputs, _ = mm.mm_inputs(bundle.processor, [example.prompt], [media], "cpu")
+        ids = inputs["input_ids"][0].tolist()
+        grids = inputs["image_grid_thw"].tolist() if "image_grid_thw" in inputs else []
+        prefix += bundle.counter.media_extra(media)
+        assert len(ids) == bundle.prompt_length(example.prompt, row), row["id"]
+        return {
+            "kind": example.kind,
+            "options": len(example.labels),
+            "prompt": example.prompt,
+            "ids": ids,
+            "prefix_tokens": prefix,
+            "grids": grids,
+        }
+
+    def logits(self, rows: list[dict]) -> dict[str, list[float]]:
+        from train.sft import collect_mm
+
+        # One row per batch: no padding, so the scores do not depend on the batching.
+        scored = collect_mm(self.bundle, rows, 1 << 20, 1 << 20, 1, "cpu")
+        return {rows[s.idx]["id"]: s.logits for s in scored}
+
+
+def run_images(args, snapshots: dict, meta: dict) -> None:
+    """--images: write reference-images.json (see the module docstring)."""
+    import torch
+    import transformers
+    from train import mm
+
+    sys.path.insert(0, str(PARITY))
+    from parity_images import onejev_media
+
+    from tiny_models import write_baselabs
+
+    cases = image_set()
+    if args.only:
+        cases = [c for c in cases if c["id"] in set(args.only.split(","))]
+    text = {c["id"]: c for c in parity_set()}
+    fixture = json.loads((PARITY / "baselabs" / "reference.json").read_text())["results"]
+    existing = json.loads(args.out.read_text()) if args.out.exists() else {}
+    results = dict(existing.get("results", {}))
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        references = {
+            shape: ImageReference(write_baselabs(scratch / shape, SEED, shape, files_from=snapshot))
+            for shape, snapshot in snapshots.items()
+        }
+        first = references["elephant"]
+        worst = 0.0
+        for case_id in IMAGE_TEXT_CHECK:
+            case = text[case_id]
+            for shape, reference in references.items():
+                got = reference.logits(reference.rows(case["state"], case["questions"], []))
+                for qid, values in got.items():
+                    want = fixture[case_id]["questions"][qid]["logits"][shape]
+                    worst = max(worst, max(abs(a - b) for a, b in zip(values, want, strict=True)))
+        print(f"text requests through the image path vs the text fixture: {worst:.2e}")
+        if worst > IMAGE_TEXT_TOLERANCE:
+            raise SystemExit(
+                f"over {IMAGE_TEXT_TOLERANCE}: the image path does not score text as serving"
+            )
+        for case in cases:
+            start = time.perf_counter()
+            folder = scratch / "media" / case["id"]
+            folder.mkdir(parents=True)
+            state, media = onejev_media(case, folder)
+            mm.set_root(folder)
+            questions = {}
+            rows = first.rows(state, case["questions"], media)
+            for row in rows:
+                entry = first.layout(row)
+                for reference in references.values():
+                    assert reference.layout(row)["ids"] == entry["ids"], (case["id"], row["id"])
+                ids = entry.pop("ids")
+                entry |= {
+                    "tokens": len(ids),
+                    "ids_sha256": sha256(ids),
+                    "prompt_sha256": sha256(entry["prompt"]),
+                }
+                if len(ids) <= IDS_TOKENS:
+                    entry["ids"] = ids
+                questions[row["id"]] = entry
+            for shape, reference in references.items():
+                for qid, values in reference.logits(rows).items():
+                    questions[qid].setdefault("logits", {})[shape] = values
+            results[case["id"]] = {"state": state, "media": media, "questions": questions}
+            print(f"{case['id']}: {time.perf_counter() - start:.1f} s", flush=True)
+    size = first.bundle.processor.image_processor.size
+    meta = {
+        **meta,
+        "seed": SEED,
+        "ids_tokens": IDS_TOKENS,
+        "scoring": "train.sft.collect_mm (train.common.batch_scores), one question per row",
+        "image_pixels": {k: size[k] for k in ("shortest_edge", "longest_edge")},
+        "text_check_max_difference": worst,
+        "torch": torch.__version__,
+        "transformers": transformers.__version__,
+    }
+    order = [c["id"] for c in image_set()]
+    ordered = {i: results[i] for i in order if i in results}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(dump({"meta": meta, "results": ordered}) + "\n")
+    print(f"wrote {len(ordered)} results to {args.out}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--onejev", type=Path, default=ROOT / "_reference" / "onejev")
     parser.add_argument("--only", help="comma-separated request ids")
     parser.add_argument("--model", type=Path, help="run the real model in this release folder")
     parser.add_argument("--device", default="mps", help="device for --model (default: mps)")
+    parser.add_argument(
+        "--images", action="store_true", help="the image requests (reference-images.json)"
+    )
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
+    if args.images and args.model:
+        parser.error("--images runs the tiny models only")
     import torch
     import transformers
 
@@ -257,6 +439,7 @@ def main() -> None:
     snapshots = {shape: fetch(*release) for shape, release in RELEASES.items()}
     model_shape = which_release(args.model, snapshots) if args.model else None
     name = BF16_FILES[model_shape] if args.model else "reference.json"
+    name = "reference-images.json" if args.images else name
     args.out = args.out or PARITY / "baselabs" / name
     patches = {(path / "serve.patch").read_bytes() for path in snapshots.values()}
     if len(patches) != 1:
@@ -265,6 +448,13 @@ def main() -> None:
     patch_sha256 = check_onejev(onejev, snapshots["elephant"] / "serve.patch")
     sys.path.insert(0, str(onejev))
     from qev.prompt import PROMPT_VERSION
+
+    if args.images:
+        releases = {s: {"repo_id": r, "revision": v} for s, (r, v) in RELEASES.items()}
+        onejev_meta = {"commit": ONEJEV_COMMIT, "serve_patch_sha256": patch_sha256}
+        meta = {"releases": releases, "onejev": onejev_meta, "prompt_version": PROMPT_VERSION}
+        run_images(args, snapshots, meta)
+        return
 
     existing = json.loads(args.out.read_text()) if args.out.exists() else {}
     results = dict(existing.get("results", {}))
