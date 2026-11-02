@@ -206,7 +206,9 @@ def test_first_picks_one_small_one_medium_one_large_that_fit():
         "SupersonicLabs/Julia-1", "convaiinnovations/laya", "convaiinnovations/laya-multilingual",
         "convaiinnovations/laya-typed-decisions", "vllm-sr/d3-edge", "vllm-sr/d3-lite",
     }  # fmt: skip
-    assert seen["medium"] == {"vllm-sr/d3-nano", "LiquidAI/d1-2B", "LiquidAI/d1-3B"}
+    assert seen["medium"] == {
+        "vllm-sr/d3-nano", "baselabs/joey-1", "LiquidAI/d1-2B", "LiquidAI/d1-3B"
+    }  # fmt: skip
     assert seen["large"] == {
         "vllm-sr/d3-mini", "h2oai/h2o-lightning-4b", "perplexity-ai/pplx-decider-flash-v1.2"
     }  # fmt: skip

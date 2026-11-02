@@ -14,7 +14,9 @@
 # types; only the production template (no other layouts, no option order
 # shifts); the chat template's output is written out instead of rendered
 # with Jinja (thinking off, a generation prompt); tokenized with
-# ``tokenizers``.
+# ``tokenizers``; images placed as the releases' qev/media.py places
+# ``<image:N>`` placeholders (a vision block in the placeholder's place),
+# from images lifted out of the state and from top-level images.
 """The prompt Base Labs' models were trained on (OneJev's ``qev-labels-v2``).
 
 One prompt per question: a fixed system message, then the user message:
@@ -24,12 +26,22 @@ a request starts alike up to the end of the state block: that shared
 prefix runs once, each question continues from it. An option's answer code
 is ``A`` to ``Z``, then two-letter codes, 256 in all; each is one token of
 the models' tokenizer.
+
+Images: the models were trained with images in their place in the state
+(OneJev's ``<image:N>`` placeholders, each replaced by the image's vision
+block, inside a JSON string value when the state is JSON). An image lifted
+out of the state (a ``LiftedImage``) gets its block there; the request's
+top-level images go at the start of the state block, before its text. The
+blocks follow the order of the request's images; the image pad of each is
+expanded to its patches when the prompt runs.
 """
 
 import bisect
 import json
+import secrets
 from dataclasses import dataclass
 
+from ...state_images import LiftedImage
 from ...types import Choice, Noul, Score
 
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -54,6 +66,8 @@ NOUL_TRUE = "the statement is true / the answer is yes"
 NOUL_FALSE = "the statement is false / the answer is no"
 CHOICE_INSTRUCTIONS = "Which option applies to the state?"
 SCORE_INSTRUCTIONS = "Which level describes the state?"
+IMAGE = "<|vision_start|><|image_pad|><|vision_end|>"
+IMAGE_MARKERS = ("<|vision_start|>", "<|image_pad|>", "<|vision_end|>")
 # The chat template's turns around the user message.
 BEFORE_USER = f"<|im_start|>system\n{SYSTEM}<|im_end|>\n<|im_start|>user\n"
 AFTER_USER = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
@@ -79,8 +93,49 @@ def render_state(state: object) -> str:
     return json.dumps(state, ensure_ascii=False, indent=2)
 
 
-def state_block(state: object) -> str:
-    return f"<state>\n{render_state(state)}\n</state>\n\n"
+def lifted_images(state: object) -> list[int]:
+    """The indices of the images lifted out of ``state``, in their order in it."""
+    if isinstance(state, LiftedImage):
+        return [state.index]
+    if isinstance(state, dict):
+        return [i for value in state.values() for i in lifted_images(value)]
+    if isinstance(state, list):
+        return [i for value in state for i in lifted_images(value)]
+    return []
+
+
+def state_text(state: object, images: int = 0) -> str:
+    """The state block's text, with a vision block for each image: the
+    request's ``images`` minus those lifted out of the state go first, the
+    lifted ones in their places. Raises ``ValueError`` when the lifted images
+    do not follow the top-level ones in order (they are lifted that way)."""
+    lifted = lifted_images(state)
+    leading = images - len(lifted)
+    if lifted != list(range(leading, images)) or leading < 0:
+        raise ValueError(f"the state's images {lifted} do not follow {leading} top-level images")
+    if lifted:
+        # A mark no text holds: rendered as the state would be, then swapped for the block.
+        mark = f"\ue000{secrets.token_hex(8)}\ue001"
+
+        def marked(value: object) -> object:
+            if isinstance(value, LiftedImage):
+                return mark
+            if isinstance(value, dict):
+                return {key: marked(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [marked(item) for item in value]
+            return value
+
+        text = render_state(marked(state)).replace(mark, IMAGE)
+    else:
+        text = render_state(state)
+    if leading:
+        return IMAGE * leading + ("\n" + text if text else "")
+    return text
+
+
+def state_block(state: object, images: int = 0) -> str:
+    return f"<state>\n{state_text(state, images)}\n</state>\n\n"
 
 
 def options(question: Noul | Choice | Score) -> tuple[list[str], list[str], list[object]]:
@@ -125,14 +180,15 @@ def render_question(question: Noul | Choice | Score) -> str:
     )
 
 
-def render(state: object, suffix: str) -> str:
-    """The whole prompt of a question, ready to tokenize (no special tokens added)."""
-    return BEFORE_USER + state_block(state) + suffix + AFTER_USER
+def render(state: object, suffix: str, images: int = 0) -> str:
+    """The whole prompt of a question, ready to tokenize (no special tokens
+    added); ``images`` is the number of the request's images."""
+    return BEFORE_USER + state_block(state, images) + suffix + AFTER_USER
 
 
-def prefix_text(state: object) -> str:
+def prefix_text(state: object, images: int = 0) -> str:
     """What every question's prompt starts with: up to the end of the state block."""
-    return BEFORE_USER + state_block(state)
+    return BEFORE_USER + state_block(state, images)
 
 
 @dataclass
@@ -143,21 +199,23 @@ class Layout:
     suffixes: list[list[int]]
 
 
-def layout(tokenizer, state: object, suffixes: list[str]) -> Layout:
+def layout(tokenizer, state: object, suffixes: list[str], images: int = 0) -> Layout:
     """The prompts of ``suffixes`` (``render_question``'s) tokenized, split into the
     longest common token prefix that ends at or before the state block's end and
     each question's rest. Raises ``ValueError`` when a question's tokens do not
     break at that point (the prefix's attention never sees a question, so its
-    cache is only shared there) or a question has no tokens of its own."""
+    cache is only shared there) or a question has no tokens of its own. With
+    ``images`` each image's block holds one image pad token here."""
+    head = prefix_text(state, images)
     full = []
     for suffix in suffixes:
-        encoding = tokenizer.encode(render(state, suffix), add_special_tokens=False)
+        encoding = tokenizer.encode(head + suffix + AFTER_USER, add_special_tokens=False)
         full.append(encoding)
-    prefix = tokenizer.encode(prefix_text(state), add_special_tokens=False).ids
+    prefix = tokenizer.encode(head, add_special_tokens=False).ids
     count = len(prefix)
     while count > 0 and not all(e.ids[:count] == prefix[:count] for e in full):
         count -= 1
-    boundary = len(prefix_text(state))
+    boundary = len(head)
     for encoding in full:
         ends = [end for _, end in encoding.offsets]
         # The tokens that end at or before the state block's end.

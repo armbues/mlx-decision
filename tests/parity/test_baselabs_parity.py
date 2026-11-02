@@ -113,6 +113,69 @@ def test_prompts_and_tokens_equal_the_release(tokenizer, case_id):
         assert len(ids) == entry["tokens"], qid
 
 
+# Images: ``baselabs/reference-images.json`` (``make_baselabs_reference.py
+# --images``), the releases' training-side scoring of the image requests.
+IMAGE_FIXTURE = json.loads((HERE / "baselabs" / "reference-images.json").read_text())
+IMAGE_CASES = {c["id"]: c for c in json.loads((HERE / "requests.json").read_text())}
+IMAGE_CASES = {key: case for key, case in IMAGE_CASES.items() if case.get("images")}
+for case in json.loads((HERE / "baselabs" / "image-requests.json").read_text()):
+    IMAGE_CASES[case["id"]] = case
+
+
+def image_request(case_id: str):
+    """The image request as a model gets it: its state's images lifted out."""
+    from parity_images import with_data_urls
+
+    from mlx_decision.model import _lift_state_images
+
+    return _lift_state_images(parse_request(with_data_urls(IMAGE_CASES[case_id])))[0]
+
+
+def expand(ids: list[int], pad: int, grids: list[list[int]]) -> list[int]:
+    """Each image pad as its patches after the 2 x 2 merge, as the processor expands it."""
+    counts = iter(t * h * w // 4 for t, h, w in grids)
+    return [token for i in ids for token in ([pad] * next(counts) if i == pad else [i])]
+
+
+def test_the_image_fixture_covers_every_image_request():
+    assert list(IMAGE_FIXTURE["results"]) == list(IMAGE_CASES)
+
+
+@pytest.mark.parametrize("case_id", list(IMAGE_CASES))
+def test_image_prompts_and_tokens_equal_the_reference(tokenizer, case_id):
+    """Images lifted out of the state get their vision block in their place,
+    top-level images at the start of the state block; the prompt and, with
+    each image pad expanded to its patches, the tokens are the reference's."""
+    body = image_request(case_id)
+    expected = IMAGE_FIXTURE["results"][case_id]["questions"]
+    count = len(body.images)
+    suffixes = [render_question(q) for q in body.questions.values()]
+    found = layout(tokenizer, body.state, suffixes, images=count)
+    pad = tokenizer.token_to_id("<|image_pad|>")
+    for (qid, entry), suffix, rest in zip(expected.items(), suffixes, found.suffixes, strict=True):
+        assert render(body.state, suffix, images=count) == entry["prompt"], qid
+        assert len(entry["grids"]) == count, qid
+        prefix = expand(found.prefix, pad, entry["grids"])
+        ids = prefix + rest
+        assert len(prefix) == entry["prefix_tokens"], qid
+        assert sha256(ids) == entry["ids_sha256"], qid
+        if "ids" in entry:
+            assert ids == entry["ids"], qid
+
+
+def test_typed_image_markers_stay_text():
+    """A value that reads [image 1] is text unless an image was lifted there."""
+    from mlx_decision.models.baselabs.prompt import IMAGE, state_text
+    from mlx_decision.state_images import LiftedImage
+
+    state = {"note": "[image 1]", "photo": LiftedImage(1)}
+    text = state_text(state, images=2)
+    assert text.startswith(IMAGE + "\n{")
+    assert '"note": "[image 1]"' in text and f'"photo": "{IMAGE}"' in text
+    with pytest.raises(ValueError, match="do not follow"):
+        state_text({"photo": LiftedImage(0)}, images=2)
+
+
 # Largest allowed difference of a logit against the reference (CPU, float32).
 LOGIT_TOLERANCE = 1e-4
 # Largest allowed difference of a probability.

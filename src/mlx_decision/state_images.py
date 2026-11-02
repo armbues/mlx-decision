@@ -16,7 +16,11 @@ that is a data URI (``data:image/png;base64,...``), bare base64 of a PNG,
 JPEG, GIF or WebP (one unbroken token of at least 64 characters, so text
 never qualifies), or a chat-style image part holding one of these. Each one
 is replaced by ``[image N]`` and joins the request's images after the
-top-level ones, N counting all of them from 1.
+top-level ones, N counting all of them from 1. The replacement is a
+``LiftedImage``: text that reads ``[image N]`` (so a prompt that shows the
+state as text is unchanged) and tells a family that places images where
+they were in the state (Base Labs) which values were images, so text a
+user typed as ``[image 2]`` stays text.
 """
 
 import base64
@@ -35,6 +39,21 @@ _PART_TYPES = ("image_url", "image", "input_image")
 # anything in the state is decoded.
 _B64_HEADS = ("iVBORw0KGgo", "/9j/", "R0lGOD", "UklGR")
 _BARE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
+
+
+class LiftedImage(str):
+    """An image lifted out of the state, in its place: the text ``[image N]``,
+    with ``index`` its place (from 0) among the request's images."""
+
+    index: int
+
+    def __new__(cls, index: int):
+        value = super().__new__(cls, f"[image {index + 1}]")
+        value.index = index
+        return value
+
+    def __reduce__(self):
+        return LiftedImage, (self.index,)
 
 
 def sniff_image(raw: bytes) -> str | None:
@@ -115,7 +134,8 @@ def _from_part(part: dict, where: str) -> bytes | None:
 
 
 def lift_images(state: Any, first: int = 0) -> tuple[Any, list[tuple[bytes, str]]]:
-    """``state`` with each image in it replaced by ``[image N]``, and the images.
+    """``state`` with each image in it replaced by ``[image N]`` (a
+    ``LiftedImage``), and the images.
 
     ``first`` is the number of images the request already has (numbered
     first). Each lifted image comes with the path where it was in the state
@@ -141,6 +161,6 @@ def lift_images(state: Any, first: int = 0) -> tuple[Any, list[tuple[bytes, str]
         if image is None:
             return value
         found.append((image, where))
-        return f"[image {first + len(found)}]"
+        return LiftedImage(first + len(found) - 1)
 
     return lift(state, "state"), found
