@@ -393,23 +393,25 @@ register_family(
     detect=_baselabs_detect,
     loader="mlx_decision.models.baselabs.model:load",
     capabilities="mlx_decision.models.baselabs.model:capabilities",
-    listing=Listing("Base Labs", "Baseten", "answer codes over Qwen3.5, 2B, 9B and 27B; text"),
+    listing=Listing(
+        "Base Labs", "Baseten", "answer codes over Qwen3.5, 2B, 9B and 27B; text and images"
+    ),
     converter="mlx_decision.models.baselabs.convert:convert",
     known_models=(
         KnownModel(
             "baselabs/elephant-1",
-            "elephant-1: Base Labs' 9B decision model (Qwen3.5), text",
+            "elephant-1: Base Labs' 9B decision model (Qwen3.5), text and images",
             "18.8 GB",
         ),
         KnownModel(
             "baselabs/mammoth-1",
-            "mammoth-1: Base Labs' 27B decision model (Qwen3.5), text; "
+            "mammoth-1: Base Labs' 27B decision model (Qwen3.5), text and images; "
             "below 96 GB of memory it runs quantized (offered after picking it)",
             "54.7 GB",
         ),
         KnownModel(
             "baselabs/joey-1",
-            "joey-1: Base Labs' 2B decision model (Qwen3.5), text",
+            "joey-1: Base Labs' 2B decision model (Qwen3.5), text and images",
             "5.5 GB",
         ),
     ),
