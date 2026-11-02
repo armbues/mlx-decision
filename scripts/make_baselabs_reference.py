@@ -9,7 +9,7 @@ and transformers (not dependencies of the package), the releases' small
 files (fetched into the Hugging Face cache at the pinned revisions, no
 weights) and a checkout of OneJev at the commit the releases serve with,
 with their `serve.patch` applied (`--onejev`, default `_reference/onejev`;
-the script checks both):
+the script checks both, and that the releases' patches are the same):
 
     git clone https://github.com/OmniJev/OneJev.git && cd OneJev
     git checkout 81ce62f1597c91e46767d4d02d6ac2e18534fe94
@@ -21,8 +21,12 @@ in float32: it renders each question, finds the shared prefix, refuses
 requests over its limits, runs the prefix once and the questions off
 copies of its cache (block-bidirectional attention in the full-attention
 layers) and reads the answer codes' logits from the LM head. The models
-are tiny random ones in both releases' shapes (tests/tiny_models.py,
-`write_baselabs`) with the releases' tokenizer and chat template.
+are tiny random ones in the three releases' shapes (tests/tiny_models.py,
+`write_baselabs`), each with its release's tokenizer and chat template.
+joey-1's config ties the head to the embeddings yet stores an `lm_head`
+too; the tiny joey's stored head differs from its embeddings, and the
+release's transformers ties only equal tensors, so its logits come from
+the stored head.
 
 Writes tests/parity/baselabs/reference.json with, per request: the shared
 prefix's length and the request's tokens, or the release's refusal; per
@@ -59,6 +63,7 @@ PARITY = ROOT / "tests" / "parity"
 RELEASES = {
     "elephant": ("baselabs/elephant-1", "b3f8a93462fb1051a9de031e94a7ff380e254072"),
     "mammoth": ("baselabs/mammoth-1", "61cec44c281c693992e3d6ebeb44dd3402dfa186"),
+    "joey": ("baselabs/joey-1", "9efbe485efbed9598dfca5294cbbe8da00e21908"),
 }
 ONEJEV_COMMIT = "81ce62f1597c91e46767d4d02d6ac2e18534fe94"
 IDS_TOKENS = 4096  # longer questions keep digests only

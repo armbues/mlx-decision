@@ -473,7 +473,11 @@ def write_h2o(folder: Path, seed: int = 0, files_from: Path | None = None) -> Pa
 
 
 # Base Labs: elephant-1 has Qwen3.5-9B's head ratios (attention 16 : 4 key-value
-# heads, linear attention 32 : 16), mammoth-1 Qwen3.5-27B's (24 : 4, 48 : 16).
+# heads, linear attention 32 : 16), mammoth-1 Qwen3.5-27B's (24 : 4, 48 : 16),
+# joey-1 Qwen3.5-2B's (8 : 2, 16 : 16). joey-1 ties its head to the embeddings
+# yet stores an `lm_head.weight` too: its tiny folder does the same, with a
+# stored head that differs from the embeddings, which shows which one is read.
+BASELABS_TIED = {"joey"}
 BASELABS_SHAPES = {
     "elephant": {
         "num_attention_heads": 4,
@@ -485,6 +489,12 @@ BASELABS_SHAPES = {
         "num_attention_heads": 6,
         "num_key_value_heads": 1,
         "linear_num_value_heads": 6,
+        "linear_num_key_heads": 2,
+    },
+    "joey": {
+        "num_attention_heads": 4,
+        "num_key_value_heads": 1,
+        "linear_num_value_heads": 2,
         "linear_num_key_heads": 2,
     },
 }
@@ -514,11 +524,12 @@ def baselabs_config(shape: str = "elephant") -> dict:
     """A Base Labs release's ``config.json`` with a tiny backbone in ``shape``'s
     head ratios (``BASELABS_SHAPES``): the release's keys, among them the
     ``modeling_overrides``, an MTP layer count without MTP weights and a
-    vision tower."""
+    vision tower; ``tie_word_embeddings`` at both levels for joey."""
+    tied = shape in BASELABS_TIED
     text = {
         **PPLX_CONFIG["text_config"],
         **BASELABS_SHAPES[shape],
-        "tie_word_embeddings": False,
+        "tie_word_embeddings": tied,
         "mtp_num_hidden_layers": 1,
         "mamba_ssm_dtype": "float32",
         "eos_token_id": 248044,
@@ -530,8 +541,8 @@ def baselabs_config(shape: str = "elephant") -> dict:
         "image_token_id": 248056,
         "model_type": "qwen3_5",
         "text_config": text,
-        "tie_word_embeddings": False,
-        "use_cache": True,
+        "tie_word_embeddings": tied,
+        "use_cache": not tied,  # as the releases: joey-1's says false
         "video_token_id": 248057,
         "vision_config": PPLX_VISION,
         "vision_end_token_id": 248054,
@@ -554,17 +565,20 @@ def write_baselabs_tokenizer(folder: Path) -> None:
 def write_baselabs(
     folder: Path, seed: int = 0, shape: str = "elephant", files_from: Path | None = None
 ) -> Path:
-    """A Base Labs release folder (elephant-1 or mammoth-1): tiny backbone with
-    vision tower, float32.
+    """A Base Labs release folder (elephant-1, mammoth-1 or joey-1): tiny
+    backbone with vision tower, float32.
 
     As the release: transformers' names (``model.language_model.*``,
-    ``model.visual.*``), PyTorch's convolution kernels, an untied ``lm_head``
+    ``model.visual.*``), PyTorch's convolution kernels, a stored ``lm_head``
     over the release's vocabulary, ``config.json`` with the
     ``modeling_overrides`` and ``readout.json``. ``shape`` gives the head
-    ratios and the files: elephant one ``model.safetensors``, mammoth two
-    shards with an index (``lm_head``, the embeddings and the first layers in
-    the first). ``files_from`` (a release folder) supplies the tokenizer,
-    chat template and processor; without it the folder gets a word-level
+    ratios and the files: elephant and joey one ``model.safetensors``, mammoth
+    two shards with an index (``lm_head``, the embeddings and the first layers
+    in the first). joey's config ties the head to the embeddings; its stored
+    ``lm_head`` is drawn on its own, so it differs from them, and transformers
+    then keeps the stored head (it ties only equal tensors). ``files_from``
+    (a release folder) supplies the tokenizer, chat template and
+    processor; without it the folder gets a word-level
     tokenizer (``BASELABS_WORDS``, the special tokens and every one- and
     two-letter code).
     """
@@ -576,7 +590,9 @@ def write_baselabs(
 
     config = baselabs_config(shape)
     # Lazily built: only the names and shapes are used, nothing is allocated.
-    text_args = {"model_type": "qwen3_5", "text_config": config["text_config"]}
+    # Untied here, so the names include the stored lm_head.
+    text_config = {**config["text_config"], "tie_word_embeddings": False}
+    text_args = {"model_type": "qwen3_5", "text_config": text_config}
     text = Model(ModelArgs.from_dict(text_args))
     vision = VisionModel(VisionArgs.from_config(config))
     shapes = {}
@@ -598,7 +614,7 @@ def write_baselabs(
         shapes[f"model.visual.{name}"] = shape_
     folder.mkdir(parents=True, exist_ok=True)
     names = sorted(shapes)
-    if shape == "elephant":
+    if shape != "mammoth":
         shards = {"model.safetensors": names}
     else:
         layers = [n for n in names if n.startswith("model.language_model.layers.")]
