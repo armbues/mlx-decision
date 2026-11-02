@@ -38,12 +38,14 @@ both batched (the releases' mode) and one question at a time; the largest
 difference between the two, per shape, goes into the meta. Existing entries are kept,
 so a run can be continued with --only.
 
-With --model (elephant-1's release folder with its weights, at the pinned
-revision) the real model runs instead, as the release's engine.py serves
-it: bfloat16 on MPS, the LM head in float32, the engine's own choice of
-batched or sequential branches. It answers every request within the
-release's limits and writes tests/parity/baselabs/reference-bf16.json with,
-per question, the token count and digests, the answer-code logits and the
+With --model (a release folder with its weights, at the pinned revision;
+which release it is comes from its config.json) the real model runs
+instead, as the release's engine.py serves it: bfloat16 on MPS, the LM
+head in float32, the engine's own choice of batched or sequential
+branches. It answers every request within the release's limits and writes
+tests/parity/baselabs/reference-bf16.json (elephant-1) or
+reference-<shape>-bf16.json (joey-1: reference-joey-bf16.json) with, per
+question, the token count and digests, the answer-code logits and the
 release's answer (no prompts or ids), after every request.
 """
 
@@ -65,6 +67,9 @@ RELEASES = {
     "mammoth": ("baselabs/mammoth-1", "61cec44c281c693992e3d6ebeb44dd3402dfa186"),
     "joey": ("baselabs/joey-1", "9efbe485efbed9598dfca5294cbbe8da00e21908"),
 }
+# What --model writes, per release (elephant-1's was the first).
+BF16_FILES = {shape: f"reference-{shape}-bf16.json" for shape in RELEASES}
+BF16_FILES["elephant"] = "reference-bf16.json"
 ONEJEV_COMMIT = "81ce62f1597c91e46767d4d02d6ac2e18534fe94"
 IDS_TOKENS = 4096  # longer questions keep digests only
 SEED = 0
@@ -102,6 +107,15 @@ def fetch(repo_id: str, revision: str) -> Path:
             token=os.environ.get("HF_TOKEN"),
         )
     )
+
+
+def which_release(folder: Path, snapshots: dict[str, Path]) -> str:
+    """The release a weights folder is: the one whose config.json it has, byte for byte."""
+    config = (folder / "config.json").read_bytes()
+    found = [s for s, path in snapshots.items() if (path / "config.json").read_bytes() == config]
+    if len(found) != 1:
+        raise SystemExit(f"{folder}: config.json is none of the pinned releases'")
+    return found[0]
 
 
 def check_onejev(onejev: Path, patch: Path) -> str:
@@ -231,8 +245,6 @@ def main() -> None:
     parser.add_argument("--device", default="mps", help="device for --model (default: mps)")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    name = "reference-bf16.json" if args.model else "reference.json"
-    args.out = args.out or PARITY / "baselabs" / name
     import torch
     import transformers
 
@@ -243,6 +255,9 @@ def main() -> None:
     if args.model and args.device == "mps":
         torch.mps.set_per_process_memory_fraction(MEMORY_FRACTION)
     snapshots = {shape: fetch(*release) for shape, release in RELEASES.items()}
+    model_shape = which_release(args.model, snapshots) if args.model else None
+    name = BF16_FILES[model_shape] if args.model else "reference.json"
+    args.out = args.out or PARITY / "baselabs" / name
     patches = {(path / "serve.patch").read_bytes() for path in snapshots.values()}
     if len(patches) != 1:
         raise SystemExit("the releases' serve.patch files differ")
@@ -260,18 +275,18 @@ def main() -> None:
         cases = [c for c in cases if c["id"] in wanted]
     with tempfile.TemporaryDirectory() as scratch:
         if args.model:
-            references = {"elephant": Reference(args.model.resolve(), True, args.device)}
+            references = {model_shape: Reference(args.model.resolve(), True, args.device)}
         else:
             references = {}
             for shape, snapshot in snapshots.items():
                 folder = write_baselabs(Path(scratch) / shape, SEED, shape, files_from=snapshot)
                 references[shape] = Reference(folder)
-        engine = references["elephant"].engine
+        engine = next(iter(references.values())).engine
         meta = {
             "releases": {s: {"repo_id": r, "revision": v} for s, (r, v) in RELEASES.items()},
             "onejev": {"commit": ONEJEV_COMMIT, "serve_patch_sha256": patch_sha256},
             "prompt_version": PROMPT_VERSION,
-            **({"model": "elephant-1 release"} if args.model else {"seed": SEED}),
+            **({"model": f"{model_shape}-1 release"} if args.model else {"seed": SEED}),
             **({} if args.model else {"ids_tokens": IDS_TOKENS}),
             "max_branch_tokens": engine.max_branch_tokens,
             "max_request_tokens": engine.max_request_tokens,

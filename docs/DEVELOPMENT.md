@@ -55,9 +55,10 @@ release from `$MLX_DECISION_MODELS/d3-flash`. Base Labs' comes from
 `scripts/make_baselabs_reference.py`, which runs the releases' engine
 (OneJev's `qev`, from a checkout at the pinned commit with the releases'
 `serve.patch` applied: `--onejev DIR`; the script checks both) on small
-random models in both releases' shapes; with `--model` it runs
-elephant-1's weights in bf16 for the slow test, which takes the release
-from `$MLX_DECISION_MODELS/elephant-1`.
+random models in the three releases' shapes; with `--model` it runs a
+release's weights in bf16 for the slow test (elephant-1 or joey-1, told
+apart by their `config.json`), which takes the release from
+`$MLX_DECISION_MODELS/elephant-1` and `$MLX_DECISION_MODELS/joey-1`.
 
 The reference scripts run the families' own code, so they need packages
 that `make setup` does not install: `torch` and `transformers` for all

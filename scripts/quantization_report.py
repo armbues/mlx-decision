@@ -18,7 +18,8 @@ in states lifted out; answers compared before the yes/no floor). d3:
 ``--reference tests/parity/d3/reference-bf16.json`` (its parity set; the
 questions the release refuses left out; the input limit raised to the
 backbone's context for the 40k request). Base Labs: ``--reference
-tests/parity/baselabs/reference-bf16.json`` (the text parity set and the
+tests/parity/baselabs/reference-bf16.json`` (elephant-1; joey-1's is
+``reference-joey-bf16.json``: the text parity set and the
 Base Labs set at the release's 32,768-token limit; what the wire format
 refuses left out).
 """
@@ -110,9 +111,9 @@ def d3_reference(fixture: dict) -> dict:
 
 
 def baselabs_reference(fixture: dict) -> dict:
-    """Base Labs' reference in the shape of Clef's: each question's option ids and
-    the softmax of the release's answer-code logits; what the release or the
-    wire format refuses left out."""
+    """Base Labs' reference (a release's bf16 fixture, any of them) in the shape
+    of Clef's: each question's option ids and the softmax of the release's
+    answer-code logits; what the release or the wire format refuses left out."""
     import math
 
     from mlx_decision.errors import DecisionError
@@ -133,7 +134,7 @@ def baselabs_reference(fixture: dict) -> dict:
             continue
         questions = []
         for question_id, result in entry["questions"].items():
-            logits = result["logits"]["elephant"]
+            (logits,) = result["logits"].values()  # a --model fixture: one release
             top = max(logits)
             exps = [math.exp(x - top) for x in logits]
             questions.append(
