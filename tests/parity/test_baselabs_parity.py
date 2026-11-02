@@ -447,3 +447,73 @@ def test_bf16_answers_as_the_release(shape):
     assert worst[0] <= tolerance, f"max |dp| {worst[0]:.4f} at {worst[1]}"
     assert mean <= MEAN_TOLERANCE, f"mean |dp| {mean:.5f}"
     assert not decided_flips
+
+
+# Images per release: the fixture make_baselabs_reference.py --images --model
+# writes and the largest allowed difference of a probability (measured: see
+# the test's docstring).
+IMAGES_BF16 = {
+    "elephant": ("elephant-1", "reference-images-elephant-bf16.json", 0.05),
+    "joey": ("joey-1", "reference-images-joey-bf16.json", 0.05),
+}
+
+
+@pytest.mark.slow
+@pytest.mark.weights
+@pytest.mark.parametrize("shape", list(IMAGES_BF16))
+def test_bf16_answers_images_as_the_release(shape):
+    """The release folder in bf16 answers the image requests (22 requests, 53
+    questions) as the releases' training-side scoring does in bf16 on MPS (the
+    LM head in float32 on both sides), at the 32,768-token limit.
+
+    joey-1, about 15 s. Measured 2026-11-02 on an M5 Pro (MLX 0.32.4): max
+    0.021 (image_three.shows_error, margin 0.67), next 0.010, mean 0.0018; no
+    changed top answers. 11 s, 6.6 GB peak (the releases' training-side
+    scoring: 101 s, 12.2 GB). The limit is 0.05, about 2.4 times the worst
+    case: images in bf16 move answers more than text (its limit 0.03).
+
+    elephant-1, about 40 s. Measured the same day: max 0.017
+    (bl_two_images_in_a_list.shows, margin 0.22), next 0.013, mean 0.0018; no
+    changed top answers. 34 s, 21.0 GB peak (the releases' scoring: 269 s,
+    30.6 GB). The same limit.
+    """
+    import os
+
+    from parity_images import with_data_urls
+    from test_parity import MARGIN, MEAN_TOLERANCE
+
+    import mlx_decision
+
+    name, file, tolerance = IMAGES_BF16[shape]
+    root = os.environ.get("MLX_DECISION_MODELS")
+    path = Path(root) / name if root else None
+    if path is None or not path.is_dir():
+        pytest.skip(f"no {name} in MLX_DECISION_MODELS")
+    fixture = HERE / "baselabs" / file
+    if not fixture.exists():
+        pytest.skip(f"no {file} (make_baselabs_reference.py --images --model)")
+    reference = json.loads(fixture.read_text())["results"]
+    model = mlx_decision.load(path, max_input_tokens=32768)
+    differences, worst, decided_flips = [], (0.0, None), []
+    for case_id, expected in reference.items():
+        result = model.decide_request(with_data_urls(IMAGE_CASES[case_id]))
+        for qid, entry in expected["questions"].items():
+            logits = entry["logits"][shape]
+            top = max(logits)
+            exps = [math.exp(x - top) for x in logits]
+            want = [e / sum(exps) for e in exps]
+            answer = result.answers[qid]
+            if answer.type == "noul":
+                got = [answer.noul, 1 - answer.noul]
+            else:
+                got = list(answer.probabilities.values())
+            pairs = list(zip(got, want, strict=True))
+            differences += [abs(a - b) for a, b in pairs]
+            worst = max(worst, (max(abs(a - b) for a, b in pairs), f"{case_id}.{qid}"))
+            first, second = [*sorted(want, reverse=True), 0.0][:2]
+            if first - second > MARGIN and got.index(max(got)) != want.index(first):
+                decided_flips.append(f"{case_id}.{qid}")
+    mean = sum(differences) / len(differences)
+    assert worst[0] <= tolerance, f"max |dp| {worst[0]:.4f} at {worst[1]}"
+    assert mean <= MEAN_TOLERANCE, f"mean |dp| {mean:.5f}"
+    assert not decided_flips
