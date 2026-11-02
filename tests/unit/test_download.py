@@ -220,6 +220,7 @@ def test_the_menu_lists_known_models_and_other():
         "vllm-sr/d3-edge",
         "baselabs/elephant-1",
         "baselabs/mammoth-1",
+        "baselabs/joey-1",
         "h2oai/h2o-lightning-4b",
         "LiquidAI/d1-2B",
         "LiquidAI/d1-3B",
@@ -236,6 +237,7 @@ def test_the_menu_lists_known_models_and_other():
         (down + "\r" + down + "\r", "perplexity-ai/pplx-decider-v1.2"),
         (down * 3 + "\r\r", "baselabs/elephant-1"),
         (down * 3 + "\r" + down + "\r", "baselabs/mammoth-1"),
+        (down * 3 + "\r" + down * 2 + "\r", "baselabs/joey-1"),
         (down * 4 + "\r", "h2oai/h2o-lightning-4b"),  # one model: no second menu
         (down * 5 + "\r", "LiquidAI/d1-2B"),
         (down * 6 + "\r", "LiquidAI/d1-3B"),

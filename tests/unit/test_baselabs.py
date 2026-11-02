@@ -494,7 +494,8 @@ def test_a_download_fetches_only_what_loading_and_converting_read():
 
     from mlx_decision.registry import get_family
 
-    # mammoth-1's files at revision 61cec44 (elephant-1 has one model.safetensors).
+    # mammoth-1's files at revision 61cec44 (elephant-1 and joey-1 have one
+    # model.safetensors; joey-1's other files are elephant-1's).
     release = [".gitattributes", "README.md", "assets/banner.png", "chat_template.jinja"]
     release += ["config.json", "constraints.txt", "engine.py", "generation_config.json"]
     release += ["model.safetensors.index.json", "processor_config.json", "readout.json"]
@@ -512,5 +513,9 @@ def test_a_download_fetches_only_what_loading_and_converting_read():
         "serve.patch",
         "setup.sh",
     }
-    assert [m.repo_id for m in family.known_models] == ["baselabs/elephant-1", "baselabs/mammoth-1"]
+    assert [m.repo_id for m in family.known_models] == [
+        "baselabs/elephant-1",
+        "baselabs/mammoth-1",
+        "baselabs/joey-1",
+    ]
     assert family.listing.title == "Base Labs"

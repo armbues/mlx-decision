@@ -3,8 +3,9 @@
 pplx, d3, Base Labs, H2O and d1 read a question's answer from the hidden
 state at its last token: one row per scored token (H2O: the option labels'
 rows of the tied embeddings; Base Labs: the answer codes' rows of the LM
-head; d1: the rows of the tokens that stand for each option; pplx and d3:
-their readout's rows), the best token's logit per option, divided by a temperature
+head, or of the tied embeddings without a stored head; d1: the rows of
+the tokens that stand for each option; pplx and d3: their readout's
+rows), the best token's logit per option, divided by a temperature
 and normalized. ``Features`` hold what goes in, so a readout can be fitted
 without running the model again, and a fitted ``Readout`` (rows and a bias
 per option) can stand in for the release's rows:

@@ -393,7 +393,7 @@ register_family(
     detect=_baselabs_detect,
     loader="mlx_decision.models.baselabs.model:load",
     capabilities="mlx_decision.models.baselabs.model:capabilities",
-    listing=Listing("Base Labs", "Baseten", "answer codes over Qwen3.5, 9B and 27B; text"),
+    listing=Listing("Base Labs", "Baseten", "answer codes over Qwen3.5, 2B, 9B and 27B; text"),
     converter="mlx_decision.models.baselabs.convert:convert",
     known_models=(
         KnownModel(
@@ -406,6 +406,11 @@ register_family(
             "mammoth-1: Base Labs' 27B decision model (Qwen3.5), text; "
             "below 96 GB of memory it runs quantized (offered after picking it)",
             "54.7 GB",
+        ),
+        KnownModel(
+            "baselabs/joey-1",
+            "joey-1: Base Labs' 2B decision model (Qwen3.5), text",
+            "5.5 GB",
         ),
     ),
     # Not the release's runtime patch, setup, engine, pins, chat template or card images.
