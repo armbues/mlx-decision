@@ -10,6 +10,8 @@ one is listed by its repo id.
 
 import dataclasses
 import json
+import os
+import stat
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
@@ -148,9 +150,11 @@ def model_facts(spec: ModelSpec, workspace_models: Path | None) -> dict:
     ``maker`` and ``family_title`` from the family's listing; ``parameters``
     and ``precision`` from the weights it loads (a fitted model: its base's);
     ``place``: "cache" (with ``repo`` and ``revision``), "studio" (the
-    workspace's ``models/``) or "folder"; ``converted_from``, the repo a
-    converted copy was made from; ``disk_bytes``, the folder's size;
-    ``licence_note``, the family's note on terms of use.
+    workspace's ``models/``) or "folder" (the Models route tells "models",
+    a folder in ``models_dir``, from it); ``link``, whether the folder is a
+    link; ``converted_from``, the repo a converted copy was made from;
+    ``disk_bytes``, the folder's size; ``licence_note``, the family's note
+    on terms of use.
     """
     family = spec.family
     weights = spec.fit.base if spec.fit is not None else spec.path
@@ -178,12 +182,30 @@ def model_facts(spec: ModelSpec, workspace_models: Path | None) -> dict:
         "precision": precision,
         "path": str(path),
         "place": place,
+        "link": path.is_symlink(),
         "repo": cached[0] if cached else None,
         "revision": cached[1] if cached else None,
         "converted_from": converted_from if isinstance(converted_from, str) else None,
         "disk_bytes": folder_size(path),
         "licence_note": family.licence,
     }
+
+
+def repo_size(snapshot: Path) -> int:
+    """The bytes a Hugging Face cache repo holds, every revision: the files in
+    its folder, links not followed (a snapshot's links count once, as their
+    blobs; payloads in the cache's shared store are left out, since another
+    repo may hold them)."""
+    total = 0
+    for folder, _, files in os.walk(Path(snapshot).resolve().parents[1]):
+        for name in files:
+            try:
+                info = os.lstat(os.path.join(folder, name))
+            except OSError:
+                continue
+            if stat.S_ISREG(info.st_mode):
+                total += info.st_size
+    return total
 
 
 # Load options as the CLI's flags take them.

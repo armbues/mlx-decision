@@ -1,5 +1,6 @@
 """Deleting models the Studio made, and fit and evaluation entries."""
 
+import dataclasses
 import shutil
 import sys
 import time
@@ -239,14 +240,16 @@ def test_an_old_fit_entry_does_not_take_a_later_fit_of_its_name(studio):
 # Downloads: a repo in the Hugging Face cache, a folder in models_dir.
 
 
-def write_cached(cache: Path, repo: str, commit: str, main: bool = True, extra=()) -> Path:
+def write_cached(
+    cache: Path, repo: str, commit: str, main: bool = True, extra=(), weights: int = 64
+) -> Path:
     """A fake model in the Hub cache's layout: files in ``blobs/`` (named by
     their hash), links to them in ``snapshots/<commit>``, ``refs/main``.
     ``extra`` names links that point nowhere (a broken snapshot)."""
     import hashlib
 
     folder = cache / f"models--{repo.replace('/', '--')}"
-    staged = write_sized_model(folder / "staged", 64)
+    staged = write_sized_model(folder / "staged", weights)
     snapshot = folder / "snapshots" / commit
     snapshot.mkdir(parents=True)
     (folder / "blobs").mkdir(exist_ok=True)
@@ -275,7 +278,7 @@ def downloads(tmp_path, monkeypatch):
 
     cache = tmp_path / "hf"
     monkeypatch.setattr(constants, "HF_HUB_CACHE", str(cache))
-    write_cached(cache, "org/cached", "b" * 40, main=False)
+    write_cached(cache, "org/cached", "b" * 40, main=False, weights=4096)
     snapshot = write_cached(cache, "org/cached", "a" * 40)
     write_cached(cache, "org/other", "c" * 40)
     write_cached(cache, "org/named", "d" * 40)
@@ -320,6 +323,53 @@ def test_the_places_are_listed_as_expected(downloads):
         "single": None,
         "named": None,
     }
+
+
+def models_by_name(studio):
+    return {model["name"]: model for model in studio.get("/studio/api/models").json()["models"]}
+
+
+def test_the_page_is_told_what_may_go_and_what_it_frees(downloads, tmp_path):
+    models = models_by_name(downloads)
+    seen = {
+        name: (model["place"], model["deletable"], model["link"]) for name, model in models.items()
+    }
+    assert seen == {
+        "laya": ("models", True, False),
+        "linked": ("models", True, True),
+        "cached": ("cache", True, False),
+        "other": ("cache", True, False),
+        "kept": ("folder", False, False),  # named, though in models_dir
+        "single": ("folder", False, False),
+        "named": ("cache", False, False),
+    }
+    # A cache repo frees every revision's files (the older one is larger).
+    repo = downloads.cache / "models--org--cached"
+    blobs = sum(path.stat().st_size for path in (repo / "blobs").iterdir())
+    refs = (repo / "refs" / "main").stat().st_size
+    assert blobs > 4096 and models["cached"]["freed_bytes"] == blobs + refs
+    assert models["cached"]["disk_bytes"] < blobs  # the main revision alone
+    assert models["laya"]["freed_bytes"] == models["laya"]["disk_bytes"] > 0
+    assert models["linked"]["freed_bytes"] == 0  # only the link goes
+    assert models["linked"]["disk_bytes"] > 0
+    for name in ("kept", "single", "named"):
+        assert models[name]["freed_bytes"] is None
+    # Named in the config's models from now on: no Delete any more.
+    settings = downloads.app_state.settings
+    settings.config = dataclasses.replace(
+        settings.config, models=(*settings.config.models, str(downloads.models_dir / "laya"))
+    )
+    laya = models_by_name(downloads)["laya"]
+    assert (laya["place"], laya["deletable"], laya["freed_bytes"]) == ("folder", False, None)
+
+
+def test_a_studio_model_says_it_may_go(studio):
+    models = models_by_name(studio)
+    for name in ("conv", "conv-fit"):
+        model = models[name]
+        assert (model["place"], model["deletable"]) == ("studio", True)
+        assert model["freed_bytes"] == model["disk_bytes"]
+    assert (models["named"]["deletable"], models["named"]["freed_bytes"]) == (False, None)
 
 
 def test_a_cached_repo_goes_with_every_revision(downloads):

@@ -3,7 +3,8 @@
 ``GET /status`` gives what the page shows in its sidebar and Get Code
 sheet; ``GET /models`` the models a run can pick, with what each takes
 (from its files, before loading), for the live check's hints, and what
-the Models page shows (``catalog.model_facts``, the memory a load takes).
+the Models page shows (``catalog.model_facts``, the memory a load takes,
+whether Delete is offered and what it frees: ``deletable``, ``freed_bytes``).
 """
 
 import asyncio
@@ -20,6 +21,7 @@ from ...backend import Capabilities
 from ...config import Config
 from ...gpu import Gpu
 from ..catalog import cli_arguments
+from ..removal import ModelRemoval
 from ..security import WILDCARDS
 from ..workspace import Workspace
 from .models import not_convertible
@@ -91,7 +93,9 @@ def status_router(
     port: int,
     api_key: str | None,
     status: Callable[[], dict[str, Any]],
+    removal: ModelRemoval | None = None,
 ) -> APIRouter:
+    """``removal`` tells which models may be deleted, and how."""
     router = APIRouter(prefix="/studio/api")
     pool = gpu.pool
     home = address(host, port)
@@ -140,8 +144,15 @@ def status_router(
                 except (ValueError, OSError) as error:
                     entry["capabilities"] = None
                     entry["error"] = str(error)
+                # Deleting depends on the config as it is now: read each time.
+                kind = removal.kind(name) if removal is not None else None
+                entry["deletable"] = kind is not None
+                entry["freed_bytes"] = None
                 try:
                     entry.update(models.facts(name))
+                    if kind == "models":
+                        entry["place"] = "models"
+                    entry["freed_bytes"] = models.freed_bytes(name, kind)
                     entry["cli"] = cli_arguments(spec, current, entry.get("repo"))
                     entry["memory"] = models.memory(name)
                 except (ValueError, OSError) as error:

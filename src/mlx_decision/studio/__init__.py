@@ -178,7 +178,9 @@ def create_studio(
     page.mount(app)
     app.include_router(page_router(page, session, api_key))
     current = lambda: settings.config  # noqa: E731 - read at each request: Settings changes it
-    app.include_router(status_router(gpu, files, models, current, host, port, api_key, status))
+    app.include_router(
+        status_router(gpu, files, models, current, host, port, api_key, status, removal)
+    )
     app.include_router(sets_router(files, max_body_bytes))
     app.include_router(data_router(files, jobs, max_body_bytes))
     app.include_router(training_router(gpu, files, max_body_bytes))

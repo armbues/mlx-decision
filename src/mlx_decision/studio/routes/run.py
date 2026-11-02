@@ -26,7 +26,7 @@ from ...memory import ModelTooLargeError
 from ...model import check_request
 from ...registry import static_capabilities
 from ...server import Answered, answer
-from ..catalog import model_facts
+from ..catalog import model_facts, repo_size
 from ..workspace import Workspace, WorkspaceError, check_name, dataset_document
 from . import ApiError, field, json_body
 
@@ -52,6 +52,7 @@ class Models:
         self._capabilities: dict[str, Capabilities] = {}
         self._fingerprints: dict[str, str] = {}
         self._facts: dict[str, dict] = {}
+        self._freed: dict[str, tuple[str, int]] = {}
 
     def speed(self, name: str) -> dict[str, Any] | None:
         """The model's measured speed on this Mac's chip (``speed_summary``),
@@ -65,7 +66,7 @@ class Models:
 
     def forget(self, name: str) -> None:
         """Drop what was read for ``name`` (the model came or went in a rescan)."""
-        for table in (self._capabilities, self._fingerprints, self._facts):
+        for table in (self._capabilities, self._fingerprints, self._facts, self._freed):
             table.pop(name, None)
 
     def facts(self, name: str) -> dict:
@@ -73,6 +74,24 @@ class Models:
         if name not in self._facts:
             self._facts[name] = model_facts(self.gpu.pool.specs[name], self.workspace_models)
         return self._facts[name]
+
+    def freed_bytes(self, name: str, kind: str | None) -> int | None:
+        """What deleting the model frees on disk (``ModelRemoval.kind``'s
+        ``kind``): a cache repo's every revision, nothing for a link, else the
+        folder; None when it may not be deleted (blocks: call it off the loop)."""
+        if kind is None:
+            return None
+        known = self._freed.get(name)
+        if known is None or known[0] != kind:
+            facts = self.facts(name)
+            if kind == "cache":
+                size = repo_size(self.gpu.pool.specs[name].path)
+            elif facts["link"]:
+                size = 0
+            else:
+                size = facts["disk_bytes"]
+            known = self._freed[name] = (kind, size)
+        return known[1]
 
     def memory(self, name: str) -> dict:
         """What loading the model takes: ``bytes`` alone (with its base), ``added``
