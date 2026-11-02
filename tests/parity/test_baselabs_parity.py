@@ -1,11 +1,13 @@
-"""Base Labs (elephant-1, mammoth-1) on MLX against the release's own serving code.
+"""Base Labs (elephant-1, mammoth-1, joey-1) on MLX against the release's own serving code.
 
 ``baselabs/reference.json`` is written by ``scripts/make_baselabs_reference.py``:
 OneJev's ``DecisionEngine`` with Base Labs' ``serve.patch``, so the prompt
 text, token ids and shared prefix of every question (the releases' real
 tokenizer) and the answers of the tiny random models of
-``tiny_models.write_baselabs`` in both shapes (CPU, float32). The prompt
-tests need the release's small files in the Hugging Face cache (the script
+``tiny_models.write_baselabs`` in the three shapes (CPU, float32). The tiny
+joey ties its head to the embeddings yet stores a head that differs from
+them; the release reads the stored one, as the loader does. The prompt
+tests need the releases' small files in the Hugging Face cache (the script
 fetches them) and skip otherwise.
 """
 
@@ -18,7 +20,7 @@ import pytest
 
 from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
-from mlx_decision.models.baselabs.model import code_token_ids, head_file, read_rows
+from mlx_decision.models.baselabs.model import code_token_ids, head_source, read_rows
 from mlx_decision.models.baselabs.prompt import layout, render, render_question
 from mlx_decision.types import parse_request
 
@@ -32,13 +34,14 @@ IDS = [case["id"] for case in CASES]
 # Requests the wire format refuses before a model sees them (the release
 # takes a score with one level).
 WIRE_REFUSED = {"bl_score_one_level"}
+SHAPES = ["elephant", "mammoth", "joey"]
 
 
-@pytest.fixture(scope="module")
-def release() -> Path:
+def cached_release(shape: str) -> Path:
+    """The release's small files in the Hugging Face cache; skips without them."""
     from huggingface_hub import snapshot_download
 
-    meta = FIXTURE["meta"]["releases"]["elephant"]
+    meta = FIXTURE["meta"]["releases"][shape]
     try:
         path = Path(
             snapshot_download(
@@ -54,6 +57,11 @@ def release() -> Path:
     if not (path / "tokenizer.json").exists():
         pytest.skip("Base Labs release files incomplete in the cache")
     return path
+
+
+@pytest.fixture(scope="module")
+def release() -> Path:
+    return cached_release("elephant")
 
 
 @pytest.fixture(scope="module")
@@ -118,7 +126,7 @@ STORED = [
 ]
 
 
-@pytest.fixture(scope="module", params=["elephant", "mammoth"])
+@pytest.fixture(scope="module", params=SHAPES)
 def tiny(request, tmp_path_factory):
     """The reference's tiny model (same seed), with a word-level tokenizer: the
     stored token ids are fed in, so no release files are needed."""
@@ -128,7 +136,7 @@ def tiny(request, tmp_path_factory):
     folder = write_baselabs(tmp_path_factory.mktemp(request.param) / "tiny", shape=request.param)
     backend = load_backend(folder, prefix_cache_gb=0)
     # The word-level tokenizer numbers the codes otherwise: the release's ids.
-    backend.rows = read_rows(head_file(folder), "lm_head.weight", FIXTURE["meta"]["slot_ids"])
+    backend.rows = read_rows(*head_source(folder), FIXTURE["meta"]["slot_ids"])
     return request.param, backend
 
 
@@ -177,14 +185,14 @@ END_TO_END = [
 ]
 
 
-@pytest.fixture(scope="module", params=["elephant", "mammoth"])
-def released(request, tmp_path_factory, release):
-    """The reference's tiny model with the release's tokenizer."""
+@pytest.fixture(scope="module", params=SHAPES)
+def released(request, tmp_path_factory):
+    """The reference's tiny model with its release's tokenizer."""
     from mlx_decision.registry import load_backend
     from tiny_models import write_baselabs
 
     folder = tmp_path_factory.mktemp(request.param) / "tiny"
-    write_baselabs(folder, shape=request.param, files_from=release)
+    write_baselabs(folder, shape=request.param, files_from=cached_release(request.param))
     return request.param, load_backend(folder, max_input_tokens=32768, prefix_cache_gb=0)
 
 

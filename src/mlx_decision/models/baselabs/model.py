@@ -1,12 +1,14 @@
-"""The Base Labs backend (elephant-1, mammoth-1): Qwen3.5 backbone with an answer-code readout.
+"""The Base Labs backend (elephant-1, mammoth-1, joey-1): Qwen3.5 with an answer-code readout.
 
-The releases are Clef's layout (``model.language_model.*``, an untied
+The releases are Clef's layout (``model.language_model.*``, a stored
 ``lm_head``, a vision tower that is not loaded) with ``modeling_overrides``
 in ``config.json`` saying how they were trained: block-bidirectional
 attention in the full-attention layers, causal Gated DeltaNet layers, and
 the LM head's logits at the answer codes as the readout (``slot_lm``). Only
 the answer codes' rows of the LM head are read, in float32 (the release
-upcasts the head); the rest of it stays on disk.
+upcasts the head); the rest of it stays on disk. joey-1's config ties the
+head to the embeddings, yet it stores one too: as the release's
+transformers, a stored head is read, the embeddings only without one.
 
 Every question's prompt starts with the same tokens up to the end of the
 state block (``prompt``). That prefix runs once per request, its
@@ -42,6 +44,7 @@ MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 10
 REQUIRED_FILES = ("config.json", "tokenizer.json", "readout.json")
 HEAD = "lm_head.weight"
+EMBEDDINGS = "model.language_model.embed_tokens.weight"
 # A converted copy's answer-code rows (float32) and their token ids, instead of the head.
 ROWS_FILE = "answer_rows.safetensors"
 # Tokens one batch of questions holds at most: its rows times the prefix and
@@ -82,18 +85,42 @@ def _header(file: Path) -> tuple[dict, int]:
         return json.loads(handle.read(length)), 8 + length
 
 
-def head_file(path: Path) -> Path:
-    """The weight file holding the LM head."""
+def ties_head(path: Path) -> bool:
+    """Whether the config ties the LM head to the embeddings. Only the text
+    config's flag counts: the release loads the text model with that config
+    alone, so a flag at the top level does not tie."""
+    text = json.loads((path / "config.json").read_text()).get("text_config")
+    return isinstance(text, dict) and text.get("tie_word_embeddings") is True
+
+
+def _tensor_file(path: Path, name: str) -> Path | None:
+    """The weight file holding the tensor ``name``, if any does."""
     index = path / "model.safetensors.index.json"
     if index.exists():
-        name = json.loads(index.read_text())["weight_map"].get(HEAD)
-        if name is None:
-            raise ValueError(f"{path}: the weights have no {HEAD}")
-        return path / name
+        found = json.loads(index.read_text())["weight_map"].get(name)
+        return path / found if found else None
     for file in sorted(path.glob("model*.safetensors")):
-        if HEAD in _header(file)[0]:
+        if name in _header(file)[0]:
             return file
-    raise ValueError(f"{path}: the weights have no {HEAD}")
+    return None
+
+
+def head_source(path: Path) -> tuple[Path, str]:
+    """The weight file and tensor the answer codes' rows come from, as the
+    release's transformers picks them: the stored LM head (tied or not; it
+    ties only equal tensors and otherwise keeps the stored one), else the
+    embeddings when the config ties the head to them."""
+    file = _tensor_file(path, HEAD)
+    if file is not None:
+        return file, HEAD
+    if not ties_head(path):
+        raise ValueError(
+            f"{path}: the weights have no {HEAD}, and config.json does not tie it to the embeddings"
+        )
+    file = _tensor_file(path, EMBEDDINGS)
+    if file is None:
+        raise ValueError(f"{path}: the weights have neither {HEAD} nor {EMBEDDINGS}")
+    return file, EMBEDDINGS
 
 
 def read_rows(file: Path, name: str, rows: list[int]) -> mx.array:
@@ -261,10 +288,10 @@ def weight_files(path: Path, options: dict) -> list[tuple[Path, None]]:
 
 def answer_rows(path: Path, ids: list[int]) -> mx.array:
     """The answer codes' rows (float32): a converted copy's, checked against the
-    tokenizer's code ids, or read from the release's LM head."""
+    tokenizer's code ids, or read from the release's LM head (``head_source``)."""
     file = path / ROWS_FILE
     if not file.exists():
-        return read_rows(head_file(path), HEAD, ids)
+        return read_rows(*head_source(path), ids)
     stored = mx.load(str(file))
     if stored["token_ids"].tolist() != ids:
         raise ValueError(f"{path}: {ROWS_FILE} is for other answer-code tokens")
@@ -300,7 +327,7 @@ def load(
     max_input_tokens: int | None = None,
     prefix_cache_gb: float = DEFAULT_PREFIX_CACHE_GB,
 ) -> BaseLabsBackend:
-    """Load elephant-1 or mammoth-1 from a release folder or a converted copy.
+    """Load elephant-1, mammoth-1 or joey-1 from a release folder or a converted copy.
 
     ``max_input_tokens`` sets the limit per question (the state and that
     question's tokens): 16,384 by default, the models' training length, up

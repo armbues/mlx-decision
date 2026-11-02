@@ -563,7 +563,11 @@ def write_baselabs_tokenizer(folder: Path) -> None:
 
 
 def write_baselabs(
-    folder: Path, seed: int = 0, shape: str = "elephant", files_from: Path | None = None
+    folder: Path,
+    seed: int = 0,
+    shape: str = "elephant",
+    files_from: Path | None = None,
+    stored_head: bool = True,
 ) -> Path:
     """A Base Labs release folder (elephant-1, mammoth-1 or joey-1): tiny
     backbone with vision tower, float32.
@@ -576,7 +580,8 @@ def write_baselabs(
     two shards with an index (``lm_head``, the embeddings and the first layers
     in the first). joey's config ties the head to the embeddings; its stored
     ``lm_head`` is drawn on its own, so it differs from them, and transformers
-    then keeps the stored head (it ties only equal tensors). ``files_from``
+    then keeps the stored head (it ties only equal tensors); without
+    ``stored_head`` the folder has no ``lm_head``. ``files_from``
     (a release folder) supplies the tokenizer, chat template and
     processor; without it the folder gets a word-level
     tokenizer (``BASELABS_WORDS``, the special tokens and every one- and
@@ -605,6 +610,8 @@ def write_baselabs(
             continue
         shapes[name.replace("language_model.model.", "model.language_model.", 1)] = shape_
     assert "lm_head.weight" in shapes
+    if not stored_head:
+        del shapes["lm_head.weight"]
     for name, value in tree_flatten(vision.parameters()):
         shape_ = tuple(value.shape)
         if name == "patch_embed.proj.weight":
@@ -620,6 +627,7 @@ def write_baselabs(
         layers = [n for n in names if n.startswith("model.language_model.layers.")]
         first = {"lm_head.weight", "model.language_model.embed_tokens.weight"}
         first |= set(layers[: len(layers) * 3 // 4])
+        first &= set(names)
         shards = {
             "model-00001-of-00002.safetensors": sorted(first),
             "model-00002-of-00002.safetensors": sorted(set(names) - first),

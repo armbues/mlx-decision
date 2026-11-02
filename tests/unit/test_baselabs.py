@@ -1,4 +1,4 @@
-"""Base Labs (elephant-1, mammoth-1) on tiny random models: detection, refusals and loading."""
+"""Base Labs (elephant-1, mammoth-1, joey-1) on tiny models: detection, refusals and loading."""
 
 import json
 import shutil
@@ -7,9 +7,11 @@ import mlx.core as mx
 import pytest
 
 from mlx_decision.models.baselabs.model import (
+    EMBEDDINGS,
+    HEAD,
     INPUT_TOKEN_LIMIT,
     MAX_INPUT_TOKENS,
-    head_file,
+    head_source,
     read_rows,
 )
 from mlx_decision.models.baselabs.prompt import CODES
@@ -24,7 +26,7 @@ from tiny_models import (
 )
 
 
-@pytest.fixture(scope="module", params=["elephant", "mammoth"])
+@pytest.fixture(scope="module", params=["elephant", "mammoth", "joey"])
 def folder(request, tmp_path_factory):
     return write_baselabs(tmp_path_factory.mktemp(request.param) / "tiny", shape=request.param)
 
@@ -73,7 +75,10 @@ def test_loads_the_answer_code_rows_in_float32(folder):
     backend = load_backend(folder)
     assert backend.family == "baselabs"
     assert backend.precision == "float32"
-    head = mx.load(str(head_file(folder)))["lm_head.weight"]
+    # joey's config ties the head, but its stored head is read, as the release does.
+    file, name = head_source(folder)
+    assert name == HEAD
+    head = mx.load(str(file))[name]
     assert backend.rows.dtype == mx.float32
     assert mx.array_equal(backend.rows, head[mx.array(backend.code_ids)])
     width = backend.backbone.language_model.args.hidden_size
@@ -86,7 +91,43 @@ def test_loads_the_answer_code_rows_in_float32(folder):
 def test_the_head_is_found_in_a_shard(folder):
     index = folder / "model.safetensors.index.json"
     expected = "model-00001-of-00002.safetensors" if index.exists() else "model.safetensors"
-    assert head_file(folder).name == expected
+    assert head_source(folder) == (folder / expected, HEAD)
+
+
+def test_a_tied_folder_without_a_stored_head_reads_the_embeddings(tmp_path):
+    """As the release's transformers: with no lm_head stored, a tied head is the
+    embeddings; the folder otherwise equals joey's (weights seeded by name)."""
+    from mlx_decision.types import parse_request
+
+    bare = write_baselabs(tmp_path / "bare", shape="joey", stored_head=False)
+    full = write_baselabs(tmp_path / "full", shape="joey")
+    assert HEAD not in mx.load(str(bare / "model.safetensors"))
+    assert head_source(bare) == (bare / "model.safetensors", EMBEDDINGS)
+    backend = load_backend(bare, prefix_cache_gb=0)
+    embeddings = read_rows(full / "model.safetensors", EMBEDDINGS, backend.code_ids)
+    assert mx.array_equal(backend.rows, embeddings)
+    reference = load_backend(full, prefix_cache_gb=0)
+    assert not mx.array_equal(backend.rows, reference.rows)  # the stored head differs
+    reference.rows = backend.rows
+    request = parse_request({"state": "billing refund please now", "questions": QUESTIONS})
+    with mx.stream(mx.cpu):
+        got = backend.score(request).probabilities
+        want = reference.score(request).probabilities
+    for qid, values in want.items():
+        assert got[qid] == pytest.approx(values, abs=1e-6), qid
+
+
+def test_only_the_text_configs_flag_ties_the_head(tmp_path):
+    """The release loads the text model with the text config alone: a flag at
+    the top level does not tie, and a folder without a head is refused."""
+    bare = write_baselabs(tmp_path / "bare", shape="joey", stored_head=False)
+    edit_config(bare, lambda c: c["text_config"].update(tie_word_embeddings=False))
+    assert json.loads((bare / "config.json").read_text())["tie_word_embeddings"] is True
+    with pytest.raises(ValueError, match="does not tie it to the embeddings"):
+        load_backend(bare)
+    untied = write_baselabs(tmp_path / "untied", stored_head=False)
+    with pytest.raises(ValueError, match="does not tie it to the embeddings"):
+        load_backend(untied)
 
 
 def test_rows_are_read_from_bfloat16(tmp_path):
@@ -394,6 +435,28 @@ def test_a_conversion_from_shards_fetched_in_turn_keeps_the_rows(folder, tmp_pat
     assert not list(source.glob("model*.safetensors"))
     copy = load_backend(tmp_path / "out", prefix_cache_gb=0)
     assert mx.array_equal(copy.rows, load_backend(folder, prefix_cache_gb=0).rows)
+
+
+@pytest.mark.parametrize("fetched", [False, True])
+def test_a_tied_folder_without_a_head_converts_with_the_embeddings_rows(tmp_path, fetched):
+    from mlx_decision.backbones.qwen3_5.load import source_shards
+    from mlx_decision.convert import convert
+    from mlx_decision.models.baselabs import convert as baselabs_convert
+
+    source = write_baselabs(tmp_path / "bare", shape="joey", stored_head=False)
+    rows = load_backend(source, prefix_cache_gb=0).rows
+    if fetched:
+
+        def shards():
+            for shard in source_shards(source):
+                yield shard
+                shard.unlink()
+
+        baselabs_convert.convert(source, tmp_path / "out", "tiny", bits=8, shards=shards())
+        out = tmp_path / "out"
+    else:
+        out = convert(source, tmp_path / "out", bits=8)
+    assert mx.array_equal(load_backend(out, prefix_cache_gb=0).rows, rows)
 
 
 def test_mixed_precision(folder, tmp_path, monkeypatch):
