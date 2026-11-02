@@ -89,16 +89,19 @@ def models_router(
 
     @router.delete("/{name}")
     async def delete(name: str):
-        """``{model, path}``: a model the Studio made (in the workspace's
-        ``models/``) deleted, unloaded first. 403 for a downloaded model, 409
-        while it is the default, has fitted models or a job uses it; 503 while
-        a GPU job or a batch holds it."""
+        """``{model, path}``: a model deleted, unloaded first: one the Studio
+        made, a repo in the Hugging Face cache or a folder in ``models_dir``
+        (``ModelRemoval``). 403 for a model named itself or elsewhere, 409
+        while it is the default, has fitted models or a job uses it, or the
+        cache cannot read it; 503 while a GPU job or a batch holds it; 500
+        when some of a cache repo stays."""
         if removal is None:
             raise ApiError(403, "models are not deleted here", kind="permission_error")
         try:
             path = await removal.delete(name)
         except RemovalError as error:
-            kind = "permission_error" if error.status == 403 else "invalid_request_error"
+            kinds = {403: "permission_error", 500: "api_error"}
+            kind = kinds.get(error.status, "invalid_request_error")
             raise ApiError(error.status, str(error), param="model", kind=kind) from None
         return {"model": name, "path": path}
 

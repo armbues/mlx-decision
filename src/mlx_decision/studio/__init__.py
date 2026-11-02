@@ -74,7 +74,8 @@ def create_studio(
     ``models_dir`` says) and changes it (the Settings page).
     ``catalog`` is where the pool's models came from (``web``'s); the Studio
     looks there again after a job wrote a model (by default only the
-    workspace's ``models/``), as ``app.state.rescans``. ``sources`` says
+    workspace's ``models/``), as ``app.state.rescans``; ``app.state.removal``
+    deletes models (``ModelRemoval``). ``sources`` says
     where each setting came from ("flag", "config", "default"; ``web``'s),
     for the config the Models page shows.
     ``config`` is the config file the process read (read here when not
@@ -109,7 +110,6 @@ def create_studio(
         hub.publish("catalog", {"added": added, "removed": removed})
 
     rescans = Rescans(gpu, catalog, catalog_changed)
-    removal = ModelRemoval(gpu, jobs, files.root / "models", catalog_changed)
     settings = Settings(
         config,
         gpu,
@@ -121,6 +121,15 @@ def create_studio(
         sources,
         on_change=lambda key: hub.publish("settings", {"key": key}),
         api_key=bool(api_key),
+    )
+    removal = ModelRemoval(
+        gpu,
+        jobs,
+        files.root / "models",
+        catalog_changed,
+        catalog=catalog,
+        config=lambda: settings.config,
+        rescan=rescans.soon,
     )
     app = FastAPI(
         title="mlx-decision Studio",
@@ -136,6 +145,7 @@ def create_studio(
     app.state.jobs = jobs
     app.state.settings = settings
     app.state.rescans = rescans
+    app.state.removal = removal
     attempts = KeyAttempts()  # wrong keys, counted for the login and the Jev API alike
     security.install(app, session, host, port, api_key, attempts)
     recorder = Recorder(files, models)

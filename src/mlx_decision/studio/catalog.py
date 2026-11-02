@@ -75,7 +75,8 @@ class Catalog:
 
     ``models_dir`` is the config's folder of models when it serves them (no
     ``-m``): scanned once it holds a model, so the first download into an
-    empty folder is found too.
+    empty folder is found too. ``downloads`` are the folders the Studio
+    downloaded, which ``references`` may hold too (``add_download``).
     """
 
     references: list[str] = dataclasses.field(default_factory=list)
@@ -83,6 +84,7 @@ class Catalog:
     options: dict = dataclasses.field(default_factory=dict)
     include_cache: bool = True
     models_dir: Path | None = None
+    downloads: list[str] = dataclasses.field(default_factory=list)
 
     def scan(self, on_skip: Callable[[Path, str], None] = lambda path, reason: None):
         """The models there are now. A named model that cannot be read any more
@@ -111,8 +113,16 @@ class Catalog:
         folder = Path(folder)
         within = self.models_dir is not None
         scanned = within and folder.parent.resolve() == self.models_dir.resolve()
+        if str(folder) not in self.downloads:
+            self.downloads.append(str(folder))
         if not scanned and str(folder) not in self.references:
             self.references.append(str(folder))
+
+    def named(self) -> list[str]:
+        """The references named with ``-m`` or in the config's ``models``: all
+        but the Studio's downloads."""
+        downloads = set(self.downloads)
+        return [reference for reference in self.references if reference not in downloads]
 
     def _references(self) -> list[str]:
         """``references``, and ``models_dir`` last when it has models and is not

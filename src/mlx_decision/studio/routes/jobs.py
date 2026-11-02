@@ -614,7 +614,7 @@ def jobs_router(
                 if name is not None:
                     await removal.delete(name)
                     deleted = name
-                elif removal.deletable(output) and output.exists():
+                elif removal.in_workspace(output) and output.exists():
                     await asyncio.to_thread(remove, output)  # written, not listed yet
                     deleted = output.name
             except RemovalError as error:
