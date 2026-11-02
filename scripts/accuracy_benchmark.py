@@ -85,7 +85,15 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from mlx_decision.data.presets import NLI, PRESETS, Preset, Source, digest, examples
+from mlx_decision.data.presets import (
+    NLI,
+    PRESETS,
+    TYPED_DECISIONS,
+    Preset,
+    Source,
+    digest,
+    examples,
+)
 from mlx_decision.metrics import metrics, record
 
 SEED = 1234
@@ -250,16 +258,6 @@ def coverage(preset: Preset) -> Callable[[Path], list[dict]]:
     return lambda datasets_dir: examples(preset, load_source(datasets_dir, preset.source))
 
 
-TYPED_DECISIONS = Source(
-    "LocalLLaMA/typed-decisions",
-    "all",
-    "test",
-    "7189f46b02248bd2569df7325c9df8e3b24e90a7",
-    400,
-    "66342f3036e80e17",
-)
-
-
 def typed_decisions(datasets_dir: Path) -> list[dict]:
     """The typed-decisions test cases: state, questions and the gold
     distributions (``type`` and ``probabilities`` of each question)."""
@@ -290,7 +288,9 @@ class Benchmark:
 
 SUITES: dict[str, dict[str, Benchmark]] = {
     "coverage": {
-        preset.key: Benchmark(coverage(preset), preset.source) for preset in PRESETS.values()
+        preset.key: Benchmark(coverage(preset), preset.source)
+        for preset in PRESETS.values()
+        if preset.coverage
     },
     "classic": {
         "ag_news": Benchmark(ag_news),

@@ -1,17 +1,20 @@
 """The calibration fit: a temperature per question, and a bias per option.
 
 Answers become ``softmax(log p / temperature + bias)``, the parameters
-minimizing the negative log-likelihood of the labels (Adam, full batch, a
+minimizing the negative log-likelihood of the labels (of a soft label: the
+cross-entropy against its distribution) (Adam, full batch, a
 fixed number of steps from temperature 1 and no bias, so the same data give
 the same result). The temperature is kept between 0.05 and 20: past that a
 model worse than chance would be fitted towards uniform answers.
 """
 
 import math
+from collections.abc import Sequence
 
 import mlx.core as mx
 
 from ..fitted import Calibration
+from .loss import Gold, Soft, gold_arrays, nll_rows
 
 STEPS = 3000
 LEARNING_RATE = 0.05
@@ -21,23 +24,27 @@ LOG_T_RANGE = (math.log(0.05), math.log(20.0))
 FLOOR = 1e-12
 
 
-def nll(log_t: mx.array, bias: mx.array, logp: mx.array, labels: mx.array) -> mx.array:
+def nll(
+    log_t: mx.array, bias: mx.array, logp: mx.array, labels: mx.array, soft: Soft | None = None
+) -> mx.array:
     """Mean negative log-likelihood of ``labels`` under the calibrated answers."""
     logits = logp / mx.exp(log_t) + bias
-    gold = mx.take_along_axis(logits, labels[:, None], axis=-1)[:, 0]
-    return (mx.logsumexp(logits, axis=-1) - gold).mean()
+    if soft is None:
+        gold = mx.take_along_axis(logits, labels[:, None], axis=-1)[:, 0]
+        return (mx.logsumexp(logits, axis=-1) - gold).mean()
+    return nll_rows(logits, labels, soft).mean()
 
 
 def fit_calibration(
-    probabilities: list[list[float]], labels: list[int], bias: bool = True
+    probabilities: list[list[float]], labels: Sequence[Gold], bias: bool = True
 ) -> Calibration:
     """The calibration of answers ``probabilities`` (rows of the options, in the
-    question's order) for the gold option indexes ``labels``; with ``bias``, one
-    bias per option as well."""
+    question's order) for the golds ``labels`` (option indexes, or a soft label's
+    probabilities in the same order); with ``bias``, one bias per option as well."""
     logp = mx.log(mx.maximum(mx.array(probabilities, dtype=mx.float32), FLOOR))
-    gold = mx.array(labels, dtype=mx.int32)
+    gold, soft = gold_arrays(labels, logp.shape[1])
     mask = mx.array(1.0 if bias else 0.0)
-    grad = mx.grad(lambda x: nll(x[0], x[1:] * mask, logp, gold))
+    grad = mx.grad(lambda x: nll(x[0], x[1:] * mask, logp, gold, soft))
 
     @mx.compile
     def step(x, m, v, t):

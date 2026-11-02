@@ -34,8 +34,13 @@ def test_coverage_suite_is_the_presets():
     from mlx_decision.data.presets import PRESETS
 
     coverage = ab.SUITES["coverage"]
-    assert list(coverage) == [preset.key for preset in PRESETS.values()]
-    assert [b.source for b in coverage.values()] == [p.source for p in PRESETS.values()]
+    presets = [preset for preset in PRESETS.values() if preset.coverage]
+    assert list(coverage) == [preset.key for preset in presets]
+    assert [b.source for b in coverage.values()] == [p.source for p in presets]
+    # typed-decisions is a suite of its own, from the preset's split.
+    assert (
+        ab.SUITES["typed-decisions"]["typed_decisions"].source == PRESETS["typed-decisions"].source
+    )
 
 
 def test_select_picks_what_sampling_the_rows_picked():

@@ -184,7 +184,10 @@ def test_problems_are_found_before_the_model_loads(tmp_path, base, data, monkeyp
         fit(base, data, output=tmp_path / "taken")
     bad = tmp_path / "bad.jsonl"
     bad.write_text('{"state": "x", "questions": {"q": {"type": "noul"}}, "labels": {"q": 3}}\n')
-    with pytest.raises(DataError, match="line 1: labels.q: a noul label is true or false"):
+    with pytest.raises(
+        DataError,
+        match="line 1: labels.q: a soft noul label is the probability of true, from 0 to 1",
+    ):
         fit(base, bad, output=tmp_path / "fit")
     with pytest.raises(ValueError, match="no fitting method is called magic"):
         fit(base, data, output=tmp_path / "fit", method="magic")

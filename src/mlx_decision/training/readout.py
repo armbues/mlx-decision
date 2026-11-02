@@ -4,7 +4,8 @@ These families read a question's answer from the hidden state at its last
 token through one row per scored token (``models/readout.py``). The fit
 trains an untied copy of a question's rows, plus one bias per option, on
 the hidden states the features pass computed once: cross-entropy with
-label smoothing and an L2 pull towards the release's rows, Adam on the full
+label smoothing (against a soft label's distribution: without smoothing) and
+an L2 pull towards the release's rows, Adam on the full
 batch. The learning rate, the L2 weight and the number of steps are those
 with the lowest negative log-likelihood on dev, searched over a small grid
 and every few steps; the rows at that step are kept (dev is not trained
@@ -20,7 +21,7 @@ import mlx.optimizers as optim
 
 from ..models.readout import Readout, group_logits
 from .events import Cancelled
-from .loss import decision_loss
+from .loss import Gold, Soft, decision_loss, gold_arrays, nll_rows
 
 LEARNING_RATES = (1e-5, 1e-4, 1e-3)
 L2_WEIGHTS = (0.0, 0.01)
@@ -62,11 +63,14 @@ def nll(
     labels: mx.array,
     groups: list[list[int]],
     temperature: float,
+    soft: Soft | None = None,
 ) -> mx.array:
     """Mean negative log-likelihood of ``labels`` under ``params``' rows and bias."""
     logits = group_logits(params["rows"], hidden, groups, temperature, params["bias"])
-    gold = mx.take_along_axis(logits, labels[:, None], axis=-1)[:, 0]
-    return (mx.logsumexp(logits, axis=-1) - gold).mean()
+    if soft is None:
+        gold = mx.take_along_axis(logits, labels[:, None], axis=-1)[:, 0]
+        return (mx.logsumexp(logits, axis=-1) - gold).mean()
+    return nll_rows(logits, labels, soft).mean()
 
 
 def fit_readout(
@@ -74,21 +78,22 @@ def fit_readout(
     rows: mx.array,
     groups: list[list[int]],
     temperature: float,
-    fit: tuple[mx.array, list[int]],
-    dev: tuple[mx.array, list[int]],
+    fit: tuple[mx.array, list[Gold]],
+    dev: tuple[mx.array, list[Gold]],
     on_step: Callable[[int], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> tuple[Readout | None, Picked]:
-    """A question's readout fitted on ``fit`` (hidden states ``[n, width]`` and gold
-    option indexes), its setting picked on ``dev``; None when the release's rows
+    """A question's readout fitted on ``fit`` (hidden states ``[n, width]`` and
+    golds: option indexes, or soft labels' probabilities), its setting picked on
+    ``dev``; None when the release's rows
     are best on dev. ``on_step(steps)`` reports the search's progress every few
     steps; ``Cancelled`` once ``cancelled()`` is true."""
     rows0 = rows.astype(mx.float32)
-    hidden, labels = fit[0], mx.array(fit[1], dtype=mx.int32)
-    dev_hidden, dev_labels = dev[0], mx.array(dev[1], dtype=mx.int32)
+    hidden, (labels, soft) = fit[0], gold_arrays(fit[1], len(groups))
+    dev_hidden, (dev_labels, dev_soft) = dev[0], gold_arrays(dev[1], len(groups))
     valid = mx.ones((len(fit[1]), len(groups)), dtype=mx.bool_)
     start = {"rows": rows0, "bias": mx.zeros(len(groups))}
-    release = nll(start, dev_hidden, dev_labels, groups, temperature).item()
+    release = nll(start, dev_hidden, dev_labels, groups, temperature, dev_soft).item()
     best = (release, None, None, 0, start)
     done = 0
     for learning_rate in LEARNING_RATES:
@@ -97,7 +102,8 @@ def fit_readout(
             def loss(params, l2=l2):
                 logits = group_logits(params["rows"], hidden, groups, temperature, params["bias"])
                 pull = ((params["rows"] - rows0) ** 2).sum()
-                return decision_loss(logits, valid, labels, SMOOTHING, brier=0.0) + l2 * pull
+                fitted = decision_loss(logits, valid, labels, SMOOTHING, brier=0.0, soft=soft)
+                return fitted + l2 * pull
 
             gradient = mx.grad(loss)
             optimizer = optim.Adam(learning_rate=learning_rate)
@@ -108,7 +114,7 @@ def fit_readout(
                 mx.eval(params, optimizer.state)
                 if step % EVERY:
                     continue
-                score = nll(params, dev_hidden, dev_labels, groups, temperature).item()
+                score = nll(params, dev_hidden, dev_labels, groups, temperature, dev_soft).item()
                 if score < best[0]:
                     best = (score, learning_rate, l2, step, dict(params))
                 done += EVERY

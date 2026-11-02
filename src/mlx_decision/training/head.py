@@ -28,7 +28,7 @@ from mlx.utils import tree_flatten, tree_map, tree_unflatten
 
 from .events import Cancelled
 from .finetune import Trained
-from .loss import decision_loss
+from .loss import Gold, decision_loss, gold_arrays
 
 LEARNING_RATE = 5e-5
 WEIGHT_DECAY = 0.01
@@ -93,10 +93,11 @@ class StateStore:
 
 @dataclass(frozen=True)
 class Item:
-    """A stored request and its labelled questions: question index -> gold option index."""
+    """A stored request and its labelled questions: question index -> gold (an
+    option index, or a soft label's probabilities in the options' order)."""
 
     state: int
-    labels: dict[int, int]
+    labels: dict[int, Gold]
 
 
 def _loss(backend, store: StateStore, item: Item, dtype) -> mx.array:
@@ -107,7 +108,8 @@ def _loss(backend, store: StateStore, item: Item, dtype) -> mx.array:
     width = max(row.shape[0] for row in rows)
     padded = mx.stack([mx.pad(row.astype(mx.float32), (0, width - row.shape[0])) for row in rows])
     valid = mx.arange(width)[None] < mx.array([row.shape[0] for row in rows])[:, None]
-    return decision_loss(padded, valid, mx.array(list(item.labels.values())))
+    labels, soft = gold_arrays(list(item.labels.values()), width)
+    return decision_loss(padded, valid, labels, soft=soft)
 
 
 def dev_loss(backend, store: StateStore, items: list[Item], dtype=mx.float32) -> float:

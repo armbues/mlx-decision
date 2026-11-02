@@ -3,7 +3,7 @@
 Progress goes to a stream (stderr): messages on lines of their own, steps
 as a bar redrawn in place in a terminal (elsewhere a line every tenth of
 the way). Reports are plain text for stdout. Metrics are shown in percent
-(ECE too), MAE in levels.
+(ECE too), MAE in levels, the log loss in nats.
 """
 
 import signal
@@ -139,13 +139,15 @@ def _rows(columns: list[dict[str, Any]], names: list[str]) -> list[str]:
     width = max(10, *(len(name) for name in names))
     lines = [" " * 11 + "".join(f"{name:>{width + 2}}" for name in names)]
     keys = list(METRICS)
-    if any("mae" in column for column in columns):
-        keys.append(("mae", "MAE"))
+    for key, label in (("mae", "MAE"), ("log_loss", "log loss")):
+        if any(key in column for column in columns):
+            keys.append((key, label))
     for key, label in keys:
         cells = []
         for column in columns:
             value = column.get(key)
-            cells.append(f"{value:.3f}" if key == "mae" and value is not None else _percent(value))
+            plain = key in ("mae", "log_loss") and value is not None
+            cells.append(f"{value:.3f}" if plain else _percent(value))
         lines.append(f"  {label:<9}" + "".join(f"{cell:>{width + 2}}" for cell in cells))
     for key in ("refused", "truncated"):
         if any(column.get(key) for column in columns):

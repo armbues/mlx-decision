@@ -75,10 +75,14 @@ class Preset:
     key: str  # the suite's benchmark name and the start of every id ("anli_r3")
     source: Source  # the evaluation split (the coverage suite's), at the pinned commit
     row_id: Callable[[dict, int], str]  # the split's own id of a row, or its index
-    make: Callable[[dict], dict]  # row -> state, questions, gold
+    # row -> state, questions and gold (one question's answer), or labels (the
+    # file's labels of every question, soft ones as distributions)
+    make: Callable[[dict], dict]
     # The column whose raw values a dataset folder keeps (None: the answer is
     # per row, as OpenBookQA's answer key).
     value_column: str | None = None
+    # In the coverage suite (one question per example, a hard gold).
+    coverage: bool = True
 
 
 def _label(names: list[str], row: dict, column: str) -> str:
@@ -159,11 +163,39 @@ def _sst5(row: dict) -> dict:
     }
 
 
+def _typed_decisions(row: dict) -> dict:
+    """A typed-decisions row as it is: the request its columns hold, and the gold
+    distributions as soft labels (a noul's as the probability of true)."""
+    gold = json.loads(row["gold"])
+    labels = {
+        question_id: answer["probabilities"]["true"]
+        if answer["type"] == "noul"
+        else answer["probabilities"]
+        for question_id, answer in gold.items()
+    }
+    return {
+        "state": json.loads(row["state"]),
+        "questions": json.loads(row["questions"]),
+        "labels": labels,
+    }
+
+
 def _index(row: dict, index: int) -> str:
     return str(index)
 
 
-# The coverage suite's splits, at the Hub commits they were saved from (2026-10-08).
+# typed-decisions' test split (D145): 400 cases of five questions, soft gold.
+TYPED_DECISIONS = Source(
+    "LocalLLaMA/typed-decisions",
+    "all",
+    "test",
+    "7189f46b02248bd2569df7325c9df8e3b24e90a7",
+    400,
+    "66342f3036e80e17",
+)
+
+# The coverage suite's splits, at the Hub commits they were saved from (2026-10-08),
+# and typed-decisions' (2026-11-02).
 PRESETS: dict[str, Preset] = {
     preset.name: preset
     for preset in (
@@ -241,6 +273,14 @@ PRESETS: dict[str, Preset] = {
             _sst5,
             "label",
         ),
+        Preset(
+            "typed-decisions",
+            "typed_decisions",
+            TYPED_DECISIONS,
+            lambda row, index: row["id"],
+            _typed_decisions,
+            coverage=False,
+        ),
     )
 }
 
@@ -254,6 +294,7 @@ SPLITS: dict[str, dict[str, int]] = {
     "anli-r3": {"train_r3": 100459, "dev_r3": 1200, "test_r3": 1200},
     "openbookqa": {"train": 4957, "validation": 500, "test": 500},
     "sst5": {"train": 8544, "validation": 1101, "test": 2210},
+    "typed-decisions": {"train": 1200, "test": 400},
 }
 
 # A row of each preset's shape, to describe its question without reading the
@@ -276,7 +317,7 @@ EXAMPLE_ROWS: dict[str, dict] = {
 
 def describe(preset: Preset) -> dict:
     """The preset's question (its id and the question as the data has it),
-    built by the preset's own code from an example row."""
+    built by the preset's own code from an example row (coverage presets)."""
     made = preset.make(EXAMPLE_ROWS[preset.name])
     [(question_id, question)] = made["questions"].items()
     return {"id": question_id, **question}

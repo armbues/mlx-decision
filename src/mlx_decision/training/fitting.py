@@ -229,7 +229,7 @@ def _calibrations(scored: list[Scored], fit: Fit) -> Fit:
     for fitted_question, rows in groups.values():
         options = fitted_question.options
         probabilities = [[item.raw[qid][o] for o in options] for item, qid in rows]
-        labels = [options.index(item.example.labels[qid]) for item, qid in rows]
+        labels = [item.example.gold(qid, options) for item, qid in rows]
         wordings = {
             json.dumps(item.request.questions[qid].model_dump(), sort_keys=True, default=str)
             for item, qid in rows
@@ -244,11 +244,11 @@ def _calibrations(scored: list[Scored], fit: Fit) -> Fit:
 class _Rows:
     """A fitted question's readout inputs: the first example's features (whose
     rows, groups and temperature every example must share) and each part's
-    hidden states and gold option indexes."""
+    hidden states and golds (``Example.gold``)."""
 
     question: FitQuestion
     features: Any  # the first example's Features
-    parts: dict[str, tuple[list, list[int]]]
+    parts: dict[str, tuple[list, list]]
     varies: bool = False
 
     def same(self, other) -> bool:
@@ -272,7 +272,7 @@ def _readouts(fit_part: list[Scored], dev_part: list[Scored], emit, cancelled, r
         for item in scored:
             if item.features is None:
                 continue  # refused
-            for question_id, label in item.example.labels.items():
+            for question_id in item.example.labels:
                 fitted_question = FitQuestion.of(question_id, item.request.questions[question_id])
                 features = item.features[question_id]
                 key = (question_id, fitted_question.type, tuple(fitted_question.options))
@@ -282,7 +282,7 @@ def _readouts(fit_part: list[Scored], dev_part: list[Scored], emit, cancelled, r
                 entry.varies = entry.varies or not entry.same(features)
                 entry.parts[part][0].append(features.hidden)
                 # The rows are in the family's order of the options.
-                entry.parts[part][1].append(features.option_ids.index(label))
+                entry.parts[part][1].append(item.example.gold(question_id, features.option_ids))
     fit = Fit([])
     report = []
     total = search_steps() * len(questions)
@@ -354,9 +354,9 @@ def _finetune(
             except DecisionError as error:
                 refusals.append(error)
                 continue  # refused, as scoring would
-            for question_id, label in example.labels.items():
+            for question_id in example.labels:
                 item = by_question[question_id]
-                result.append(Item(item, item.option_ids.index(label)))
+                result.append(Item(item, example.gold(question_id, item.option_ids)))
         return result
 
     emit(Event("train", message="preparing the training examples"))
@@ -474,8 +474,10 @@ def _head(
             questions = store.inputs[item.state].questions
             index = {question.question_id: i for i, question in enumerate(questions)}
             labels = {
-                index[question_id]: questions[index[question_id]].option_ids.index(label)
-                for question_id, label in item.example.labels.items()
+                index[question_id]: item.example.gold(
+                    question_id, questions[index[question_id]].option_ids
+                )
+                for question_id in item.example.labels
             }
             result.append(Item(item.state, labels))
         return result
@@ -496,7 +498,7 @@ def _head(
 
 
 def _compact(metrics: dict[str, dict]) -> dict[str, dict]:
-    keys = ("accuracy", "macro_f1", "ece", "mae")
+    keys = ("accuracy", "macro_f1", "ece", "mae", "log_loss")
     return {key: metrics[key] for key in keys if metrics.get(key) is not None}
 
 

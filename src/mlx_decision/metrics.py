@@ -1,23 +1,44 @@
-"""Accuracy metrics over answered examples: accuracy, macro-F1, calibration, MAE.
+"""Accuracy metrics over answered examples: accuracy, macro-F1, calibration, MAE, log loss.
 
 An answer becomes a record with :func:`record`: the gold option id, the
-predicted one and the top probability; a refused example is a record with
+predicted one, the top probability and the log loss (against a soft label's
+distribution when there is one); a refused example is a record with
 ``predicted`` None and a ``refused`` reason. :func:`metrics` summarizes a list
 of records of one question; :func:`confusion` counts gold against predicted.
 """
 
+import math
 import statistics
 
+# log(0) is replaced by log of this in the log loss.
+FLOOR = 1e-12
 
-def record(answer: dict, gold: str) -> dict:
+
+def log_loss(probabilities: dict[str, float], gold: str, target: dict | None = None) -> float:
+    """The negative log-probability of ``gold``, or with ``target`` (a soft label:
+    option id -> probability) the cross-entropy against it."""
+    if target is None:
+        return -math.log(max(probabilities.get(gold, 0.0), FLOOR))
+    return -sum(
+        weight * math.log(max(probabilities.get(option, 0.0), FLOOR))
+        for option, weight in target.items()
+        if weight > 0
+    )
+
+
+def record(answer: dict, gold: str, target: dict | None = None) -> dict:
     """What the metrics need of an answer (in the wire format): ``predicted`` is an
-    option id, a level (as its string key) or "true" / "false" (noul, at 0.5)."""
+    option id, a level (as its string key) or "true" / "false" (noul, at 0.5);
+    ``gold`` the label (a soft label's most likely answer), ``target`` a soft
+    label's distribution, which the log loss is against."""
     if answer["type"] == "noul":
+        noul = answer["noul"]
         return {
             "gold": gold,
-            "predicted": "true" if answer["noul"] >= 0.5 else "false",
-            "p_max": max(answer["noul"], 1 - answer["noul"]),
-            "noul": answer["noul"],
+            "predicted": "true" if noul >= 0.5 else "false",
+            "p_max": max(noul, 1 - noul),
+            "noul": noul,
+            "log_loss": log_loss({"true": noul, "false": 1 - noul}, gold, target),
         }
     probabilities = answer["probabilities"]
     result = {
@@ -26,6 +47,7 @@ def record(answer: dict, gold: str) -> dict:
         "p_max": max(probabilities.values()),
         "confidence": answer["confidence"],
         "probabilities": probabilities,
+        "log_loss": log_loss(probabilities, gold, target),
     }
     if answer["type"] == "score":
         result["score"] = answer["score"]
@@ -71,8 +93,10 @@ def mae(records: list[dict]) -> float | None:
 
 
 def metrics(records: list[dict]) -> dict:
-    """Accuracy and macro-F1 over all records (refused ones are wrong); ECE and MAE
-    over the answered ones. ``noul`` predictions are yes at 0.5 or more."""
+    """Accuracy and macro-F1 over all records (refused ones are wrong); ECE, MAE
+    and the mean log loss over the answered ones (records written before the log
+    loss have none: then it is left out). ``noul`` predictions are yes at 0.5 or
+    more."""
     result = {
         "n": len(records),
         "refused": sum("refused" in r for r in records),
@@ -83,6 +107,9 @@ def metrics(records: list[dict]) -> dict:
     }
     if any("score" in r for r in records):
         result["mae"] = mae(records)
+    losses = [r["log_loss"] for r in records if "log_loss" in r]
+    if losses:
+        result["log_loss"] = statistics.mean(losses)
     return result
 
 

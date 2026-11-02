@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import DecisionError
-from .format import DataError, Example, _label_to_json, parse_example, parse_examples
+from .format import DataError, Example, parse_example, parse_examples
 
 DATASET_FILE = "dataset.json"
 # The version of dataset.json this one writes and reads (missing means 1).
@@ -483,10 +483,9 @@ def line_json(example: Example, shared_questions: bool, mapped: set[str]) -> dic
         obj[key] = value
     if example.values:
         obj["values"] = example.values
-    questions = example.request.get("questions") or {}
-    labels = {
-        question_id: _label_to_json(questions[question_id], label)
-        for question_id, label in example.labels.items()
+    labels = {  # soft labels as distributions
+        question_id: label
+        for question_id, label in example.to_json()["labels"].items()
         if question_id not in mapped
     }
     if labels:

@@ -106,6 +106,14 @@ correct answer for each question, by question id:
 - `noul`: `true` or `false` (also as strings).
 - `score`: the level, counted from 0 in the order of the `criteria`
   list (`2` or `"2"` for the third).
+- A label may also be soft: how likely each answer is, for data whose
+  answers are uncertain (several annotators, a teacher model's
+  probabilities). For `choice` and `score` it is an object from option
+  id (a level as a string) to probability, the probabilities summing to
+  1 and options left out counting as 0; for `noul` it is the probability
+  of true, a number from 0 to 1:
+  `"labels": {"team": {"billing": 0.7, "tech": 0.3}, "urgent": 0.8}`.
+  A soft label that puts everything on one answer is that answer.
 - `id` is optional: a non-empty string, unique in the file. It defaults
   to the line number.
 - A question without a label is asked but not trained on.
@@ -114,6 +122,14 @@ correct answer for each question, by question id:
 The whole file is checked before any model loads: every request must be
 valid (the same checks as `run` and the server), and every label must
 name an option of its question. An error names its line.
+
+Soft labels train against their distribution: the trained kinds' loss
+and the calibration's log loss are measured against it, without label
+smoothing, so a fitted model learns to answer as uncertain as the data
+is. Accuracy, macro-F1 and the confusion matrix count a soft label's
+most likely answer (on a tie the question's first option; a `noul` at
+0.5 counts as true); the log loss that `training fit` and
+`training eval` report is against the distribution.
 
 Two rules decide what a fit can learn:
 
@@ -274,7 +290,11 @@ mlx-decision data hf:Yelp/yelp_review_full --split train --sample 5000 \
 suite, with its wording and label maps, pinned to the commits it was
 measured on. These are the datasets of the table above. Their splits:
 the dataset's own (`train`, `test`; ANLI's `train_r3`, `dev_r3` and
-`test_r3`).
+`test_r3`). `--preset typed-decisions` gives
+[typed-decisions](https://huggingface.co/datasets/LocalLLaMA/typed-decisions)
+(splits `train`, 1,200 cases, and `test`, 400), its requests as they
+are, five questions over four workflows, with soft labels from its gold
+distributions.
 
 **Menus.** Without a source in a terminal, `data` asks step by step,
 with its guesses preselected: the source (presets, a Hub dataset, a
@@ -348,7 +368,8 @@ with a calibration:
   stored in bf16.
 
 The trained kinds use cross-entropy with label smoothing 0.1 plus a Brier
-term; the readout fit uses the cross-entropy alone. `head` and
+term (against a soft label's distribution: no smoothing); the readout fit
+uses the cross-entropy alone. `head` and
 `finetune` train for 3 epochs (`--epochs`). After each epoch they score
 the dev part, keep the epoch with the lowest dev loss, and stop when an
 epoch is worse than the best one before it. `--no-early-stop` trains
@@ -557,8 +578,8 @@ answer_type (choice, 500 examples)
   ...
 ```
 
-For each labelled question, `training eval` shows accuracy, macro-F1
-and ECE (`score` questions also mean absolute error), refused and cut
+For each labelled question, `training eval` shows accuracy, macro-F1,
+ECE and log loss (`score` questions also mean absolute error), refused and cut
 examples when there are any, and a confusion matrix. `--compare` scores
 a second model after the first; only one is loaded at a time. `--json`
 prints the results as JSON. `--events` prints the progress as JSON

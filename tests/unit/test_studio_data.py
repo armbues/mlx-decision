@@ -102,7 +102,9 @@ def test_bad_lines_are_named(studio):
     assert [e["line"] for e in error["errors"]] == [2, 3, 4, 5, 6]
     assert '"nobody" is none of the options' in error["errors"][0]["message"]
     assert error["errors"][0]["param"] == "labels.team"
-    assert error["errors"][3]["message"] == "a noul label is true or false"
+    assert error["errors"][3]["message"] == (
+        "a noul label is true or false, or the probability of true"
+    )
     assert error["errors"][4]["message"] == "the same id as line 1"
     assert not (studio.workspace / "data" / "broken.jsonl").exists()
     many = "\n".join("{bad" for _ in range(50))

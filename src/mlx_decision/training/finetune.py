@@ -29,7 +29,7 @@ from mlx.utils import tree_flatten, tree_unflatten
 
 from .checkpoint import checkpointed
 from .events import Cancelled
-from .loss import decision_loss
+from .loss import Gold, decision_loss, gold_arrays
 
 LEARNING_RATE = 2e-5
 HEAD_LEARNING_RATE = 1e-4
@@ -43,10 +43,11 @@ TRAIN_DTYPE = mx.bfloat16
 
 @dataclass(frozen=True)
 class Item:
-    """A labelled question: the family's training item and the gold option's index."""
+    """A labelled question: the family's training item and its gold (the option's
+    index, or a soft label's probabilities in the item's order of the options)."""
 
     item: Any
-    label: int
+    label: Gold
 
 
 @dataclass
@@ -84,7 +85,8 @@ def batches(items: list[Item], rng: random.Random | None = None) -> list[list[It
 
 def _loss(backend, batch: list[Item]) -> mx.array:
     logits, valid = backend.scores([entry.item for entry in batch])
-    return decision_loss(logits, valid, mx.array([entry.label for entry in batch]))
+    labels, soft = gold_arrays([entry.label for entry in batch], logits.shape[-1])
+    return decision_loss(logits, valid, labels, soft=soft)
 
 
 def dev_loss(backend, items: list[Item]) -> float:

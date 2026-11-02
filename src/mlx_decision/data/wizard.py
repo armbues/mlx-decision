@@ -55,6 +55,7 @@ PRESET_TEXT = {
     "sst5": "SST-5: sentiment of movie reviews (5 levels)",
     "openbookqa": "OpenBookQA: science questions (4 choices)",
     "anli-r3": "ANLI round 3: premise and hypothesis (3 classes)",
+    "typed-decisions": "typed-decisions: five questions per case, soft labels",
 }
 HUB, FILE = "hub", "file"
 NONE = "(none)"

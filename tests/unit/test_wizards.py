@@ -138,7 +138,7 @@ def test_the_hub_asks_config_and_split_with_train_preselected(tmp_path, monkeypa
     train = labelled(["happy", "sad", "glad"], [0, 1, 0], ["joy", "sadness"])
     hub(monkeypatch, {"org/emotion": {"split": {"test": train, "train": train}, "raw": {}}})
     keys = typed(
-        "6",  # a Hugging Face dataset
+        "7",  # a Hugging Face dataset (after the six presets)
         "org/emotion",
         "1",  # config: split
         "",  # split: train, preselected

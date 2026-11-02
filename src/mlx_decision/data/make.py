@@ -27,7 +27,7 @@ from .dataset import (
     roles_by_name,
     write_dataset,
 )
-from .format import Example, _label_to_json, parse_examples
+from .format import Example, _label_to_json, parse_example, parse_examples
 from .format import split as split_examples
 from .shapes import (
     VALUE_SHAPES,
@@ -181,9 +181,14 @@ def _preset(name: str, split: str | None, limit, sample, seed) -> Made:
     made = []
     column = table.columns.get(found.value_column) if found.value_column else None
     items = preset_data.examples(found, rows, table.split, indices)
-    for row, item in zip(rows, items, strict=True):
-        [question_id] = item["questions"]
+    for number, (row, item) in enumerate(zip(rows, items, strict=True), 1):
         request = {"state": item["state"], "questions": item["questions"]}
+        if "labels" in item:  # every question's label, as a line of the file has them
+            made.append(
+                parse_example({"id": item["id"], **request, "labels": item["labels"]}, number)
+            )
+            continue
+        [question_id] = item["questions"]
         values = None
         if column is not None:
             values = {column.name: raw_value(class_of(column, row[column.name]))}

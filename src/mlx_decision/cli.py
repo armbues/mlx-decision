@@ -2373,7 +2373,8 @@ def data_command(
         str | None,
         typer.Option(
             help="A coverage-suite dataset with its wording, pinned to its commit: trec, "
-            "offensive, sst5, openbookqa or anli-r3 (with --split)."
+            "offensive, sst5, openbookqa or anli-r3 (with --split); or typed-decisions, "
+            "five questions per case with soft labels."
         ),
     ] = None,
     subset: Annotated[

@@ -120,10 +120,11 @@ def records(scored: list[Scored], adjust) -> dict[str, list[dict]]:
                 )
             continue
         probabilities = adjust(item.request.questions, item.raw)
+        targets = item.example.targets or {}
         for question_id, gold in labels.items():
             question = item.request.questions[question_id]
             answer = build_answer(question, probabilities[question_id]).model_dump()
-            entry = record(answer, gold)
+            entry = record(answer, gold, targets.get(question_id))
             entry["truncated"] = item.truncated
             result.setdefault(question_id, []).append(entry)
     return result

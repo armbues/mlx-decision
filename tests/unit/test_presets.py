@@ -24,10 +24,12 @@ ROWS = {
 }
 
 
-def test_every_preset_builds_one_question_with_its_gold_among_the_options():
+def test_every_coverage_preset_builds_one_question_with_its_gold_among_the_options():
     golds = {"trec": "human", "offensive": "false", "anli-r3": "entailment"}
     golds |= {"openbookqa": "B", "sst5": "4"}
-    for name, preset in PRESETS.items():
+    coverage = {name: preset for name, preset in PRESETS.items() if preset.coverage}
+    assert set(coverage) == set(golds)  # typed-decisions: test_soft_labels
+    for name, preset in coverage.items():
         (example,) = examples(preset, [ROWS[name]])
         assert list(example) == ["id", "state", "questions", "gold"]
         (question,) = example["questions"].values()

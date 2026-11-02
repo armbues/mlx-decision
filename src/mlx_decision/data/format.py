@@ -3,8 +3,13 @@
 Each line is a request body (``state``, ``questions``) plus ``labels``, an
 object from question id to the correct answer: an option id (``choice``),
 ``true`` / ``false`` (``noul``) or a level (``score``, 0 for the first one).
-An optional ``id`` (a string, unique in the file) names the example; without
-one it is the line number. Questions without a label are asked but not
+A label may also be soft, a distribution over the answers: an object from
+option id (a score's level as a string, "0", "1", ...) to its probability,
+the probabilities summing to 1, options left out at 0; for a ``noul``, the
+probability of true (a number from 0 to 1). A soft label that puts all of its
+weight on one answer is that answer, a hard label. An optional ``id`` (a
+string, unique in the file) names the example; without one it is the line
+number. Questions without a label are asked but not
 trained on. Images are not supported.
 
 A dataset folder (``dataset``) holds such files, one per split, whose lines
@@ -16,6 +21,7 @@ error names its line.
 """
 
 import json
+import math
 import random
 from collections import defaultdict
 from collections.abc import Iterable
@@ -46,7 +52,11 @@ class DataError(DecisionError):
 class Example:
     """One labelled request. ``labels`` holds the answers as option ids: the
     ``choice`` option, "true" / "false" for ``noul``, the level as a string
-    ("0", "1", ...) for ``score``, the way answers and metrics name them."""
+    ("0", "1", ...) for ``score``, the way answers and metrics name them. A
+    soft label is in ``targets`` too (question id -> option id -> probability,
+    every option of the question, summing to 1), its label the most likely
+    answer (the first of the question's options on a tie; a noul's true at
+    0.5)."""
 
     id: str
     request: dict[str, Any]  # the request body as given: state, questions
@@ -54,15 +64,34 @@ class Example:
     # A dataset folder's raw values of the source's label columns (column ->
     # value as text), from which ``dataset.json`` maps the labels; None elsewhere.
     values: dict[str, str] | None = None
+    targets: dict[str, dict[str, float]] | None = None
 
     def to_json(self) -> dict[str, Any]:
         """The line's object, with the labels in the file's form."""
         questions = self.request.get("questions") or {}
+        targets = self.targets or {}
         labels = {
-            question_id: _label_to_json(questions[question_id], label)
+            question_id: _target_to_json(questions[question_id], targets[question_id])
+            if question_id in targets
+            else _label_to_json(questions[question_id], label)
             for question_id, label in self.labels.items()
         }
         return {"id": self.id, **self.request, "labels": labels}
+
+    def gold(self, question_id: str, options: list[str]) -> int | tuple[float, ...]:
+        """A labelled question's gold in ``options``' order (a family's order of
+        the question's option ids): the label's index, or a soft label's
+        probabilities."""
+        target = (self.targets or {}).get(question_id)
+        if target is None:
+            return options.index(self.labels[question_id])
+        return tuple(target.get(option, 0.0) for option in options)
+
+
+def _target_to_json(question: dict, target: dict[str, float]) -> Any:
+    if question["type"] == "noul":
+        return target["true"]
+    return dict(target)
 
 
 def _label_to_json(question: dict, label: str) -> Any:
@@ -74,6 +103,62 @@ def _label_to_json(question: dict, label: str) -> Any:
     return label
 
 
+# How far a soft label's probabilities may sum from 1 (they are renormalised),
+# and up to which distance that is rounding (they are kept as given).
+SUM_TOLERANCE = 1e-3
+ROUNDING = 1e-5
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _soft(
+    question: Noul | Choice | Score, value: Any, param: str, line: int
+) -> tuple[str, dict[str, float] | None]:
+    """A label as an option id and, when it is soft, its distribution over the
+    question's options (None for a hard label, or a soft one on one answer)."""
+    if isinstance(question, Noul):
+        if not _number(value):
+            return _label(question, value, param, line), None
+        if not 0 <= value <= 1:
+            raise DataError(
+                "a soft noul label is the probability of true, from 0 to 1", line, param
+            )
+        target = {"true": float(value), "false": 1 - float(value)}
+    elif isinstance(value, dict):
+        options = [str(level) for level in range(len(question.criteria))]
+        if isinstance(question, Choice):
+            options = list(question.criteria)
+        for key, probability in value.items():
+            if key not in options:
+                listed = ", ".join(options)
+                raise DataError(
+                    f"a soft label names {json.dumps(key)}, none of the options ({listed})",
+                    line,
+                    param,
+                )
+            if not _number(probability) or probability < 0:
+                raise DataError(
+                    f"a soft label's probability is a number from 0 to 1, not "
+                    f"{json.dumps(probability)} for {json.dumps(key)}",
+                    line,
+                    param,
+                )
+        total = sum(value.values())
+        if abs(total - 1) > SUM_TOLERANCE:
+            raise DataError(f"a soft label's probabilities sum to 1, not {total:.6g}", line, param)
+        if abs(total - 1) <= ROUNDING:  # rounded as given: kept as it is
+            total = 1.0
+        target = {option: float(value.get(option, 0)) / total for option in options}
+    else:
+        return _label(question, value, param, line), None
+    label = max(target, key=target.get)  # the first on a tie: true for a noul at 0.5
+    if target[label] >= 1 - 1e-9:
+        return label, None
+    return label, target
+
+
 def _label(question: Noul | Choice | Score, value: Any, param: str, line: int) -> str:
     """A label as an option id, or the error saying what the question takes."""
     if isinstance(question, Noul):
@@ -81,18 +166,28 @@ def _label(question: Noul | Choice | Score, value: Any, param: str, line: int) -
             return "true" if value else "false"
         if value in ("true", "false"):
             return value
-        raise DataError("a noul label is true or false", line, param)
+        raise DataError("a noul label is true or false, or the probability of true", line, param)
     if isinstance(question, Score):
         levels = len(question.criteria)
         if isinstance(value, str) and value.isdigit() and value.isascii():
             value = int(value)
         if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < levels:
             return str(value)
-        raise DataError(f"a score label is a level from 0 to {levels - 1}", line, param)
+        raise DataError(
+            f"a score label is a level from 0 to {levels - 1}, or an object from level "
+            "to probability",
+            line,
+            param,
+        )
     if isinstance(value, str) and value in question.criteria:
         return value
     options = ", ".join(question.criteria)
-    raise DataError(f"{json.dumps(value)} is none of the options ({options})", line, param)
+    raise DataError(
+        f"{json.dumps(value)} is none of the options ({options}), nor an object from "
+        "option to probability",
+        line,
+        param,
+    )
 
 
 def parse_example(data: Any, line: int) -> Example:
@@ -117,13 +212,16 @@ def parse_example(data: Any, line: int) -> Example:
         raise DataError("no labels: an object from question id to the correct answer", line)
     if not isinstance(data["labels"], dict):
         raise DataError("labels must be an object from question id to the answer", line, "labels")
-    labels = {}
+    labels, targets = {}, {}
     for question_id, value in data["labels"].items():
         param = f"labels.{question_id}"
         if question_id not in request.questions:
             raise DataError("the request has no question with this id", line, param)
-        labels[question_id] = _label(request.questions[question_id], value, param, line)
-    return Example(example_id, body, labels)
+        label, target = _soft(request.questions[question_id], value, param, line)
+        labels[question_id] = label
+        if target is not None:
+            targets[question_id] = target
+    return Example(example_id, body, labels, targets=targets or None)
 
 
 def parse_examples(
