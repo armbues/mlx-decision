@@ -2,10 +2,10 @@
 
 usage:
   python scripts/accuracy_benchmark.py local --datasets DIR --model MODEL --out FILE
-      [--suite coverage|classic] [--benchmarks NAME,...] [--samples N]
+      [--suite coverage|classic|typed-decisions] [--benchmarks NAME,...] [--samples N]
   python scripts/accuracy_benchmark.py report RESULTS [RESULTS ...]
 
-Two suites of benchmarks:
+Three suites of benchmarks:
 
 - ``coverage`` (default): TREC-6 (answer type, ``choice``), TweetEval
   Offensive (``noul``), ANLI round 3 (``choice``), OpenBookQA (``choice``)
@@ -15,6 +15,17 @@ Two suites of benchmarks:
   datasets change on the Hub.
 - ``classic``: AG News, DAIR Emotion, ANLI r1-r3, BANKING77 and MMLU,
   500 examples of each, sampled with a fixed seed.
+- ``typed-decisions``: the test split of LocalLLaMA/typed-decisions (400
+  cases over four workflows, five questions each, pinned like the coverage
+  suite). Each case is one request with all its questions, as the
+  benchmark's board sends it, and every decision is scored against the
+  gold distribution with the board's published scorer
+  (``bench/score_with_jobs.py`` in the dataset repo, revision
+  ``fa01e869``): accuracy (the prediction's argmax against the gold's
+  argmax), KL from the gold (predictions floored at 1e-9), Brier (squared
+  error summed over the options) and ECE (pooled, 10 bins of the top
+  probability), also by question type and by workflow. A refused case
+  counts as uniform answers, as the scorer counts a missing answer.
 
 ``--samples N`` answers a fixed-seed sample of each benchmark instead (of
 the whole split, or of 500). ``--benchmarks`` picks some of the suite.
@@ -43,6 +54,10 @@ dependency of this package; ``pip install datasets``) as ``DIR/<org>/<name>``:
   load_dataset("dair-ai/emotion", split="test").save_to_disk("DIR/dair-ai/emotion")
   load_dataset("mteb/banking77", split="test").save_to_disk("DIR/mteb/banking77")
   load_dataset("cais/mmlu", "all", split="test").save_to_disk("DIR/cais/mmlu")
+  # typed-decisions suite
+  load_dataset("LocalLLaMA/typed-decisions", "all",
+               revision="7189f46b02248bd2569df7325c9df8e3b24e90a7"
+               ).save_to_disk("DIR/LocalLLaMA/typed-decisions")
 
 The coverage suite's questions, option descriptions, label maps and pinned
 commits are the ``data`` command's presets (``mlx_decision.data.presets``),
@@ -55,11 +70,13 @@ and resumes from it: examples already answered are not asked again.
 macro-F1 and ECE (expected calibration error of the top probability) in
 percent, for score questions also the mean absolute error of the expected
 level, and how many examples were refused or truncated (``--json``: the
-numbers).
+numbers); typed-decisions runs get tables of their own, in the board's
+units (fractions, not percent).
 """
 
 import argparse
 import json
+import math
 import random
 import sys
 import time
@@ -233,10 +250,42 @@ def coverage(preset: Preset) -> Callable[[Path], list[dict]]:
     return lambda datasets_dir: examples(preset, load_source(datasets_dir, preset.source))
 
 
+TYPED_DECISIONS = Source(
+    "LocalLLaMA/typed-decisions",
+    "all",
+    "test",
+    "7189f46b02248bd2569df7325c9df8e3b24e90a7",
+    400,
+    "66342f3036e80e17",
+)
+
+
+def typed_decisions(datasets_dir: Path) -> list[dict]:
+    """The typed-decisions test cases: state, questions and the gold
+    distributions (``type`` and ``probabilities`` of each question)."""
+    cases = []
+    for row in load_source(datasets_dir, TYPED_DECISIONS):
+        gold = json.loads(row["gold"])
+        cases.append(
+            {
+                "id": row["id"],
+                "workflow": row["workflow"],
+                "state": json.loads(row["state"]),
+                "questions": json.loads(row["questions"]),
+                "gold": {
+                    qid: {"type": g["type"], "probabilities": g["probabilities"]}
+                    for qid, g in gold.items()
+                },
+            }
+        )
+    return cases
+
+
 @dataclass(frozen=True)
 class Benchmark:
     make: Callable[[Path], list[dict]]  # every example of the split, in order
     source: Source | None = None  # pinned split (coverage suite)
+    cases: bool = False  # many questions per example, gold distributions (typed-decisions)
 
 
 SUITES: dict[str, dict[str, Benchmark]] = {
@@ -250,8 +299,14 @@ SUITES: dict[str, dict[str, Benchmark]] = {
         "banking77": Benchmark(banking77),
         "mmlu": Benchmark(mmlu),
     },
+    "typed-decisions": {
+        "typed_decisions": Benchmark(typed_decisions, TYPED_DECISIONS, cases=True),
+    },
 }
-DEFAULT_SAMPLES = {"coverage": None, "classic": 500}
+DEFAULT_SAMPLES = {"coverage": None, "classic": 500, "typed-decisions": None}
+CASE_SUITES = {
+    suite for suite, benchmarks in SUITES.items() if any(b.cases for b in benchmarks.values())
+}
 
 
 def build(
@@ -355,6 +410,110 @@ def answer_all(model, name: str, examples: list[dict], results: dict, out: Path)
     )
 
 
+def distribution(answer: dict) -> dict[str, float]:
+    """An answer's probabilities by option, as the gold names them (a noul's
+    options are "true" and "false")."""
+    if answer["type"] == "noul":
+        return {"true": answer["noul"], "false": 1 - answer["noul"]}
+    return dict(answer["probabilities"])
+
+
+def answer_cases(model, name: str, cases: list[dict], results: dict, out: Path) -> None:
+    """Ask every case not answered yet, all its questions in one request; a
+    record holds the gold and the predicted distributions (None: refused)."""
+    from mlx_decision.errors import DecisionError
+
+    records = results["benchmarks"].setdefault(name, [])
+    answered = {r["id"] for r in records}
+    todo = [c for c in cases if c["id"] not in answered]
+    start = time.perf_counter()
+    for count, case in enumerate(todo, 1):
+        tick = time.perf_counter()
+        entry = {"id": case["id"], "workflow": case["workflow"], "gold": case["gold"]}
+        try:
+            result = model.decide_request(wire(case))
+        except DecisionError as error:
+            entry.update(predicted=None, refused=str(error))
+        else:
+            answers = result.to_wire()["answers"]
+            entry.update(
+                predicted={qid: distribution(answer) for qid, answer in answers.items()},
+                seconds=round(time.perf_counter() - tick, 4),
+                truncated=result.truncated,
+            )
+        records.append(entry)
+        if count % 20 == 0:
+            write(out, results)
+    write(out, results)
+    print(
+        f"{name:10s} {len(todo):5d} answered, {len(answered):5d} resumed, "
+        f"{time.perf_counter() - start:7.1f}s",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def score_decision(predicted: dict[str, float], gold: dict) -> tuple[bool, float, float, float]:
+    """One decision as the board's scorer scores it: whether the argmaxes
+    agree, KL from the gold, Brier, and the top probability. Options are the
+    gold's, in its order (the first maximum wins); a prediction is
+    renormalised, a missing one is uniform."""
+    options = list(gold["probabilities"])
+    g = [float(gold["probabilities"][o]) for o in options]
+    p = [float(predicted.get(o, 0.0)) for o in options]
+    total = sum(p)
+    p = [v / total for v in p] if total > 0 else [1.0 / len(options)] * len(options)
+    kl = sum(gi * math.log(gi / max(pi, 1e-9)) for gi, pi in zip(g, p, strict=True) if gi > 0)
+    brier = sum((pi - gi) ** 2 for pi, gi in zip(p, g, strict=True))
+    return p.index(max(p)) == g.index(max(g)), kl, brier, max(p)
+
+
+def pooled_ece(scored: list[tuple[bool, float, float, float]], bins: int = 10) -> float:
+    """The board's ECE: decisions in ``bins`` equal bins of the top probability,
+    each bin's gap between accuracy and mean confidence, weighted by its size."""
+    totals = [[0, 0, 0.0] for _ in range(bins)]
+    for ok, _, _, confidence in scored:
+        tally = totals[min(int(confidence * bins), bins - 1)]
+        tally[0] += 1
+        tally[1] += int(ok)
+        tally[2] += confidence
+    n = len(scored)
+    return sum(t / n * abs(h / t - c / t) for t, h, c in totals if t)
+
+
+def summarise(scored: list[tuple[bool, float, float, float]]) -> dict:
+    n = len(scored)
+    return {
+        "n": n,
+        "accuracy": sum(s[0] for s in scored) / n,
+        "kl": sum(s[1] for s in scored) / n,
+        "brier": sum(s[2] for s in scored) / n,
+        "ece": pooled_ece(scored),
+    }
+
+
+def case_metrics(records: list[dict]) -> dict:
+    """Every decision of the case records scored (``score_decision``): over
+    all of them, by question type and by workflow; ``cases``, ``refused`` and
+    ``truncated`` count cases."""
+    scored, by_type, by_workflow = [], {}, {}
+    for entry in records:
+        predicted = entry.get("predicted") or {}
+        for qid, gold in entry["gold"].items():
+            result = score_decision(predicted.get(qid, {}), gold)
+            scored.append(result)
+            by_type.setdefault(gold["type"], []).append(result)
+            by_workflow.setdefault(entry["workflow"], []).append(result)
+    return {
+        **summarise(scored),
+        "cases": len(records),
+        "refused": sum(1 for r in records if r.get("predicted") is None),
+        "truncated": sum(1 for r in records if r.get("truncated")),
+        "by_type": {kind: summarise(by_type[kind]) for kind in sorted(by_type)},
+        "by_workflow": {name: summarise(by_workflow[name]) for name in sorted(by_workflow)},
+    }
+
+
 def local(args) -> None:
     import mlx_decision
     from mlx_decision.errors import DecisionError
@@ -371,7 +530,10 @@ def local(args) -> None:
                 results["not_applicable"][name] = str(error)
                 print(f"{name:10s} not applicable: {error}", file=sys.stderr, flush=True)
                 continue
-            answer_all(model, name, examples, results, args.out)
+            if SUITES[args.suite][name].cases:
+                answer_cases(model, name, examples, results, args.out)
+            else:
+                answer_all(model, name, examples, results, args.out)
     finally:
         write(args.out, results)
 
@@ -389,8 +551,70 @@ def cell(m: dict) -> str:
 
 
 def report(args) -> None:
-    runs = [json.loads(Path(path).read_text()) for path in args.results]
-    names = [name for suite in SUITES.values() for name in suite]
+    loaded = [(path, json.loads(Path(path).read_text())) for path in args.results]
+    cases = [(path, run) for path, run in loaded if run.get("suite") in CASE_SUITES]
+    others = [(path, run) for path, run in loaded if run.get("suite") not in CASE_SUITES]
+    tables = []
+    if others:
+        tables.append(example_report([p for p, _ in others], [r for _, r in others], args.json))
+    if cases:
+        tables.append(case_report([p for p, _ in cases], [r for _, r in cases], args.json))
+    if args.json:
+        print(json.dumps([row for table in tables for row in table], indent=2))
+    else:
+        print("\n\n".join(tables))
+
+
+def fraction(m: dict) -> str:
+    return f"{m['accuracy']:.3f} / {m['kl']:.3f} / {m['brier']:.3f} / {m['ece']:.3f}"
+
+
+def case_report(paths: list[str], runs: list[dict], as_json: bool):
+    """typed-decisions runs: the board's four numbers, then accuracy by
+    question type and by workflow (a JSON list with ``as_json``)."""
+    table = []
+    for path, run in zip(paths, runs, strict=True):
+        for name, records in run["benchmarks"].items():
+            if records:
+                table.append({"model": run["model"], "file": path, "benchmark": name,
+                              "metrics": case_metrics(records)})  # fmt: skip
+    if as_json:
+        return table
+    types = sorted({t for row in table for t in row["metrics"]["by_type"]})
+    flows = sorted({w for row in table for w in row["metrics"]["by_workflow"]})
+    lines = [
+        "| Model | Accuracy / KL / Brier / ECE | " + " | ".join(types) + " | Cases |",
+        "|---|---|" + "---|" * len(types) + "---|",
+    ]
+    for row in table:
+        m = row["metrics"]
+        count = [str(m["cases"])]
+        if m["refused"]:
+            count.append(f"{m['refused']} refused")
+        if m["truncated"]:
+            count.append(f"{m['truncated']} truncated")
+        by_type = [
+            f"{m['by_type'][t]['accuracy']:.3f}" if t in m["by_type"] else "-" for t in types
+        ]
+        lines.append(
+            f"| {row['model']} | {fraction(m)} | "
+            + " | ".join(by_type)
+            + f" | {', '.join(count)} |"
+        )
+    lines += ["", "| Model | " + " | ".join(flows) + " |", "|---|" + "---|" * len(flows)]
+    for row in table:
+        flow = row["metrics"]["by_workflow"]
+        lines.append(
+            f"| {row['model']} | "
+            + " | ".join(f"{flow[w]['accuracy']:.3f}" if w in flow else "-" for w in flows)
+            + " |"
+        )
+    return "\n".join(lines)
+
+
+def example_report(paths: list[str], runs: list[dict], as_json: bool):
+    """The coverage and classic runs: one table, a column per run."""
+    names = [name for suite, items in SUITES.items() if suite not in CASE_SUITES for name in items]
     names = [n for n in names if any(n in run["benchmarks"] for run in runs)]
     table = [
         {
@@ -405,11 +629,10 @@ def report(args) -> None:
                 for name in names
             },
         }
-        for path, run in zip(args.results, runs, strict=True)
+        for path, run in zip(paths, runs, strict=True)
     ]
-    if args.json:
-        print(json.dumps(table, indent=2))
-        return
+    if as_json:
+        return table
     lines = [
         "| Benchmark | "
         + " | ".join(f"{run['model']}: acc / macro-F1 / ECE (n)" for run in runs)
@@ -422,7 +645,7 @@ def report(args) -> None:
             m = column["benchmarks"][name]
             cells.append(m if m == "n/a" else cell(m) if m else "-")
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
-    print("\n".join(lines))
+    return "\n".join(lines)
 
 
 def add_dataset_options(parser) -> None:
