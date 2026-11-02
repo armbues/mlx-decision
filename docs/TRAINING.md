@@ -75,6 +75,18 @@ The laya run trained three epochs and kept the first. With early
 stopping, the default since then, the same run stops after the second
 epoch and takes about 11.5 minutes.
 
+Soft labels make the difference on data with uncertain answers. On
+[typed-decisions](https://huggingface.co/datasets/LocalLLaMA/typed-decisions)
+(`--preset typed-decisions`: 1,200 training cases of five questions,
+its gold distributions as soft labels; scored on the 400 test cases with
+the benchmark's own scorer, accuracy and KL divergence from the gold,
+lower is better), laya fine-tuned for 31 minutes went from 0.363 / 0.572
+to 0.784 / 0.094, ahead of the published laya-typed-decisions (0.766 /
+0.117), and a 5-minute d1-3B readout fit from 0.648 / 0.286 to 0.776 /
+0.097. The same d1-3B fit on hard labels (each gold's most likely
+answer) reached 0.765 but KL 1.240: trained on hard labels, a model
+learns to be sure where the data is not.
+
 What to expect in general:
 
 - **Julia** gains the most: on TREC its release guesses (16%), and after
