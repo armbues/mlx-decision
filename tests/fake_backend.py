@@ -110,6 +110,34 @@ def write_sized_model(folder: Path, weights: int) -> Path:
     return folder
 
 
+def write_cached(
+    cache: Path, repo: str, commit: str, main: bool = True, extra=(), weights: int = 64
+) -> Path:
+    """A fake model in the Hub cache's layout: files in ``blobs/`` (named by
+    their hash), links to them in ``snapshots/<commit>``, ``refs/main``.
+    ``extra`` names links that point nowhere (a broken snapshot)."""
+    import hashlib
+    import shutil
+
+    folder = cache / f"models--{repo.replace('/', '--')}"
+    staged = write_sized_model(folder / "staged", weights)
+    snapshot = folder / "snapshots" / commit
+    snapshot.mkdir(parents=True)
+    (folder / "blobs").mkdir(exist_ok=True)
+    for file in sorted(staged.iterdir()):
+        data = file.read_bytes()
+        blob = folder / "blobs" / hashlib.sha256(data).hexdigest()
+        blob.write_bytes(data)
+        (snapshot / file.name).symlink_to(Path("../../blobs") / blob.name)
+    for name in extra:
+        (snapshot / name).symlink_to(Path("../../blobs") / ("0" * 64))
+    shutil.rmtree(staged)
+    if main:
+        (folder / "refs").mkdir(exist_ok=True)
+        (folder / "refs" / "main").write_text(commit)
+    return snapshot
+
+
 register_family(
     FAMILY,
     detect=lambda path: False,

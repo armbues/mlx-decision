@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from fake_backend import write_fitted, write_model, write_sized_model
+from fake_backend import write_cached, write_fitted, write_model
 from mlx_decision.config import Config
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.registry import MARKER_FILE
@@ -162,7 +162,6 @@ def test_a_job_that_has_not_ended_stays(studio):
 
 
 def test_a_fit_whose_model_was_deleted_on_disk_says_so(studio):
-    import shutil
 
     from test_studio_jobs_api import write_data
 
@@ -240,33 +239,6 @@ def test_an_old_fit_entry_does_not_take_a_later_fit_of_its_name(studio):
 # Downloads: a repo in the Hugging Face cache, a folder in models_dir.
 
 
-def write_cached(
-    cache: Path, repo: str, commit: str, main: bool = True, extra=(), weights: int = 64
-) -> Path:
-    """A fake model in the Hub cache's layout: files in ``blobs/`` (named by
-    their hash), links to them in ``snapshots/<commit>``, ``refs/main``.
-    ``extra`` names links that point nowhere (a broken snapshot)."""
-    import hashlib
-
-    folder = cache / f"models--{repo.replace('/', '--')}"
-    staged = write_sized_model(folder / "staged", weights)
-    snapshot = folder / "snapshots" / commit
-    snapshot.mkdir(parents=True)
-    (folder / "blobs").mkdir(exist_ok=True)
-    for file in sorted(staged.iterdir()):
-        data = file.read_bytes()
-        blob = folder / "blobs" / hashlib.sha256(data).hexdigest()
-        blob.write_bytes(data)
-        (snapshot / file.name).symlink_to(Path("../../blobs") / blob.name)
-    for name in extra:
-        (snapshot / name).symlink_to(Path("../../blobs") / ("0" * 64))
-    shutil.rmtree(staged)
-    if main:
-        (folder / "refs").mkdir(exist_ok=True)
-        (folder / "refs" / "main").write_text(commit)
-    return snapshot
-
-
 @pytest.fixture
 def downloads(tmp_path, monkeypatch):
     """A Studio started without -m: models_dir holds ``laya``, ``kept`` (named
@@ -323,6 +295,12 @@ def test_the_places_are_listed_as_expected(downloads):
         "single": None,
         "named": None,
     }
+    # Where models live counts the link in models_dir, not where it points.
+    places = {
+        place["kind"]: place["models"]
+        for place in downloads.get("/studio/api/places").json()["places"]
+    }
+    assert places["models_dir"] == 3 and places["cache"] == 3
 
 
 def models_by_name(studio):

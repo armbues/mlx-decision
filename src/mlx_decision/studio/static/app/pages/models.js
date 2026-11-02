@@ -12,7 +12,7 @@ import { duration, gigabytes, parameters, plural } from "../format.js";
 import { chooseModel } from "../playground/session.js";
 import { SHORTCUTS, onKey } from "../keys.js";
 import { openConvert } from "../models/convert.js";
-import { confirmDeleteModel, deletable, deleteWhyNot } from "../models/delete.js";
+import { confirmDeleteModel, deletable, deleteTitle, deleteWhyNot } from "../models/delete.js";
 import { openDownload } from "../models/download.js";
 import { FirstStart } from "../models/first-start.js";
 import { Places, loadPlaces } from "../settings/places.js";
@@ -39,7 +39,13 @@ function reads(model) {
   return html`${limit}<span class="pic-slot">${caps.supports_images && html`<${Picture} />`}</span>`;
 }
 
-const PLACES = { cache: "HF cache", studio: "made here", folder: "your folder" };
+const PLACES = { cache: "HF cache", studio: "made here", models: "models folder", folder: "your folder" };
+const LOCATIONS = {
+  cache: "In the Hugging Face cache",
+  studio: "Made by the Studio, in its models folder",
+  models: "In your models folder (models_dir)",
+  folder: "A folder you named",
+};
 
 function subline(model) {
   if (model.fitted) return `fitted on ${model.base}`;
@@ -574,7 +580,7 @@ function Details() {
       </dl></section>`}
 
       <section class="igroup"><h4>Files</h4><dl>
-        <${Kv} label="Location"><code title=${model.path}>${tilde(model.path)}</code><small>${{ cache: "In the Hugging Face cache", studio: "Made by the Studio, in its models folder", folder: "A folder you named" }[model.place] ?? ""}</small><//>
+        <${Kv} label="Location"><code title=${model.path}>${tilde(model.path)}</code><small>${model.link && model.place === "models" ? "A link in your models folder (models_dir)" : (LOCATIONS[model.place] ?? "")}</small><//>
         ${model.disk_bytes != null && html`<${Kv} label="On disk">${gigabytes(model.disk_bytes)}<//>`}
         ${model.repo && html`<${Kv} label="From"><code>${model.repo}</code><small>Revision ${model.revision.slice(0, 7)}</small><//>`}
         ${model.converted_from && html`<${Kv} label="Converted">from <code>${model.converted_from}</code><//>`}
@@ -593,7 +599,7 @@ function Details() {
       </dl></section>
       ${deletable(model) &&
       html`<div class="idet-foot">
-        <button class="btn plain danger" disabled=${Boolean(deleteWhyNot(model))} title=${deleteWhyNot(model) ?? `Delete the folder of ${model.name}`}
+        <button class="btn plain danger" disabled=${Boolean(deleteWhyNot(model))} title=${deleteWhyNot(model) ?? deleteTitle(model)}
                 onClick=${() => confirmDeleteModel(model)}>Delete…</button>
       </div>`}
     </div>

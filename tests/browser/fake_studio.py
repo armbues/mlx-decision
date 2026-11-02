@@ -13,6 +13,12 @@ probabilities; Compare's Stop and its notes where models differ). With
 ``empty`` it serves no models at all (a first start); with ``convertible``
 also ``tiny-clef``, the tiny Clef of ``tests/tiny_models.py``, which
 Convert offers; ``max_body_bytes`` sets the most a request (an upload) holds.
+With ``downloads`` it lists downloaded models too (Delete for them): the
+Hugging Face cache this process uses (``huggingface_hub.constants.HF_HUB_CACHE``,
+which the caller points at a scratch folder) gains ``org/fake-cached`` (two
+revisions), and ``home/models-dir``, the config's ``models_dir``, holds
+``fake-local`` (a folder), ``fake-linked`` (a link to a folder elsewhere) and
+``fake-named`` (named in the config's ``models``, so it stays).
 
 Jobs run ``tests/fake_job.py`` in the CLI's place (``fake_jobs`` sets how
 many steps and how fast); ``data/tickets.jsonl`` is there for a fit.
@@ -28,12 +34,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from fake_backend import write_fitted, write_model
+from fake_backend import write_cached, write_fitted, write_model
 from mlx_decision.config import Config
 from mlx_decision.memory import ModelTooLargeError
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio, server
-from mlx_decision.studio.catalog import Catalog
+from mlx_decision.studio.catalog import Catalog, studio_models
 
 GB = 10**9
 FAKE_JOB = Path(__file__).resolve().parents[1] / "fake_job.py"
@@ -103,6 +109,7 @@ def write_studio(
     empty: bool = False,
     convertible: bool = False,
     max_body_bytes: int | None = None,
+    downloads: bool = False,
 ) -> FastAPI:
     """Write the fake models under ``home/fake-models`` and the sample sets in
     ``home/ws/sets`` (kept when there), and build the Studio for ``port``."""
@@ -143,6 +150,22 @@ def write_studio(
         pool = SizedPool(discover([models]), budget=8 * GB)
     else:
         pool = ModelPool(discover([models]), budget=GB)
+    models_dir, named = home / "models-dir", ()
+    if downloads:
+        from huggingface_hub import constants
+
+        cache = Path(constants.HF_HUB_CACHE)
+        if not (cache / "models--org--fake-cached").exists():
+            write_cached(cache, "org/fake-cached", "b" * 40, main=False, weights=4096)
+            write_cached(cache, "org/fake-cached", "a" * 40)
+        write_model(models_dir / "fake-local")
+        write_model(models_dir / "fake-named")
+        if not (models_dir / "fake-linked").is_symlink():
+            (models_dir / "fake-linked").symlink_to(write_model(home / "elsewhere" / "linked"))
+        named = (str(models_dir / "fake-named"),)
+        # Named as web names them: the cached repo after its repo id.
+        found = studio_models([str(models_dir)], None, include_cache=True)
+        pool = ModelPool([*pool.specs.values(), *found], budget=pool.budget)
     data = home / "ws" / "data"
     data.mkdir(parents=True, exist_ok=True)
     line = {**TICKET_TRIAGE, "labels": {"department": "technical", "is_urgent": "true"}}
@@ -151,6 +174,9 @@ def write_studio(
     config = Config(home / "config.toml")
     # Where the models come from, as web passes it (Where models live, rescans).
     catalog = Catalog([] if empty else [str(models)], home / "ws" / "models", include_cache=False)
+    if downloads:  # as web without -m: models_dir scanned, the cache too
+        config = Config(home / "config.toml", models_dir=models_dir, models=named)
+        catalog = Catalog([str(models), *named], home / "ws" / "models", models_dir=models_dir)
     app = create_studio(
         pool,
         port=port,

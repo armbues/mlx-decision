@@ -1,6 +1,7 @@
 """Deleting from the lists: a dataset that is not picked, the Studio's own
-models on the Models page, and fits and evaluations in Training's History
-(a fit's model too, when asked)."""
+models and downloaded ones (a Hugging Face cache repo, a folder or a link in
+the models folder) on the Models page, and fits and evaluations in
+Training's History (a fit's model too, when asked)."""
 
 import json
 import re
@@ -119,3 +120,109 @@ def test_a_fit_with_its_model_and_an_evaluation(studio, page):
     listed = page.request.get(f"{studio.base}/studio/api/models").json()["models"]
     assert "mine" not in [entry["name"] for entry in listed]
     assert json.loads(page.request.get(f"{studio.base}/studio/api/jobs").text())["jobs"] == []
+
+
+@pytest.fixture
+def downloads(make_studio, monkeypatch, tmp_path):
+    """The fake Studio with downloaded models (``downloads=True``), its Hugging
+    Face cache in a scratch folder."""
+    from huggingface_hub import constants
+
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path / "hf"))
+    studio = make_studio(downloads=True)
+    studio.cache = tmp_path / "hf"
+    studio.models_dir = studio.home / "models-dir"
+    return studio
+
+
+def location(page):
+    return page.locator(".idet dt", has_text="Location").locator("xpath=following-sibling::dd[1]")
+
+
+def delete_from_inspector(page, studio, name):
+    page.goto(f"{studio.base}/#/models/{name}")
+    expect(page.locator(".idet h2")).to_have_text(name)
+    page.locator(".idet-foot").get_by_role("button", name="Delete…").click()
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text(f"Delete the model {name}?")
+    return sheet
+
+
+def test_a_cached_repo_every_revision(downloads, page):
+    repo = downloads.cache / "models--org--fake-cached"
+    open_studio(page, downloads, "models")
+    row = page.locator(".mrow", has_text="fake-cached").first
+    expect(row).to_contain_text("HF cache")
+    page.goto(f"{downloads.base}/#/models/fake-cached")
+    expect(location(page)).to_contain_text("In the Hugging Face cache")
+    button = page.locator(".idet-foot").get_by_role("button", name="Delete…")
+    expect(button).to_have_attribute("title", "Delete org/fake-cached from the Hugging Face cache")
+    sheet = delete_from_inspector(page, downloads, "fake-cached")
+    expect(sheet).to_contain_text(
+        "The Hugging Face cache repo org/fake-cached (0.0 GB), every revision"
+    )
+    expect(sheet).to_contain_text("Other tools share the cache")
+    sheet.get_by_role("button", name="Delete").click()
+    expect(page.locator(".toast")).to_contain_text("Deleted the model fake-cached")
+    expect(page).to_have_url(re.compile(r"#/models$"))
+    expect(page.locator(".mrow", has_text="fake-cached")).to_have_count(0)
+    assert not repo.exists()
+
+
+def test_a_folder_and_a_link_in_the_models_folder(downloads, page):
+    open_studio(page, downloads, "models")
+    expect(page.locator(".mrow", has_text="fake-local").first).to_contain_text("models folder")
+    page.goto(f"{downloads.base}/#/models/fake-local")
+    expect(location(page)).to_contain_text("In your models folder (models_dir)")
+    sheet = delete_from_inspector(page, downloads, "fake-local")
+    expect(sheet).to_contain_text(f"Its folder {downloads.models_dir / 'fake-local'}")
+    expect(sheet).to_contain_text("is deleted from disk")
+    sheet.get_by_role("button", name="Delete").click()
+    expect(page.locator(".mrow", has_text="fake-local")).to_have_count(0)
+    assert not (downloads.models_dir / "fake-local").exists()
+
+    # The link, from the row's context menu: only the link goes.
+    page.goto(f"{downloads.base}/#/models/fake-linked")
+    expect(location(page)).to_contain_text("A link in your models folder")
+    button = page.locator(".idet-foot").get_by_role("button", name="Delete…")
+    expect(button).to_have_attribute("title", "Delete the link fake-linked")
+    page.locator(".mrow", has_text="fake-linked").first.click(button="right")
+    menu_item(page, "Delete…").click()
+    sheet = page.locator(".sheet")
+    expect(sheet).to_contain_text(f"The link {downloads.models_dir / 'fake-linked'}")
+    expect(sheet).to_contain_text("The folder it points to stays")
+    sheet.get_by_role("button", name="Delete").click()
+    expect(page.locator(".mrow", has_text="fake-linked")).to_have_count(0)
+    assert not (downloads.models_dir / "fake-linked").is_symlink()
+    assert (downloads.home / "elsewhere" / "linked").is_dir()
+
+
+def test_a_named_folder_has_no_delete(downloads, page):
+    open_studio(page, downloads, "models/fake-named")
+    expect(page.locator(".idet h2")).to_have_text("fake-named")
+    expect(location(page)).to_contain_text("A folder you named")
+    expect(page.locator(".idet-foot")).to_have_count(0)
+    page.locator(".mrow", has_text="fake-named").first.click(button="right")
+    page.wait_for_selector(".menu .mi")
+    expect(page.locator(".menu .mi", has_text="Delete…")).to_have_count(0)
+    page.keyboard.press("Escape")
+    response = page.request.delete(
+        f"{downloads.base}/studio/api/models/fake-named",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status == 403
+    assert (downloads.models_dir / "fake-named").is_dir()
+
+
+def test_a_refusal_is_shown_in_the_sheet(downloads, page):
+    repo = downloads.cache / "models--org--fake-cached"
+    open_studio(page, downloads, "models")
+    sheet = delete_from_inspector(page, downloads, "fake-cached")
+    # Broken after the page listed it: the cache can no longer read the repo.
+    (repo / "snapshots" / ("a" * 40) / "README.md").symlink_to(repo / "blobs" / "missing")
+    sheet.get_by_role("button", name="Delete").click()
+    expect(sheet).to_contain_text("Not deleted: the Hugging Face cache cannot read org/fake-cached")
+    expect(sheet.locator("h2")).to_have_text("Delete the model fake-cached?")
+    assert repo.is_dir()
+    listed = page.request.get(f"{downloads.base}/studio/api/models").json()["models"]
+    assert "fake-cached" in [entry["name"] for entry in listed]

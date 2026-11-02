@@ -77,11 +77,17 @@ def settings_router(
             found.append(
                 {"id": f"named-{len(found)}", "kind": "named", "path": path, "downloads": False}
             )
-        specs = [_resolved(spec.path) for spec in pool.specs.values()]
+        # Where each model is: its folder, and a link's own place too.
+        specs = [
+            {_resolved(spec.path), _resolved(spec.path.absolute().parent) / spec.path.name}
+            for spec in pool.specs.values()
+        ]
         for place in found:
             root = _resolved(place["path"])
             place["exists"] = place["path"].is_dir()
-            place["models"] = sum(1 for path in specs if path == root or path.is_relative_to(root))
+            place["models"] = sum(
+                1 for paths in specs if any(path.is_relative_to(root) for path in paths)
+            )
             place["path"] = str(place["path"])
             place["display"] = tilde(place["path"])
         return found
