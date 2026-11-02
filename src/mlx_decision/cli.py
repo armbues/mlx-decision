@@ -454,9 +454,9 @@ MaxImageOption = Annotated[
         "--max-image-mp",
         min=0,
         help="Shrink larger images to this many megapixels (1 MP = 2^20 pixels = 1,024 "
-        "tokens; Clef, pplx, d3 and d1 LFM3). Default: Clef 2, pplx v1.2, d3 and d1 LFM3 their "
-        "releases' 1.56, pplx v1.1 0.25. 0 = no cap beyond the model's own, as in Cloudflare's "
-        "reference.",
+        "tokens; Clef, pplx, d3, Base Labs and d1 LFM3). Default: Clef 2, pplx v1.2, d3 and "
+        "d1 LFM3 their releases' 1.56, Base Labs its releases' 16, pplx v1.1 0.25. 0 = no cap "
+        "beyond the model's own, as in Cloudflare's reference.",
     ),
 ]
 

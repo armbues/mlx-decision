@@ -206,7 +206,8 @@ def load(model: str | Path, *, check_memory: bool = True, **options) -> Decision
     longer input is refused), ``vision`` as for Clef and ``max_image_pixels``
     (default and maximum the release's 1,638,400). For Base Labs:
     ``max_input_tokens`` (default 16,384 per question, at most 262,144;
-    longer input is refused). For H2O-Lightning:
+    longer input is refused), ``vision`` as for Clef and ``max_image_pixels``
+    (default and maximum the releases' 16,777,216). For H2O-Lightning:
     ``max_input_tokens`` (default and maximum 40,960 per question; states
     over 32,000 tokens, or too long for a lowered limit, are cut) and
     ``noul_floor`` (default the release's 0.801: less sure yes/no answers are

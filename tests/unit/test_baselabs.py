@@ -6,6 +6,7 @@ import shutil
 import mlx.core as mx
 import pytest
 
+from mlx_decision.model import DecisionModel
 from mlx_decision.models.baselabs.model import (
     EMBEDDINGS,
     HEAD,
@@ -380,6 +381,56 @@ def test_images_in_the_state_and_beside_it_are_answered(model):
     assert model.backend.vision is not None
 
 
+def test_images_up_to_the_releases_bounds(model, folder):
+    import mlx.core as mx
+
+    question = {"refund": QUESTIONS["refund"]}
+    with mx.stream(mx.cpu):
+        plain = model.decide("please", question).usage.input_tokens
+        small = model.decide("please", question, images=[png(10, 10)]).usage.input_tokens
+        large = model.decide("please", question, images=[png(2000, 1000)]).usage.input_tokens
+        lowered = DecisionModel(load_backend(folder, max_image_pixels=262144, prefix_cache_gb=0))
+        capped = lowered.decide("please", question, images=[png(2000, 1000)]).usage.input_tokens
+    # An image adds its pad tokens and the start and end markers (the tiny
+    # tokenizer has no token for the line break after them); one token per
+    # 32 x 32 pixels, at least 65,536 pixels, at most the releases' 16,777,216
+    # (2000 x 1000 stays as it is).
+    assert small - plain - 2 == 64
+    assert 1900 < large - plain - 2 <= 2000
+    assert 200 < capped - plain - 2 <= 256
+
+
+def test_videos_are_refused(model):
+    from mlx_decision.errors import DecisionError
+
+    with pytest.raises(DecisionError, match="videos are not supported"):
+        model.decide_request(
+            {
+                "state": "s",
+                "questions": {"q": {"type": "noul"}},
+                "videos": ["data:video/mp4;base64,AA=="],
+            }
+        )
+
+
+@pytest.mark.parametrize("bits", [8, 4])
+def test_a_quantized_copy_answers_images_like_the_release(folder, tmp_path, bits):
+    """The vision tower is kept as stored, so only the backbone's rounding moves the answers."""
+    import mlx.core as mx
+
+    from mlx_decision.convert import convert
+
+    out = convert(folder, tmp_path / f"q{bits}", bits=bits)
+    request = {"state": {"note": "see", "photo": png(300, 200)}, "questions": QUESTIONS}
+    with mx.stream(mx.cpu):
+        base = DecisionModel(load_backend(folder, prefix_cache_gb=0)).decide_request(request)
+        copy = DecisionModel(load_backend(out, prefix_cache_gb=0)).decide_request(request)
+    assert copy.usage.input_tokens == base.usage.input_tokens
+    a, b = base.answers["team"].probabilities, copy.answers["team"].probabilities
+    error = max(abs(a[k] - p) for k, p in b.items())
+    assert error < (0.02 if bits == 8 else 0.15)
+
+
 @pytest.fixture(scope="module")
 def without_vision(tmp_path_factory):
     """A tiny folder without the vision tower's weights."""
@@ -392,7 +443,6 @@ def without_vision(tmp_path_factory):
 
 def test_without_vision_weights_images_are_refused_and_state_images_are_text(without_vision):
     from mlx_decision.errors import DecisionError
-    from mlx_decision.model import DecisionModel
 
     assert not static_capabilities(without_vision).supports_images
     with pytest.raises(ValueError, match="no vision weights"):

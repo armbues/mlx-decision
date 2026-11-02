@@ -19,7 +19,8 @@ in states lifted out; answers compared before the yes/no floor). d3:
 questions the release refuses left out; the input limit raised to the
 backbone's context for the 40k request). Base Labs: ``--reference
 tests/parity/baselabs/reference-bf16.json`` (elephant-1; joey-1's is
-``reference-joey-bf16.json``: the text parity set and the
+``reference-joey-bf16.json``; a ``--images`` fixture runs the image
+requests instead, cached as ``<model>-images.json``: the text parity set and the
 Base Labs set at the release's 32,768-token limit; what the wire format
 refuses left out).
 """
@@ -43,7 +44,28 @@ SETS = {
     "h2o": ["requests.json", "marker/requests.json", "h2o/requests.json"],
     "d3": ["requests.json", "marker/requests.json", "d3/requests.json"],
     "baselabs": ["requests.json", "baselabs/requests.json"],
+    # Base Labs' image requests: the parity set's and its own (images in states).
+    "baselabs-images": ["requests.json", "baselabs/image-requests.json"],
 }
+
+
+def cases_for(kind: str) -> list[dict]:
+    """The requests of a parity set. Base Labs' text set leaves out the image
+    requests (its reference has none); its image set has only those."""
+    cases = []
+    for name in SETS[kind]:
+        found = json.loads((PARITY / name).read_text())
+        if name == "requests.json" and kind == "baselabs":
+            found = [c for c in found if not c.get("images")]
+        elif name == "requests.json" and kind == "baselabs-images":
+            found = [c for c in found if c.get("images")]
+        cases += found
+    return cases
+
+
+def cache_name(model: str, kind: str) -> str:
+    """A model's cached results; the image set's beside the text set's."""
+    return f"{Path(model).name}{'-images' if kind == 'baselabs-images' else ''}.json"
 
 
 def requests_digest(kind: str = "clef") -> str:
@@ -110,26 +132,26 @@ def d3_reference(fixture: dict) -> dict:
     return reference
 
 
-def baselabs_reference(fixture: dict) -> dict:
-    """Base Labs' reference (a release's bf16 fixture, any of them) in the shape
-    of Clef's: each question's option ids and the softmax of the release's
-    answer-code logits; what the release or the wire format refuses left out."""
+def baselabs_reference(fixture: dict, kind: str = "baselabs") -> dict:
+    """Base Labs' reference (a release's bf16 fixture, any of them, text or
+    images) in the shape of Clef's: each question's option ids and the softmax
+    of the release's answer-code logits; what the release or the wire format
+    refuses left out."""
     import math
 
     from mlx_decision.errors import DecisionError
     from mlx_decision.models.baselabs.prompt import options
     from mlx_decision.types import parse_request
 
-    cases = {}
-    for name in SETS["baselabs"]:
-        cases |= {case["id"]: case for case in json.loads((PARITY / name).read_text())}
+    cases = {case["id"]: case for case in cases_for(kind)}
     reference = {}
     for case_id, entry in fixture["results"].items():
         if "refused" in entry:
             continue
         case = cases[case_id]
         try:
-            request = parse_request({"state": case["state"], "questions": case["questions"]})
+            # The questions alone (the images play no part in the option ids).
+            request = parse_request({"state": "", "questions": case["questions"]})
         except DecisionError:
             continue
         questions = []
@@ -148,14 +170,17 @@ def baselabs_reference(fixture: dict) -> dict:
     return reference
 
 
-def answerable(loaded, request):
-    """The request without the questions the model refuses, or None if none is left."""
+def answerable(loaded, request, images: bool = False):
+    """The request without the questions the model refuses, or None if none is
+    left. ``images``: the request's images count in each question's tokens."""
     from mlx_decision.errors import DecisionError
 
+    tokens = loaded.backend.open_images(request)[1].tokens if images else None
     kept = {}
     for question_id, question in request.questions.items():
+        one = request.model_copy(update={"questions": {question_id: question}})
         try:
-            loaded.backend.encode(request.model_copy(update={"questions": {question_id: question}}))
+            loaded.backend.encode(one, tokens) if images else loaded.backend.encode(one)
         except DecisionError:
             continue
         kept[question_id] = question
@@ -172,11 +197,9 @@ def run_model(model: str, out: Path, kind: str = "clef") -> None:
     from mlx_decision.types import parse_request
 
     sys.path.insert(0, str(PARITY))
-    from parity_images import open_image
+    from parity_images import open_image, with_data_urls
 
-    cases = []
-    for name in SETS[kind]:
-        cases += json.loads((PARITY / name).read_text())
+    cases = cases_for(kind)
     from mlx_decision.hub import resolve_model_path
     from mlx_decision.registry import detect_family
 
@@ -203,15 +226,18 @@ def run_model(model: str, out: Path, kind: str = "clef") -> None:
         }
         for c in cases
     }
+    if kind == "baselabs-images":
+        # Images in states too, as PNG data URLs (the reference's pixels).
+        bodies = {c["id"]: with_data_urls(c) for c in cases}
     if kind == "clef":
         requests = {case_id: parse_request(body) for case_id, body in bodies.items()}
-    elif kind in ("d3", "baselabs"):
-        # What the model refuses (over its limit; Base Labs: images too), left out.
-        check = loaded.check if kind == "baselabs" else parse_request
+    elif kind in ("d3", "baselabs", "baselabs-images"):
+        # What the model refuses (over its limit), left out.
+        check = parse_request if kind == "d3" else loaded.check
         requests = {}
         for case_id, body in bodies.items():
             try:
-                request = answerable(loaded, check(body))
+                request = answerable(loaded, check(body), kind == "baselabs-images")
             except DecisionError:
                 continue
             if request is not None:
@@ -326,12 +352,14 @@ def main() -> None:
     kind = {"h2oai/h2o-lightning-4b": "h2o"}.get(repo_id, "d3" if "/d3" in repo_id else "clef")
     if "elephant" in fixture.get("meta", {}).get("releases", {}):
         kind = "baselabs"
+        if "collect_mm" in fixture["meta"].get("scoring", ""):
+            kind = "baselabs-images"
     if kind == "h2o":
         fixture = {"results": h2o_reference(fixture)}
     elif kind == "d3":
         fixture = {"results": d3_reference(fixture)}
-    elif kind == "baselabs":
-        fixture = {"results": baselabs_reference(fixture)}
+    elif kind in ("baselabs", "baselabs-images"):
+        fixture = {"results": baselabs_reference(fixture, kind)}
     if (
         "requests_sha256" in fixture
         and fixture["requests_sha256"]
@@ -356,7 +384,7 @@ def main() -> None:
         args.cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as scratch:
         for model in args.models:
-            cached = args.cache / f"{Path(model).name}.json" if args.cache else None
+            cached = args.cache / cache_name(model, kind) if args.cache else None
             if (
                 cached
                 and cached.exists()
