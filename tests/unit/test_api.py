@@ -41,6 +41,7 @@ def test_info_describes_the_model_and_its_limits(fake_model_path):
         "name": "fake",
         "family": "fake",
         "precision": None,
+        "reading": None,
         "max_input_tokens": 3,
         "truncates_input": True,
         "question_types": ["choice", "noul", "score"],

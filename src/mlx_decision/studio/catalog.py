@@ -213,6 +213,7 @@ OPTION_FLAGS = {
     "max_input_tokens": "--max-input-tokens",
     "prefix_cache_gb": "--prefix-cache",
     "noul_floor": "--noul-floor",
+    "reading": "--reading",
 }
 
 
@@ -223,8 +224,9 @@ def option_arguments(options: dict) -> list[str]:
         pixels = options["max_image_pixels"]
         arguments += ["--max-image-mp", "0" if not pixels else f"{pixels / 2**20:g}"]
     for key, flag in OPTION_FLAGS.items():
-        if options.get(key) is not None:
-            arguments += [flag, f"{options[key]:g}"]
+        value = options.get(key)
+        if value is not None:
+            arguments += [flag, value if isinstance(value, str) else f"{value:g}"]
     return arguments
 
 

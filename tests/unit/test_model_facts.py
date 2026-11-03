@@ -163,6 +163,7 @@ def test_cli_arguments_carry_the_load_options(tmp_path):
         "max_input_tokens": 2048,
         "prefix_cache_gb": 0.5,
         "noul_floor": 0.01,
+        "reading": "one-way",
     }
     spec = dataclasses.replace(spec, options=options)
     arguments = cli_arguments(spec, Config(tmp_path / "config.toml"), None)["short"]
@@ -175,6 +176,8 @@ def test_cli_arguments_carry_the_load_options(tmp_path):
         "0.5",
         "--noul-floor",
         "0.01",
+        "--reading",
+        "one-way",
     ]
     spec = dataclasses.replace(spec, options={"max_image_pixels": None})
     assert cli_arguments(spec, Config(tmp_path / "config.toml"), None)["full"][2:] == [

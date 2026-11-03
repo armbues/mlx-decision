@@ -108,6 +108,8 @@ def discover(
     specs = []
     for name, path, family, fit in found:
         family_options = accepted_options(family, options)
+        if fit is not None:  # an H2O fit is served in the reading it was made in
+            family_options = fitted.base_options(fit, family_options)
         base = None
         if fit is not None and fit.shares_base:
             base = ModelSpec(fit.base_name, fit.base, family, family_options)

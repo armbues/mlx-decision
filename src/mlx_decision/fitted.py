@@ -177,6 +177,7 @@ class FittedBackend:
         self.path = path
         self.capabilities = base.capabilities
         self.precision = getattr(base, "precision", None)
+        self.reading = getattr(base, "reading", None)
         self.warned: set[str] = set()
 
     @property
@@ -484,8 +485,44 @@ def model_family(path: Path) -> Family:
     return open_folder(path).family if family is FITTED else family
 
 
+def fit_reading(folder: FittedFolder) -> str | None:
+    """The reading an H2O-Lightning fit was made in: its features are that
+    mode's, so it is served in it. Fits that do not record one were made
+    one-way (the only mode before v1.4's two-way). None for other families."""
+    if folder.family.name != "h2o":
+        return None
+    return (folder.marker.get("fit") or {}).get("reading", "one-way")
+
+
+def base_options(folder: FittedFolder, options: Mapping[str, Any]) -> dict[str, Any]:
+    """The base's load options for a fitted model: ``options`` with its fit's
+    reading where the base would read otherwise (so a base read the same way
+    stays shareable); another reading asked for is refused."""
+    expected = fit_reading(folder)
+    if expected is None:
+        return dict(options)
+    from .models.h2o.model import ServeConfig, reading_of
+
+    if options.get("reading") is not None:
+        if reading_of(options["reading"]) != expected:
+            raise ValueError(
+                f"{folder.path.name} was fitted on {expected} reading and answers only so "
+                f"(leave reading out or pass {expected!r})"
+            )
+        return dict(options)
+    two_way = ServeConfig.read(folder.base).two_way
+    default = two_way.default if two_way else "one-way"
+    return dict(options) if default == expected else {**options, "reading": expected}
+
+
 def attach(folder: FittedFolder, base, name: str | None = None) -> FittedBackend:
     """The fit applied to its loaded base backend (which may serve other models too)."""
+    expected = fit_reading(folder)
+    if expected is not None and getattr(base, "reading", None) != expected:
+        raise ValueError(
+            f"{folder.path.name} was fitted on {expected} reading; its base is loaded "
+            f"{getattr(base, 'reading', None)}"
+        )
     fit = read_fit(folder.path, folder.marker)
     name = name or folder.path.resolve().name
     return FittedBackend(name, base, fit, folder.marker["base"], folder.path)
@@ -495,6 +532,7 @@ def load(path: Path, **options) -> FittedBackend:
     """A fitted model: its base resolved, checked and loaded (``options`` go to the
     base's loader), with the fit applied."""
     folder = open_folder(path)
+    options = base_options(folder, options)
     if not folder.shares_base:
         options = {**options, "fit_weights": path / FIT_FILE}
     return attach(folder, load_backend(folder.base, **options))

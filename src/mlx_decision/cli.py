@@ -6,6 +6,7 @@ import os
 import re
 import sys
 from contextlib import nullcontext, suppress
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -504,6 +505,26 @@ NoulFloorOption = Annotated[
 ]
 
 
+class Reading(StrEnum):
+    """H2O-Lightning's reading modes (from v1.4)."""
+
+    two_way = "two-way"
+    one_way = "one-way"
+
+
+ReadingOption = Annotated[
+    Reading | None,
+    typer.Option(
+        "--reading",
+        case_sensitive=False,
+        help="How H2O-Lightning from v1.4 reads a prompt: two-way (the release's default; "
+        "the full-attention layers read each question's whole prompt both ways) or "
+        "one-way (causal, as v1.2.3; the state's computed prefix is shared, so faster "
+        "for many questions about one long state).",
+    ),
+]
+
+
 NoMemoryCheckOption = Annotated[
     bool,
     typer.Option(
@@ -519,6 +540,7 @@ def load_options(
     max_input_tokens: int | None,
     prefix_cache: float | None = None,
     noul_floor: float | None = None,
+    reading: Reading | str | None = None,
 ) -> dict[str, Any]:
     """Load options for the flags that were given."""
     options = image_options(max_image_mp)
@@ -528,6 +550,8 @@ def load_options(
         options["prefix_cache_gb"] = prefix_cache
     if noul_floor is not None:
         options["noul_floor"] = noul_floor
+    if reading is not None:
+        options["reading"] = Reading(reading).value
     return options
 
 
@@ -568,6 +592,7 @@ def run(
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
     noul_floor: NoulFloorOption = None,
+    reading: ReadingOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     states: Annotated[
         str | None,
@@ -612,7 +637,9 @@ def run(
                 loaded = load(
                     model,
                     check_memory=not no_memory_check,
-                    **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor),
+                    **load_options(
+                        max_image_mp, max_input_tokens, prefix_cache, noul_floor, reading
+                    ),
                 )
             except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
                 fail(str(error))
@@ -627,7 +654,7 @@ def run(
         loaded = load(
             model,
             check_memory=not no_memory_check,
-            **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor),
+            **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor, reading),
         )
         if bare := undescribed_choices(loaded, body.get("questions")):
             typer.echo(describe_options_hint(bare, RUN_DESCRIBE_HOW), err=True)
@@ -657,6 +684,7 @@ def chat(
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
     noul_floor: NoulFloorOption = None,
+    reading: ReadingOption = None,
     no_memory_check: NoMemoryCheckOption = False,
 ) -> None:
     """Load a model once, then answer states typed one after another.
@@ -682,7 +710,7 @@ def chat(
         loaded = load(
             model,
             check_memory=not no_memory_check,
-            **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor),
+            **load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor, reading),
         )
         if body.get("images"):
             loaded.check({"state": "", "questions": {"q": {"type": "noul"}}, **body})
@@ -1151,6 +1179,7 @@ def server(
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
     noul_floor: NoulFloorOption = None,
+    reading: ReadingOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: ApiKeyOption = None,
 ) -> None:
@@ -1173,7 +1202,7 @@ def server(
     memory_budget = config.resolve(memory_budget, "memory_budget_gb")
     host = config.resolve(host, "host", "127.0.0.1")
     port = config.resolve(port, "port", 8000)
-    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor, reading)
     budget = round(memory_budget * 1e9) if memory_budget is not None else None
     try:
         # Fail here, not inside the server: folders, options, the default model's size.
@@ -1246,6 +1275,7 @@ def web(
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
     noul_floor: NoulFloorOption = None,
+    reading: ReadingOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: ApiKeyOption = None,
     dev: Annotated[
@@ -1298,7 +1328,7 @@ def web(
     if folder.exists() and not folder.is_dir():
         fail(f"--workspace {folder} is not a folder")
     references = [model_reference(m, config) for m in model or []] or config_models(config)
-    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor, reading)
     memory_budget = config.resolve(memory_budget, "memory_budget_gb")
     budget = round(memory_budget * 1e9) if memory_budget is not None else None
     # Without -m the config's models_dir is served: scanned again once it has
@@ -1457,6 +1487,7 @@ def mcp(
     max_input_tokens: MaxInputOption = None,
     prefix_cache: PrefixCacheOption = None,
     noul_floor: NoulFloorOption = None,
+    reading: ReadingOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     api_key: Annotated[
         str | None,
@@ -1493,7 +1524,7 @@ def mcp(
     model = model_or_default(model, config)
     host = config.resolve(host, "host", "127.0.0.1")
     port = config.resolve(port, "port", 8000)
-    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor)
+    options = load_options(max_image_mp, max_input_tokens, prefix_cache, noul_floor, reading)
     try:
         # Fail here, before a client is waiting for the handshake.
         path = resolve_model_path(model)
@@ -1765,6 +1796,7 @@ def benchmark(
     ] = None,
     old_questions: Annotated[str | None, typer.Option("--questions", hidden=True)] = None,
     repeats: Annotated[int, typer.Option(min=1, help="Timed runs per row.")] = 5,
+    reading: ReadingOption = None,
     no_memory_check: NoMemoryCheckOption = False,
     as_json: Annotated[
         bool,
@@ -1807,6 +1839,8 @@ def benchmark(
     if not references:
         fail(f"pass -m MODEL (or set models_dir or models in {config.path})")
     if len(references) > 1 or is_folder_of_models(references[0]):
+        if reading is not None:
+            fail("--reading takes one model: pass -m with an H2O-Lightning model")
         arguments = ["--question-counts", questions, "--repeats", str(repeats)]
         arguments += ["--lengths", lengths] if lengths else []
         arguments += ["--no-memory-check"] if no_memory_check else []
@@ -1814,7 +1848,13 @@ def benchmark(
         return
     model = references[0]
     try:
-        report = run_benchmark(model, check_memory=not no_memory_check, repeats=repeats, **grid)
+        report = run_benchmark(
+            model,
+            check_memory=not no_memory_check,
+            load_options=load_options(None, None, reading=reading),
+            repeats=repeats,
+            **grid,
+        )
     except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
         fail(str(error))
     if out is not None:

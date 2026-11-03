@@ -869,6 +869,8 @@ def fit(
         "seed": seed,
         "data": source.sha256,
         "version": __version__,
+        # H2O-Lightning: the mode the features were read in, served so.
+        **({"reading": reading} if (reading := getattr(model.backend, "reading", None)) else {}),
     }
     finish_stage("write")
     report["seconds"]["total"] = round(time.perf_counter() - started, 2)

@@ -214,10 +214,12 @@ def run(
     )
 
 
-def benchmark(reference: str, check_memory: bool = True, **options) -> Report:
-    """Load ``reference`` (timed) and run the grid."""
+def benchmark(
+    reference: str, check_memory: bool = True, load_options: dict | None = None, **options
+) -> Report:
+    """Load ``reference`` (timed, with ``load_options``) and run the grid."""
     start = time.perf_counter()
-    model = load(reference, check_memory=check_memory)
+    model = load(reference, check_memory=check_memory, **(load_options or {}))
     load_s = time.perf_counter() - start
     return run(model, load_s=load_s, **options)
 

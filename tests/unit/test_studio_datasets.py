@@ -173,8 +173,11 @@ def test_a_finished_data_job_tells_every_tab(studio):
         assert time.monotonic() < deadline
         time.sleep(0.02)
     assert jobs.jobs[job["id"]].outcome == "done"
-    recent = [message for _, (_, message) in studio.app_state.hub.recent]
-    assert {"type": "workspace", "folder": "data", "name": "mine", "action": "saved"} in recent
+    # Published on the Studio's loop just after the job ends: waited for.
+    saved = {"type": "workspace", "folder": "data", "name": "mine", "action": "saved"}
+    while saved not in [message for _, (_, message) in studio.app_state.hub.recent]:
+        assert time.monotonic() < deadline
+        time.sleep(0.02)
 
 
 def test_a_stopped_download_leaves_nothing(studio):

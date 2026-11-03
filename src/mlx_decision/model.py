@@ -37,6 +37,8 @@ class DecisionModel:
             "name": self.name,
             "family": getattr(self.backend, "family", None),
             "precision": getattr(self.backend, "precision", None),
+            # H2O-Lightning from v1.4: "two-way" or "one-way"; None elsewhere.
+            "reading": getattr(self.backend, "reading", None),
             "max_input_tokens": caps.max_input_tokens,
             "truncates_input": caps.truncates_input,
             "question_types": sorted(caps.question_types),

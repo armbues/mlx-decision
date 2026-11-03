@@ -683,3 +683,111 @@ def test_only_v1_2_3_reports_a_state_cap(folder, two_way_folder):
     assert mlx_decision.load(folder).backend.capabilities.max_state_tokens == 32000
     # From v1.4 a state is cut only where a prompt would not fit.
     assert mlx_decision.load(two_way_folder).backend.capabilities.max_state_tokens is None
+
+
+def test_the_reading_flag(folder, two_way_folder, tmp_path):
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+    from tiny_models import write_marker
+
+    def run(model, *flags):
+        args = ["run", "-m", str(model), "-s", "please refund", "--noul", "refund", "--json"]
+        return CliRunner().invoke(app, [*args, *flags])
+
+    def noul(result):
+        assert result.exit_code == 0, result.output
+        return json.loads(result.stdout)["answers"]["noul_1"]["noul"]
+
+    question = {"noul_1": {"type": "noul", "instructions": "refund"}}
+    for flag, reading in (("two-way", "two-way"), ("ONE-WAY", "one-way")):
+        model = mlx_decision.load(two_way_folder, reading=reading)
+        want = model.decide("please refund", question).answers["noul_1"].noul
+        # The JSON is rounded to 4 decimals.
+        assert noul(run(two_way_folder, "--reading", flag)) == pytest.approx(want, abs=1e-4)
+    assert noul(run(two_way_folder)) == pytest.approx(
+        noul(run(two_way_folder, "--reading", "two-way"))
+    )
+    refused = run(folder, "--reading", "two-way")
+    assert refused.exit_code == 1 and "reads one-way only" in refused.stderr
+    laya = run(write_marker(tmp_path / "laya", "laya"), "--reading", "one-way")
+    assert laya.exit_code == 1 and "laya models do not take reading" in laya.stderr
+
+
+def test_info_says_how_a_model_reads(folder, two_way_folder, tmp_path):
+    from tiny_models import write_marker
+
+    assert mlx_decision.load(two_way_folder).info()["reading"] == "two-way"
+    assert mlx_decision.load(two_way_folder, reading="one-way").info()["reading"] == "one-way"
+    assert mlx_decision.load(folder).info()["reading"] == "one-way"
+    assert mlx_decision.load(write_marker(tmp_path / "laya", "laya")).info()["reading"] is None
+
+
+def test_in_a_pool_only_h2o_models_take_the_reading(two_way_folder, tmp_path):
+    from mlx_decision.pool import discover
+    from tiny_models import write_marker
+
+    laya = write_marker(tmp_path / "laya", "laya")
+    specs = discover([two_way_folder, laya], {"reading": "one-way"})
+    assert [spec.options for spec in specs] == [{"reading": "one-way"}, {}]
+
+
+def test_the_benchmark_takes_the_reading_for_one_model(two_way_folder, tmp_path):
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+
+    args = ["benchmark", "-m", str(two_way_folder), "--lengths", "50", "--question-counts", "2"]
+    result = CliRunner().invoke(app, [*args, "--repeats", "1", "--json", "--reading", "one-way"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["model_info"]["reading"] == "one-way"
+
+
+def write_h2o_fit(folder, base, reading=None):
+    """A calibration fit on an H2O base; ``reading`` recorded as training records it."""
+    from mlx_decision import fitted
+    from mlx_decision.fitted import Calibration, Fit, FitQuestion, base_reference, fingerprint
+
+    question = parse_request({"state": "x", "questions": {"refund": QUESTIONS["refund"]}})
+    fit = Fit(
+        ["calibrate"],
+        [FitQuestion.of("refund", question.questions["refund"])],
+        {0: Calibration(1.0, [0.0, 0.0])},
+    )
+    if reading:
+        fit.meta = {"reading": reading}
+    return fitted.write(
+        folder,
+        family="h2o",
+        base=base_reference(base, base),
+        base_fingerprint=fingerprint(base),
+        fit=fit,
+    )
+
+
+def test_a_fit_is_served_in_the_reading_it_was_made_in(two_way_folder, tmp_path):
+    # Fits that record no reading were made one-way, before v1.4's two-way.
+    old = mlx_decision.load(write_h2o_fit(tmp_path / "old", two_way_folder))
+    assert old.info()["reading"] == "one-way"
+    two = mlx_decision.load(write_h2o_fit(tmp_path / "two", two_way_folder, "two-way"))
+    assert two.info()["reading"] == "two-way"
+    assert mlx_decision.load(tmp_path / "two", reading="two-way").info()["reading"] == "two-way"
+    with pytest.raises(ValueError, match="was fitted on two-way reading"):
+        mlx_decision.load(tmp_path / "two", reading="one-way")
+
+
+def test_a_pool_shares_a_base_only_when_it_reads_as_the_fit(two_way_folder, tmp_path):
+    import shutil
+
+    from mlx_decision.pool import discover
+
+    root = tmp_path / "models"
+    base = root / "tiny-h2o"
+    shutil.copytree(two_way_folder, base)
+    write_h2o_fit(root / "fit-two", base, "two-way")
+    write_h2o_fit(root / "fit-one", base)
+    specs = {spec.name: spec for spec in discover([root])}
+    assert specs["fit-two"].base.options == specs["tiny-h2o"].options == {}
+    assert specs["fit-one"].base.options == {"reading": "one-way"}
+    with pytest.raises(ValueError, match="was fitted on one-way reading"):
+        discover([root], {"reading": "two-way"})

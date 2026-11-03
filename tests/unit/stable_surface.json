@@ -93,6 +93,16 @@
     "required": false,
     "type": "str"
    },
+   "--reading": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--reading": true
+    },
+    "required": false,
+    "type": "choice"
+   },
    "--repeats": {
     "default": 5,
     "kind": "option",
@@ -216,6 +226,16 @@
     },
     "required": false,
     "type": "path"
+   },
+   "--reading": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--reading": true
+    },
+    "required": false,
+    "type": "choice"
    },
    "--score": {
     "default": null,
@@ -478,6 +498,16 @@
     },
     "required": false,
     "type": "float range"
+   },
+   "--reading": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--reading": true
+    },
+    "required": false,
+    "type": "choice"
    }
   },
   "run": {
@@ -592,6 +622,16 @@
     },
     "required": false,
     "type": "path"
+   },
+   "--reading": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--reading": true
+    },
+    "required": false,
+    "type": "choice"
    },
    "--score": {
     "default": null,
@@ -757,6 +797,16 @@
     },
     "required": false,
     "type": "float range"
+   },
+   "--reading": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--reading": true
+    },
+    "required": false,
+    "type": "choice"
    }
   },
   "web": {
@@ -881,6 +931,16 @@
     },
     "required": false,
     "type": "float range"
+   },
+   "--reading": {
+    "default": null,
+    "kind": "option",
+    "multiple": false,
+    "names": {
+     "--reading": true
+    },
+    "required": false,
+    "type": "choice"
    },
    "--workspace": {
     "default": null,
