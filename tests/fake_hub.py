@@ -37,7 +37,7 @@ def install(sizes: dict[str, int], delay: float = 0.0, patch=setattr) -> None:
     contents.update({name: b"\0" * size for name, size in sizes.items()})
 
     class Api:
-        def model_info(self, repo_id, files_metadata=False):
+        def model_info(self, repo_id, files_metadata=False, revision=None):
             if repo_id != REPO:
                 import httpx
 
@@ -46,7 +46,7 @@ def install(sizes: dict[str, int], delay: float = 0.0, patch=setattr) -> None:
                     "missing", response=httpx.Response(404, request=request)
                 )
             siblings = [SimpleNamespace(rfilename=n, size=len(b)) for n, b in contents.items()]
-            return SimpleNamespace(siblings=siblings, sha=SHA)
+            return SimpleNamespace(siblings=siblings, sha=revision or SHA)
 
     def snapshot_download(
         repo_id,

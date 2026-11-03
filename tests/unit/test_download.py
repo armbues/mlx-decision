@@ -1040,3 +1040,26 @@ def test_the_first_download_asks_in_a_terminal_and_saves_the_answer(tmp_path, mo
     assert again.wait() == 1  # the fake refuses an existing folder: the same one
     assert "Where should models go?" not in again.text()
     assert str(tmp_path / "Decision" / "laya") in again.text().replace("\n", "")
+
+
+def test_a_pinned_repo_is_checked_and_downloaded_at_its_commit(monkeypatch, tmp_path):
+    import huggingface_hub
+
+    import fake_hub
+    import mlx_decision.registry as registry
+
+    pin = "e" * 40
+    fake_hub.install({"model.safetensors": 1000}, patch=monkeypatch.setattr)
+    monkeypatch.setattr(registry, "pinned_revision", lambda r: pin if r == fake_hub.REPO else None)
+    check = download.check_repo(fake_hub.REPO)
+    assert check.revision == pin
+    asked = []
+    real = download.snapshot_download
+    monkeypatch.setattr(
+        download,
+        "snapshot_download",
+        lambda *args, **kwargs: asked.append(kwargs.get("revision")) or real(*args, **kwargs),
+    )
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_CACHE", str(tmp_path / "hub"))
+    download.download(fake_hub.REPO, files=check.files, revision=check.revision, draw=False)
+    assert asked == [pin]

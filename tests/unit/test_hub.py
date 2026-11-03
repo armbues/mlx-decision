@@ -166,3 +166,69 @@ def test_downloading_by_repo_id_logs_the_familys_licence_note(monkeypatch, tmp_p
     with caplog.at_level(logging.WARNING, logger="mlx_decision.hub"):
         mlx_decision.load("org/d1")
     assert "LFM" not in caplog.text
+
+
+PIN = "e" * 40
+
+
+@pytest.fixture
+def pinned(monkeypatch, tmp_path):
+    """``org/model`` pinned to PIN, in an empty Hub cache."""
+    import mlx_decision.registry as registry
+
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_CACHE", str(tmp_path / "hub"))
+    monkeypatch.setattr(registry, "pinned_revision", lambda r: PIN if r == "org/model" else None)
+    return tmp_path / "hub" / "models--org--model" / "snapshots"
+
+
+def test_h2o_lightning_is_pinned_to_the_checked_release():
+    from mlx_decision.registry import pinned_revision
+
+    checked = "ee4e0e624a0c62a803df878536bd1b59a40cc9f7"  # tag v1.4.2
+    assert pinned_revision("h2oai/h2o-lightning-4b") == checked
+    assert pinned_revision("H2OAI/h2o-lightning-4b") == checked
+    assert pinned_revision("Cloudflare/clef-flash") is None
+
+
+def test_a_pinned_repo_resolves_to_its_checked_commit_without_the_network(pinned, monkeypatch):
+    snapshot = write_model(pinned / PIN)
+    write_model(pinned / ("0" * 40))  # a later main, also cached
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("the Hub was asked")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", no_network)
+    assert resolve_model_path("org/model") == snapshot
+
+
+def test_a_pinned_repo_is_fetched_at_its_checked_commit(pinned, monkeypatch):
+    asked = []
+
+    def snapshot_download(repo_id, allow_patterns=None, revision=None):
+        asked.append(revision)
+        return str(write_model(pinned / revision))
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    assert resolve_model_path("org/model") == pinned / PIN
+    assert set(asked) == {PIN}
+
+
+def test_offline_an_earlier_cached_release_of_a_pinned_repo_serves(pinned, monkeypatch):
+    earlier = write_model(pinned / ("0" * 40))
+
+    def snapshot_download(repo_id, allow_patterns=None, revision=None):
+        if revision is not None:
+            raise LocalEntryNotFoundError("offline")
+        return str(earlier)  # the cache's main
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    assert resolve_model_path("org/model") == earlier
+
+
+def test_a_pinned_repo_stored_quantized_earlier_is_not_fetched_again(pinned, monkeypatch):
+    import mlx_decision.hub as hub
+
+    stored = write_model(pinned / ("0" * 40))
+    monkeypatch.setattr(hub, "stored_snapshot", lambda repo_id: stored)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: pytest.fail("fetch"))
+    assert resolve_model_path("org/model") == stored

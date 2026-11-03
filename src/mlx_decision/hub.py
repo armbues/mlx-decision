@@ -19,7 +19,8 @@ def resolve_model_path(model: str | Path, revision: str | None = None) -> Path:
     """Return the folder for a local path or a Hugging Face repo id.
 
     ``revision`` (a commit hash) pins a repo id to that snapshot: the cached
-    one if there is one, else downloaded. Raises ``ModelNotFoundError`` with a
+    one if there is one, else downloaded; a known model pinned to a checked
+    commit takes that one by default. Raises ``ModelNotFoundError`` with a
     one-line reason when there is none.
     """
     path = Path(model).expanduser()
@@ -37,13 +38,25 @@ def resolve_model_path(model: str | Path, revision: str | None = None) -> Path:
         RepositoryNotFoundError,
     )
 
+    from .registry import pinned_revision
+
+    pinned = revision is None and pinned_revision(str(model)) is not None
+    revision = revision or pinned_revision(str(model))
     try:
         if revision is not None:
             if (cached := cached_snapshot(str(model), revision)) is not None:
                 return cached
+            if pinned and (stored := stored_snapshot(str(model))) is not None:
+                return stored  # stored quantized from an earlier release: not fetched again
         elif (stored := stored_snapshot(str(model))) is not None:
             return stored
-        return Path(_snapshot(str(model), snapshot_download, revision))
+        try:
+            return Path(_snapshot(str(model), snapshot_download, revision))
+        except LocalEntryNotFoundError:
+            if not pinned:
+                raise
+            # The Hub cannot be reached: an earlier release in the cache serves.
+            return Path(_snapshot(str(model), snapshot_download))
     except GatedRepoError:
         reason = "gated on the Hugging Face Hub: accept its terms there and set HF_TOKEN"
     except RepositoryNotFoundError:

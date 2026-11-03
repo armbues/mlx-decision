@@ -19,6 +19,10 @@ class KnownModel:
     repo_id: str
     description: str
     size: str  # approximate download size, for the menu
+    # The commit mlx-decision was checked against: ``download`` and loading
+    # by repo id take it, so a later release reaches nobody unchecked. None:
+    # the Hub's latest.
+    revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,12 @@ def families() -> list[Family]:
 
 def known_models() -> list[KnownModel]:
     return [model for family in families() for model in family.known_models]
+
+
+def pinned_revision(repo_id: str) -> str | None:
+    """The checked commit of a known model's repo, if it is pinned."""
+    wanted = repo_id.strip("/").lower()
+    return next((m.revision for m in known_models() if m.repo_id.lower() == wanted), None)
 
 
 def get_family(name: str) -> Family:
@@ -457,6 +467,7 @@ register_family(
             "h2oai/h2o-lightning-4b",
             "H2O-Lightning: H2O.ai's 4B decision model (Qwen3.5), text and images",
             "9.3 GB",
+            revision="ee4e0e624a0c62a803df878536bd1b59a40cc9f7",  # tag v1.4.2
         ),
     ),
     # Not the serving shim, its tests, the adapter or the chart images.

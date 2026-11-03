@@ -163,9 +163,16 @@ def check_repo(repo_id: str) -> RepoCheck:
 
     Only the repository's JSON files are fetched for this (configs, the
     marker of a converted model); the weights are not touched. The size
-    counts the files the family needs, or the whole repository.
+    counts the files the family needs, or the whole repository. A known
+    model pinned to a checked commit is checked (and downloaded) there,
+    others at the Hub's latest.
     """
-    info = HfApi().model_info(repo_id, files_metadata=True)
+    from .registry import pinned_revision
+
+    pinned = pinned_revision(repo_id)
+    info = HfApi().model_info(
+        repo_id, files_metadata=True, **({"revision": pinned} if pinned else {})
+    )
     siblings = info.siblings or []
     revision = getattr(info, "sha", None)
     with tempfile.TemporaryDirectory() as folder, progress() as quiet:
