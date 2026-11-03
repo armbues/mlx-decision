@@ -224,6 +224,119 @@ def load_hub(
     return _from_dataset(dataset, repo.rsplit("/", 1)[-1], split, origin)
 
 
+# The Hub's parquet copy of every public dataset, by config and split.
+PARQUET_REVISION = "refs/convert/parquet"
+# Row counts read from that copy's file footers (a few KB each), at most.
+FOOTER_FILES = 16
+
+
+@dataclass
+class SplitSize:
+    """A Hub split's size from the Hub's metadata, nothing of it read: ``bytes``
+    of its parquet copy, ``rows`` from the card or the copy's footers (None
+    when unknown); ``partial`` when the Hub copied only its first part (a
+    split of several GB)."""
+
+    rows: int | None = None
+    bytes: int | None = None
+    partial: bool = False
+
+
+def hub_split_sizes(repo: str, config: str | None = None) -> dict[str, SplitSize]:
+    """Each split's size (of ``config``) as the Hub knows it, best effort:
+    the files of its parquet copy, and the rows from the dataset card's
+    ``dataset_info``, else from those files' footers. Empty when the Hub
+    says nothing (a private or brand-new dataset)."""
+    from huggingface_hub import HfApi
+
+    api = HfApi()
+    by_config: dict[str, dict[str, list]] = {}
+    try:
+        tree = api.list_repo_tree(
+            repo, path_in_repo=config, recursive=True, repo_type="dataset",
+            revision=PARQUET_REVISION,
+        )  # fmt: skip
+        for entry in tree:
+            parts = entry.path.split("/")
+            if len(parts) >= 3 and entry.path.endswith(".parquet"):
+                by_config.setdefault(parts[0], {}).setdefault(parts[1], []).append(entry)
+    except Exception:  # no parquet copy, offline, or the Hub's errors
+        by_config = {}
+    # Without a config: "default", or the one config there is (named otherwise).
+    folder = config or ("default" if len(by_config) != 1 else next(iter(by_config)))
+    files = by_config.get(folder, {})
+    sizes: dict[str, SplitSize] = {}
+    for name, group in files.items():
+        partial = name.startswith("partial-")
+        size = sizes.setdefault(name.removeprefix("partial-"), SplitSize(partial=partial))
+        size.bytes = sum(getattr(entry, "size", 0) or 0 for entry in group)
+    for split, rows in _card_rows(api, repo, folder).items():
+        sizes.setdefault(split, SplitSize()).rows = rows
+    budget = FOOTER_FILES
+    for name, group in files.items():
+        size = sizes[name.removeprefix("partial-")]
+        if size.rows is None and not size.partial and len(group) <= budget:
+            budget -= len(group)
+            size.rows = _footer_rows(repo, group)
+    return sizes
+
+
+def _card_rows(api, repo: str, folder: str) -> dict[str, int]:
+    """The rows per split the dataset card's ``dataset_info`` gives for ``folder``."""
+    try:
+        card = api.dataset_info(repo).card_data
+        info = card.get("dataset_info") if card is not None else None
+    except Exception:
+        return {}
+    entries = info if isinstance(info, list) else [info] if isinstance(info, dict) else []
+    entries = [entry for entry in entries if isinstance(entry, dict)]
+    entry = next((e for e in entries if e.get("config_name", "default") == folder), None)
+    if entry is None and len(entries) == 1 and folder == "default":
+        entry = entries[0]
+    splits = (entry or {}).get("splits") or []
+    return {
+        item["name"]: item["num_examples"]
+        for item in splits
+        if isinstance(item, dict) and isinstance(item.get("num_examples"), int)
+    }
+
+
+def _footer_rows(repo: str, files: list) -> int | None:
+    """The rows of a split's parquet files, from their footers alone."""
+    from urllib.parse import quote
+
+    try:
+        import pyarrow.parquet as pq
+        from huggingface_hub import HfFileSystem
+
+        fs = HfFileSystem()
+        revision = quote(PARQUET_REVISION, safe="")
+        rows = 0
+        for entry in files:
+            with fs.open(f"datasets/{repo}@{revision}/{entry.path}", block_size=2**16) as handle:
+                rows += pq.ParquetFile(handle).metadata.num_rows
+        return rows
+    except Exception:
+        return None
+
+
+def load_hub_head(repo: str, config: str | None, split: str, count: int) -> Table:
+    """The first ``count`` rows of a Hub dataset's split, streamed: the split is
+    not downloaded, nothing is stored."""
+    from itertools import islice
+
+    datasets = _datasets()
+    what = f"{HUB_PREFIX}{repo}" + (f" ({config})" if config else "")
+    try:
+        stream = datasets.load_dataset(repo, config, split=split, streaming=True)
+        rows = list(islice(stream, count))
+        dataset = datasets.Dataset.from_list(rows, features=stream.features)
+    except Exception as error:  # the Hub's and the loaders' errors vary
+        raise SourceError(f"{what}: cannot read the first rows of {split}: {error}") from None
+    origin = {"repo": repo, "config": config, "split": split, "revision": None}
+    return _from_dataset(dataset, repo.rsplit("/", 1)[-1], split, origin)
+
+
 def load_saved(path: Path, split: str | None = None) -> Table:
     """A dataset folder written by ``save_to_disk`` (one split, or a split of several)."""
     datasets = _datasets()

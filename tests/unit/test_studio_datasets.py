@@ -201,7 +201,7 @@ def test_a_stopped_download_leaves_nothing(studio):
 @pytest.fixture
 def hub(monkeypatch):
     """A Hub stand-in: org/reviews has the configs en and de, each with the
-    splits train and test; a split is 12 rows."""
+    splits train and test; a split is 12 rows, small enough to read whole."""
     import datasets
 
     from mlx_decision.data import sources
@@ -231,9 +231,17 @@ def hub(monkeypatch):
         dataset = datasets.Dataset.from_dict(rows, features=features)
         return sources._from_dataset(dataset, "reviews", split, {"repo": repo})
 
+    def head(repo, config, split, count):  # the first rows, as streamed
+        first = {name: values[:count] for name, values in rows.items()}
+        dataset = datasets.Dataset.from_dict(first, features=features)
+        return sources._from_dataset(dataset, "reviews", split, {"repo": repo})
+
+    small = {name: sources.SplitSize(12, 2_000) for name in ("train", "test")}
     monkeypatch.setattr(sources, "hub_configs", configs)
     monkeypatch.setattr(sources, "hub_splits", splits)
+    monkeypatch.setattr(sources, "hub_split_sizes", lambda repo, config=None: small)
     monkeypatch.setattr(sources, "load_hub", load)
+    monkeypatch.setattr(sources, "load_hub_head", head)
     monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: None)
 
 
@@ -247,8 +255,11 @@ def test_the_preview_asks_for_config_and_split_then_reads(studio, hub):
                      "splits": None, "split": None}  # fmt: skip
     second = preview(studio, config="en").json()
     assert second["splits"] == ["train", "test"] and second["split"] is None
+    # Each split's size from the Hub's metadata, before anything is read.
+    small = {"rows": 12, "bytes": 2_000, "partial": False, "whole": True}
+    assert second["sizes"] == {"train": small, "test": small}
     body = preview(studio, config="en", split="train").json()
-    assert body["rows"] == 12
+    assert body["rows"] == 12 and body["sampled"] is None  # read whole
     assert [c["name"] for c in body["columns"]] == ["review", "sentiment", "stars", "note"]
     assert body["columns"][1] == {
         "name": "sentiment",
@@ -263,6 +274,40 @@ def test_the_preview_asks_for_config_and_split_then_reads(studio, hub):
     assert body["text"] == "review" and body["label"] == "sentiment"
     assert len(body["sample"]) == 5 and body["sample"][0]["review"] == "review 0"
     assert [row["sentiment"] for row in body["sample"][:2]] == ["negative", "positive"]
+
+
+def test_a_large_split_is_previewed_by_its_first_rows(studio, hub, monkeypatch):
+    from mlx_decision.data import sources
+    from mlx_decision.studio.routes import datasets as route
+
+    def whole(*args, **kwargs):
+        raise AssertionError("a large split is not read whole")
+
+    monkeypatch.setattr(route, "HEAD_ROWS", 4)
+    monkeypatch.setattr(sources, "load_hub", whole)
+    sizes = {
+        "train": sources.SplitSize(3_600_000, route.WHOLE_BYTES + 1),
+        "test": sources.SplitSize(None, None),  # the Hub says nothing: first rows too
+    }
+    monkeypatch.setattr(sources, "hub_split_sizes", lambda repo, config=None: sizes)
+    listed = preview(studio, config="en").json()
+    assert listed["sizes"]["train"] == {
+        "rows": 3_600_000, "bytes": 50_000_001, "partial": False, "whole": False,
+    }  # fmt: skip
+    assert listed["sizes"]["test"]["whole"] is False
+    body = preview(studio, config="en", split="train").json()
+    assert (body["rows"], body["sampled"]) == (3_600_000, 4)
+    labels = {column["name"]: column["classes"] for column in body["label_columns"]}
+    assert labels["sentiment"] == [["negative", 2], ["positive", 2]]  # in the rows read
+    unknown = preview(studio, config="en", split="test").json()
+    assert (unknown["rows"], unknown["sampled"]) == (None, 4)
+    # Only part of it copied by the Hub (several GB): first rows, rows unknown.
+    sizes["train"] = sources.SplitSize(None, 5 * 10**9, partial=True)
+    assert preview(studio, config="en", split="train").json()["sampled"] == 4
+    # First rows that turn out to be all of it: its rows, not a sample.
+    monkeypatch.setattr(route, "HEAD_ROWS", 50)
+    body = preview(studio, config="en", split="test").json()
+    assert (body["rows"], body["sampled"]) == (12, None)
 
 
 def test_the_preview_refuses(studio, hub):
@@ -371,6 +416,8 @@ def mmlu(monkeypatch):
 
     monkeypatch.setattr(sources, "hub_configs", lambda repo, revision=None: ["all"])
     monkeypatch.setattr(sources, "hub_splits", lambda repo, config=None, revision=None: ["test"])
+    small = {"test": sources.SplitSize(8, 1_000)}
+    monkeypatch.setattr(sources, "hub_split_sizes", lambda repo, config=None: small)
     monkeypatch.setattr(sources, "load_hub", load)
     monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: None)
 

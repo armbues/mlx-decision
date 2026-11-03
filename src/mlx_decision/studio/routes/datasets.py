@@ -8,13 +8,15 @@ code) and the splits it can be read from with their rows, the coverage
 suite's evaluation split marked.
 
 ``POST /studio/api/datasets/preview`` ``{source, config, split}`` reads any
-``hf:ORG/NAME``: first its configs and splits (the Hub's metadata), then,
-with both settled, the split itself (into the Hugging Face cache, in a
-thread): the columns with their kinds, a few rows, the text columns that
-can be the state and the label columns with each value and its count (and
-the values' names when the dataset card lists them, as ``"LABEL_0":
-"Analyst Update"``). Downloading either is a ``data`` job (``POST
-/studio/api/jobs``) that writes a dataset folder.
+``hf:ORG/NAME``: first its configs, splits and each split's rows and size
+(the Hub's metadata, nothing read), then, with both settled, the split
+itself (in a thread): a small one whole (into the Hugging Face cache), a
+large one (or one of unknown size) by its first rows, streamed, nothing
+stored. The answer has the columns with their kinds, a few rows, the text
+columns that can be the state and the label columns with each value and
+its count (in the rows read; and the values' names when the dataset card
+lists them, as ``"LABEL_0": "Analyst Update"``). Downloading either is a
+``data`` job (``POST /studio/api/jobs``) that writes a dataset folder.
 """
 
 import asyncio
@@ -33,6 +35,10 @@ from .jobs import MAX_CLASSES, REPO_ID
 
 ROWS_SHOWN = 5
 CELL_CHARS = 160
+# A split whose parquet copy on the Hub is at most this is read whole for the
+# preview; a larger one, or one of unknown size, by its first HEAD_ROWS rows.
+WHOLE_BYTES = 50 * 10**6
+HEAD_ROWS = 5000
 # A label column has at most MAX_CLASSES classes, and repeats them (more, or
 # about one value a row, is free text or ids, not labels).
 
@@ -94,11 +100,16 @@ def datasets_router(max_body_bytes: int = 2**20) -> APIRouter:
     @router.post("/preview")
     async def preview(request: Request):
         """``{source, config, split}`` -> ``{source, configs, config, splits,
-        split}`` and, once config and split are settled, ``rows`` (the split's
-        length), ``columns`` (``name``, ``kind``, ``names``), ``sample`` (the
-        first rows, cells cut short), ``text_columns`` and ``label_columns``
-        (``name``, ``classes`` as ``[class, count]``), with the guessed
-        ``text`` and ``label``. 400 for a source that is no ``hf:ORG/NAME``,
+        sizes, split}`` (``sizes``: per split its ``rows``, ``bytes`` and
+        ``partial`` as the Hub's metadata gives them, and ``whole``: whether
+        the preview reads it whole; a split the Hub says nothing of left
+        out) and, once config and split are settled, ``rows`` (the split's
+        length; None when only its first rows were read and the Hub does not
+        say), ``sampled`` (the rows read when not all; else None),
+        ``columns`` (``name``, ``kind``, ``names``), ``sample`` (the first
+        rows, cells cut short), ``text_columns`` and ``label_columns``
+        (``name``, ``classes`` as ``[class, count]`` over the rows read),
+        with the guessed ``text`` and ``label``. 400 for a source that is no ``hf:ORG/NAME``,
         404 for one the Hub does not show, 422 for one that cannot be read."""
         body = await json_body(request, max_body_bytes)
         source = field(body, "source", str).strip()
@@ -135,14 +146,31 @@ def read_preview(repo: str, config: str | None, split: str | None) -> dict[str, 
     except Exception as error:  # the Hub's errors vary by version
         raise SourceError(f"{source}: cannot list its splits: {error}") from None
     answer["splits"] = splits
+    sizes = sources.hub_split_sizes(repo, config)
+    answer["sizes"] = {
+        name: {"rows": size.rows, "bytes": size.bytes, "partial": size.partial,
+               "whole": read_whole(size)}
+        for name in splits
+        if (size := sizes.get(name)) is not None
+    }  # fmt: skip
     if split is None and len(splits) == 1:
         split = splits[0]
     if split is None:
         return answer | {"split": None}
     if split not in splits:
         raise SourceError(f"{source} has no split {split!r}; it has {', '.join(splits)}")
-    table = sources.load_hub(repo, config, split)
-    described = describe_table(table)
+    size = sizes.get(split)
+    sampled = None
+    if read_whole(size):
+        table = sources.load_hub(repo, config, split)
+        rows = table.length
+    else:
+        table = sources.load_hub_head(repo, config, split, HEAD_ROWS)
+        if table.length < HEAD_ROWS:
+            rows = table.length  # that was all of it
+        else:
+            rows, sampled = (size.rows if size else None), table.length
+    described = describe_table(table) | {"rows": rows, "sampled": sampled}
     card = None
     for column in described["label_columns"]:
         if column["kind"] == LABEL:
@@ -151,6 +179,16 @@ def read_preview(repo: str, config: str | None, split: str | None) -> dict[str, 
         values = [value for value, _ in column["classes"]]
         column["names"] = sources.names_from_card(card, values) if card else None
     return answer | {"split": split, **described}
+
+
+def read_whole(size: sources.SplitSize | None) -> bool:
+    """Whether the preview reads a split whole: its size is known and small."""
+    return (
+        size is not None
+        and not size.partial
+        and size.bytes is not None
+        and (size.bytes <= WHOLE_BYTES)
+    )
 
 
 def describe_table(table: Table) -> dict[str, Any]:

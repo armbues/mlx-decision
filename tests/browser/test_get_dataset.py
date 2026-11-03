@@ -178,6 +178,16 @@ def hub(monkeypatch):
             datasets.Dataset.from_dict(rows, features=features), "reviews", split, {}
         ),
     )
+    monkeypatch.setattr(
+        sources,
+        "load_hub_head",  # the first rows, as streamed
+        lambda repo, config, split, count: sources._from_dataset(
+            datasets.Dataset.from_dict({k: v[:count] for k, v in rows.items()}, features=features),
+            "reviews", split, {},
+        ),
+    )  # fmt: skip
+    sizes = {"train": sources.SplitSize(12, 2_000), "test": sources.SplitSize(7, 1_000)}
+    monkeypatch.setattr(sources, "hub_split_sizes", lambda repo, config=None: sizes)
     card = '{"LABEL_1": "One star", "LABEL_2": "Two stars"}'
     monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: card)
 
@@ -208,10 +218,10 @@ def test_another_dataset_without_a_question(studio, page, hub):
     sheet.get_by_label("Label column").select_option("stars")
     expect(values.locator(".dim")).to_have_text(["One star", "Two stars"])
     expect(sheet).to_contain_text("Names from the dataset card")
-    # Every split in the table: rows known only for the one previewed.
+    # Every split in the table, with its rows as the Hub's metadata says.
     assert roles(sheet) == ["train", "report"]
     expect(sheet.locator(".st-row[data-split='train'] .num")).to_have_text("12")
-    expect(sheet.locator(".st-row[data-split='test'] .num")).to_have_text("–")
+    expect(sheet.locator(".st-row[data-split='test'] .num")).to_have_text("7")
     expect(sheet.get_by_label("Name")).to_have_value("reviews")
     shot(page, "get-another-dataset")
     download.click()
@@ -221,6 +231,35 @@ def test_another_dataset_without_a_question(studio, page, hub):
     assert job.details["label"] == "stars" and job.details["text"] == "review"
     assert job.argv[job.argv.index("--value-names") + 1] == "1=One star,2=Two stars"
     assert "-q" not in job.argv and "--label-map" not in job.argv
+
+
+def test_a_large_split_is_previewed_by_its_first_rows(studio, page, hub, monkeypatch):
+    from mlx_decision.data import sources
+    from mlx_decision.studio.routes import datasets as route
+
+    monkeypatch.setattr(route, "HEAD_ROWS", 6)
+    big = {"train": sources.SplitSize(3_600_000, 1_028_000_000), "test": sources.SplitSize()}
+    monkeypatch.setattr(sources, "hub_split_sizes", lambda repo, config=None: big)
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    sheet.locator(".fam[data-preset='any']").click()
+    field = sheet.get_by_label("Hugging Face dataset")
+    field.fill("org/reviews")
+    field.press("Enter")
+    sheet.get_by_label("Subset").select_option("en")
+    # The sizes before anything is read.
+    options = sheet.get_by_label("Split to preview").locator("option")
+    expect(options).to_have_text(["Pick one", "train · 3,600,000 rows · 1.0 GB", "test"])
+    sheet.get_by_label("Split to preview").select_option("train")
+    expect(sheet.locator(".any-table tbody tr")).to_have_count(5)
+    expect(sheet.locator(".opts h4").filter(has_text="the first")).to_have_text(
+        "3,600,000 rows · the first 5"
+    )
+    expect(sheet.locator(".any-map .any-row .num")).to_have_text(["3", "3"])  # of 6 read
+    expect(sheet).to_contain_text("Counted in the first 6 rows; the download reads every row.")
+    expect(sheet.locator(".st-row[data-split='train'] .num")).to_have_text("3,600,000")
+    expect(sheet.locator(".st-row[data-split='test'] .num")).to_have_text("–")
+    expect(sheet.get_by_role("button", name="Download")).to_be_enabled()
 
 
 def test_one_split_is_cut_into_parts_by_default(studio, page, hub, monkeypatch):
@@ -310,6 +349,8 @@ def mmlu(monkeypatch):
             "answer": [i % 4 for i in range(8)]}  # fmt: skip
     monkeypatch.setattr(sources, "hub_configs", lambda repo, revision=None: ["all"])
     monkeypatch.setattr(sources, "hub_splits", lambda repo, config=None, revision=None: ["test"])
+    small = {"test": sources.SplitSize(8, 1_000)}
+    monkeypatch.setattr(sources, "hub_split_sizes", lambda repo, config=None: small)
     monkeypatch.setattr(
         sources,
         "load_hub",

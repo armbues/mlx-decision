@@ -10,7 +10,7 @@ import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
 import { StatusIcon } from "../components/icons.js";
-import { plural } from "../format.js";
+import { plural, size as bytesText } from "../format.js";
 import { NameAndSeed, SplitTable, freeBase, knowRows, seeded, setSplits, splitState, splitsBody, splitsProblem } from "./splits.js";
 
 export const source = signal("");
@@ -61,14 +61,20 @@ async function read(fields, what) {
     config.value = result.config;
     split.value = result.split;
     if (result.splits) {
-      // Another config: its own splits, from their defaults.
+      // Another config: its own splits, from their defaults; their rows as
+      // the Hub's metadata gives them, before anything is read.
       const fresh = before?.config !== result.config;
-      setSplits(table, result.splits.map((name) => ({ name })), result.split, fresh);
+      const sizes = result.sizes ?? {};
+      setSplits(table, result.splits.map((name) => ({ name, rows: sizes[name]?.rows ?? null })), result.split, fresh);
+      const known = Object.fromEntries(Object.entries(sizes).filter(([, item]) => item.rows != null).map(([name, item]) => [name, item.rows]));
+      rowsOf.value = { ...rowsOf.value, ...known };
     }
-    if (result.rows != null) {
+    if (result.sample) {
       applyGuess(result);
-      rowsOf.value = { ...rowsOf.value, [result.split]: result.rows };
-      knowRows(table, result.split, result.rows);
+      if (result.rows != null) {
+        rowsOf.value = { ...rowsOf.value, [result.split]: result.rows };
+        knowRows(table, result.split, result.rows);
+      }
     }
   } catch (error) {
     failed.value = error.message;
@@ -121,7 +127,7 @@ const labelInfo = computed(() => previewed.value?.label_columns?.find((column) =
 export const anyProblem = computed(() => {
   const result = previewed.value;
   if (reading.value) return reading.value;
-  if (!result || result.rows == null) return "Read a dataset first";
+  if (!result || !result.sample) return "Read a dataset first";
   if (shape.value === "choice") {
     const picked = roles.value;
     for (const role of ["question", "choices", "answer"]) if (!picked[role]) return `Pick the ${role} column`;
@@ -182,9 +188,9 @@ function Source() {
         </select></label>`}
       ${result?.splits?.length > 0 &&
       html`<label class="any-row"><span>Preview</span>
-        <select aria-label="Split to preview" value=${split.value ?? ""} onChange=${(event) => read({ config: config.value, split: event.target.value }, "Reading the split into the Hugging Face cache…")}>
+        <select aria-label="Split to preview" value=${split.value ?? ""} onChange=${(event) => read({ config: config.value, split: event.target.value }, readingText(event.target.value))}>
           ${!split.value && html`<option value="">Pick one</option>`}
-          ${result.splits.map((item) => html`<option value=${item}>${item}</option>`)}
+          ${result.splits.map((item) => html`<option value=${item}>${item}${sizeText(result.sizes?.[item])}</option>`)}
         </select></label>`}
       ${reading.value && html`<div class="checking"><${StatusIcon} kind="spin" /> ${reading.value}</div>`}
       ${failed.value && html`<div class="notice"><${StatusIcon} kind="warn" /><span>${failed.value}</span></div>`}
@@ -192,11 +198,28 @@ function Source() {
   `;
 }
 
+const rowsText = (rows) => `${rows.toLocaleString("en")} ${rows === 1 ? "row" : "rows"}`;
+
+// A split's size as the Hub's metadata gives it: " · 3,600,000 rows · 1.0 GB".
+function sizeText(size) {
+  if (!size) return "";
+  const rows = size.rows != null ? ` · ${rowsText(size.rows)}` : "";
+  const bytes = size.bytes != null ? ` · ${size.partial ? "over " : ""}${bytesText(size.bytes)}` : "";
+  return rows + bytes;
+}
+
+// What reading a split for the preview does: a small one is read whole, a
+// large one (or one the Hub gives no size for) only by its first rows.
+function readingText(name) {
+  return previewed.value?.sizes?.[name]?.whole ? "Reading the split into the Hugging Face cache…" : "Reading its first rows…";
+}
+
 function Preview() {
   const result = previewed.value;
+  const rows = result.rows != null ? rowsText(result.rows) : "Rows not known";
   return html`
     <div class="opts">
-      <h4>${plural(result.rows, "row")} · the first ${result.sample.length}</h4>
+      <h4>${rows} · the first ${result.sample.length}</h4>
       <div class="any-table"><table>
         <thead><tr>${result.columns.map((column) => html`<th>${column.name}<small>${column.names ? "classes" : column.kind}</small></th>`)}</tr></thead>
         <tbody>${result.sample.map((row) => html`<tr>${result.columns.map((column) => html`<td>${row[column.name]}</td>`)}</tr>`)}</tbody>
@@ -298,6 +321,8 @@ function LabelValues() {
           </div>`,
         )}
       </div>
+      ${previewed.value.sampled &&
+      html`<small class="hint">Counted in the first ${previewed.value.sampled.toLocaleString("en")} rows; the download reads every row.</small>`}
       ${info.names && html`<small class="hint">Names from the dataset card.</small>`}
     </div>
   `;
@@ -316,7 +341,7 @@ function Output() {
 
 export function AnyDataset() {
   const result = previewed.value;
-  const ready = result && result.rows != null;
+  const ready = result && Boolean(result.sample);
   return html`
     <p>Any dataset on the Hugging Face Hub. You write its questions afterwards; multiple choice asks its question here.</p>
     <${Source} />
