@@ -163,7 +163,7 @@ def test_a_download_goes_where_the_config_says(studio, tmp_path):
     # No models_dir: the CLI puts it into the Hugging Face cache.
     assert job["command"] == ["mlx-decision", "download", "Org/model-x", "--bits", "4"]
     assert job["title"] == "Download Org/model-x (4-bit)"
-    assert job["holds_gpu"] is False and job["output"] is None
+    assert job["holds_gpu"] is True and job["output"] is None  # it converts as it fetches
     wait_for(studio, job["id"])
     # models_dir set (read at each start): the repo's name in it.
     models_dir = tmp_path / "downloads"
@@ -242,6 +242,39 @@ def test_a_second_gpu_job_is_refused_naming_the_first(studio):
         assert stop(studio, job["id"]).status_code == 200
         wait_for(studio, job["id"])
     assert start(studio, kind="convert", model="fake").status_code == 202
+
+
+def test_a_quantized_download_holds_the_gpu_and_a_full_size_one_does_not(studio):
+    jobs = studio.app_state.jobs
+    # A GPU job first: a quantized download is refused naming it, full size runs.
+    fit = long_fit(studio)
+    refused = start(studio, kind="download", repo="Org/model-x", bits=8)
+    assert refused.status_code == 409
+    error = refused.json()["error"]
+    assert error["code"] == "gpu_job_running"
+    assert error["message"].startswith("Fit fake-tickets is running")
+    full = start(studio, kind="download", repo="Org/model-y")
+    assert full.status_code == 202 and full.json()["job"]["holds_gpu"] is False
+    for job in (fit, full.json()["job"]):
+        stop(studio, job["id"])
+        wait_for(studio, job["id"])
+
+    # The quantized download first: it has the GPU, as a conversion would.
+    download = start(studio, kind="download", repo="Org/model-x", bits=4).json()["job"]
+    assert download["holds_gpu"] is True
+    wait_until(lambda: jobs.jobs[download["id"]].events)  # it has started work
+    busy = studio.post("/v1/systemone", json=BODY)
+    assert busy.status_code == 503 and "Download Org/model-x (4-bit)" in busy.text
+    refused = start(studio, kind="convert", model="fake")
+    assert refused.status_code == 409
+    assert refused.json()["error"]["message"].startswith("Download Org/model-x (4-bit) is running")
+    assert start(studio, kind="download", repo="Org/model-z", bits=8).status_code == 409
+    full = start(studio, kind="download", repo="Org/model-y")  # full size: alongside
+    assert full.status_code == 202
+    for job in (download, full.json()["job"]):
+        stop(studio, job["id"])
+        wait_for(studio, job["id"])
+    assert studio.post("/v1/systemone", json=BODY).status_code == 200  # the GPU is back
 
 
 def test_stop_ends_the_job_and_leaves_no_folder(studio):

@@ -156,11 +156,12 @@ def test_progress_lines(studio, page):
 
 def test_downloading_and_converting_rows_on_the_models_page(studio, page):
     open_studio(page, studio, "models")
-    download = start_job(page, studio, kind="download", repo="Org/model-x", bits=4)
+    # Full size, so the conversion runs beside it (a quantized one has the GPU).
+    download = start_job(page, studio, kind="download", repo="Org/model-x")
     row = page.locator(f".mrow.mjob[data-job='{download['id']}']")
     expect(page.locator(".msec", has_text="Downloading")).to_be_visible()
     expect(row).to_contain_text("model-x")
-    expect(row).to_contain_text("Org/model-x · 4-bit")
+    expect(row.locator(".nm-txt > span")).to_have_text("Org/model-x")
     expect(row.locator(".pill-act")).to_contain_text(re.compile(r"Downloading \d+%"))
 
     # A conversion: under the model it copies, until it ends; then the model.

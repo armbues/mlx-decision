@@ -175,7 +175,10 @@ def jobs_router(
             argv += ["--bits", str(quantized)]
         title = f"Download {repo}" + (f" ({quantized}-bit)" if quantized else "")
         details = {"repo": repo, "bits": quantized}
-        return Plan(argv, holds_gpu=False, title=title, details=details, output=output)
+        # A quantized download converts each weight file as it arrives, so it
+        # holds the GPU from the start, as a conversion does; full size does not.
+        quantizing = quantized is not None
+        return Plan(argv, holds_gpu=quantizing, title=title, details=details, output=output)
 
     def convert(body: dict) -> Plan:
         source = model(body)

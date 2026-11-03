@@ -22,7 +22,9 @@ gets ``MLX_DECISION_WATCH_STDIN=1``, which turns that on).
 A job that loads a model (``holds_gpu``) first takes the GPU from the
 Studio's pool (``Gpu.acquire``: the request on the worker finishes, the
 pool unloads, model work answers busy naming the job) and gives it back
-when it ends. One such job runs at a time; downloads run alongside.
+when it ends. One such job runs at a time; full-size downloads run
+alongside. A quantized download is a GPU job: it converts each weight file
+as it is fetched.
 
 Use it from the event loop. ``job.json`` and the event lines are small
 writes made on the loop.

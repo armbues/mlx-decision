@@ -9,7 +9,7 @@ import { closeSheet, openSheet } from "../components/sheet.js";
 import { StatusIcon } from "../components/icons.js";
 import { markOf } from "../families.js";
 import { size } from "../format.js";
-import { jobs } from "../store/jobs.js";
+import { gpuJob, jobs } from "../store/jobs.js";
 import { toast } from "../store/ui.js";
 
 const offered = signal(null); // {families, destination}
@@ -74,8 +74,19 @@ const verdict = computed(() => {
   if (state.state === "failed" || !state.result.family) return { label: "Download", ready: false };
   if (downloading.value.has(repo)) return { label: "Downloading", ready: false };
   if (state.result.on_this_mac) return { label: "On this Mac", ready: false };
+  if (bitsOf.value[repo] && gpuJob.value) return { label: "Download", ready: false };
   return { label: "Download", ready: bitsOf.value[repo] != null };
 });
+
+// What picking a quantized download means for the GPU: it converts each file
+// as it arrives, so it holds the GPU as a conversion does (off beside another).
+function gpuNote(bits) {
+  if (!bits) return null;
+  const what = `${bits === 8 ? "an" : "a"} ${bits}-bit download`;
+  const job = gpuJob.value;
+  if (job) return html`<${Notice}>${job.title} has the GPU: ${what} is off until it is done. Original downloads beside it.<//>`;
+  return html`<${Notice} kind="info">${what[0].toUpperCase() + what.slice(1)} uses the GPU while it runs: it is quantized file by file as it arrives, and the models here do not answer until it is done.<//>`;
+}
 
 async function start() {
   if (!verdict.value.ready || starting.value) return;
@@ -159,7 +170,7 @@ const FITS = {
 };
 
 const optionTitle = (bits) => (bits ? `${bits}-bit` : "Original");
-const optionLine = (bits) => (bits === 8 ? "quantized after the download" : bits === 4 ? "smallest, a little less exact" : "as published");
+const optionLine = (bits) => (bits === 8 ? "quantized as it downloads" : bits === 4 ? "smallest, a little less exact" : "as published");
 
 function Options({ result }) {
   const repo = result.repo;
@@ -185,6 +196,7 @@ function Options({ result }) {
       </div>
       ${result.options.length === 1 &&
       html`<span class="note">${result.family_title} models are not stored quantized: full size only.</span>`}
+      ${gpuNote(chosen)}
     </div>
   `;
 }

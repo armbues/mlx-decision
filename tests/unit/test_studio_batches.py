@@ -385,9 +385,13 @@ def test_a_gpu_job_is_refused_while_a_batch_runs_and_the_other_way(studio):
     jobs = studio.app_state.jobs
     with pytest.raises(JobBlocked, match=f"batch {name} is running on slow"):
         jobs.submit("convert", ["convert"], holds_gpu=True, title="Convert slow")
-    response = studio.post("/studio/api/jobs", json={"kind": "convert", "model": "fake"})
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "batch_running"
+    for body in (
+        {"kind": "convert", "model": "fake"},
+        {"kind": "download", "repo": "Org/model-x", "bits": 8},  # it converts as it fetches
+    ):
+        response = studio.post("/studio/api/jobs", json=body)
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "batch_running"
     assert jobs.list() == []  # nothing was made
     stop(studio, name)
     wait(studio, name)

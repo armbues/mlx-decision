@@ -4,7 +4,8 @@ answered by ``fake_check`` (no network); the job is ``tests/fake_job.py``."""
 
 import httpx
 import pytest
-from drive import open_studio
+from drive import open_studio, start_job
+from fake_studio import fake_jobs
 
 from mlx_decision.download import RepoCheck
 from mlx_decision.studio.routes import downloads as downloads_route
@@ -125,3 +126,34 @@ def test_a_licence_note_comes_before_the_download(studio, page, hub):
     # d1 is not stored quantized: full size only, and the sheet says so.
     expect(sheet.locator(".qopt b")).to_have_text(["Original"])
     expect(sheet.locator(".opts .note")).to_contain_text("not stored quantized")
+
+
+def test_a_quantized_download_says_it_takes_the_gpu_and_waits_for_a_gpu_job(studio, page, hub):
+    open_studio(page, studio, "models")
+    page.keyboard.press("Meta+d")
+    sheet = page.locator(".sheet")
+    sheet.locator(".fam[data-family='d3']").click()
+    sheet.locator(".crow[data-repo='vllm-sr/d3-edge']").click()
+    download = sheet.get_by_role("button", name="Download", exact=True)
+    note = sheet.locator(".opts .notice")
+    expect(sheet.locator(".qopt[aria-checked='true'] b")).to_have_text("8-bit")
+    expect(note).to_contain_text("An 8-bit download uses the GPU while it runs")
+    expect(download).to_be_enabled()
+    sheet.locator(".qopt[data-bits='0']").click()  # full size: no GPU
+    expect(note).to_have_count(0)
+    page.keyboard.press("Escape")
+
+    fake_jobs(studio.app, steps=1000, every=0.05)
+    fit = start_job(page, studio, kind="fit", model="fake", data="tickets")
+    page.keyboard.press("Meta+d")
+    sheet.locator(".fam[data-family='d3']").click()
+    sheet.locator(".crow[data-repo='vllm-sr/d3-edge']").click()
+    sheet.locator(".qopt[data-bits='4']").click()
+    expect(note).to_contain_text(
+        "Fit fake-tickets has the GPU: a 4-bit download is off until it is done."
+    )
+    expect(download).to_be_disabled()
+    sheet.locator(".qopt[data-bits='0']").click()
+    expect(download).to_be_enabled()  # full size downloads beside it
+    page.keyboard.press("Escape")
+    page.request.post(f"{studio.base}/studio/api/jobs/{fit['id']}/stop", data={})
