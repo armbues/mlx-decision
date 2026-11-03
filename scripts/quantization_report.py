@@ -13,8 +13,9 @@ the parity set is unchanged, so adding a model only runs that model
 fixture, such as ``tests/parity/reference-clef.json`` from a larger Mac; when
 it also holds mlx-decision's bf16 results, those are the baseline (the first
 row), so only the quantized copies need to run here. H2O-Lightning:
-``--reference tests/parity/h2o/reference-v1.2.3-bf16.json`` (its parity set, images
-in states lifted out; answers compared before the yes/no floor). d3:
+``--reference tests/parity/h2o/reference-bf16.json`` (v1.4.2; its parity set,
+images in states lifted out; answers compared before the yes/no floor, two-way,
+the default reading). d3:
 ``--reference tests/parity/d3/reference-bf16.json`` (its parity set; the
 questions the release refuses left out; the input limit raised to the
 backbone's context for the 40k request). Base Labs: ``--reference
@@ -78,11 +79,15 @@ def requests_digest(kind: str = "clef") -> str:
 
 def h2o_reference(fixture: dict) -> dict:
     """H2O-Lightning's reference in the shape of Clef's: questions with option
-    ids and probabilities, before the floor; refused requests and questions left out."""
+    ids and probabilities, before the floor; refused requests and questions left out.
+    A fixture with reading modes (v1.4) gives its two-way results, the mode the
+    models load in by default; v1.2.3's is one-way only."""
     reference = {}
     for case_id, entry in fixture["results"].items():
         if "refused" in entry:
             continue
+        if "bidirectional" in entry:
+            entry = entry["bidirectional"]
         questions = []
         for question_id, result in entry.items():
             if "refused" in result:

@@ -184,7 +184,7 @@ def pinned(monkeypatch, tmp_path):
 def test_h2o_lightning_is_pinned_to_the_checked_release():
     from mlx_decision.registry import pinned_revision
 
-    checked = "ee4e0e624a0c62a803df878536bd1b59a40cc9f7"  # tag v1.4.2
+    checked = "839c5c9523764f0b68c2785944f5541ee66a92b8"  # tag v1.4.2
     assert pinned_revision("h2oai/h2o-lightning-4b") == checked
     assert pinned_revision("H2OAI/h2o-lightning-4b") == checked
     assert pinned_revision("Cloudflare/clef-flash") is None

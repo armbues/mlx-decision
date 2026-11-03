@@ -2,7 +2,7 @@
  "meta": {
   "repo_id": "h2oai/h2o-lightning-4b",
   "tag": "v1.4.2",
-  "revision": "ee4e0e624a0c62a803df878536bd1b59a40cc9f7",
+  "revision": "839c5c9523764f0b68c2785944f5541ee66a92b8",
   "seed": 0,
   "label_ids": {
    "A": 357,

@@ -467,7 +467,7 @@ register_family(
             "h2oai/h2o-lightning-4b",
             "H2O-Lightning: H2O.ai's 4B decision model (Qwen3.5), text and images",
             "9.3 GB",
-            revision="ee4e0e624a0c62a803df878536bd1b59a40cc9f7",  # tag v1.4.2
+            revision="839c5c9523764f0b68c2785944f5541ee66a92b8",  # the commit of tag v1.4.2
         ),
     ),
     # Not the serving shim, its tests, the adapter or the chart images.

@@ -1,7 +1,7 @@
 # Copyright H2O.ai (the H2O-Lightning authors).
 #
 # Copied from H2O-Lightning-4B (https://huggingface.co/h2oai/h2o-lightning-4b,
-# revision ee4e0e624a0c62a803df878536bd1b59a40cc9f7, tag v1.4.2), file
+# revision 839c5c9523764f0b68c2785944f5541ee66a92b8, tag v1.4.2), file
 # selector_v2.py, under the Apache License 2.0. See
 # LICENSES/h2o-lightning-Apache-2.0.txt.
 #

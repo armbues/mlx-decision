@@ -1,0 +1,79 @@
+{
+ "source": "H2O-Lightning-4B v1.4.2 (commit 839c5c95), h2o_lightning_shim.py TWO_WAY_PROBES, Apache-2.0; the release's two-way answers to them are serve_config.json's two_way.probe_reference (at T = 1, no floor)",
+ "probes": [
+  {
+   "state": {
+    "ticket": "Checkout returns HTTP 500 for every customer since 09:12.",
+    "plan": "enterprise"
+   },
+   "questions": {
+    "outage": {
+     "type": "noul",
+     "instructions": "Is this a full outage?",
+     "criteria": {
+      "true": "yes",
+      "false": "no"
+     }
+    },
+    "team": {
+     "type": "choice",
+     "instructions": "Which team should take it?",
+     "criteria": {
+      "payments": "Payments",
+      "web": "Web frontend",
+      "support": "Customer support"
+     }
+    }
+   }
+  },
+  {
+   "state": "The parcel left the depot on Monday, was scanned in Lyon on Tuesday and has not moved since.",
+   "questions": {
+    "lost": {
+     "type": "noul",
+     "instructions": "Should the parcel be declared lost?",
+     "criteria": {
+      "true": "yes",
+      "false": "no"
+     }
+    },
+    "next": {
+     "type": "choice",
+     "instructions": "What should happen next?",
+     "criteria": {
+      "wait": "Wait two more days",
+      "trace": "Open a trace with the carrier",
+      "refund": "Refund the customer now"
+     }
+    }
+   }
+  },
+  {
+   "state": {
+    "review": "Battery lasts two days, screen is dim outdoors, support replaced it once without fuss.",
+    "stars": 3
+   },
+   "questions": {
+    "tone": {
+     "type": "score",
+     "instructions": "How positive is the review?",
+     "criteria": [
+      "Negative",
+      "Mixed",
+      "Positive"
+     ]
+    },
+    "issue": {
+     "type": "choice",
+     "instructions": "What is the main complaint?",
+     "criteria": {
+      "battery": "Battery",
+      "screen": "Screen",
+      "support": "Support",
+      "none": "No complaint"
+     }
+    }
+   }
+  }
+ ]
+}

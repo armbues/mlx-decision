@@ -7,9 +7,10 @@ training tokenizer) and the answers of the tiny random model of
 ``tiny_models.write_h2o`` (CPU, float32), per reading mode. The token and
 end-to-end tests need the release's small files in the Hugging Face cache
 (the script fetches them) and skip otherwise; the tiny-model test feeds the
-stored ids and always runs. ``h2o/reference-v1.2.3-bf16.json`` is the
-script with ``--model``: v1.2.3's weights in bfloat16 on MPS; the slow test
-compares the release folder in ``MLX_DECISION_MODELS`` with it.
+stored ids and always runs. ``h2o/reference-bf16.json`` is the script with
+``--model``: v1.4.2's weights in bfloat16 on MPS, both modes; the slow tests
+compare the release folder in ``MLX_DECISION_MODELS`` with it, and with the
+release's own probe answers.
 
 The model runs on the CPU here: on the GPU, float32 matmuls use TF32, which
 moves the tiny model's probabilities by up to about 1e-3.
@@ -471,22 +472,33 @@ def test_tiny_model_answers_images_as_the_release(tiny_models, version, reading,
     assert result.usage.input_tokens == tokens
 
 
-BF16 = json.loads((HERE / "h2o" / "reference-v1.2.3-bf16.json").read_text())
+BF16 = json.loads((HERE / "h2o" / "reference-bf16.json").read_text())
+
+
+def bf16_results(reading: str) -> dict:
+    """The bf16 reference's results in one mode by request (a refusal as it is)."""
+    by_case = BF16["results"]
+    return {k: v if "refused" in v else v[MODES[reading]] for k, v in by_case.items()}
 
 
 def test_the_bf16_reference_is_for_the_same_prompts():
-    """Every request it has, with the token ids of the tiny reference (same tokenizer)."""
-    assert BF16["meta"]["revision"] == FIXTURE["meta"]["revision"]
-    assert BF16["meta"]["dtype"] == "torch.bfloat16"
-    assert set(BF16["results"]) <= set(REFERENCE)
-    for case_id, expected in BF16["results"].items():
-        tiny = REFERENCE[case_id]
-        assert ("refused" in expected) == ("refused" in tiny), case_id
-        if "refused" in expected:
-            continue
-        for question_id, entry in expected.items():
-            assert entry["ids_sha256"] == tiny[question_id]["ids_sha256"], case_id
-            assert ("answer_no_floor" in entry) == ("refused" not in entry), case_id
+    """Every request in both modes, with the token ids of the tiny reference."""
+    meta = BF16["meta"]
+    assert meta["revision"] == FIXTURES["v1.4.2"]["meta"]["revision"]
+    assert meta["dtype"] == "torch.bfloat16"
+    assert meta["modes"] == ["causal", "bidirectional"]
+    # The release's start-up check of the stand-in engine passed.
+    assert meta["two_way"]["probe_anchor"] <= 0.05
+    for reading in MODES:
+        real, tiny = bf16_results(reading), results("v1.4.2", reading)
+        assert set(real) == set(tiny)
+        for case_id, expected in real.items():
+            assert ("refused" in expected) == ("refused" in tiny[case_id]), case_id
+            if "refused" in expected:
+                continue
+            for question_id, entry in expected.items():
+                assert entry["ids_sha256"] == tiny[case_id][question_id]["ids_sha256"], case_id
+                assert "answer_no_floor" in entry, case_id
 
 
 def option_probabilities(answer: dict) -> dict[str, float]:
@@ -496,22 +508,31 @@ def option_probabilities(answer: dict) -> dict[str, float]:
     return answer["probabilities"]
 
 
-@pytest.mark.slow
-@pytest.mark.weights
-def test_bf16_answers_as_the_release():
-    """About 2 minutes: the release folder answers the whole parity set.
-
-    Measured 2026-10-10: max 0.0195, mean 0.0014; 3 changed top answers,
-    all where the reference's top-two margin is within 0.04.
-    """
+def release_weights() -> Path:
+    """v1.4.2's weights in MLX_DECISION_MODELS, or a skip."""
     root = os.environ.get("MLX_DECISION_MODELS")
     path = Path(root) / "h2o-lightning-4b" if root else None
     if path is None or not path.is_dir():
         pytest.skip("no h2o-lightning-4b in MLX_DECISION_MODELS")
+    if "two_way" not in json.loads((path / "serve_config.json").read_text()):
+        pytest.skip(f"{path} is not v1.4.2 (its serve config has no two_way block)")
+    return path
+
+
+@pytest.mark.slow
+@pytest.mark.weights
+@pytest.mark.parametrize("reading", list(MODES))
+def test_bf16_answers_as_the_release(reading):
+    """About 5.5 minutes per mode: the release folder answers the whole parity set.
+
+    Measured 2026-11-03 (v1.4.2): one-way max 0.0299, mean 0.0015, no changed
+    top answer; two-way max 0.0314, mean 0.0016, 4 changed top answers, all
+    where the reference's top-two margin is within 0.031.
+    """
     # Before the floor, as the reference's answer_no_floor.
-    model = mlx_decision.load(path, noul_floor=0)
+    model = mlx_decision.load(release_weights(), noul_floor=0, reading=reading)
     differences, worst, decided_flips = [], (0.0, None), []
-    for case_id, expected in BF16["results"].items():
+    for case_id, expected in bf16_results(reading).items():
         if "refused" in expected:
             continue
         result = model.decide_request(request(case_id))
@@ -530,3 +551,37 @@ def test_bf16_answers_as_the_release():
     assert worst[0] <= BF16_TOLERANCE, f"max |dp| {worst[0]:.4f} at {worst[1]}"
     assert mean <= MEAN_TOLERANCE, f"mean |dp| {mean:.5f}"
     assert not decided_flips
+
+
+# The release's start-up probes (its shim's requests, h2o/probes.json) and its
+# recorded two-way answers to them (serve_config.json), measured by H2O on its
+# own engine: an anchor independent of the stand-in reference.
+PROBES = json.loads((HERE / "h2o" / "probes.json").read_text())["probes"]
+
+
+@pytest.mark.slow
+@pytest.mark.weights
+def test_the_release_probes_read_two_way_as_the_release():
+    """Within the release's tolerance (0.05) two-way, and one-way apart from it
+    by the release's separation (0.05), as its shim checks an engine.
+
+    Measured 2026-11-03: two-way max 0.0032; one-way up to 0.1030 away.
+    """
+    path = release_weights()
+    block = json.loads((path / "serve_config.json").read_text())["two_way"]
+    apart = 0.0
+    for reading in MODES:
+        model = mlx_decision.load(path, noul_floor=0, reading=reading)
+        # The release's answers are at temperature 1.
+        model.backend.temperatures = dict.fromkeys(model.backend.temperatures, 1.0)
+        worst = 0.0
+        for body, recorded in zip(PROBES, block["probe_reference"], strict=True):
+            answers = model.decide(body["state"], body["questions"]).to_wire()["answers"]
+            for question_id, want in recorded.items():
+                got = option_probabilities(answers[question_id])
+                worst = max(worst, max(abs(got[k] - p) for k, p in want.items()))
+        if reading == "two-way":
+            assert worst <= block["probe_tolerance"], f"max |dp| {worst:.4f}"
+        else:
+            apart = worst
+    assert apart >= 0.05, f"one-way reads like two-way (max |dp| {apart:.4f})"

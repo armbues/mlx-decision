@@ -43,12 +43,14 @@ with --only. For v1.4.2 also, under "limits", the token ids of the text
 requests longer than 256, 1,024 and 8,192 tokens as the shim fits them to a vLLM
 started with that context (one-way).
 
-With --model (the release folder with its weights, at the pinned revision)
-the real model runs instead: bfloat16 on MPS, the logits in float32 (the
+With --model (a folder with the release's weights at the pinned revision;
+the code and small files still come from the pinned snapshot) the real
+model runs instead: bfloat16 on MPS, the logits in float32 (the
 release's `"head_dtype": "float32"`: the last hidden state in float32 times
 the tied embeddings in float32), every prompt answered, no token ids kept;
 the shim's two-way probe check runs (the release's recorded answers, within
-0.05). Writes reference-bf16.json (v1.4.2) or reference-v1.2.3-bf16.json.
+0.05). Writes reference-bf16.json (v1.4.2; about 60 min, both modes) or
+reference-v1.2.3-bf16.json.
 """
 
 import argparse
@@ -67,7 +69,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PARITY = ROOT / "tests" / "parity"
 REPO_ID = "h2oai/h2o-lightning-4b"
 REVISIONS = {
-    "v1.4.2": "ee4e0e624a0c62a803df878536bd1b59a40cc9f7",
+    "v1.4.2": "839c5c9523764f0b68c2785944f5541ee66a92b8",
     "v1.2.3": "acaf0d4ea251e54de928c75ef4352670d33192d3",
 }
 MAX_MODEL_LEN = 40960  # vLLM's --max-model-len in the release's serve.sh
@@ -127,7 +129,7 @@ class Engine:
     entry per read, in the order the shim makes them.
     """
 
-    def __init__(self, shim, folder: Path, model_name: str, real=False, device="cpu"):
+    def __init__(self, shim, folder: Path, model_name: str, real=False, device="cpu", files=None):
         import torch
         import transformers.models.qwen3_5.modeling_qwen3_5 as modeling
         from transformers import Qwen3_5ForConditionalGeneration
@@ -139,8 +141,11 @@ class Engine:
         self.torch, self.modeling, self.shim = torch, modeling, shim
         self.base = "stand-in engine"
         self.model_name = model_name
-        self.real, self.device, self.folder = real, device, folder
-        self.tokenizer = Qwen2Tokenizer.from_pretrained(folder)
+        # The weights from ``folder``; the tokenizer, chat template and image
+        # processor from ``files`` (the release's small files; default: the same).
+        self.real, self.device = real, device
+        self.folder = files or folder
+        self.tokenizer = Qwen2Tokenizer.from_pretrained(self.folder)
         dtype = torch.bfloat16 if real else torch.float32
         self.model = (
             Qwen3_5ForConditionalGeneration.from_pretrained(
@@ -255,6 +260,8 @@ class Reference:
     """The release's shim with the stand-in engine, for one release and model."""
 
     def __init__(self, release: Path, folder: Path, real=False, device="cpu"):
+        """``release``: the release's small files (its shim, configs, tokenizer);
+        ``folder``: the model whose weights run."""
         # Reads one at a time, in question order, so each read is its question's.
         os.environ["SHIM_QUESTION_THREADS"] = "1"
         os.environ["SHIM_TWO_WAY_FLAG"] = "1"  # one engine, both modes, as serve.sh
@@ -268,7 +275,7 @@ class Reference:
         self.contract = shim.Contract(config, env={})
         self.two_way = getattr(self.contract, "two_way", None) is not None
         self.modes = ("causal", "bidirectional") if self.two_way else ("causal",)
-        self.engine = Engine(shim, folder, self.contract.model, real, device)
+        self.engine = Engine(shim, folder, self.contract.model, real, device, files=release)
         self.server = shim.Shim(self.contract, vllm=self.engine)
         self.real = real
         # The shim's start-up checks, before any request: the label ids and the
@@ -391,7 +398,15 @@ def main() -> None:
     torch.set_grad_enabled(False)
     if args.model and args.device == "mps":
         torch.mps.set_per_process_memory_fraction(MEMORY_FRACTION)
-    release = (args.model or args.release or fetch_release(REVISIONS[args.revision])).resolve()
+    # The release's code and small files at the pinned revision; with --model
+    # only the weights come from that folder (a download may hold no shim).
+    release = (args.release or fetch_release(REVISIONS[args.revision])).resolve()
+    if (
+        args.model
+        and (args.model / "serve_config.json").read_bytes()
+        != (release / "serve_config.json").read_bytes()
+    ):
+        raise SystemExit(f"{args.model} is not the release at {args.revision} (serve_config.json)")
     has_two_way = "two_way" in json.loads((release / "serve_config.json").read_text())
     if has_two_way != (args.revision != "v1.2.3"):
         raise SystemExit(
@@ -406,7 +421,7 @@ def main() -> None:
     results = dict(existing)
     with tempfile.TemporaryDirectory() as folder:
         if args.model:
-            reference = Reference(release, release, real=True, device=args.device)
+            reference = Reference(release, args.model.resolve(), real=True, device=args.device)
         else:
             tiny = write_h2o(Path(folder) / "tiny-h2o", seed=SEED, files_from=release)
             reference = Reference(release, tiny)
