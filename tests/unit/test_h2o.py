@@ -588,3 +588,92 @@ def test_the_sensitivity_sweep_reads_the_output_rows_it_is_measuring(folder):
     # pass differs, and the original rows are back afterwards.
     assert seen[2][0] != seen[1][0]
     assert flat(after) == pytest.approx(flat(before), abs=1e-7)
+
+
+# v1.4's serve config: a two_way block with its own calibration.
+TWO_WAY = {
+    "default": "bidirectional",
+    "temperature": {"choice": 1.0, "noul": 0.5, "score": 2.0},
+    "noul_floor": 0,
+    "image_temperature": 0.9,
+}
+
+
+@pytest.fixture(scope="module")
+def two_way_folder(folder, tmp_path_factory):
+    return edit_config(folder, tmp_path_factory.mktemp("two-way"), two_way=TWO_WAY)
+
+
+def test_a_release_without_a_two_way_block_reads_one_way_only(folder, model):
+    assert model.backend.reading == "one-way"
+    with pytest.raises(ValueError, match="reads one-way only"):
+        mlx_decision.load(folder, reading="two-way")
+
+
+def test_two_way_is_the_default_where_the_release_has_it(two_way_folder):
+    backend = mlx_decision.load(two_way_folder).backend
+    assert backend.reading == "two-way"
+    assert backend.temperatures == TWO_WAY["temperature"]
+    assert (backend.noul_floor, backend.image_temperature) == (0, 0.9)
+    assert backend.prefix_cache is None  # a two-way prompt is read whole
+    assert not backend.backbone.language_model.model.causal
+    one = mlx_decision.load(two_way_folder, reading="one-way").backend
+    assert one.reading == "one-way" and one.backbone.language_model.model.causal
+    assert one.temperatures == H2O_SERVE_CONFIG["temperature"]
+    assert (one.noul_floor, one.image_temperature) == (0.801, 0.65)
+    assert one.prefix_cache is not None
+
+
+@pytest.mark.parametrize(
+    ("name", "reading"),
+    [
+        ("two-way", "two-way"),
+        ("bidirectional", "two-way"),
+        ("One-Way", "one-way"),
+        ("causal", "one-way"),
+        ("one_way", "one-way"),
+    ],
+)
+def test_the_release_names_of_the_modes_are_taken(two_way_folder, name, reading):
+    assert mlx_decision.load(two_way_folder, reading=name).backend.reading == reading
+
+
+def test_an_unknown_mode_is_refused(two_way_folder):
+    with pytest.raises(ValueError, match="reading must be 'two-way' or 'one-way'"):
+        mlx_decision.load(two_way_folder, reading="sideways")
+
+
+def test_a_missing_two_way_setting_falls_back_to_one_way(folder, tmp_path):
+    copy = edit_config(folder, tmp_path, two_way={"default": "two-way"})
+    backend = mlx_decision.load(copy).backend
+    assert backend.temperatures == H2O_SERVE_CONFIG["temperature"]
+    assert (backend.noul_floor, backend.image_temperature) == (0.801, 0.65)
+
+
+def test_two_way_reads_each_question_whole(two_way_folder, monkeypatch):
+    import mlx.core as mx
+
+    model = mlx_decision.load(two_way_folder)
+    monkeypatch.setattr(model.backend, "prefix_state", lambda *args: pytest.fail("a prefix"))
+    request = parse_request({"state": "please refund now", "questions": QUESTIONS})
+    encoded, _ = model.backend.encode(request)
+    with mx.stream(mx.cpu):
+        result = model.decide_request(request)
+        one = mlx_decision.load(two_way_folder, reading="one-way").decide_request(request)
+        whole = {
+            e.question_id: model.backend.probabilities(
+                e.input_ids, len(e.option_ids), e.question_type
+            )
+            for e in encoded
+        }
+    team = list(result.answers["team"].probabilities.values())
+    assert team == pytest.approx(whole["team"], abs=1e-6)
+    assert team != pytest.approx(list(one.answers["team"].probabilities.values()), abs=1e-4)
+
+
+def test_other_families_refuse_the_reading(tmp_path):
+    from tiny_models import write_marker
+
+    laya = write_marker(tmp_path / "laya", "laya")
+    with pytest.raises(ValueError, match="laya models do not take reading"):
+        mlx_decision.load(laya, reading="one-way")

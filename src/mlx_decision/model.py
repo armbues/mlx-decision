@@ -210,8 +210,12 @@ def load(model: str | Path, *, check_memory: bool = True, **options) -> Decision
     (default and maximum the releases' 16,777,216). For H2O-Lightning:
     ``max_input_tokens`` (default and maximum 40,960 per question; states
     over 32,000 tokens, or too long for a lowered limit, are cut) and
-    ``noul_floor`` (default the release's 0.801: less sure yes/no answers are
-    reported at it; 0 turns it off). For d1: ``max_input_tokens`` (default
+    ``noul_floor`` (default the release's: less sure yes/no answers are
+    reported at it; 0 turns it off; v1.4 ships it off) and, from v1.4,
+    ``reading`` (``"two-way"``, the release's default, each question's
+    prompt read whole with the full-attention layers both ways; or
+    ``"one-way"``, causal with shared prefixes, faster for many questions
+    about one long state). For d1: ``max_input_tokens`` (default
     and maximum 32,768 per question; states too long for it are cut). For
     Clef, Base Labs, H2O-Lightning and d1: ``prefix_cache_gb`` (memory for recently
     computed states, default 2; 0 turns it off). For Laya and

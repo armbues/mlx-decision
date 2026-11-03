@@ -79,6 +79,34 @@ class ImageSettings:
     temperature: float = 0.65
 
 
+# The two reading modes from v1.4 (the release's names as aliases).
+READINGS = {
+    "two-way": "two-way",
+    "one-way": "one-way",
+    "bidirectional": "two-way",
+    "causal": "one-way",
+}
+
+
+def reading_of(value: str) -> str:
+    """``"two-way"`` or ``"one-way"`` for a mode's name or the release's alias."""
+    reading = READINGS.get(str(value).strip().lower().replace("_", "-"))
+    if reading is None:
+        raise ValueError(f"reading must be 'two-way' or 'one-way', not {value!r}")
+    return reading
+
+
+@dataclass(frozen=True)
+class TwoWaySettings:
+    """The ``two_way`` block of ``serve_config.json`` (v1.4 on): the default
+    mode and two-way's own calibration, each falling back to one-way's."""
+
+    default: str
+    temperatures: dict[str, float]
+    noul_floor: float
+    image_temperature: float | None
+
+
 @dataclass(frozen=True)
 class ServeConfig:
     """What the release's ``serve_config.json`` sets for answering."""
@@ -88,6 +116,15 @@ class ServeConfig:
     noul_floor: float
     prompt: PromptSettings
     image: ImageSettings | None = None
+    two_way: TwoWaySettings | None = None
+
+    def settings(self, reading: str) -> tuple[dict[str, float], float, float | None]:
+        """(temperature by type, yes/no floor, image temperature) of a mode."""
+        if reading == "two-way" and self.two_way is not None:
+            t = self.two_way
+            return t.temperatures, t.noul_floor, t.image_temperature
+        image = self.image.temperature if self.image else None
+        return self.temperatures, self.noul_floor, image
 
     @classmethod
     def read(cls, path: Path) -> "ServeConfig":
@@ -96,18 +133,8 @@ class ServeConfig:
         labels = labels[: int(config.get("max_options", len(labels)))]
         if not labels or len(set(labels)) != len(labels):
             raise ValueError(f"{path}: serve_config.json needs distinct option labels")
-        temperature = config.get("temperature", 1.0)
-        if isinstance(temperature, dict):
-            if set(temperature) != set(QUESTION_TYPES):
-                raise ValueError(f"{path}: a temperature per type needs {QUESTION_TYPES}")
-            temperatures = {kind: float(temperature[kind]) for kind in QUESTION_TYPES}
-        else:
-            temperatures = dict.fromkeys(QUESTION_TYPES, float(temperature))
-        if not all(math.isfinite(t) and t > 0 for t in temperatures.values()):
-            raise ValueError(f"{path}: temperatures must be positive numbers")
-        floor = float(config.get("noul_floor", 0) or 0)
-        if floor and not 0.5 < floor < 1:
-            raise ValueError(f"{path}: noul_floor must be between 0.5 and 1, or 0 (off)")
+        temperatures = _temperatures(config.get("temperature", 1.0), path)
+        floor = _floor(config.get("noul_floor", 0), path)
         image = None
         if isinstance(block := config.get("image"), dict):
             image = ImageSettings(
@@ -118,7 +145,42 @@ class ServeConfig:
             if not 1 <= image.max_images <= 16 or not image.temperature > 0:
                 raise ValueError(f"{path}: the image block's limits are out of range")
         prompt = PromptSettings.from_config(config["prompt"])
-        return cls(labels, temperatures, floor, prompt, image)
+        two_way = None
+        if isinstance(block := config.get("two_way"), dict):
+            image_t = block.get("image_temperature")
+            two_way = TwoWaySettings(
+                default=reading_of(block.get("default", "two-way")),
+                temperatures=_temperatures(block["temperature"], path)
+                if "temperature" in block
+                else temperatures,
+                noul_floor=_floor(block["noul_floor"], path) if "noul_floor" in block else floor,
+                image_temperature=float(image_t)
+                if image_t is not None
+                else (image.temperature if image else None),
+            )
+            if two_way.image_temperature is not None and not two_way.image_temperature > 0:
+                raise ValueError(f"{path}: two_way.image_temperature must be positive")
+        return cls(labels, temperatures, floor, prompt, image, two_way)
+
+
+def _temperatures(value, path) -> dict[str, float]:
+    """One temperature for every type, or one per type."""
+    if isinstance(value, dict):
+        if set(value) != set(QUESTION_TYPES):
+            raise ValueError(f"{path}: a temperature per type needs {QUESTION_TYPES}")
+        temperatures = {kind: float(value[kind]) for kind in QUESTION_TYPES}
+    else:
+        temperatures = dict.fromkeys(QUESTION_TYPES, float(value))
+    if not all(math.isfinite(t) and t > 0 for t in temperatures.values()):
+        raise ValueError(f"{path}: temperatures must be positive numbers")
+    return temperatures
+
+
+def _floor(value, path) -> float:
+    floor = float(value or 0)
+    if floor and not 0.5 < floor < 1:
+        raise ValueError(f"{path}: noul_floor must be between 0.5 and 1, or 0 (off)")
+    return floor
 
 
 def commit_noul(p_true: float, floor: float) -> float:
@@ -142,23 +204,43 @@ class H2OBackend:
         path=None,
         label_ids: list[int] | None = None,
         prefix_cache_gb: float = 0.0,
+        reading: str | None = None,
     ):
         """``backbone`` None gives a backend that only encodes; ``label_ids``
         (each label's token) default to what ``tokenizer`` makes of them;
-        ``prefix_cache_gb`` 0 keeps no prefixes between requests."""
+        ``prefix_cache_gb`` 0 keeps no prefixes between requests.
+        ``reading`` is ``"two-way"`` or ``"one-way"``; by default the serve
+        config's (two-way for a release with a ``two_way`` block, else
+        one-way, the only mode such a release has)."""
+        if reading is None:
+            reading = config.two_way.default if config.two_way else "one-way"
+        reading = reading_of(reading)
+        if reading == "two-way" and config.two_way is None:
+            raise ValueError(
+                "this release reads one-way only (its serve_config.json has no two_way block)"
+            )
+        self.reading = reading
         self.name = name
         self.backbone = backbone
+        if backbone is not None:
+            # Two-way: the full-attention layers see the whole prompt both
+            # ways (the Gated DeltaNet layers stay causal).
+            backbone.language_model.model.causal = reading == "one-way"
         self.tokenizer = tokenizer
         self.config = config
         self.labels = config.labels
-        self.noul_floor = config.noul_floor
+        self.temperatures, self.noul_floor, self.image_temperature = config.settings(reading)
         self.path = path
         self.label_ids = label_ids or label_token_ids(tokenizer, config.labels)
         self._label_rows = None
         self._rows_layer = None  # the output layer the rows were read from
         self.vision = None
+        # A two-way prompt is read whole: the record sees the question, so no
+        # prefix is shared or kept.
         self.prefix_cache = (
-            PrefixCache(round(prefix_cache_gb * 1e9)) if prefix_cache_gb > 0 else None
+            PrefixCache(round(prefix_cache_gb * 1e9))
+            if prefix_cache_gb > 0 and reading == "one-way"
+            else None
         )
         if backbone is not None:
             self.label_rows()
@@ -336,7 +418,11 @@ class H2OBackend:
         # prefix (the images included) runs once or comes from the cache, and
         # each question continues from it, so a request answers the same
         # whether its prefix is new or kept.
-        reuse = bool(prefix) and (len(encoded) > 1 or self.prefix_cache is not None)
+        reuse = (
+            self.reading == "one-way"
+            and bool(prefix)
+            and (len(encoded) > 1 or self.prefix_cache is not None)
+        )
         state = (len(prefix), self.prefix_state(prefix, images)) if reuse else None
         features = None
         if images.prepared and state is None:
@@ -351,8 +437,8 @@ class H2OBackend:
     def temperature(self, question_type: str, with_images: bool = False) -> float:
         """The question type's temperature, or the image temperature with images."""
         if with_images:
-            return self.config.image.temperature
-        return self.config.temperatures[question_type]
+            return self.image_temperature
+        return self.temperatures[question_type]
 
     def question_features(
         self, question: Encoded, hidden: mx.array, with_images: bool, truncated: bool = False
@@ -501,6 +587,15 @@ def _capabilities(config: ServeConfig, max_input_tokens: int, path: Path | None)
     )
 
 
+def _check_reading(config: ServeConfig, reading: str | None) -> None:
+    """Refused before the weights load: an unknown mode, or two-way for a
+    release that reads one-way only."""
+    if reading is not None and reading_of(reading) == "two-way" and config.two_way is None:
+        raise ValueError(
+            "this release reads one-way only (its serve_config.json has no two_way block)"
+        )
+
+
 def _input_limit(max_input_tokens: int | None) -> int:
     """The limit per question's prompt: the release's unless lowered."""
     if max_input_tokens is None:
@@ -515,7 +610,9 @@ def _input_limit(max_input_tokens: int | None) -> int:
 def capabilities(path: Path, options: dict) -> Capabilities:
     """What ``load(path, **options)`` gives the backend, from the folder's config files."""
     limit = _input_limit(options.get("max_input_tokens"))
-    result = _capabilities(ServeConfig.read(path), limit, path)
+    config = ServeConfig.read(path)
+    _check_reading(config, options.get("reading"))
+    result = _capabilities(config, limit, path)
     if options.get("vision") and not result.supports_images:
         raise ValueError(f"{path} has no vision weights or image settings")
     return result
@@ -527,6 +624,7 @@ def load(
     noul_floor: float | None = None,
     prefix_cache_gb: float = DEFAULT_PREFIX_CACHE_GB,
     vision: bool = False,
+    reading: str | None = None,
 ) -> H2OBackend:
     """Load H2O-Lightning from a release folder or a converted copy.
 
@@ -544,6 +642,12 @@ def load(
     questions of one request still share their prefix). ``vision=True``
     loads the vision tower now, not with the first image. Images are scaled
     to at most the serve config's pixels (1,048,576), at most 4 a request.
+    ``reading`` (v1.4 on): ``"two-way"``, the release's default, where the
+    full-attention layers read each question's whole prompt both ways (no
+    prefix is shared or kept, so N questions cost about N passes), or
+    ``"one-way"``, causal as v1.2.3, with the shared and kept prefix. Each
+    mode has the serve config's own temperatures and floor. A release
+    without a ``two_way`` block reads one-way only.
     """
     if prefix_cache_gb < 0:
         raise ValueError("prefix_cache_gb must be 0 (off) or more")
@@ -557,6 +661,7 @@ def load(
     if not any(path.glob("model*.safetensors")):
         raise FileNotFoundError(f"{path}: no model*.safetensors weights")
     config = ServeConfig.read(path)
+    _check_reading(config, reading)
     backbone = load_text_model(path, lm_head=False)
     if not backbone.language_model.args.tie_word_embeddings:
         raise ValueError(f"{path}: the label readout needs tied embeddings")
@@ -569,6 +674,7 @@ def load(
         max_input_tokens,
         path,
         prefix_cache_gb=prefix_cache_gb,
+        reading=reading,
     )
     if noul_floor is not None:
         backend.noul_floor = float(noul_floor)

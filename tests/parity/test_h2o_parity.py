@@ -30,7 +30,12 @@ import mlx_decision
 from mlx_decision.backbones.qwen3_5.load import load_text_model
 from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
-from mlx_decision.models.h2o.model import H2OBackend, ServeConfig, training_tokenizer
+from mlx_decision.models.h2o.model import (
+    H2OBackend,
+    ServeConfig,
+    TwoWaySettings,
+    training_tokenizer,
+)
 from mlx_decision.models.h2o.prompt import PromptSettings
 from mlx_decision.state_images import lift_images
 from mlx_decision.types import parse_request
@@ -89,10 +94,31 @@ END_TO_END = [
 ]
 
 
+# Our reading modes and the fixture's keys (the release's names).
+MODES = {"one-way": "causal", "two-way": "bidirectional"}
+# Every release in every mode it has.
+READINGS = [("v1.2.3", "one-way"), ("v1.4.2", "one-way"), ("v1.4.2", "two-way")]
+
+
+def results(version: str, reading: str) -> dict:
+    """A release's results in one mode by request (a refusal stays as it is)."""
+    by_case = FIXTURES[version]["results"]
+    return {k: v if "refused" in v else v[MODES[reading]] for k, v in by_case.items()}
+
+
 def one_way(version: str) -> dict:
-    """A release's one-way results by request (a refusal stays as it is)."""
-    results = FIXTURES[version]["results"]
-    return {k: v if "refused" in v else v["causal"] for k, v in results.items()}
+    return results(version, "one-way")
+
+
+def per_reading(case_ids: list[str]) -> list:
+    """(version, reading, case) for every release and mode; v1.4.2's long
+    requests are expected to fail."""
+    long = pytest.mark.xfail(reason="v1.4.2's long input is not built yet", strict=True)
+    return [
+        pytest.param(v, r, c, marks=[long] if v == "v1.4.2" and c in LONG_INPUT else [])
+        for v, r in READINGS
+        for c in case_ids
+    ]
 
 
 def per_version(case_ids: list[str]) -> list:
@@ -220,6 +246,22 @@ def test_v1_4_2_one_way_reads_as_v1_2_3_where_the_prompts_agree():
     assert changed == LONG_INPUT | {"image_enlarged"}
 
 
+def test_two_way_reads_the_same_prompts_differently():
+    """The mode changes the attention, not the prompt."""
+    one, two = one_way("v1.4.2"), results("v1.4.2", "two-way")
+    moved = 0
+    for case_id, questions in one.items():
+        if "refused" in questions:
+            assert "refused" in two[case_id]
+            continue
+        for question_id, entry in questions.items():
+            other = two[case_id][question_id]
+            assert entry["ids_sha256"] == other["ids_sha256"], case_id
+            if "logprobs" in entry:
+                moved += entry["logprobs"] != pytest.approx(other["logprobs"], abs=1e-4)
+    assert moved > 200
+
+
 @pytest.mark.parametrize(("version", "case_id"), per_version(TEXT_IDS))
 def test_token_ids_equal_the_release(encoders, version, case_id):
     encoder = encoders(version)
@@ -300,20 +342,29 @@ def test_a_lowered_limit_cuts_states_so_prompts_fit(release, limit):
             backend.encode(request("choice_255_options"))
 
 
-@pytest.fixture(scope="module", params=VERSIONS)
-def tiny(request, tmp_path_factory) -> tuple[str, H2OBackend]:
-    """The tiny model with a release's labels, temperatures and floor, no tokenizer."""
-    meta = FIXTURES[request.param]["meta"]
+@pytest.fixture(scope="module", params=READINGS, ids=lambda r: "-".join(r))
+def tiny(request, tmp_path_factory) -> tuple[str, str, H2OBackend]:
+    """The tiny model with a release's labels, temperatures and floor in one
+    mode, no tokenizer."""
+    version, reading = request.param
+    meta = FIXTURES[version]["meta"]
     folder = write_h2o(tmp_path_factory.mktemp("h2o") / "tiny-h2o")
+    two_way = None
+    if block := meta.get("two_way"):
+        two_way = TwoWaySettings(
+            "two-way", block["temperature"], block["noul_floor"], block["image_temperature"]
+        )
     config = ServeConfig(
         labels=list(meta["label_ids"]),
         temperatures=meta["temperature"],
         noul_floor=meta["noul_floor"],
         prompt=PromptSettings.from_config({}),
+        two_way=two_way,
     )
     backbone = load_text_model(folder, lm_head=False)
     ids = list(meta["label_ids"].values())
-    return request.param, H2OBackend("tiny", backbone, None, config, 40960, folder, label_ids=ids)
+    backend = H2OBackend("tiny", backbone, None, config, 40960, folder, ids, reading=reading)
+    return version, reading, backend
 
 
 def answer_values(answer: dict) -> list[float]:
@@ -324,8 +375,8 @@ def answer_values(answer: dict) -> list[float]:
 
 def test_tiny_model_answers_as_the_release(tiny):
     """Every text question with stored ids: one pass each, about 20 ms on the CPU."""
-    version, tiny = tiny
-    reference = one_way(version)
+    version, reading, tiny = tiny
+    reference = results(version, reading)
     checked = 0
     for case_id in TEXT_IDS:
         for question_id, expected in reference[case_id].items():
@@ -344,27 +395,29 @@ def test_tiny_model_answers_as_the_release(tiny):
 
 @pytest.fixture(scope="module")
 def tiny_models(tmp_path_factory) -> dict:
-    """Per release, the tiny model in a folder with its files."""
-    made = {}
+    """Per release and mode, the tiny model in a folder with the release's files."""
+    folders, made = {}, {}
 
-    def get(version: str):
-        if version not in made:
+    def get(version: str, reading: str):
+        if version not in folders:
             folder = tmp_path_factory.mktemp("h2o") / f"tiny-h2o-{version}"
-            made[version] = mlx_decision.load(write_h2o(folder, files_from=release_folder(version)))
-        return made[version]
+            folders[version] = write_h2o(folder, files_from=release_folder(version))
+        if (version, reading) not in made:
+            made[version, reading] = mlx_decision.load(folders[version], reading=reading)
+        return made[version, reading]
 
     return get
 
 
-@pytest.mark.parametrize(("version", "case_id"), per_version(END_TO_END))
-def test_tiny_model_end_to_end(tiny_models, version, case_id):
+@pytest.mark.parametrize(("version", "reading", "case_id"), per_reading(END_TO_END))
+def test_tiny_model_end_to_end(tiny_models, version, reading, case_id):
     """The whole path: prompt, real tokenizer, passes, the floor, answers."""
     with mx.stream(mx.cpu):
-        result = tiny_models(version).decide_request(request(case_id))
+        result = tiny_models(version, reading).decide_request(request(case_id))
     assert not result.truncated
     tokens = 0
     for question_id, answer in result.answers.items():
-        expected = one_way(version)[case_id][question_id]
+        expected = results(version, reading)[case_id][question_id]
         tokens += expected["tokens"]
         if answer.type == "noul":
             assert answer.noul == pytest.approx(expected["answer"]["noul"], abs=TOLERANCE)
@@ -389,14 +442,14 @@ IMAGE_END_TO_END = [
 ]
 
 
-@pytest.mark.parametrize(("version", "case_id"), per_version(IMAGE_END_TO_END))
-def test_tiny_model_answers_images_as_the_release(tiny_models, version, case_id):
+@pytest.mark.parametrize(("version", "reading", "case_id"), per_reading(IMAGE_END_TO_END))
+def test_tiny_model_answers_images_as_the_release(tiny_models, version, reading, case_id):
     """Images through the whole path (measured within 3.4e-6 of the release)."""
     with mx.stream(mx.cpu):
-        result = tiny_models(version).decide_request(request(case_id))
+        result = tiny_models(version, reading).decide_request(request(case_id))
     tokens = 0
     for question_id, answer in result.answers.items():
-        expected = one_way(version)[case_id][question_id]
+        expected = results(version, reading)[case_id][question_id]
         tokens += expected["tokens"]
         if answer.type == "noul":
             assert answer.noul == pytest.approx(expected["answer"]["noul"], abs=TOLERANCE)

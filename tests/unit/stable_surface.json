@@ -1180,6 +1180,11 @@
     "kind": "positional_or_keyword",
     "position": 3
    },
+   "reading": {
+    "default": null,
+    "kind": "positional_or_keyword",
+    "position": 5
+   },
    "vision": {
     "default": false,
     "kind": "positional_or_keyword",
