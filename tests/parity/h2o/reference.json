@@ -15183,5 +15183,1004 @@
     }
    }
   }
+ },
+ "limits": {
+  "256": {
+   "choice_54_options": {
+    "refused": "over the server's context limit: 507 tokens"
+   },
+   "choice_255_options": {
+    "refused": "over the server's context limit: 4622 tokens"
+   },
+   "reviews_1k": {
+    "stars": {
+     "tokens": 229,
+     "ids_sha256": "d7d193244084674cb70fd44a228cc053e0208f7a2f6a2194021fa6b2553804c8",
+     "state_cut": true
+    },
+    "recommends": {
+     "tokens": 232,
+     "ids_sha256": "6ddf35b97ef16bad41ab31be2d1660ce32ab51e7b818bce17e88ffe99854ac89",
+     "state_cut": true
+    }
+   },
+   "log_1k": {
+    "outage": {
+     "tokens": 191,
+     "ids_sha256": "ac5c33b909806b55c543024cec08b9c73c950e972852ad878e751d1a4d5c2983",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 201,
+     "ids_sha256": "0963f6f776a59c0ec647812688e08ab70782effc1895c4ef23e6a0f8853badb6",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 208,
+     "ids_sha256": "25c9a147b996365c68ebbbea687b3b767ad64da2db1fd944db3c4662063f4bbc",
+     "state_cut": true
+    }
+   },
+   "notes_2k_array": {
+    "decision_made": {
+     "tokens": 229,
+     "ids_sha256": "7290c21424983e56e5fe83802ddff0a71606d7ed7c1d2d2adb80823db3fcdf95",
+     "state_cut": true
+    },
+    "topic": {
+     "tokens": 234,
+     "ids_sha256": "2f5a5b15c56c122b8aff9e15b45390d140c18d2288af2fcde3d62d0bd765ec73",
+     "state_cut": true
+    },
+    "tone": {
+     "tokens": 232,
+     "ids_sha256": "1cac8e86fef4004e47f24e9ddcb454fda4ad947fd9e0f84a1b7757a949d44a8c",
+     "state_cut": true
+    }
+   },
+   "ledger_3k": {
+    "overdue": {
+     "tokens": 214,
+     "ids_sha256": "67360a886cd6bf9d0833337539f331107573f90706df30cb8c0acb7d099e7e2f",
+     "state_cut": true
+    },
+    "largest_vendor": {
+     "tokens": 220,
+     "ids_sha256": "cc275f1d5bf613c6ea7806f7d15102157e78d391772bee38003fd3131eb5db94",
+     "state_cut": true
+    },
+    "risk": {
+     "tokens": 231,
+     "ids_sha256": "2ef564167277ede501fc6f089959c65c1968dfc74aa15ddaad16e716bfd65818",
+     "state_cut": true
+    }
+   },
+   "thread_2k": {
+    "department": {
+     "tokens": 205,
+     "ids_sha256": "a8277a2467241686ec4fe27bde1c0a025700a85cb6f8a460091c9ad62d3d4117",
+     "state_cut": true
+    },
+    "frustration": {
+     "tokens": 203,
+     "ids_sha256": "29bb677b45fe5c8e2247d2570990926b30a8a03aa632acb117008c2530a4517f",
+     "state_cut": true
+    },
+    "is_urgent": {
+     "tokens": 234,
+     "ids_sha256": "50f0de967b5b4a916cf2c96619a383c508d35eb8fbcf3dfcc0f31f92551a6918",
+     "state_cut": true
+    },
+    "resolved": {
+     "tokens": 234,
+     "ids_sha256": "bcf7dbc8524acdae1457059204e2f6cc76ee9fc58e1dfb1c37a44b2ff80e3003",
+     "state_cut": true
+    },
+    "language": {
+     "tokens": 228,
+     "ids_sha256": "8ffb1c7a3b340110d666be788957f019326c9e160ee0abb80dcb938054d2ec93",
+     "state_cut": true
+    }
+   },
+   "log_4k": {
+    "outage": {
+     "tokens": 189,
+     "ids_sha256": "e899fa7446e95ae75e2ac7953f24e355b4cbd41861ae6d799a3e2936d8dcc99f",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 199,
+     "ids_sha256": "99b6cc1ddcd9a144c9a6c432bacb874d99a58ad4817dd5d9f3b48d8d64ba55c6",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 206,
+     "ids_sha256": "1ae5efa55e9483b7328141e340c32122a6deed7282488b62e0d1418cec066afd",
+     "state_cut": true
+    }
+   },
+   "ledger_6k": {
+    "overdue": {
+     "tokens": 199,
+     "ids_sha256": "9b00c8c19bcf3e3421a01ec8f15d37388aa4538f166db9f3c8f86152401a8a89",
+     "state_cut": true
+    },
+    "largest_vendor": {
+     "tokens": 233,
+     "ids_sha256": "b3cebc59bf0c08d39eb556ad62a9c9fe5e6d6949d9ad48f753639e4ae98b6041",
+     "state_cut": true
+    },
+    "risk": {
+     "tokens": 231,
+     "ids_sha256": "efa0eb4cf3b492201dd9f2b0e183b51e98149e54e97af6325dd94620206157df",
+     "state_cut": true
+    }
+   },
+   "notes_8k": {
+    "decision_made": {
+     "tokens": 212,
+     "ids_sha256": "29a90d9aa2aa9437b722a10d304855212186905f803ae71f0d358293df68aeb4",
+     "state_cut": true
+    },
+    "topic": {
+     "tokens": 233,
+     "ids_sha256": "4a93ab7c6d291bf0b0b3108927e5ac03aef0c77d79455cfc279352313b12b59a",
+     "state_cut": true
+    },
+    "tone": {
+     "tokens": 232,
+     "ids_sha256": "8d4b26e08b4b3822b753298e09c3c1e48d8cccde27c4553332895419ecf7e043",
+     "state_cut": true
+    }
+   },
+   "thread_12k": {
+    "department": {
+     "tokens": 194,
+     "ids_sha256": "39324257da021be90288be17fef9386063a4b9937215bb7f42904fe28ec718bc",
+     "state_cut": true
+    },
+    "frustration": {
+     "tokens": 192,
+     "ids_sha256": "14cd65345f5c0b8f801af824b7206d64086b9c4ce93167233f97ccc33155213d",
+     "state_cut": true
+    },
+    "is_urgent": {
+     "tokens": 231,
+     "ids_sha256": "844feec6217e1c0e94cad3ee8e6f7bdcb11fc64b510d0859aa047a99fda09e65",
+     "state_cut": true
+    },
+    "resolved": {
+     "tokens": 231,
+     "ids_sha256": "61c47e59750d933ecfd626aa4330369e8e4b22490a769d1d1a85610da878d130",
+     "state_cut": true
+    },
+    "language": {
+     "tokens": 219,
+     "ids_sha256": "9f12247ca212bc01f2160b05190ab84709b6ee098fc4612c6ec6ed1f01edb768",
+     "state_cut": true
+    }
+   },
+   "log_16k_near_limit": {
+    "outage": {
+     "tokens": 188,
+     "ids_sha256": "1782ef4d458ac55742a981f5e476563f3c338f7accf8aea77f0d02fe88ec8a27",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 198,
+     "ids_sha256": "9e792516ffe01196264c53a4c864cf363426828327a88293f1461f81772e76ab",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 205,
+     "ids_sha256": "623290f611df3597f0819cb291af34abdcc7ab38e881cb32fa38b60ae204dc57",
+     "state_cut": true
+    }
+   },
+   "ledger_18k_truncated": {
+    "overdue": {
+     "tokens": 221,
+     "ids_sha256": "94a8af13ca907c95ac212f0854680314cae8d8207956f13b23a70e85df62b046",
+     "state_cut": true
+    },
+    "largest_vendor": {
+     "tokens": 240,
+     "ids_sha256": "4ff9f8a52536149853e5de7b33fa2d0dfa4a3daf9f4036524a2532dd78288693",
+     "state_cut": true
+    },
+    "risk": {
+     "tokens": 231,
+     "ids_sha256": "0650b8af89b89e5fdd0186a9b8ad2a9f161a20b1cb8d588288dd45d9ba693ad0",
+     "state_cut": true
+    }
+   },
+   "log_24k_truncated": {
+    "outage": {
+     "tokens": 188,
+     "ids_sha256": "d607784ff9af7a1e0b058d758cab64ce2463a88035deff59aead2fabded0df65",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 198,
+     "ids_sha256": "8432e5303b2985242ed161a9de94bf9be25c787aac71baeb98ed7242d88e9da7",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 205,
+     "ids_sha256": "ac8e13276a94b9f9c788101ca611d439a68e492c4fbc4f9d86baaaa806d13d8c",
+     "state_cut": true
+    }
+   },
+   "reviews_40k_truncated": {
+    "stars": {
+     "tokens": 224,
+     "ids_sha256": "c76ebe89d2ce9c3668e65dcfb5e080d69c9181902fbb39b87c14d88ff0a2caaf",
+     "state_cut": true
+    },
+    "recommends": {
+     "tokens": 232,
+     "ids_sha256": "a89b5cfcb05f8c87885847fafaa5417e78639b3fac8ce77da557c4c4984576c2",
+     "state_cut": true
+    }
+   },
+   "thread_6k_twenty_questions": {
+    "n0": {
+     "tokens": 205,
+     "ids_sha256": "eac2977d8e736e1dc47292ad12480374bc94f8a9e9d5528ac2a16d54117d87a7",
+     "state_cut": true
+    },
+    "n1": {
+     "tokens": 205,
+     "ids_sha256": "0870d45c4aa644c3f4275e34133211640a5bc06f6d4bb3b231fe3f4b297bdd12",
+     "state_cut": true
+    },
+    "n2": {
+     "tokens": 223,
+     "ids_sha256": "3a430ecc43256852dbe5ff66c9f59bd1faa05d6f277add37b2810f1f31e72cda",
+     "state_cut": true
+    },
+    "n3": {
+     "tokens": 206,
+     "ids_sha256": "1e157cfac74e1cbd1dbf05ace06cccdd2cd515d710f05843538ecf57f18c92e8",
+     "state_cut": true
+    },
+    "n4": {
+     "tokens": 202,
+     "ids_sha256": "38b990c02302d45ebacc0111a8e24f479bcbe50b7b31f966253ca4306840e7c7",
+     "state_cut": true
+    },
+    "n5": {
+     "tokens": 230,
+     "ids_sha256": "d1354239a031c0e8bc993227f51651e1c1209e4f90adc454d4f54edd92e5775d",
+     "state_cut": true
+    },
+    "n6": {
+     "tokens": 232,
+     "ids_sha256": "3a7c205e0656d1e1fbf3a5aeca51bbb9e7e500c28b6b60f0d207f5c0f4e23fd0",
+     "state_cut": true
+    },
+    "n7": {
+     "tokens": 206,
+     "ids_sha256": "4ec07d13717fc297a0f77d8eff2198be2c8af64078e1c164bca3012dd4dac142",
+     "state_cut": true
+    },
+    "n8": {
+     "tokens": 208,
+     "ids_sha256": "30d8d5a363cf76aa3120ec19f10887175abc4e6013a3d472f76638b170299632",
+     "state_cut": true
+    },
+    "n9": {
+     "tokens": 198,
+     "ids_sha256": "4ba61f3e031c1dad501320e66caee6c9de10edbce35cec26639bf4f74e0acfe4",
+     "state_cut": true
+    },
+    "department": {
+     "tokens": 221,
+     "ids_sha256": "589d75f20ce67bb706536d1d54f4ad931aa7f888804809d24b6f402de940b024",
+     "state_cut": true
+    },
+    "frustration": {
+     "tokens": 230,
+     "ids_sha256": "63c661201b4bbd7cf7a894586534a5836597de998ab057b5b59fc20653d9242e",
+     "state_cut": true
+    },
+    "is_urgent": {
+     "tokens": 231,
+     "ids_sha256": "2d1f71d76f249448c19a51b8cf45053e9fe1a80db282890fc848caa1001e0dbc",
+     "state_cut": true
+    },
+    "sentiment": {
+     "tokens": 231,
+     "ids_sha256": "c4c0f94fbb093ac2be3eb399252f6963c41ef5f3961a56921b7cac61270c9349",
+     "state_cut": true
+    },
+    "stars": {
+     "tokens": 202,
+     "ids_sha256": "904c1d65f76fc49ed803c7125aafbbcd701db769d54ef9e1fe6b892b546741e1",
+     "state_cut": true
+    },
+    "recommends": {
+     "tokens": 232,
+     "ids_sha256": "d4c16c51f2e8c7a26908d536981090eb4424f0824937d26373a52a7054247004",
+     "state_cut": true
+    },
+    "topic0": {
+     "tokens": 202,
+     "ids_sha256": "6abba52c48b1507389181016ad0e9e6cd52157494f5d0f03154396edc173b190",
+     "state_cut": true
+    },
+    "topic1": {
+     "tokens": 215,
+     "ids_sha256": "06f00d9a55364aaedb5f41d89bdd76fc75f8fe274e97d77b083edb9eec17916b",
+     "state_cut": true
+    },
+    "topic2": {
+     "tokens": 212,
+     "ids_sha256": "64cf59053a68751aeb5e669e0f02b3820a8be46ea1aa064221a5c18826242bfb",
+     "state_cut": true
+    },
+    "topic3": {
+     "tokens": 207,
+     "ids_sha256": "b640dd1f7d48e8936bf8d0c3577cd1f3df04a9227d9886ac411f2f743628dea9",
+     "state_cut": true
+    }
+   },
+   "fifteen_long_options": {
+    "refused": "over the server's context limit: 277 tokens"
+   },
+   "twenty_one_options": {
+    "refused": "over the server's context limit: 337 tokens"
+   },
+   "long_instructions": {
+    "angry": {
+     "tokens": 234,
+     "ids_sha256": "e60d632dbd5a73f62b23a431c955fd06adeeebdcb9200701e96edd9731050e42",
+     "state_cut": true
+    }
+   },
+   "conversation_1k": {
+    "churn": {
+     "tokens": 210,
+     "ids_sha256": "3aea3cf1e2c217da75b68e95e42d1c395c7daf54e283cd930083953bf3e5e4d5",
+     "state_cut": true
+    },
+    "team": {
+     "tokens": 232,
+     "ids_sha256": "fbc12ed829d24bbb71a5fe6a320411f95e2df99d1696166a58997b3a3e42d0c2",
+     "state_cut": true
+    }
+   },
+   "state_450": {
+    "team": {
+     "tokens": 233,
+     "ids_sha256": "a92c357d1e756bb414fa125adab16f2a44d24f332a228706f2b6c4f388b302b2",
+     "state_cut": true
+    },
+    "urgency": {
+     "tokens": 232,
+     "ids_sha256": "9db912fb54a786084637d70bce11e1dc3051ccd635a8c845c8b709d47162a7d1",
+     "state_cut": true
+    },
+    "angry": {
+     "tokens": 232,
+     "ids_sha256": "92a3a75bb86ec260f5003f358e6d5d9a35bf2dce1b54494332b4fa5e2246f40a",
+     "state_cut": true
+    }
+   },
+   "state_600": {
+    "team": {
+     "tokens": 233,
+     "ids_sha256": "9722eb917b389bed8cb15b441d3dcab3ceccb0cf6f3978d91bf010b6f27bb363",
+     "state_cut": true
+    },
+    "urgency": {
+     "tokens": 232,
+     "ids_sha256": "360a34d7cde6aa6d2575edd733cfa92ae30674fac93f0dda62be2a33667a5a73",
+     "state_cut": true
+    },
+    "angry": {
+     "tokens": 232,
+     "ids_sha256": "d42788a33f66af35d871298330c372e01af59bb7eb5ad32d9b87745dffc94ff3",
+     "state_cut": true
+    }
+   },
+   "state_900": {
+    "team": {
+     "tokens": 233,
+     "ids_sha256": "b148373af6e749451449d00a0f7b6ebb0e101c79113c12630dec5209bda0716f",
+     "state_cut": true
+    },
+    "urgency": {
+     "tokens": 232,
+     "ids_sha256": "471286fd9420e9a1d2cc3f2c46187cbe6542ceca7855aa3dc31a3c2091084ee0",
+     "state_cut": true
+    },
+    "angry": {
+     "tokens": 232,
+     "ids_sha256": "abb87f7508dd64e18ba5e9b6b4111a5c616cf02186aff08eaced9b7354c60d7f",
+     "state_cut": true
+    }
+   },
+   "state_1100": {
+    "team": {
+     "tokens": 233,
+     "ids_sha256": "ab8be0d262e722285ecaa38cd2ddc3262d3046da29779d1d7ad6acfcb6b76956",
+     "state_cut": true
+    },
+    "urgency": {
+     "tokens": 232,
+     "ids_sha256": "3a2b6482de1ee1659b9c93879df3ccad60cf5edc4facbf45372c6b84ed45294e",
+     "state_cut": true
+    },
+    "angry": {
+     "tokens": 232,
+     "ids_sha256": "3a8655b84daaa159228281e7a49673a2a6222d4676a9133cfa749d6c4427bfe8",
+     "state_cut": true
+    }
+   },
+   "h2o_text_over_context": {
+    "outage": {
+     "tokens": 207,
+     "ids_sha256": "81e7dbb3557ef651ceddd7d33d8e11ede62cbedf6cf7ba20263c36b3107dab7c",
+     "state_cut": true
+    },
+    "service": {
+     "tokens": 222,
+     "ids_sha256": "31c6b46bb5fbc20ac9b67dc2eb59045e300ece0b4018270da04f233c37349ff3",
+     "state_cut": true
+    },
+    "invoice": {
+     "tokens": 232,
+     "ids_sha256": "f55a6187b29a6d6c54c9ebd2bab4288eb631d9db327d4b211a0c12bcd5376a43",
+     "state_cut": true
+    }
+   },
+   "h2o_json_over_context": {
+    "stolen": {
+     "tokens": 199,
+     "ids_sha256": "b6d6d63a344063408e62986a5362f0d99fde77b1e1f0cf33f06cda5af4e3c183",
+     "state_cut": true
+    },
+    "status": {
+     "tokens": 204,
+     "ids_sha256": "106687872663b4620f4251de2c87bbb6fc0129a1d8a5cfdb01fc3dfee9b59dd6",
+     "state_cut": true
+    }
+   }
+  },
+  "1024": {
+   "choice_255_options": {
+    "refused": "over the server's context limit: 4622 tokens"
+   },
+   "reviews_1k": {
+    "stars": {
+     "tokens": 949,
+     "ids_sha256": "be51665572191160a11501baf68f358a2cf5df7c3e361fb0aa4f878bc8dbc070",
+     "state_cut": true
+    },
+    "recommends": {
+     "tokens": 1000,
+     "ids_sha256": "bc3f05b83eed2aeebc15a268423d700dfe369d6adeb1772e0be4afcb65cab86a",
+     "state_cut": true
+    }
+   },
+   "log_1k": {
+    "outage": {
+     "tokens": 850,
+     "ids_sha256": "bdd4a1833d77f27d6496a934c9f887fc0a38a3e1dc6149968ce2fbbfa57ae0ad",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 906,
+     "ids_sha256": "5aae2ed6c19ceba9f3c9d46b1247a6ae2cbe98c11f9d4772caf9b31792bc92a6",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 867,
+     "ids_sha256": "03a217e72086a72e934a29ad781d87fc4094aa789f7d8df5a120c8a5a3b58617",
+     "state_cut": true
+    }
+   },
+   "notes_2k_array": {
+    "decision_made": {
+     "tokens": 986,
+     "ids_sha256": "6c5ad5b4480e25b68f21c7a8aa0f3d233a14afcbac1ecd035bdeb0c2cd667df1",
+     "state_cut": true
+    },
+    "topic": {
+     "tokens": 956,
+     "ids_sha256": "f492c7df46e61d66dcf72a56e9590854b74ff4d31b48d5edbabbc47555969d1f",
+     "state_cut": true
+    },
+    "tone": {
+     "tokens": 1000,
+     "ids_sha256": "a8823ea885854c28a84a1f671eaab6945e0e0cfcb531a0c2a42e0aa66361d3fb",
+     "state_cut": true
+    }
+   },
+   "ledger_3k": {
+    "overdue": {
+     "tokens": 915,
+     "ids_sha256": "d7f9fe0934d3231cb0c1d9f568b86022ed297ed0e52e53203461a2d506b32f50",
+     "state_cut": true
+    },
+    "largest_vendor": {
+     "tokens": 916,
+     "ids_sha256": "12d741352371079f6c40b1630c875ea895f7bfb8ecf21f763fc75d5677227453",
+     "state_cut": true
+    },
+    "risk": {
+     "tokens": 999,
+     "ids_sha256": "b42794bf92894be31185ded18940acbba54689249a3d4b7c17ee09cf68086591",
+     "state_cut": true
+    }
+   },
+   "thread_2k": {
+    "department": {
+     "tokens": 903,
+     "ids_sha256": "36e1632baa94bd91423b9ca16e7896253f27e9fbd16e03d0545d723bccebe30d",
+     "state_cut": true
+    },
+    "frustration": {
+     "tokens": 913,
+     "ids_sha256": "dbdbfd72af97de6f4d4d7d9618d320cb39a5bbe99f986a4a959b9bdfe96c55ab",
+     "state_cut": true
+    },
+    "is_urgent": {
+     "tokens": 1000,
+     "ids_sha256": "72c4b125454aa8d4de24bb01880835f40faf557e429266c18c36b0265e42ecaf",
+     "state_cut": true
+    },
+    "resolved": {
+     "tokens": 1000,
+     "ids_sha256": "cb1a57a1fd6dbb15b7549985d17d2f683adf5b906fae9793c0e91f4383017de4",
+     "state_cut": true
+    },
+    "language": {
+     "tokens": 892,
+     "ids_sha256": "0e08e591d33cb283f531540f0c3a31b621adda6028afd6c3d569d5d0cfc951a3",
+     "state_cut": true
+    }
+   },
+   "log_4k": {
+    "outage": {
+     "tokens": 866,
+     "ids_sha256": "e30bade2e21175714b16a0d11d3da3c45294bf17598f527d3380221d21c02b3b",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 874,
+     "ids_sha256": "bafb8d7edc21e5232dff425a32816f00ad2ae35c8cce369aee2b2d293b8135f2",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 883,
+     "ids_sha256": "c03b9963425983274114b19013e5433084f29f9aed0ca36cc724ef4b297f0af0",
+     "state_cut": true
+    }
+   },
+   "ledger_6k": {
+    "overdue": {
+     "tokens": 890,
+     "ids_sha256": "1b65e07ca3d59f915c42b0a8fb2babace1a82d8f7bddea910cbf56ee97d3d23c",
+     "state_cut": true
+    },
+    "largest_vendor": {
+     "tokens": 902,
+     "ids_sha256": "4f49ca36d7338d7795f9a276b1ffec9c624558cf537c2f4ac4bd63c8b1e07c4e",
+     "state_cut": true
+    },
+    "risk": {
+     "tokens": 999,
+     "ids_sha256": "582011e11845060b047a4c9703279a122c788b188bc8f221815704af7b90ef41",
+     "state_cut": true
+    }
+   },
+   "notes_8k": {
+    "decision_made": {
+     "tokens": 971,
+     "ids_sha256": "3c58846c6d0b9cdb23e099aeea0fbf6295d49cbf4753d928a8b19b40d1bfb153",
+     "state_cut": true
+    },
+    "topic": {
+     "tokens": 866,
+     "ids_sha256": "15b5c1ab2ef9a789e3738ede4b41f89487038959bf86346f1a8560049f652e49",
+     "state_cut": true
+    },
+    "tone": {
+     "tokens": 1000,
+     "ids_sha256": "b54e838d1ef34de58d25bdf1fcdee76baf7922bff12a5d664712c0ebedc071f4",
+     "state_cut": true
+    }
+   },
+   "thread_12k": {
+    "department": {
+     "tokens": 935,
+     "ids_sha256": "e60d061b9af913f6eab630d403651fc2e322f3b7823f22bf3bf4397a5750257e",
+     "state_cut": true
+    },
+    "frustration": {
+     "tokens": 963,
+     "ids_sha256": "88ee8055e57c1745db4f95e807601befd5e516887cb9ab8269c72f04b4546552",
+     "state_cut": true
+    },
+    "is_urgent": {
+     "tokens": 1002,
+     "ids_sha256": "7b26629a034302017cfdff623ff1f8ffab17c3ab6fe18883d208d82c3e3dff73",
+     "state_cut": true
+    },
+    "resolved": {
+     "tokens": 1002,
+     "ids_sha256": "ca3349b132a24460a24256c36ec62bcc94c3667d1f3f16716b0924633c325338",
+     "state_cut": true
+    },
+    "language": {
+     "tokens": 914,
+     "ids_sha256": "4ec98401df8673153424d10660f3e053fb0c20647929bbe902889b0f1e12b74b",
+     "state_cut": true
+    }
+   },
+   "log_16k_near_limit": {
+    "outage": {
+     "tokens": 916,
+     "ids_sha256": "6ccf45e3de496c717ae8b37723f321d3caba21c45365d3248b7d23f3c8a2c58b",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 916,
+     "ids_sha256": "b4ff5d9abf70b3b09d3ffd399b8adcc85c03f6c153b5c1124d7277232039b735",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 903,
+     "ids_sha256": "236facac4d911096e2c699c02a31250891cd33e61049f58295215296a1336ce6",
+     "state_cut": true
+    }
+   },
+   "ledger_18k_truncated": {
+    "overdue": {
+     "tokens": 953,
+     "ids_sha256": "fcc501a5ee54e7784162f16c0e79f8eae720c049bece13db50a826d095e803a9",
+     "state_cut": true
+    },
+    "largest_vendor": {
+     "tokens": 968,
+     "ids_sha256": "29f25a239692632fee76d90e7ddc76bed39ef5f4cb81282c8c38fbf06c84e35b",
+     "state_cut": true
+    },
+    "risk": {
+     "tokens": 999,
+     "ids_sha256": "8636376a562e587a9e7624666dd4f7a5eef5bdad962fba37883c3b38bed53c9a",
+     "state_cut": true
+    }
+   },
+   "log_24k_truncated": {
+    "outage": {
+     "tokens": 853,
+     "ids_sha256": "5210af38184c0b24eecec236f149bd91bf28532261ad33d50508c2fff858d607",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 860,
+     "ids_sha256": "4d3bd4692cfc7672c7f32d2ba2870a9665f4d07d9a26df81796011988f77715c",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 866,
+     "ids_sha256": "a2a6b7f7640239150be3af8df1f04cf9e8f8ac3147108944868063c521168c94",
+     "state_cut": true
+    }
+   },
+   "reviews_40k_truncated": {
+    "stars": {
+     "tokens": 994,
+     "ids_sha256": "27116d6b30fbf95ab37122580b722a531ad2c18f2fe83b2b3fd8ca65bb591373",
+     "state_cut": true
+    },
+    "recommends": {
+     "tokens": 1000,
+     "ids_sha256": "93a1b292b4baca36fb1cc22287a644072f7a2570cfb3b56b6bd51a074e31f71e",
+     "state_cut": true
+    }
+   },
+   "thread_6k_twenty_questions": {
+    "n0": {
+     "tokens": 931,
+     "ids_sha256": "9265c6e9eccc957e207e071c4532b3bf2a87dd1d4bc2fa48502ac45c7dabd1b1",
+     "state_cut": true
+    },
+    "n1": {
+     "tokens": 931,
+     "ids_sha256": "1ecda7aa3cba97b36b6fb55afcfb17b92cc6554395bcf1e66afc33fb188cf3e4",
+     "state_cut": true
+    },
+    "n2": {
+     "tokens": 973,
+     "ids_sha256": "f8891c48c03f133b4d31b5f94f6ced0c73ebd479abce01261fae79c98bdc54f1",
+     "state_cut": true
+    },
+    "n3": {
+     "tokens": 932,
+     "ids_sha256": "6d03b86494c42f3c3806d488fce1e05799b01713daf9a08b92a10f546195f773",
+     "state_cut": true
+    },
+    "n4": {
+     "tokens": 922,
+     "ids_sha256": "0c5adb19be4572ded054285bb957be6475b1f2520c4d913d36a57fb35e3e80d3",
+     "state_cut": true
+    },
+    "n5": {
+     "tokens": 999,
+     "ids_sha256": "a0358f8860a176dec32fb2fd54b2a207571d90411bdb2b0c56b0d7ac1a39cbb9",
+     "state_cut": true
+    },
+    "n6": {
+     "tokens": 1000,
+     "ids_sha256": "d50f88b0c45d95a9eb3e625fa29a085ce52b1f5b76ef54e41d7639d952b0ffe1",
+     "state_cut": true
+    },
+    "n7": {
+     "tokens": 932,
+     "ids_sha256": "0899e58f6dc25b54ea4cd01a0e526bdc63a98ef3ff1288699d92ce1cac35c988",
+     "state_cut": true
+    },
+    "n8": {
+     "tokens": 929,
+     "ids_sha256": "d1fb1229b704bed896566d76083fc49d13bd6424057019e458b8a4b907dcf1cd",
+     "state_cut": true
+    },
+    "n9": {
+     "tokens": 954,
+     "ids_sha256": "e2f9b827a9b6298d2560eb07c22313df44f57812652e8bc8dea9390adcdcecf1",
+     "state_cut": true
+    },
+    "department": {
+     "tokens": 837,
+     "ids_sha256": "6d69b7d08388f113318ef3aa1d744c9ccd1eb9c7fcde34f982eb7bdf8fb070a9",
+     "state_cut": true
+    },
+    "frustration": {
+     "tokens": 935,
+     "ids_sha256": "2a45a951e8e062c5f0c3b238db43ee0c73fa612113da29b9a499a931cfe93017",
+     "state_cut": true
+    },
+    "is_urgent": {
+     "tokens": 1000,
+     "ids_sha256": "b7b8a3e5548f868f5597fc6b627ef6ea2e9c9654d23f7ed6d2350415c0019936",
+     "state_cut": true
+    },
+    "sentiment": {
+     "tokens": 1001,
+     "ids_sha256": "78be1a5b7425f6706b52d97a584bc6874d34c066f03fbbb6973bac706bdbb9d3",
+     "state_cut": true
+    },
+    "stars": {
+     "tokens": 832,
+     "ids_sha256": "1806d403bd49944ced1f986ffcde2ad63e0302cad1f2f4de560bd6bc24ea9a91",
+     "state_cut": true
+    },
+    "recommends": {
+     "tokens": 1000,
+     "ids_sha256": "d124fdacbd724d1ba9fe97e24e216d12e7b7b5b02910da65c074ce290be4fd51",
+     "state_cut": true
+    },
+    "topic0": {
+     "tokens": 922,
+     "ids_sha256": "c191efa5b513c6140ca7397c2ec12660a5f7619f3f5e7f88902015de42365a25",
+     "state_cut": true
+    },
+    "topic1": {
+     "tokens": 947,
+     "ids_sha256": "12553c394dae0076dd881902f4470bd6922ab41dbf62e83a44a84217658e0c63",
+     "state_cut": true
+    },
+    "topic2": {
+     "tokens": 933,
+     "ids_sha256": "aeb9f3e71bb9d911914f8dd26264d40290ddbf926d4767dc6a13b03f7bbfbc78",
+     "state_cut": true
+    },
+    "topic3": {
+     "tokens": 925,
+     "ids_sha256": "0908ec3573d1fe876c5752d8b5f4a870c9621b99913ce5a68c6b29d2987ced3b",
+     "state_cut": true
+    }
+   },
+   "conversation_1k": {
+    "churn": {
+     "tokens": 904,
+     "ids_sha256": "aecf01af92f7dcbfd5a8b8e2c93d2dbd714cc3262e72060bfa2b6540161773c9",
+     "state_cut": true
+    },
+    "team": {
+     "tokens": 1000,
+     "ids_sha256": "816f5634e1dcfa60c259e314442e252545b3caa0135b2a031673f7d8915086e1",
+     "state_cut": true
+    }
+   },
+   "state_900": {
+    "team": {
+     "tokens": 1001,
+     "ids_sha256": "b8b2eae065753835381d3a07e61b6a31b851ced75658dbac4af78bbb8ae3c4b4",
+     "state_cut": true
+    },
+    "urgency": {
+     "tokens": 1000,
+     "ids_sha256": "febf1490c736888447eb12a7c1a5435a8472f5665841d501fc2c774b6cdebe54",
+     "state_cut": true
+    },
+    "angry": {
+     "tokens": 1000,
+     "ids_sha256": "9eda82445b057a91e4486910ad7c312f51cfad1427a654f401c7208cc08a5474",
+     "state_cut": true
+    }
+   },
+   "state_1100": {
+    "team": {
+     "tokens": 1001,
+     "ids_sha256": "b84940519f9f5934d93a87e7eee29dfd289df484339a9a28db096675138d5b4a",
+     "state_cut": true
+    },
+    "urgency": {
+     "tokens": 1000,
+     "ids_sha256": "aedf7c803e26817360e9e0c6a9a7c416885540e3e49211ce1b7d06cb936ceb4f",
+     "state_cut": true
+    },
+    "angry": {
+     "tokens": 1000,
+     "ids_sha256": "9b71fd58dc2827949ce8a9fa0b6eb5e72d7af63c74c672a23b86c2559842a7c5",
+     "state_cut": true
+    }
+   },
+   "h2o_text_over_context": {
+    "outage": {
+     "tokens": 826,
+     "ids_sha256": "49377054dee3fa5e9fce1017f4f14109f1d2ad46c2cc0cf96f6a184db0906c49",
+     "state_cut": true
+    },
+    "service": {
+     "tokens": 938,
+     "ids_sha256": "c8049204c5a5d5ddfe08b1e6726d488658cbde6706c524f09a0f81efc67e7e49",
+     "state_cut": true
+    },
+    "invoice": {
+     "tokens": 1000,
+     "ids_sha256": "7785ad77fa3367a5e88bc625b383c43eb59ae2c4d2744245b6cb43cb75983db1",
+     "state_cut": true
+    }
+   },
+   "h2o_json_over_context": {
+    "stolen": {
+     "tokens": 961,
+     "ids_sha256": "ca5e013ab213dc6ebca98b11e8389ab1cc21ef99005a030a8b347c87d6445fc0",
+     "state_cut": true
+    },
+    "status": {
+     "tokens": 849,
+     "ids_sha256": "0135d7b5e5d99e3b16f7fa9431bea67a1beebb9c5b07fd4e818b5ae513f59536",
+     "state_cut": true
+    }
+   }
+  },
+  "8192": {
+   "thread_12k": {
+    "department": {
+     "tokens": 7718,
+     "ids_sha256": "a9362ea94a8a28b4086b0fb3575b9eb5b01a48a48ddb868e3b388762040ced65",
+     "state_cut": true
+    },
+    "frustration": {
+     "tokens": 7765,
+     "ids_sha256": "10e529d1849b3d0f5d834bbed89ceae267cd089445f5524c01286e941a78a88d",
+     "state_cut": true
+    },
+    "is_urgent": {
+     "tokens": 8168,
+     "ids_sha256": "8a8d4ea90c37e017aea7b4aec8e84dde4bea1bc6b438778afa9633bc35f402c5",
+     "state_cut": true
+    },
+    "resolved": {
+     "tokens": 8168,
+     "ids_sha256": "8a15a408c2f45574bce6754cfb4d9c60dab7bc7033973a4c521f3643e6846a5f",
+     "state_cut": true
+    },
+    "language": {
+     "tokens": 7696,
+     "ids_sha256": "a0b8b5855a47eae49082a71949880535bcde957871a521f766ccdacc91503b43",
+     "state_cut": true
+    }
+   },
+   "log_16k_near_limit": {
+    "outage": {
+     "tokens": 7509,
+     "ids_sha256": "89b075e809213a45c50c74835c05a07552ed7d3cb2b4a6ad15a88cbe1305c626",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 7550,
+     "ids_sha256": "6a2c0fc0e6fcf79dcd0c8872a65c836b62d845d36fd74796bcc7c8917b7dffd1",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 7560,
+     "ids_sha256": "21245f6c77e584adb4c5d9e6697058abe105af66f62e30eed796d1c33bb32134",
+     "state_cut": true
+    }
+   },
+   "ledger_18k_truncated": {
+    "overdue": {
+     "tokens": 7895,
+     "ids_sha256": "858e1bbc23eb3b4ea8259a6629a9f66791c0fc93c715d59145acf69d75b90172",
+     "state_cut": true
+    },
+    "largest_vendor": {
+     "tokens": 7830,
+     "ids_sha256": "922cac94b1c404f004e0f1f9b2f2705f8485529f887f514c9a2df30b5e9cc5d6",
+     "state_cut": true
+    },
+    "risk": {
+     "tokens": 8167,
+     "ids_sha256": "c5f04f165b62df245590e693a85b5044eb26678a14cda42991ff545297e5ddce",
+     "state_cut": true
+    }
+   },
+   "log_24k_truncated": {
+    "outage": {
+     "tokens": 7409,
+     "ids_sha256": "b4ccc73c6e30f7036b8186eadc26d2823f6b8bee6100b8b00e5b31add42c4465",
+     "state_cut": true
+    },
+    "worst_service": {
+     "tokens": 7545,
+     "ids_sha256": "350756b64dc1f53435dc3e395455acfd67e350d0f21fd4a616b95c1aea89a100",
+     "state_cut": true
+    },
+    "severity": {
+     "tokens": 7442,
+     "ids_sha256": "85a57afb324fcc20fddebe93cfbbda58d01051ede8d5f62f0d8aa9d4ead639fb",
+     "state_cut": true
+    }
+   },
+   "reviews_40k_truncated": {
+    "stars": {
+     "tokens": 7910,
+     "ids_sha256": "7e42ce9cc88d91a5032e7f53effdeb9a7219decef674612d8f673d00c38ea1d4",
+     "state_cut": true
+    },
+    "recommends": {
+     "tokens": 8168,
+     "ids_sha256": "73bd64159429dbeb406969de93e2a169c11b51a22ee712d82d3be7af55750d09",
+     "state_cut": true
+    }
+   },
+   "h2o_text_over_context": {
+    "outage": {
+     "tokens": 7517,
+     "ids_sha256": "fdbea27da09ba256e6541828791acb2be133bb44075854a1e175e1a79e3d7b4c",
+     "state_cut": true
+    },
+    "service": {
+     "tokens": 7597,
+     "ids_sha256": "550730a51847e963667a82f05d87c1d4635897093faa970a57035d98a0df3485",
+     "state_cut": true
+    },
+    "invoice": {
+     "tokens": 8168,
+     "ids_sha256": "f24c7270f26a06f5a704fe53500738c447f642fb57737948d36ed283459e042c",
+     "state_cut": true
+    }
+   },
+   "h2o_json_over_context": {
+    "stolen": {
+     "tokens": 7855,
+     "ids_sha256": "a8b11cbaf0703a1901d79dd5a2dc71295a2b7bb74c53d5c84fa96e669aedc314",
+     "state_cut": true
+    },
+    "status": {
+     "tokens": 7937,
+     "ids_sha256": "5843b8f0446bc8282646e15a9711eb34eb8c3fcc2d820012cc074c51740ac43f",
+     "state_cut": true
+    }
+   }
+  }
  }
 }

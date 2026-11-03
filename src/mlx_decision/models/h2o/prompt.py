@@ -131,15 +131,27 @@ def render(
     """
     names, descriptions = options(question)
     instructions = instructions_text(question).lstrip() or settings.default_instructions
+    user = user_text(state_text, instructions, names, descriptions, labels)
+    return chat(user, settings, images), names
+
+
+def user_text(
+    state_text: str, instructions: str, names: list[str], descriptions: list[str], labels
+) -> str:
+    """The user message: the record, the question and one line per option."""
     body = "\n".join(
         f"{label}) {name}: {description}"
         for label, name, description in zip(labels, names, descriptions, strict=False)
     )
-    user = f"record: {state_text}\nquestion: {instructions}\noptions:\n{body}"
+    return f"record: {state_text}\nquestion: {instructions}\noptions:\n{body}"
+
+
+def chat(user: str, settings: PromptSettings, images: int = 0) -> str:
+    """The whole prompt around a user message, the images ahead of it."""
     # The chat template trims both messages.
     text = "" if settings.system is None else CHAT["system"].format(content=settings.system.strip())
     text += CHAT["user"].format(content=IMAGE * images + user.strip())
-    return text + CHAT["generation"] + settings.prefill, names
+    return text + CHAT["generation"] + settings.prefill
 
 
 def shared_prefix(state_text: str, settings: PromptSettings, images: int = 0) -> str:

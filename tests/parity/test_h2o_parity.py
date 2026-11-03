@@ -57,8 +57,8 @@ REFERENCE = {
     case_id: result if "refused" in result else result["causal"]
     for case_id, result in FIXTURE["results"].items()
 }
-# v1.4.2 reads a record whole up to the context and selects it beyond: not
-# built yet, so its long requests are expected to differ.
+# v1.4.2 reads a record whole up to the context and selects it beyond, so
+# its long requests have other prompts than v1.2.3's.
 LONG_INPUT = {"reviews_40k_truncated", "h2o_text_over_context", "h2o_json_over_context"}
 TEXT_IDS = [case["id"] for case in CASES if not case.get("images")]
 IMAGE_IDS = [case["id"] for case in CASES if case.get("images")]
@@ -111,24 +111,13 @@ def one_way(version: str) -> dict:
 
 
 def per_reading(case_ids: list[str]) -> list:
-    """(version, reading, case) for every release and mode; v1.4.2's long
-    requests are expected to fail."""
-    long = pytest.mark.xfail(reason="v1.4.2's long input is not built yet", strict=True)
-    return [
-        pytest.param(v, r, c, marks=[long] if v == "v1.4.2" and c in LONG_INPUT else [])
-        for v, r in READINGS
-        for c in case_ids
-    ]
+    """(version, reading, case) for every release and mode."""
+    return [(v, r, c) for v, r in READINGS for c in case_ids]
 
 
 def per_version(case_ids: list[str]) -> list:
-    """(version, case) pairs; v1.4.2's long requests are expected to fail."""
-    long = pytest.mark.xfail(reason="v1.4.2's long input is not built yet", strict=True)
-    return [
-        pytest.param(v, c, marks=[long] if v == "v1.4.2" and c in LONG_INPUT else [])
-        for v in VERSIONS
-        for c in case_ids
-    ]
+    """(version, case) pairs."""
+    return [(v, c) for v in VERSIONS for c in case_ids]
 
 
 def release_folder(version: str) -> Path:
@@ -312,6 +301,28 @@ def test_every_prompt_starts_with_the_shared_prefix(encoder, case_id):
     encoded, _, prefix = encoder.encode_with_prefix(request(case_id))
     assert prefix
     assert all(len(prefix) < len(e.input_ids) for e in encoded)
+
+
+@pytest.mark.parametrize("limit", [256, 1024, 8192])
+def test_a_lowered_limit_fits_prompts_as_v1_4_2(limit):
+    """From v1.4 each question is fitted to a lowered limit on its own, as the
+    release's shim fits them to a smaller vLLM context (at 256 tokens some
+    questions are read without the record, their own text cut)."""
+    expected = FIXTURES["v1.4.2"]["limits"][str(limit)]
+    assert len(expected) >= 5
+    path = release_folder("v1.4.2")
+    backend = H2OBackend("tokens", None, training_tokenizer(path), ServeConfig.read(path), limit)
+    for case_id, questions in expected.items():
+        if "refused" in questions:
+            with pytest.raises(DecisionError, match=f"the limit is {limit}"):
+                backend.encode(request(case_id))
+            continue
+        encoded, cut = backend.encode(request(case_id))
+        assert cut == any(e.get("state_cut") for e in questions.values()), case_id
+        for question in encoded:
+            reference = questions[question.question_id]
+            assert len(question.input_ids) == reference["tokens"], case_id
+            assert digest(question.input_ids) == reference["ids_sha256"], case_id
 
 
 @pytest.mark.parametrize("limit", [1024, 8192])

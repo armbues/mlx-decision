@@ -677,3 +677,9 @@ def test_other_families_refuse_the_reading(tmp_path):
     laya = write_marker(tmp_path / "laya", "laya")
     with pytest.raises(ValueError, match="laya models do not take reading"):
         mlx_decision.load(laya, reading="one-way")
+
+
+def test_only_v1_2_3_reports_a_state_cap(folder, two_way_folder):
+    assert mlx_decision.load(folder).backend.capabilities.max_state_tokens == 32000
+    # From v1.4 a state is cut only where a prompt would not fit.
+    assert mlx_decision.load(two_way_folder).backend.capabilities.max_state_tokens is None

@@ -84,8 +84,9 @@ mlx-decision = "mlx_decision.cli:entry"
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
-# Copied from mlx-lm and mlx-vlm, and d1-2B's prompt and readout from their own
-# project; kept close to their sources so they can be diffed.
+# Copied from mlx-lm and mlx-vlm, d1-2B's prompt and readout from their own
+# project and H2O-Lightning's selector; kept close to their sources so they
+# can be diffed.
 extend-exclude = [
     "src/mlx_decision/models/d1lfm3/prompt.py",
     "src/mlx_decision/models/d1lfm3/readout.py",
@@ -102,6 +103,7 @@ extend-exclude = [
     "src/mlx_decision/backbones/qwen3_5/qwen3_5.py",
     "src/mlx_decision/backbones/qwen3_5/qwen3_next.py",
     "src/mlx_decision/backbones/qwen3_5/rope_utils.py",
+    "src/mlx_decision/models/h2o/selector.py",
 ]
 
 [tool.ruff.lint]

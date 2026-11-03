@@ -208,8 +208,9 @@ def load(model: str | Path, *, check_memory: bool = True, **options) -> Decision
     ``max_input_tokens`` (default 16,384 per question, at most 262,144;
     longer input is refused), ``vision`` as for Clef and ``max_image_pixels``
     (default and maximum the releases' 16,777,216). For H2O-Lightning:
-    ``max_input_tokens`` (default and maximum 40,960 per question; states
-    over 32,000 tokens, or too long for a lowered limit, are cut) and
+    ``max_input_tokens`` (default and maximum 40,960 per question; from
+    v1.4 a state too long for a question's prompt is cut to the parts most
+    relevant to it, v1.2.3 cuts states over 32,000 tokens) and
     ``noul_floor`` (default the release's: less sure yes/no answers are
     reported at it; 0 turns it off; v1.4 ships it off) and, from v1.4,
     ``reading`` (``"two-way"``, the release's default, each question's

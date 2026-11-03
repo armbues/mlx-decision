@@ -41,7 +41,8 @@ from ..qwen import (
     prepare,
 )
 from ..readout import Features, Readout, pick, read_out, singletons
-from .prompt import PromptSettings, cut_state, render, render_state, shared_prefix
+from .fit import Fit, fit_records
+from .prompt import PromptSettings, chat, cut_state, render, render_state, shared_prefix
 
 # vLLM's --max-model-len in the release's serve.sh: a longer prompt is refused.
 MAX_INPUT_TOKENS = 40960
@@ -117,6 +118,12 @@ class ServeConfig:
     prompt: PromptSettings
     image: ImageSettings | None = None
     two_way: TwoWaySettings | None = None
+
+    @property
+    def selector(self) -> str:
+        """How a long record is fitted: ``"v2"`` from v1.4 (the releases with a
+        ``two_way`` block), else v1.2.3's ``"headtail"`` cut."""
+        return "v2" if self.two_way is not None else "headtail"
 
     def settings(self, reading: str) -> tuple[dict[str, float], float, float | None]:
         """(temperature by type, yes/no floor, image temperature) of a mode."""
@@ -307,6 +314,32 @@ class H2OBackend:
         cap = self.state_cap(request, image_tokens)
         return cut_state(text, cap, self._encode_text, self._decode)
 
+    def fits(self, request: Request, image_tokens: list[int] = ()) -> tuple[list[Fit], bool]:
+        """Each question's record, and whether any was cut or selected.
+
+        v1.2.3 cuts the state once, for every question, over its cap; from
+        v1.4 a question whose prompt fits the input limit reads the state
+        whole and one that does not gets it selected to its own room.
+        """
+        if self.config.selector != "v2":
+            text, cut = self.state_text(request, image_tokens)
+            return [Fit(text)] * len(request.questions), cut
+        full = render_state(request.state, self.config.prompt.state_compact)
+        image = self.config.image
+        fits = fit_records(
+            request.state,
+            full,
+            request.questions,
+            self.labels,
+            self.config.prompt,
+            self._encode_text,
+            self._decode,
+            self.capabilities.max_input_tokens,
+            len(image_tokens),
+            image.max_pixels if image else 0,
+        )
+        return fits, any(f.record != full or f.user is not None for f in fits)
+
     def encode(self, request: Request, image_tokens: list[int] = ()) -> tuple[list[Encoded], bool]:
         """Every question's token ids and whether the state was cut.
 
@@ -330,14 +363,19 @@ class H2OBackend:
             self.config.prompt,
             len(image_tokens),
         )
-        state_text, cut = self.state_text(request, image_tokens)
-        prefix = self._encode_text(shared_prefix(state_text, settings, count))
-        if image_tokens:
-            prefix = self._expand_images(prefix, image_tokens, request.state, "state")
+        fits, cut = self.fits(request, image_tokens)
+        # The prefix is shared only when every question reads the same record.
+        prefix = []
+        if all(f == fits[0] and f.user is None for f in fits):
+            prefix = self._encode_text(shared_prefix(fits[0].record, settings, count))
+            if image_tokens:
+                prefix = self._expand_images(prefix, image_tokens, request.state, "state")
         encoded = []
-        for question_id, question in request.questions.items():
+        for (question_id, question), fit in zip(request.questions.items(), fits, strict=True):
             where = f"questions.{question_id}"
-            text, option_ids = render(state_text, question, self.labels, settings, count)
+            text, option_ids = render(fit.record, question, self.labels, settings, count)
+            if fit.user is not None:  # the question itself cut to fit
+                text = chat(fit.user, settings, count)
             ids = self._encode_text(text)
             if image_tokens:
                 ids = self._expand_images(ids, image_tokens, request.state, where)
@@ -348,7 +386,7 @@ class H2OBackend:
                     param=f"questions.{question_id}",
                 )
             encoded.append(Encoded(question_id, question.type, option_ids, ids))
-        if not all(e.input_ids[: len(prefix)] == prefix for e in encoded):
+        if not prefix or not all(e.input_ids[: len(prefix)] == prefix for e in encoded):
             prefix = []
         return encoded, cut, prefix
 
@@ -578,7 +616,8 @@ def _capabilities(config: ServeConfig, max_input_tokens: int, path: Path | None)
         max_choice_options=len(config.labels),
         max_score_levels=len(config.labels),
         truncates_input=True,
-        max_state_tokens=config.prompt.max_state_tokens,
+        # From v1.4 a record is cut only where a prompt would not fit.
+        max_state_tokens=config.prompt.max_state_tokens if config.selector != "v2" else None,
         supports_images=images,
         max_image_pixels=image_pixel_limit(path, config.image.max_pixels or None)
         if images
@@ -629,10 +668,13 @@ def load(
     """Load H2O-Lightning from a release folder or a converted copy.
 
     ``max_input_tokens`` lowers the limit per question's prompt (default and
-    maximum 40,960, the release's). States over the release's cap (32,000
-    tokens) are cut around a "..." line, under a lowered limit also states
-    that would not leave room for the questions; prompts still over the
-    limit are refused.
+    maximum 40,960, the release's). From v1.4 a state is read whole while a
+    question's prompt fits the limit; beyond it each question gets the
+    state's parts most relevant to it (the release's BM25 selection), or its
+    head and tail, and a question too long even alone has its own text cut.
+    v1.2.3 cuts states over its cap (32,000 tokens) around a "..." line,
+    under a lowered limit also states that would not leave room for the
+    questions. Prompts still over the limit are refused.
     ``noul_floor`` replaces the release's yes/no floor (0.801): a yes/no
     answer less sure than it is reported at it, on its own side; 0 turns it
     off (the raw probability, for routing uncertain answers elsewhere).

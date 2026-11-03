@@ -39,7 +39,9 @@ prompts of at most 4,096 tokens also the token ids, the label token ids, the
 tiny model's log-probabilities of the labels and the shim's answer with and
 without the yes/no floor. A request the wire format or the shim refuses is
 recorded as refused. Existing entries are kept, so a run can be continued
-with --only.
+with --only. For v1.4.2 also, under "limits", the token ids of the text
+requests longer than 256, 1,024 and 8,192 tokens as the shim fits them to a vLLM
+started with that context (one-way).
 
 With --model (the release folder with its weights, at the pinned revision)
 the real model runs instead: bfloat16 on MPS, the logits in float32 (the
@@ -69,6 +71,9 @@ REVISIONS = {
     "v1.2.3": "acaf0d4ea251e54de928c75ef4352670d33192d3",
 }
 MAX_MODEL_LEN = 40960  # vLLM's --max-model-len in the release's serve.sh
+# Lowered contexts (v1.4.2, text, token ids only): how the shim fits prompts
+# to a vLLM started with a smaller --max-model-len.
+LIMITS = (256, 1024, 8192)
 TINY_TOKENS = 4096
 SEED = 0
 MEMORY_FRACTION = 0.7  # of the GPU's working set, on MPS
@@ -151,11 +156,12 @@ class Engine:
         self.Processor = Qwen2VLImageProcessor
         self.processors = {}
         self.reads = []
+        self.context = MAX_MODEL_LEN
 
     # What the shim asks of vLLM.
     def call(self, method, path, body=None):
         assert (method, path) == ("GET", "/v1/models"), (method, path)
-        return 200, {"data": [{"id": self.model_name, "max_model_len": MAX_MODEL_LEN}]}
+        return 200, {"data": [{"id": self.model_name, "max_model_len": self.context}]}
 
     def tokenize(self, text):
         return self.tokenizer.encode(text, add_special_tokens=False)
@@ -204,7 +210,7 @@ class Engine:
         return self.read(self.tokenize(text), ids, attention_mode, text, batch)
 
     def read(self, tokens, ids, mode, text, batch=None):
-        if len(tokens) > MAX_MODEL_LEN:
+        if len(tokens) > self.context:
             raise self.shim.Unprocessable(f"over the server's context limit: {len(tokens)} tokens")
         entry = {"tokens": tokens, "text": text, "mode": mode or "causal"}
         if batch is not None:
@@ -275,6 +281,24 @@ class Reference:
         elif self.two_way:
             self.server.two_way_ok = True
         self.engine.reads.clear()
+
+    def at_limit(self, body: dict, limit: int) -> dict:
+        """The questions' token ids, one-way, from a shim whose vLLM has a
+        ``limit``-token context."""
+        self.engine.context = limit
+        try:
+            server = self.shim.Shim(self.contract, vllm=self.engine, min_context=1)
+            server.check_backend()
+            self.engine.reads.clear()
+            try:
+                out = server.decide_questions(json.loads(json.dumps(body)), "causal")
+            except (self.shim.Unprocessable, self.shim.BadRequest) as error:
+                return {"refused": str(error)}
+            entries = self.questions(body, out["answers"], "causal")
+        finally:
+            self.engine.context = MAX_MODEL_LEN
+        keep = ("tokens", "ids_sha256", "state_cut")
+        return {q: {k: e[k] for k in keep if k in e} for q, e in entries.items()}
 
     def temperatures(self, mode: str):
         """(by type, image temperature, floor) of a mode."""
@@ -398,6 +422,19 @@ def main() -> None:
                     body["images"] = [data_uri(open_image(spec)) for spec in case["images"]]
                 results[case["id"]] = reference.request(body)
             print(f"{case['id']}: {time.perf_counter() - start:.1f} s", flush=True)
+        limits = {}
+        if reference.two_way and not args.model:
+            for limit in LIMITS:
+                limits[str(limit)] = {}
+                for case in parity_set():
+                    result = results.get(case["id"], {})
+                    if case.get("images") or "refused" in result:
+                        continue
+                    longest = max(e["tokens"] for e in result["causal"].values())
+                    if longest > limit:
+                        body = {"state": case["state"], "questions": case["questions"]}
+                        limits[str(limit)][case["id"]] = reference.at_limit(body, limit)
+                print(f"limit {limit}: {len(limits[str(limit)])} requests", flush=True)
         contract, server = reference.contract, reference.server
         meta = {
             "repo_id": REPO_ID,
@@ -430,7 +467,8 @@ def main() -> None:
             if args.model:
                 meta["two_way"]["probe_anchor"] = server.two_way_anchor
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(dump({"meta": meta, "results": results}) + "\n")
+    data = {"meta": meta, "results": results, **({"limits": limits} if limits else {})}
+    args.out.write_text(dump(data) + "\n")
     print(f"wrote {len(results)} results to {args.out}")
 
 
