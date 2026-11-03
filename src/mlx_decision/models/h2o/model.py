@@ -24,7 +24,7 @@ import mlx.core as mx
 
 from ...backbones.qwen3_5.cache import fork_cache
 from ...backbones.qwen3_5.load import has_vision_weights, load_text_model
-from ...backbones.qwen3_5.tokenizer import load_tokenizer
+from ...backbones.qwen3_5.tokenizer import QWEN2_PRETOKENIZE_REGEX, load_tokenizer
 from ...backend import BackendOutput, Capabilities
 from ...errors import DecisionError
 from ...types import Noul, Request
@@ -459,6 +459,13 @@ class H2OBackend:
         return read_out(Features([], hidden, rows, singletons(count), temperature))
 
 
+def training_tokenizer(path: str | Path):
+    """The release's tokenizer as it was trained and is served: Qwen2Tokenizer's
+    split, not Qwen3.5's, which cuts Devanagari and vowelled Arabic differently
+    (the release's ``tokenizer_contract.json`` checks this)."""
+    return load_tokenizer(path, QWEN2_PRETOKENIZE_REGEX)
+
+
 def label_token_ids(tokenizer, labels: list[str]) -> list[int]:
     """Each label's token at the answer slot: ``" " + label`` must be one token."""
     ids = []
@@ -553,7 +560,7 @@ def load(
     backbone = load_text_model(path, lm_head=False)
     if not backbone.language_model.args.tie_word_embeddings:
         raise ValueError(f"{path}: the label readout needs tied embeddings")
-    tokenizer = load_tokenizer(path)
+    tokenizer = training_tokenizer(path)
     backend = H2OBackend(
         path.resolve().name,
         backbone,

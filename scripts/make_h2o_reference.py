@@ -15,7 +15,10 @@ The release serves through vLLM behind a standard-library shim
 (`h2o_lightning_shim.py`), imported here from the release folder: the shim
 renders each prompt, cuts long states, reads the label tokens' ids and
 builds the answers. vLLM's part is done with transformers, as vLLM does it:
-the folder's tokenizer, `Qwen3_5ForConditionalGeneration` on the CPU in
+the folder's tokenizer as `Qwen2Tokenizer` (the release's training
+tokenizer: transformers' `AutoTokenizer` would pick `Qwen3_5Tokenizer`,
+which splits Devanagari and vowelled Arabic differently),
+`Qwen3_5ForConditionalGeneration` on the CPU in
 float32 (the release computes the logits in float32), the log-softmax over
 the whole vocabulary at the answer slot, and the folder's image processor
 with the shim's `max_pixels`, each image pad expanded to the image's tokens.
@@ -116,7 +119,8 @@ class Reference:
 
     def __init__(self, release: Path, folder: Path, real: bool = False, device: str = "cpu"):
         import torch
-        from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
+        from transformers import Qwen3_5ForConditionalGeneration
+        from transformers.models.qwen2.tokenization_qwen2 import Qwen2Tokenizer
         from transformers.models.qwen2_vl.image_processing_qwen2_vl import (
             Qwen2VLImageProcessor,
         )
@@ -130,7 +134,7 @@ class Reference:
         self.device = device
         self.config = json.loads((folder / "serve_config.json").read_text())
         self.contract = shim.Contract(self.config, env={})
-        self.tokenizer = AutoTokenizer.from_pretrained(folder)
+        self.tokenizer = Qwen2Tokenizer.from_pretrained(folder)
         dtype = torch.bfloat16 if real else torch.float32
         self.model = (
             Qwen3_5ForConditionalGeneration.from_pretrained(folder, dtype=dtype).to(device).eval()

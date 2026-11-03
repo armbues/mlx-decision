@@ -2,7 +2,7 @@
 
 from tokenizers import Regex, Tokenizer, models, pre_tokenizers
 
-from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
+from mlx_decision.backbones.qwen3_5.tokenizer import QWEN2_PRETOKENIZE_REGEX, load_tokenizer
 
 # The pattern the releases' tokenizer.json files carry: no \p{M}.
 OLD_PATTERN = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""  # noqa: E501
@@ -37,3 +37,19 @@ def test_the_release_pattern_is_replaced(tmp_path):
 def test_other_pre_tokenizers_are_kept(tmp_path):
     loaded = load_tokenizer(write(tmp_path, pre_tokenizers.Whitespace()))
     assert pieces(loaded, "a <b> c") == ["a", "<", "b", ">", "c"]
+
+
+def test_qwen2s_pattern_can_be_asked_for(tmp_path):
+    """H2O-Lightning was trained with Qwen2Tokenizer's split: marks apart."""
+    folder = write(
+        tmp_path,
+        pre_tokenizers.Sequence(
+            [
+                pre_tokenizers.Split(Regex(r"\s+"), "isolated"),
+                pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=False),
+            ]
+        ),
+    )
+    loaded = load_tokenizer(folder, QWEN2_PRETOKENIZE_REGEX)
+    assert len(pieces(loaded, HINDI)) > 2
+    assert QWEN2_PRETOKENIZE_REGEX == OLD_PATTERN

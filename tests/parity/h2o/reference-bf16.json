@@ -274,7 +274,7 @@
   "dtype": "torch.bfloat16",
   "logits": "float32",
   "torch": "2.14.1",
-  "transformers": "5.18.0"
+  "transformers": "5.19.0"
  },
  "results": {
   "ticket": {
@@ -6543,76 +6543,76 @@
   "lang_ar": {
    "team": {
     "options": 3,
-    "tokens": 118,
-    "ids_sha256": "9fa7126254fd58aa72cb8b009618c83291299171e8a6abbe8ec0e6909485d4ea",
+    "tokens": 119,
+    "ids_sha256": "4be3a52aa95d1c7ce0aa18f3e8c2e3b6a8df051e2d199414bec0b90ed6fd0dba",
     "label_ids": [357, 417, 351],
-    "logprobs": [-1.3262146711349487, -4.256525039672852, -4.171337127685547],
+    "logprobs": [-1.315701961517334, -4.280726909637451, -4.22100305557251],
     "temperature": 0.75,
     "answer": {
      "type": "choice",
      "choice": "billing",
      "probabilities": {
-      "billing": 0.9591260503495646,
-      "technical": 0.019277565572540494,
-      "account": 0.021596384077894916
+      "billing": 0.9615656433504354,
+      "technical": 0.018452433097965706,
+      "account": 0.01998192355159894
      },
-     "confidence": 0.9386890755243467
+     "confidence": 0.9423484650256531
     },
     "answer_no_floor": {
      "type": "choice",
      "choice": "billing",
      "probabilities": {
-      "billing": 0.9591260503495646,
-      "technical": 0.019277565572540494,
-      "account": 0.021596384077894916
+      "billing": 0.9615656433504354,
+      "technical": 0.018452433097965706,
+      "account": 0.01998192355159894
      },
-     "confidence": 0.9386890755243467
+     "confidence": 0.9423484650256531
     }
    },
    "urgency": {
     "options": 3,
-    "tokens": 109,
-    "ids_sha256": "1497b3dd88e344d7647fa0ca62bb168170d5457ae6e381574232a08bb1df5c27",
+    "tokens": 110,
+    "ids_sha256": "d976e73e0163fdb60898dd07779a64797f8b0f336036f702755a7fa212323879",
     "label_ids": [357, 417, 351],
-    "logprobs": [-3.8054869174957275, -2.0875179767608643, -1.5752041339874268],
+    "logprobs": [-3.9516687393188477, -2.3507680892944336, -1.4517487287521362],
     "temperature": 0.65,
     "answer": {
      "type": "score",
-     "score": 1.650731612899186,
+     "score": 1.7692693278425795,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.02175352310632923,
-      "1": 0.30576134088815554,
-      "2": 0.6724851360055153
+      "0": 0.016793740768553982,
+      "1": 0.1971431906203125,
+      "2": 0.7860630686111335
      },
-     "confidence": 0.5087277040082729
+     "confidence": 0.6790946029167002
     },
     "answer_no_floor": {
      "type": "score",
-     "score": 1.650731612899186,
+     "score": 1.7692693278425795,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.02175352310632923,
-      "1": 0.30576134088815554,
-      "2": 0.6724851360055153
+      "0": 0.016793740768553982,
+      "1": 0.1971431906203125,
+      "2": 0.7860630686111335
      },
-     "confidence": 0.5087277040082729
+     "confidence": 0.6790946029167002
     }
    },
    "angry": {
     "options": 2,
-    "tokens": 101,
-    "ids_sha256": "a52063374c59f2cdc49cd35d6297a3e9a76a16a6ff54e9d10e4d992bbf475be4",
+    "tokens": 102,
+    "ids_sha256": "2ea95367a806b5a3cc610bb3f8286c575496945d2b589dbcb37aee3845f9d6f2",
     "label_ids": [357, 417],
-    "logprobs": [-2.295870780944824, -2.3465566635131836],
+    "logprobs": [-2.238269805908203, -2.4043874740600586],
     "temperature": 0.8,
     "answer": {
      "type": "noul",
@@ -6620,7 +6620,7 @@
     },
     "answer_no_floor": {
      "type": "noul",
-     "noul": 0.5158340419664277
+     "noul": 0.5517260473780812
     }
    }
   },
@@ -6711,76 +6711,76 @@
   "lang_hi": {
    "team": {
     "options": 3,
-    "tokens": 124,
-    "ids_sha256": "6e5a9dd2a137cffc7388a87eb6ee7e122487129d9f0a7496eb639af80d0be543",
+    "tokens": 141,
+    "ids_sha256": "2615d86bc712033513ff51a4e4edc9a9c44cddbf8c258f5ca5f7ae5dfd580dd7",
     "label_ids": [357, 417, 351],
-    "logprobs": [-1.3162506818771362, -4.619200706481934, -4.682639122009277],
+    "logprobs": [-1.3782951831817627, -4.600857734680176, -4.6443376541137695],
     "temperature": 0.75,
     "answer": {
      "type": "choice",
      "choice": "billing",
      "probabilities": {
-      "billing": 0.9770716177575001,
-      "technical": 0.011948749003046906,
-      "account": 0.01097963323945314
+      "billing": 0.9742232973124295,
+      "technical": 0.013261836398015436,
+      "account": 0.01251486628955519
      },
-     "confidence": 0.9656074266362501
+     "confidence": 0.9613349459686441
     },
     "answer_no_floor": {
      "type": "choice",
      "choice": "billing",
      "probabilities": {
-      "billing": 0.9770716177575001,
-      "technical": 0.011948749003046906,
-      "account": 0.01097963323945314
+      "billing": 0.9742232973124295,
+      "technical": 0.013261836398015436,
+      "account": 0.01251486628955519
      },
-     "confidence": 0.9656074266362501
+     "confidence": 0.9613349459686441
     }
    },
    "urgency": {
     "options": 3,
-    "tokens": 115,
-    "ids_sha256": "cb763e21674b898c22d0d3972dd439d668dd658dede1363394c3d5ce92c58f20",
+    "tokens": 132,
+    "ids_sha256": "17d727f242de89f74d5d2019b9a61158bf5daf60c760acf79e23bc5f3519b21b",
     "label_ids": [357, 417, 351],
-    "logprobs": [-2.500521659851074, -1.8310939073562622, -2.427401542663574],
+    "logprobs": [-2.3005480766296387, -1.9884878396987915, -2.629215717315674],
     "temperature": 0.65,
     "answer": {
      "type": "score",
-     "score": 1.0242008630489616,
+     "score": 0.8767195117254614,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.20325953643427502,
-      "1": 0.5692800640824883,
-      "2": 0.22746039948323668
+      "0": 0.31062247087887807,
+      "1": 0.5020355465167822,
+      "2": 0.18734198260433962
      },
-     "confidence": 0.3539200961237325
+     "confidence": 0.25305331977517326
     },
     "answer_no_floor": {
      "type": "score",
-     "score": 1.0242008630489616,
+     "score": 0.8767195117254614,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.20325953643427502,
-      "1": 0.5692800640824883,
-      "2": 0.22746039948323668
+      "0": 0.31062247087887807,
+      "1": 0.5020355465167822,
+      "2": 0.18734198260433962
      },
-     "confidence": 0.3539200961237325
+     "confidence": 0.25305331977517326
     }
    },
    "angry": {
     "options": 2,
-    "tokens": 107,
-    "ids_sha256": "23a00730863b87b214cf9cff7b01e05a571aaa4d2ee61c2ce86f505458780ff8",
+    "tokens": 124,
+    "ids_sha256": "040acb890ed50dd77333341e5f939edb11e99f79dab95cc4aeba4ffec00ad807",
     "label_ids": [357, 417],
-    "logprobs": [-2.4912874698638916, -2.206589937210083],
+    "logprobs": [-2.367250442504883, -2.281574249267578],
     "temperature": 0.8,
     "answer": {
      "type": "noul",
@@ -6788,83 +6788,83 @@
     },
     "answer_no_floor": {
      "type": "noul",
-     "noul": 0.41195922473594077
+     "noul": 0.4732517502383887
     }
    }
   },
   "lang_bn": {
    "team": {
     "options": 3,
-    "tokens": 114,
-    "ids_sha256": "3bbc91519bb879d87f97f0f1cbc54114952c5ba85165e552cad03b96c5ff24a6",
+    "tokens": 125,
+    "ids_sha256": "44a4a87bcbac1440e9f6631da2175b846790937a5ecdd7b35ceec5b942005673",
     "label_ids": [357, 417, 351],
-    "logprobs": [-4.622569561004639, -4.373815059661865, -1.223132610321045],
+    "logprobs": [-4.510156631469727, -4.341030120849609, -1.1882179975509644],
     "temperature": 0.75,
     "answer": {
      "type": "choice",
      "choice": "account",
      "probabilities": {
-      "billing": 0.010483089515954565,
-      "technical": 0.014606054069283116,
-      "account": 0.9749108564147623
+      "billing": 0.011611492875184433,
+      "technical": 0.014548638085869365,
+      "account": 0.9738398690389463
      },
-     "confidence": 0.9623662846221432
+     "confidence": 0.9607598035584194
     },
     "answer_no_floor": {
      "type": "choice",
      "choice": "account",
      "probabilities": {
-      "billing": 0.010483089515954565,
-      "technical": 0.014606054069283116,
-      "account": 0.9749108564147623
+      "billing": 0.011611492875184433,
+      "technical": 0.014548638085869365,
+      "account": 0.9738398690389463
      },
-     "confidence": 0.9623662846221432
+     "confidence": 0.9607598035584194
     }
    },
    "urgency": {
     "options": 3,
-    "tokens": 105,
-    "ids_sha256": "3120077fadba4c1874e52ebfc617417ce4e3daef72aa28ad85e3e142adf1c9f2",
+    "tokens": 116,
+    "ids_sha256": "b6638a413a1b49afab4abbc1e8f96db8a6c7982fec925d09a924d3f26fad8d80",
     "label_ids": [357, 417, 351],
-    "logprobs": [-3.068101167678833, -1.734931230545044, -1.8974449634552002],
+    "logprobs": [-2.6789393424987793, -1.7196248769760132, -2.1038031578063965],
     "temperature": 0.65,
     "answer": {
      "type": "score",
-     "score": 1.3408758532269358,
+     "score": 1.1824404752498203,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.06742329385879355,
-      "1": 0.5242775590554772,
-      "2": 0.40829914708572923
+      "0": 0.1282479855727627,
+      "1": 0.5610635536046544,
+      "2": 0.31068846082258295
      },
-     "confidence": 0.28641633858321586
+     "confidence": 0.34159533040698165
     },
     "answer_no_floor": {
      "type": "score",
-     "score": 1.3408758532269358,
+     "score": 1.1824404752498203,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.06742329385879355,
-      "1": 0.5242775590554772,
-      "2": 0.40829914708572923
+      "0": 0.1282479855727627,
+      "1": 0.5610635536046544,
+      "2": 0.31068846082258295
      },
-     "confidence": 0.28641633858321586
+     "confidence": 0.34159533040698165
     }
    },
    "angry": {
     "options": 2,
-    "tokens": 97,
-    "ids_sha256": "373370a2d5e1bd04c8f1544adb5ddebbd059b87c87ddc4e2cd50f14e8dd8f119",
+    "tokens": 108,
+    "ids_sha256": "89851741e55993435809bd72fbfbaa7b1c01964eedcf105d1d0524e008bae491",
     "label_ids": [357, 417],
-    "logprobs": [-2.9173665046691895, -2.112621784210205],
+    "logprobs": [-2.7526957988739014, -2.175506353378296],
     "temperature": 0.8,
     "answer": {
      "type": "noul",
@@ -6872,7 +6872,7 @@
     },
     "answer_no_floor": {
      "type": "noul",
-     "noul": 0.2677769347513134
+     "noul": 0.32706566198478426
     }
    }
   },
@@ -7131,76 +7131,76 @@
   "lang_th": {
    "team": {
     "options": 3,
-    "tokens": 105,
-    "ids_sha256": "0aa8e8e06eda484582da79490c97096ab2c391c4cd882b8c0f6a0775895c2cac",
+    "tokens": 119,
+    "ids_sha256": "c0d48513f70465bd2e839ac544950f7d85290f0aa13effa0b79fa651633f619b",
     "label_ids": [357, 417, 351],
-    "logprobs": [-4.487683296203613, -1.8539190292358398, -1.4087400436401367],
+    "logprobs": [-3.6626088619232178, -1.247154951095581, -2.754319906234741],
     "temperature": 0.75,
     "answer": {
      "type": "choice",
-     "choice": "account",
+     "choice": "technical",
      "probabilities": {
-      "billing": 0.01050827793198136,
-      "technical": 0.3520766861757901,
-      "account": 0.6374150358922285
+      "billing": 0.034013274192218286,
+      "technical": 0.8518036821596564,
+      "account": 0.1141830436481254
      },
-     "confidence": 0.4561225538383427
+     "confidence": 0.7777055232394846
     },
     "answer_no_floor": {
      "type": "choice",
-     "choice": "account",
+     "choice": "technical",
      "probabilities": {
-      "billing": 0.01050827793198136,
-      "technical": 0.3520766861757901,
-      "account": 0.6374150358922285
+      "billing": 0.034013274192218286,
+      "technical": 0.8518036821596564,
+      "account": 0.1141830436481254
      },
-     "confidence": 0.4561225538383427
+     "confidence": 0.7777055232394846
     }
    },
    "urgency": {
     "options": 3,
-    "tokens": 96,
-    "ids_sha256": "bd7b2cb66b88806f8abbb8e361065d2a90630908978123b06bf695ba8bdb1907",
+    "tokens": 110,
+    "ids_sha256": "0d488b30f97b123516ff4350de30487446f24ac58ad53aca4b7647df800ad0e4",
     "label_ids": [357, 417, 351],
-    "logprobs": [-3.837273597717285, -2.5026683807373047, -1.4546891450881958],
+    "logprobs": [-3.9277877807617188, -2.49051570892334, -1.5329971313476562],
     "temperature": 0.65,
     "answer": {
      "type": "score",
-     "score": 1.7954201799804093,
+     "score": 1.777217355310327,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.020890199105527908,
-      "1": 0.16279942180853485,
-      "2": 0.8163103790859372
+      "0": 0.02002261569677414,
+      "1": 0.18273741329612472,
+      "2": 0.7972399710071011
      },
-     "confidence": 0.7244655686289058
+     "confidence": 0.6958599565106516
     },
     "answer_no_floor": {
      "type": "score",
-     "score": 1.7954201799804093,
+     "score": 1.777217355310327,
      "legend": {
       "0": "Not urgent",
       "1": "Soon",
       "2": "Right away"
      },
      "probabilities": {
-      "0": 0.020890199105527908,
-      "1": 0.16279942180853485,
-      "2": 0.8163103790859372
+      "0": 0.02002261569677414,
+      "1": 0.18273741329612472,
+      "2": 0.7972399710071011
      },
-     "confidence": 0.7244655686289058
+     "confidence": 0.6958599565106516
     }
    },
    "angry": {
     "options": 2,
-    "tokens": 88,
-    "ids_sha256": "c09cb94ec610ab191a042abb3375e3391cf76f1b54b7bc8d5cec3c91e6b03b9a",
+    "tokens": 102,
+    "ids_sha256": "e313339aced98c59ae858278ea6893944575f1eac75c16cf5a6441834a5b7d96",
     "label_ids": [357, 417],
-    "logprobs": [-2.209366798400879, -2.4535131454467773],
+    "logprobs": [-2.0168330669403076, -2.8381335735321045],
     "temperature": 0.8,
     "answer": {
      "type": "noul",
@@ -7208,7 +7208,7 @@
     },
     "answer_no_floor": {
      "type": "noul",
-     "noul": 0.5757090365625039
+     "noul": 0.7362611816691923
     }
    }
   },

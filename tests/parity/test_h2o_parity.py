@@ -29,7 +29,7 @@ import mlx_decision
 from mlx_decision.backbones.qwen3_5.load import load_text_model
 from mlx_decision.backbones.qwen3_5.tokenizer import load_tokenizer
 from mlx_decision.errors import DecisionError
-from mlx_decision.models.h2o.model import H2OBackend, ServeConfig
+from mlx_decision.models.h2o.model import H2OBackend, ServeConfig, training_tokenizer
 from mlx_decision.models.h2o.prompt import PromptSettings
 from mlx_decision.state_images import lift_images
 from mlx_decision.types import parse_request
@@ -102,7 +102,7 @@ def release() -> Path:
 def encoder(release) -> H2OBackend:
     """A backend without weights: enough to render and tokenize."""
     config = ServeConfig.read(release)
-    return H2OBackend("tokens", None, load_tokenizer(release), config, 40960, release)
+    return H2OBackend("tokens", None, training_tokenizer(release), config, 40960, release)
 
 
 def request(case_id: str):
@@ -120,6 +120,30 @@ def request(case_id: str):
 
 def digest(ids: list[int]) -> str:
     return hashlib.sha256(json.dumps(ids).encode()).hexdigest()
+
+
+# The release's tokenizer check (v1.4.2's ``tokenizer_contract.json``, copied
+# unchanged): 24 strings and their ids under the training tokenizer.
+CONTRACT = json.loads((HERE / "h2o" / "tokenizer_contract.json").read_text())
+
+
+def test_the_tokenizer_passes_the_release_contract(release):
+    tokenizer = training_tokenizer(release)
+    for probe in CONTRACT["probes"]:
+        got = tokenizer.encode(probe["text"], add_special_tokens=False).ids
+        assert got == probe["token_ids"], probe["id"]
+
+
+def test_qwen3_5s_split_fails_the_contract(release):
+    """Why H2O needs its own: Qwen3.5's pattern keeps marks with their letters."""
+    tokenizer = load_tokenizer(release)
+    probes = CONTRACT["probes"]
+    failed = [
+        p["id"]
+        for p in probes
+        if tokenizer.encode(p["text"], add_special_tokens=False).ids != p["token_ids"]
+    ]
+    assert len(failed) == 8
 
 
 def test_label_ids_equal_the_release(encoder):
@@ -178,7 +202,9 @@ def test_every_prompt_starts_with_the_shared_prefix(encoder, case_id):
 
 @pytest.mark.parametrize("limit", [1024, 8192])
 def test_a_lowered_limit_cuts_states_so_prompts_fit(release, limit):
-    backend = H2OBackend("tokens", None, load_tokenizer(release), ServeConfig.read(release), limit)
+    backend = H2OBackend(
+        "tokens", None, training_tokenizer(release), ServeConfig.read(release), limit
+    )
 
     def tokens(case_id):
         return max((e["tokens"] for e in REFERENCE[case_id].values() if "tokens" in e), default=0)
