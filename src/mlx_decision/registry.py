@@ -60,6 +60,9 @@ class Family:
     # read from its folder's config files without loading weights; the
     # backend's constructor builds its capabilities the same way.
     capabilities: str | None = None
+    # Repos the family loads but ``download`` does not offer, each pinned to
+    # the commit it was checked against: (repo id, commit), as ``revision``.
+    pins: tuple[tuple[str, str], ...] = ()
 
 
 # In registration order, which is the order the docs list the families in.
@@ -78,6 +81,7 @@ def register_family(
     licence: str | None = None,
     listing: Listing | None = None,
     capabilities: str | None = None,
+    pins: tuple[tuple[str, str], ...] = (),
 ) -> None:
     _FAMILIES[name] = Family(
         name,
@@ -91,6 +95,7 @@ def register_family(
         licence,
         listing,
         capabilities,
+        pins,
     )
 
 
@@ -104,9 +109,12 @@ def known_models() -> list[KnownModel]:
 
 
 def pinned_revision(repo_id: str) -> str | None:
-    """The checked commit of a known model's repo, if it is pinned."""
+    """The checked commit of a known model's repo, or of one a family pins
+    without offering it, if it is pinned."""
     wanted = repo_id.strip("/").lower()
-    return next((m.revision for m in known_models() if m.repo_id.lower() == wanted), None)
+    pinned = [(m.repo_id, m.revision) for m in known_models()]
+    pinned += [pin for family in families() for pin in family.pins]
+    return next((commit for repo, commit in pinned if repo.lower() == wanted and commit), None)
 
 
 def get_family(name: str) -> Family:
@@ -297,7 +305,9 @@ register_family(
         "pplx", "Perplexity", "whole requests in one pass, 4B and 27B; text and images"
     ),
     converter="mlx_decision.models.pplx.convert:convert",
-    # v1.1 (``perplexity-ai/pplx-decider-v1.1-27b``) still downloads by repo id.
+    # v1.1 still downloads by repo id, at the commit it was checked against:
+    # its later main reads larger images (2048 x 2048) than this code does.
+    pins=(("perplexity-ai/pplx-decider-v1.1-27b", "3b45dead91dfa6d95aad6b95764a606fab2bf7a6"),),
     known_models=(
         KnownModel(
             "perplexity-ai/pplx-decider-flash-v1.2",

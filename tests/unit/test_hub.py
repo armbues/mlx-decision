@@ -190,6 +190,15 @@ def test_h2o_lightning_is_pinned_to_the_checked_release():
     assert pinned_revision("Cloudflare/clef-flash") is None
 
 
+def test_pplx_v1_1_is_pinned_without_being_offered():
+    from mlx_decision.registry import known_models, pinned_revision
+
+    repo = "perplexity-ai/pplx-decider-v1.1-27b"
+    # The commit whose code the reference ran: its later main reads larger images.
+    assert pinned_revision(repo) == "3b45dead91dfa6d95aad6b95764a606fab2bf7a6"
+    assert repo not in [model.repo_id for model in known_models()]  # not in the menu
+
+
 def test_a_pinned_repo_resolves_to_its_checked_commit_without_the_network(pinned, monkeypatch):
     snapshot = write_model(pinned / PIN)
     write_model(pinned / ("0" * 40))  # a later main, also cached
