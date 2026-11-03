@@ -42,10 +42,11 @@ code from its release folder). pplx's fixtures come from
 `scripts/make_pplx_joint_reference.py` (v1.2 and flash), which run the
 release's code on small random models with the release's tokenizer; its tests need only the
 release's small files in the Hugging Face cache. H2O-Lightning's comes
-from `scripts/make_h2o_reference.py` in the same way (the release's shim,
-with transformers in place of vLLM); with `--model` it runs the real
-weights in bf16 for the slow test, which takes the release from
-`$MLX_DECISION_MODELS/h2o-lightning-4b`. d1-3B's come from
+from `scripts/make_h2o_reference.py` in the same way (the release's own
+shim, with transformers in place of vLLM, in both reading modes;
+`--revision v1.2.3` for the older release's fixture); with `--model` it
+runs the real weights in bf16 for the slow test, which takes the release
+from `$MLX_DECISION_MODELS/h2o-lightning-4b`. d1-3B's come from
 `scripts/make_d1_reference.py` (its release's code, which runs only
 there; `--model` for the slow test, from `$MLX_DECISION_MODELS/d1-3B`).
 d3's comes from `scripts/make_d3_reference.py`, which runs the release's

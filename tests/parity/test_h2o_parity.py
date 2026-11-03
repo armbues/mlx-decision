@@ -1,13 +1,14 @@
 """H2O-Lightning on MLX against the release's own serving code, on the parity set.
 
-``h2o/reference.json`` is written by ``scripts/make_h2o_reference.py``: the
-release's shim with transformers in vLLM's place, so the token ids of every
-question (its real tokenizer) and the answers of the tiny random model of
-``tiny_models.write_h2o`` (CPU, float32). The token and end-to-end tests
-need the release's small files in the Hugging Face cache (the script
-fetches them) and skip otherwise; the tiny-model test feeds the stored ids
-and always runs. ``h2o/reference-bf16.json`` is the same script with
-``--model``: the release's weights in bfloat16 on MPS; the slow test
+``h2o/reference.json`` (v1.4.2) and ``h2o/reference-v1.2.3.json`` are written
+by ``scripts/make_h2o_reference.py``: each release's own shim with
+transformers in vLLM's place, so the token ids of every question (its
+training tokenizer) and the answers of the tiny random model of
+``tiny_models.write_h2o`` (CPU, float32), per reading mode. The token and
+end-to-end tests need the release's small files in the Hugging Face cache
+(the script fetches them) and skip otherwise; the tiny-model test feeds the
+stored ids and always runs. ``h2o/reference-v1.2.3-bf16.json`` is the
+script with ``--model``: v1.2.3's weights in bfloat16 on MPS; the slow test
 compares the release folder in ``MLX_DECISION_MODELS`` with it.
 
 The model runs on the CPU here: on the GPU, float32 matmuls use TF32, which
@@ -40,8 +41,20 @@ CASES = []
 for name in ("requests.json", "marker/requests.json", "h2o/requests.json"):
     CASES += json.loads((HERE / name).read_text())
 REQUESTS = {case["id"]: case for case in CASES}
-FIXTURE = json.loads((HERE / "h2o" / "reference.json").read_text())
-REFERENCE = FIXTURE["results"]
+FIXTURES = {
+    "v1.4.2": json.loads((HERE / "h2o" / "reference.json").read_text()),
+    "v1.2.3": json.loads((HERE / "h2o" / "reference-v1.2.3.json").read_text()),
+}
+VERSIONS = list(FIXTURES)
+# v1.2.3's results, one-way: what the H2O code reads today.
+FIXTURE = FIXTURES["v1.2.3"]
+REFERENCE = {
+    case_id: result if "refused" in result else result["causal"]
+    for case_id, result in FIXTURE["results"].items()
+}
+# v1.4.2 reads a record whole up to the context and selects it beyond: not
+# built yet, so its long requests are expected to differ.
+LONG_INPUT = {"reviews_40k_truncated", "h2o_text_over_context", "h2o_json_over_context"}
 TEXT_IDS = [case["id"] for case in CASES if not case.get("images")]
 IMAGE_IDS = [case["id"] for case in CASES if case.get("images")]
 # Largest allowed difference of any probability against the reference (CPU,
@@ -76,11 +89,26 @@ END_TO_END = [
 ]
 
 
-@pytest.fixture(scope="module")
-def release() -> Path:
+def one_way(version: str) -> dict:
+    """A release's one-way results by request (a refusal stays as it is)."""
+    results = FIXTURES[version]["results"]
+    return {k: v if "refused" in v else v["causal"] for k, v in results.items()}
+
+
+def per_version(case_ids: list[str]) -> list:
+    """(version, case) pairs; v1.4.2's long requests are expected to fail."""
+    long = pytest.mark.xfail(reason="v1.4.2's long input is not built yet", strict=True)
+    return [
+        pytest.param(v, c, marks=[long] if v == "v1.4.2" and c in LONG_INPUT else [])
+        for v in VERSIONS
+        for c in case_ids
+    ]
+
+
+def release_folder(version: str) -> Path:
     from huggingface_hub import snapshot_download
 
-    meta = FIXTURE["meta"]
+    meta = FIXTURES[version]["meta"]
     try:
         path = Path(
             snapshot_download(
@@ -99,10 +127,30 @@ def release() -> Path:
 
 
 @pytest.fixture(scope="module")
-def encoder(release) -> H2OBackend:
-    """A backend without weights: enough to render and tokenize."""
-    config = ServeConfig.read(release)
-    return H2OBackend("tokens", None, training_tokenizer(release), config, 40960, release)
+def release() -> Path:
+    return release_folder("v1.2.3")
+
+
+@pytest.fixture(scope="module")
+def encoders() -> dict:
+    """Per release, a backend without weights: enough to render and tokenize."""
+    made = {}
+
+    def get(version: str) -> H2OBackend:
+        if version not in made:
+            path = release_folder(version)
+            config = ServeConfig.read(path)
+            made[version] = H2OBackend(
+                "tokens", None, training_tokenizer(path), config, 40960, path
+            )
+        return made[version]
+
+    return get
+
+
+@pytest.fixture(scope="module")
+def encoder(encoders) -> H2OBackend:
+    return encoders("v1.2.3")
 
 
 def request(case_id: str):
@@ -146,13 +194,36 @@ def test_qwen3_5s_split_fails_the_contract(release):
     assert len(failed) == 8
 
 
-def test_label_ids_equal_the_release(encoder):
-    assert dict(zip(encoder.labels, encoder.label_ids, strict=True)) == FIXTURE["meta"]["label_ids"]
+@pytest.mark.parametrize("version", VERSIONS)
+def test_label_ids_equal_the_release(encoders, version):
+    encoder = encoders(version)
+    labels = dict(zip(encoder.labels, encoder.label_ids, strict=True))
+    assert labels == FIXTURES[version]["meta"]["label_ids"]
 
 
-@pytest.mark.parametrize("case_id", TEXT_IDS)
-def test_token_ids_equal_the_release(encoder, case_id):
-    expected = REFERENCE[case_id]
+def test_v1_4_2_one_way_reads_as_v1_2_3_where_the_prompts_agree():
+    """The new weights' release changed the prompt only where its settings did:
+    the pixel bound and the long-input rule; the tokenizer is the same."""
+    old, new = one_way("v1.2.3"), one_way("v1.4.2")
+    assert set(old) == set(new)
+    changed = set()
+    for case_id, questions in old.items():
+        assert ("refused" in questions) == ("refused" in new[case_id]), case_id
+        if "refused" in questions:
+            continue
+        for question_id, entry in questions.items():
+            other = new[case_id][question_id]
+            if entry["ids_sha256"] != other["ids_sha256"]:
+                changed.add(case_id)
+            elif "logprobs" in entry:
+                assert entry["logprobs"] == pytest.approx(other["logprobs"], abs=1e-6)
+    assert changed == LONG_INPUT | {"image_enlarged"}
+
+
+@pytest.mark.parametrize(("version", "case_id"), per_version(TEXT_IDS))
+def test_token_ids_equal_the_release(encoders, version, case_id):
+    encoder = encoders(version)
+    expected = one_way(version)[case_id]
     if "refused" in expected:
         # Refused by the wire format before the release would see it.
         with pytest.raises(DecisionError):
@@ -167,12 +238,13 @@ def test_token_ids_equal_the_release(encoder, case_id):
         assert len(question.option_ids) == reference["options"]
 
 
-@pytest.mark.parametrize("case_id", IMAGE_IDS)
-def test_image_token_ids_equal_the_release(encoder, case_id):
+@pytest.mark.parametrize(("version", "case_id"), per_version(IMAGE_IDS))
+def test_image_token_ids_equal_the_release(encoders, version, case_id):
     """Token ids and image grids as the release's processor makes them."""
     from mlx_decision.models.qwen import prepare
 
-    expected = REFERENCE[case_id]
+    encoder = encoders(version)
+    expected = one_way(version)[case_id]
     body = request(case_id)
     if "refused" in expected:
         with pytest.raises(DecisionError, match="at most 4") as error:
@@ -228,10 +300,10 @@ def test_a_lowered_limit_cuts_states_so_prompts_fit(release, limit):
             backend.encode(request("choice_255_options"))
 
 
-@pytest.fixture(scope="module")
-def tiny(tmp_path_factory) -> H2OBackend:
-    """The tiny model with the release's labels, temperatures and floor, no tokenizer."""
-    meta = FIXTURE["meta"]
+@pytest.fixture(scope="module", params=VERSIONS)
+def tiny(request, tmp_path_factory) -> tuple[str, H2OBackend]:
+    """The tiny model with a release's labels, temperatures and floor, no tokenizer."""
+    meta = FIXTURES[request.param]["meta"]
     folder = write_h2o(tmp_path_factory.mktemp("h2o") / "tiny-h2o")
     config = ServeConfig(
         labels=list(meta["label_ids"]),
@@ -241,7 +313,7 @@ def tiny(tmp_path_factory) -> H2OBackend:
     )
     backbone = load_text_model(folder, lm_head=False)
     ids = list(meta["label_ids"].values())
-    return H2OBackend("tiny", backbone, None, config, 40960, folder, label_ids=ids)
+    return request.param, H2OBackend("tiny", backbone, None, config, 40960, folder, label_ids=ids)
 
 
 def answer_values(answer: dict) -> list[float]:
@@ -252,9 +324,11 @@ def answer_values(answer: dict) -> list[float]:
 
 def test_tiny_model_answers_as_the_release(tiny):
     """Every text question with stored ids: one pass each, about 20 ms on the CPU."""
+    version, tiny = tiny
+    reference = one_way(version)
     checked = 0
     for case_id in TEXT_IDS:
-        for question_id, expected in REFERENCE[case_id].items():
+        for question_id, expected in reference[case_id].items():
             if "ids" not in expected:
                 continue
             kind = expected["answer"]["type"]
@@ -269,20 +343,28 @@ def test_tiny_model_answers_as_the_release(tiny):
 
 
 @pytest.fixture(scope="module")
-def tiny_with_tokenizer(release, tmp_path_factory):
-    folder = write_h2o(tmp_path_factory.mktemp("h2o") / "tiny-h2o", files_from=release)
-    return mlx_decision.load(folder)
+def tiny_models(tmp_path_factory) -> dict:
+    """Per release, the tiny model in a folder with its files."""
+    made = {}
+
+    def get(version: str):
+        if version not in made:
+            folder = tmp_path_factory.mktemp("h2o") / f"tiny-h2o-{version}"
+            made[version] = mlx_decision.load(write_h2o(folder, files_from=release_folder(version)))
+        return made[version]
+
+    return get
 
 
-@pytest.mark.parametrize("case_id", END_TO_END)
-def test_tiny_model_end_to_end(tiny_with_tokenizer, case_id):
+@pytest.mark.parametrize(("version", "case_id"), per_version(END_TO_END))
+def test_tiny_model_end_to_end(tiny_models, version, case_id):
     """The whole path: prompt, real tokenizer, passes, the floor, answers."""
     with mx.stream(mx.cpu):
-        result = tiny_with_tokenizer.decide_request(request(case_id))
+        result = tiny_models(version).decide_request(request(case_id))
     assert not result.truncated
     tokens = 0
     for question_id, answer in result.answers.items():
-        expected = REFERENCE[case_id][question_id]
+        expected = one_way(version)[case_id][question_id]
         tokens += expected["tokens"]
         if answer.type == "noul":
             assert answer.noul == pytest.approx(expected["answer"]["noul"], abs=TOLERANCE)
@@ -307,14 +389,14 @@ IMAGE_END_TO_END = [
 ]
 
 
-@pytest.mark.parametrize("case_id", IMAGE_END_TO_END)
-def test_tiny_model_answers_images_as_the_release(tiny_with_tokenizer, case_id):
+@pytest.mark.parametrize(("version", "case_id"), per_version(IMAGE_END_TO_END))
+def test_tiny_model_answers_images_as_the_release(tiny_models, version, case_id):
     """Images through the whole path (measured within 3.4e-6 of the release)."""
     with mx.stream(mx.cpu):
-        result = tiny_with_tokenizer.decide_request(request(case_id))
+        result = tiny_models(version).decide_request(request(case_id))
     tokens = 0
     for question_id, answer in result.answers.items():
-        expected = REFERENCE[case_id][question_id]
+        expected = one_way(version)[case_id][question_id]
         tokens += expected["tokens"]
         if answer.type == "noul":
             assert answer.noul == pytest.approx(expected["answer"]["noul"], abs=TOLERANCE)
@@ -325,14 +407,14 @@ def test_tiny_model_answers_images_as_the_release(tiny_with_tokenizer, case_id):
     assert result.usage.input_tokens == tokens
 
 
-BF16 = json.loads((HERE / "h2o" / "reference-bf16.json").read_text())
+BF16 = json.loads((HERE / "h2o" / "reference-v1.2.3-bf16.json").read_text())
 
 
 def test_the_bf16_reference_is_for_the_same_prompts():
-    """Every request, with the token ids of the tiny reference (same tokenizer)."""
+    """Every request it has, with the token ids of the tiny reference (same tokenizer)."""
     assert BF16["meta"]["revision"] == FIXTURE["meta"]["revision"]
     assert BF16["meta"]["dtype"] == "torch.bfloat16"
-    assert set(BF16["results"]) == set(REFERENCE)
+    assert set(BF16["results"]) <= set(REFERENCE)
     for case_id, expected in BF16["results"].items():
         tiny = REFERENCE[case_id]
         assert ("refused" in expected) == ("refused" in tiny), case_id

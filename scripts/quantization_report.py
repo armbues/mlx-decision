@@ -13,7 +13,7 @@ the parity set is unchanged, so adding a model only runs that model
 fixture, such as ``tests/parity/reference-clef.json`` from a larger Mac; when
 it also holds mlx-decision's bf16 results, those are the baseline (the first
 row), so only the quantized copies need to run here. H2O-Lightning:
-``--reference tests/parity/h2o/reference-bf16.json`` (its parity set, images
+``--reference tests/parity/h2o/reference-v1.2.3-bf16.json`` (its parity set, images
 in states lifted out; answers compared before the yes/no floor). d3:
 ``--reference tests/parity/d3/reference-bf16.json`` (its parity set; the
 questions the release refuses left out; the input limit raised to the
