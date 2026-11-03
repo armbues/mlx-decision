@@ -192,12 +192,29 @@ def model_facts(spec: ModelSpec, workspace_models: Path | None) -> dict:
 
 
 def repo_size(snapshot: Path) -> int:
-    """The bytes a Hugging Face cache repo holds, every revision: the files in
-    its folder, links not followed (a snapshot's links count once, as their
-    blobs; payloads in the cache's shared store are left out, since another
-    repo may hold them)."""
+    """What deleting a Hugging Face cache repo frees, every revision of it, as
+    the cache API counts what it deletes: the repo's blobs, and a payload in
+    hub 2.x's shared store when no other repo holds it. When the API cannot
+    read the repo, the files in its folder (links not followed)."""
+    from huggingface_hub import scan_cache_dir
+    from huggingface_hub.errors import CacheNotFound
+
+    repo = Path(snapshot).resolve().parents[1]
+    try:
+        info = scan_cache_dir(repo.parent)
+    except (CacheNotFound, OSError, ValueError):
+        return _files_size(repo)
+    for cached in info.repos:
+        if Path(cached.repo_path).resolve() == repo:
+            commits = [revision.commit_hash for revision in cached.revisions]
+            return info.delete_revisions(*commits).expected_freed_size
+    return _files_size(repo)
+
+
+def _files_size(repo: Path) -> int:
+    """The regular files in ``repo``'s folder, links not followed."""
     total = 0
-    for folder, _, files in os.walk(Path(snapshot).resolve().parents[1]):
+    for folder, _, files in os.walk(repo):
         for name in files:
             try:
                 info = os.lstat(os.path.join(folder, name))

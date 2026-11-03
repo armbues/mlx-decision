@@ -303,6 +303,41 @@ def test_the_places_are_listed_as_expected(downloads):
     assert places["models_dir"] == 3 and places["cache"] == 3
 
 
+def test_a_repo_in_the_shared_store_frees_the_payloads_only_it_holds(tmp_path):
+    # Hub 2.x keeps payloads in the cache's shared store, the repo's blobs are
+    # links to them: they count, unless another repo holds them too.
+    shared = pytest.importorskip("huggingface_hub.utils._shared_blobs")
+    from mlx_decision.studio.catalog import repo_size
+
+    cache = tmp_path / "hf"
+
+    def cached(name, commit, weights):
+        snapshot = write_cached(cache, f"org/{name}", commit, weights=weights)
+        hashes = set()
+        for blob in sorted((snapshot.parents[1] / "blobs").iterdir()):
+            published = shared.publish_blob_to_shared_store(
+                blob_path=str(blob),
+                xet_hash=blob.name,  # a SHA-256, as a Xet hash looks
+                cache_dir=cache,
+                expected_size=blob.stat().st_size,
+            )
+            assert published and blob.is_symlink()
+            hashes.add(blob.name)
+        return snapshot, hashes
+
+    def payloads(hashes):
+        return sum(shared.shared_blob_path(cache, h).stat().st_size for h in hashes)
+
+    one, held = cached("one", "a" * 40, 4096)
+    assert payloads(held) > 4096
+    assert repo_size(one) == payloads(held)  # the repo folder itself: links, a few bytes
+    twin, its = cached("twin", "b" * 40, 4096)  # the same weights, held twice
+    both = held & its
+    assert payloads(both) > 4096
+    assert repo_size(one) == payloads(held - both)
+    assert repo_size(twin) == payloads(its - both)
+
+
 def models_by_name(studio):
     return {model["name"]: model for model in studio.get("/studio/api/models").json()["models"]}
 
@@ -321,11 +356,10 @@ def test_the_page_is_told_what_may_go_and_what_it_frees(downloads, tmp_path):
         "single": ("folder", False, False),
         "named": ("cache", False, False),
     }
-    # A cache repo frees every revision's files (the older one is larger).
+    # A cache repo frees every revision's blobs (the older one is larger).
     repo = downloads.cache / "models--org--cached"
     blobs = sum(path.stat().st_size for path in (repo / "blobs").iterdir())
-    refs = (repo / "refs" / "main").stat().st_size
-    assert blobs > 4096 and models["cached"]["freed_bytes"] == blobs + refs
+    assert blobs > 4096 and models["cached"]["freed_bytes"] == blobs
     assert models["cached"]["disk_bytes"] < blobs  # the main revision alone
     assert models["laya"]["freed_bytes"] == models["laya"]["disk_bytes"] > 0
     assert models["linked"]["freed_bytes"] == 0  # only the link goes
