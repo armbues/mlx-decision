@@ -248,6 +248,35 @@ def test_clean_up_removes_stale_temporaries_and_partials(space):
     assert all(path.exists() for path in kept)
 
 
+def test_clean_up_finishes_a_fitted_model_whose_replacement_was_stopped(space, tmp_path):
+    from mlx_decision import fitted
+    from mlx_decision.fitted import Calibration, Fit, FitQuestion, base_reference, fingerprint
+
+    base = write_model(tmp_path / "base")
+    question = FitQuestion("team", "choice", ["billing", "tech"])
+    calibration = {0: Calibration(1.0, [0.0, 0.0])}
+
+    def fit(seed):
+        return Fit(["calibrate"], [question], calibration, meta={"seed": seed})
+
+    def write(folder, seed):
+        reference = base_reference(base, base)
+        return fitted.write(
+            folder, family="fake", base=reference, base_fingerprint=fingerprint(base), fit=fit(seed)
+        )
+
+    models = space.root / "models"
+    write(models / ".support.new", 2)  # stopped between the renames: both aside
+    write(models / ".support.old", 1)
+    backup = models / ".other.old"  # not a fit: left alone
+    backup.mkdir()
+    removed = space.open()
+    assert sorted(removed) == [models / ".support.new", models / ".support.old"]
+    assert sorted(p.name for p in models.iterdir()) == [".other.old", "support"]
+    marker = json.loads((models / "support" / "mlx_decision.json").read_text())
+    assert marker["fit"]["seed"] == 2
+
+
 def test_clean_up_marks_jobs_without_an_outcome_interrupted(space):
     jobs = space.root / "jobs"
     for job_id, job in {

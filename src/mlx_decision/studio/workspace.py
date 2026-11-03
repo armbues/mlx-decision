@@ -357,9 +357,18 @@ class Workspace:
 
     def clean_up(self) -> list[Path]:
         """Remove hidden ``.tmp`` and ``.partial`` leftovers from the workspace's
-        folders (not inside models) and mark jobs that never ended as interrupted.
-        Returns the paths removed and the job files changed."""
+        folders (not inside models), finish fitted models whose replacement was
+        stopped halfway and mark jobs that never ended as interrupted. Returns the
+        paths removed or renamed and the job files changed."""
+        from ..fitted import recover
+
         changed = []
+        for path in _entries(self.root / "models"):
+            # A fitted model whose replacement (``--overwrite``) was stopped halfway.
+            if path.name.startswith(".") and path.name.endswith((".new", ".old")):
+                recover(path.with_name(path.name[1:-4]))
+                if not path.exists():
+                    changed.append(path)
         places = [self.root, *(self.root / f for f in FOLDERS), self.root / "history" / IMAGES]
         for place in places:
             for path in _entries(place):

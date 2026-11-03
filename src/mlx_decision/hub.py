@@ -23,7 +23,10 @@ def resolve_model_path(model: str | Path, revision: str | None = None) -> Path:
     commit takes that one by default. Raises ``ModelNotFoundError`` with a
     one-line reason when there is none.
     """
+    from .fitted import recover
+
     path = Path(model).expanduser()
+    recover(path)  # a fitted model whose replacement was stopped halfway
     if path.is_dir():
         return path
     if not is_repo_id(model):

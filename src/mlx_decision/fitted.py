@@ -540,8 +540,45 @@ def load(path: Path, **options) -> FittedBackend:
 
 def partial_folder(folder: str | Path) -> Path:
     """Where ``write`` puts ``folder`` before renaming it into place."""
+    return _beside(Path(folder), ".partial")
+
+
+def _beside(folder: Path, suffix: str) -> Path:
+    return folder.parent / f".{folder.name}{suffix}"
+
+
+def _is_fit(path: Path) -> bool:
+    """Whether ``path`` is a fitted model folder (its marker names a base)."""
+    try:
+        marker = json.loads((path / MARKER_FILE).read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(marker, dict) and isinstance(marker.get("base"), dict)
+
+
+def recover(folder: str | Path) -> None:
+    """Finish a ``write`` that was stopped while it replaced ``folder``: a complete
+    new fit waiting beside it (``.NAME.new``) goes into place, else the fit it was
+    replacing (``.NAME.old``) comes back; an ``.old`` left beside a fit is removed.
+    Does nothing when neither is there."""
     folder = Path(folder)
-    return folder.parent / f".{folder.name}.partial"
+    new, old = _beside(folder, ".new"), _beside(folder, ".old")
+    try:
+        if _is_fit(new):
+            if folder.exists():  # stopped before the old fit was moved aside
+                shutil.rmtree(old, ignore_errors=True)
+                folder.rename(old)
+            new.rename(folder)
+            log.info("%s: finished replacing it with the fit written last", folder)
+            shutil.rmtree(old, ignore_errors=True)
+        elif _is_fit(old):
+            if folder.exists():  # stopped while removing the replaced fit
+                shutil.rmtree(old, ignore_errors=True)
+            else:
+                old.rename(folder)
+                log.warning("%s: restored the fit a stopped write was replacing", folder)
+    except OSError as error:
+        log.warning("%s: could not finish an interrupted write: %s", folder, error)
 
 
 def write(
@@ -557,10 +594,16 @@ def write(
 ) -> Path:
     """Write a fitted model folder: into ``.<name>.partial`` beside it, renamed when
     complete, so an interrupted write leaves no fitted model behind. ``tensors``
-    are the weight kinds' tensors (stored next to the question kinds')."""
+    are the weight kinds' tensors (stored next to the question kinds').
+
+    Replacing a folder (``overwrite``) takes three renames: the complete fit to
+    ``.<name>.new``, the folder to ``.<name>.old``, ``.new`` into place. A process
+    killed between them leaves both fits on disk, and the next write or load puts
+    the new one in place (``recover``)."""
     import mlx.core as mx
 
     folder = Path(folder)
+    recover(folder)
     if folder.exists() and not overwrite:
         raise FileExistsError(f"{folder} exists (pass overwrite to replace it)")
     folder.parent.mkdir(parents=True, exist_ok=True)
@@ -588,15 +631,23 @@ def write(
             mx.save_safetensors(str(partial / FIT_FILE), all_tensors)
         if report is not None:
             (partial / REPORT_FILE).write_text(json.dumps(report, indent=2, ensure_ascii=False))
-        if folder.exists():
-            old = folder.parent / f".{folder.name}.old"
-            shutil.rmtree(old, ignore_errors=True)
-            folder.rename(old)
+        if not folder.exists():
             partial.rename(folder)
-            shutil.rmtree(old, ignore_errors=True)
-        else:
-            partial.rename(folder)
+            return folder
+        # Out of ``.partial``, which cleaners remove, before the old fit moves aside.
+        new, old = _beside(folder, ".new"), _beside(folder, ".old")
+        partial.rename(new)
     except BaseException:
         shutil.rmtree(partial, ignore_errors=True)
         raise
+    try:
+        shutil.rmtree(old, ignore_errors=True)
+        folder.rename(old)
+        new.rename(folder)
+    except BaseException:  # an error, not a kill: the old fit stays
+        if not folder.exists() and old.exists():
+            old.rename(folder)
+        shutil.rmtree(new, ignore_errors=True)
+        raise
+    shutil.rmtree(old, ignore_errors=True)
     return folder

@@ -4,6 +4,8 @@ import json
 import logging
 import math
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import huggingface_hub
@@ -122,6 +124,115 @@ def test_the_folder_is_written_whole_or_not_at_all(tmp_path, base, monkeypatch):
     write_fitted(folder, base, team_fit(seed=7), overwrite=True)
     assert json.loads((folder / MARKER_FILE).read_text())["fit"]["seed"] == 7
     assert sorted(p.name for p in tmp_path.iterdir()) == ["base", "fit"]
+
+
+# A replacing write killed after its first, second or third rename (the complete
+# fit to .new, the old folder to .old, .new into place): os._exit, no handlers run.
+KILLED_WRITE = """
+import os, pathlib, sys
+from mlx_decision import fitted
+from mlx_decision.fitted import Calibration, Fit, FitQuestion, base_reference, fingerprint
+
+folder, base, stop_after = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), int(sys.argv[3])
+renames = 0
+rename = pathlib.Path.rename
+
+def stopping(self, target):
+    global renames
+    result = rename(self, target)
+    renames += 1
+    if renames == stop_after:
+        os._exit(9)
+    return result
+
+pathlib.Path.rename = stopping
+question = FitQuestion("team", "choice", ["billing", "tech", "sales"])
+fit = Fit(["calibrate"], [question], {0: Calibration(2.0, [0.0, 1.0, -1.0])}, meta={"seed": 7})
+fitted.write(folder, family="fake", base=base_reference(base, base),
+             base_fingerprint=fingerprint(base), fit=fit, overwrite=True)
+"""
+
+
+def killed_write(folder: Path, base: Path, stop_after: int) -> list[str]:
+    """Replace ``folder`` by a seed-7 fit in a process killed after the given rename;
+    the names beside it afterwards."""
+    args = [sys.executable, "-c", KILLED_WRITE, str(folder), str(base), str(stop_after)]
+    result = subprocess.run(args, capture_output=True, text=True, timeout=120)
+    assert result.returncode == 9, result.stderr
+    return sorted(p.name for p in folder.parent.iterdir())
+
+
+def seed(folder: Path) -> int:
+    return json.loads((folder / MARKER_FILE).read_text())["fit"]["seed"]
+
+
+@pytest.mark.parametrize(
+    ("stop_after", "left"),
+    [
+        (1, [".fit.new", "fit"]),  # the old fit not moved aside yet
+        (2, [".fit.new", ".fit.old"]),  # no fit in place
+        (3, [".fit.old", "fit"]),  # the new fit in place, the old not removed
+    ],
+)
+@pytest.mark.parametrize("then", ["load", "write"])
+def test_a_replacing_write_killed_between_its_renames_loses_nothing(
+    tmp_path, base, stop_after, left, then
+):
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    assert killed_write(folder, base, stop_after) == sorted(["base", *left])
+    if then == "load":  # the new fit goes into place, the old is removed
+        assert mlx_decision.load(folder).info()["fit"]["seed"] == 7
+    else:
+        with pytest.raises(FileExistsError):  # finished before the check
+            write_fitted(folder, base, team_fit(seed=9))
+    assert seed(folder) == 7
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["base", "fit"]
+
+
+def test_a_write_killed_before_its_renames_leaves_the_old_fit(tmp_path, base):
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    partial = fitted.partial_folder(folder)
+    partial.mkdir()  # as a kill while writing leaves it: incomplete
+    (partial / MARKER_FILE).write_text("{")
+    assert mlx_decision.load(folder).info()["fit"]["seed"] == 0
+    write_fitted(folder, base, team_fit(seed=7), overwrite=True)  # removed as before
+    assert seed(folder) == 7
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["base", "fit"]
+
+
+def test_the_replaced_fit_comes_back_when_no_new_one_is_complete(tmp_path, base):
+    # A stop between the renames of an older version: the old fit aside, the new
+    # one still in .partial, which cleaners remove.
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    folder.rename(tmp_path / ".fit.old")
+    assert mlx_decision.load(folder).info()["fit"]["seed"] == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["base", "fit"]
+
+
+def test_a_failed_rename_keeps_the_old_fit(tmp_path, base, monkeypatch):
+    folder = write_fitted(tmp_path / "fit", base, team_fit())
+    rename = Path.rename
+
+    def failing(self, target):
+        if self.name == ".fit.new":
+            raise OSError("no room")
+        return rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", failing)
+    with pytest.raises(OSError, match="no room"):
+        write_fitted(folder, base, team_fit(seed=7), overwrite=True)
+    monkeypatch.undo()
+    assert seed(folder) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["base", "fit"]
+
+
+def test_recovery_leaves_other_folders_alone(tmp_path, base):
+    # Not fits: a model with a hidden backup beside it, and a missing folder.
+    shutil.copytree(base, tmp_path / ".base.old")
+    shutil.copytree(base, tmp_path / ".gone.new")
+    fitted.recover(tmp_path / "base")
+    fitted.recover(tmp_path / "gone")
+    assert sorted(p.name for p in tmp_path.iterdir()) == [".base.old", ".gone.new", "base"]
 
 
 def test_a_moved_base_is_refused_naming_it(tmp_path, base):
