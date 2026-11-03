@@ -675,9 +675,10 @@ def load(
     v1.2.3 cuts states over its cap (32,000 tokens) around a "..." line,
     under a lowered limit also states that would not leave room for the
     questions. Prompts still over the limit are refused.
-    ``noul_floor`` replaces the release's yes/no floor (0.801): a yes/no
-    answer less sure than it is reported at it, on its own side; 0 turns it
-    off (the raw probability, for routing uncertain answers elsewhere).
+    ``noul_floor`` replaces the release's yes/no floor (none from v1.4, 0.801
+    for v1.2.3): a yes/no answer less sure than it is reported at it, on its
+    own side; 0 turns it off (the raw probability, for routing uncertain
+    answers elsewhere).
     ``prefix_cache_gb`` is the memory for kept prefixes (the computed state
     after a request's state), so a request with a state seen recently and
     other questions computes only its questions; 0 turns keeping off (the

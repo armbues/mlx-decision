@@ -152,9 +152,10 @@ suggests one by your Mac's memory.
 | Perplexity's [pplx-decider-flash-v1.2](https://huggingface.co/perplexity-ai/pplx-decider-flash-v1.2) | 4B | text, images | 9.1 GB (8-bit: 5.1 GB, 4-bit: 3.0 GB) | all questions of a request in one pass; distilled from the 27B |
 | Perplexity's [pplx-decider-v1.2](https://huggingface.co/perplexity-ai/pplx-decider-v1.2) | 27B | text, images | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | as flash, and more accurate |
 | vLLM Semantic Router's [d3-flash](https://huggingface.co/vllm-sr/d3-flash) | 9B | text, images | 19 GB (8-bit: 12 GB) | entailment, knowledge, calibrated scores; five more sizes from 0.6B to 27B |
-| Base Labs' [elephant-1](https://huggingface.co/baselabs/elephant-1) | 9B | text | 18 GB (8-bit: 11 GB) | entailment and knowledge, calibrated; a request's questions share one pass over the state |
-| Base Labs' [mammoth-1](https://huggingface.co/baselabs/mammoth-1) | 27B | text | 8-bit: 33 GB | as elephant-1; not measured here beyond a check of its 8-bit copy |
-| H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 13 GB (8-bit: 9 GB, 4-bit: 7 GB) | long states and many questions, calibrated scores |
+| Base Labs' [elephant-1](https://huggingface.co/baselabs/elephant-1) | 9B | text, images | 18 GB (8-bit: 11 GB) | entailment and knowledge, calibrated; a request's questions share one pass over the state |
+| Base Labs' [mammoth-1](https://huggingface.co/baselabs/mammoth-1) | 27B | text, images | 8-bit: 33 GB | as elephant-1; not measured here beyond a check of its 8-bit copy |
+| Base Labs' [joey-1](https://huggingface.co/baselabs/joey-1) | 2B | text, images | 5.0 GB (8-bit: 3.4 GB) | small and fast, as elephant-1 in its reading; offensive tweets, weaker on answer type and sentiment |
+| H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 11 GB (8-bit: 9 GB) | sentiment, long states, images; each question read whole by default, or one pass over the state for many questions |
 | LiquidAI's [d1-2B](https://huggingface.co/LiquidAI/d1-2B) | 1.9B | text, images, many languages | 5.3 GB | small and fast, with pictures; answers depend on which questions are asked together; commercial use limited by its licence |
 | LiquidAI's [d1-3B](https://huggingface.co/LiquidAI/d1-3B) | 3B | text, many languages | 12 GB | small and fast, many questions on one state; commercial use limited by its licence |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 1.8 GB | topic classification of English text |
@@ -183,10 +184,11 @@ AI's hosted model, for comparison.
 | clef-flash | **96.8** | 78.1 | 50.8 | 95.4 | 57.6 |
 | clef (8-bit) | 96.4 | **81.0** | 55.2 | 95.4 | 57.6 |
 | pplx v1.1 27B (8-bit) | 94.0 | 79.6 | 66.8 | **96.8** | 58.0 |
-| pplx-decider-flash-v1.2 | 93.6 | 77.9 | 61.8 | 93.8 | **60.6** |
+| pplx-decider-flash-v1.2 | 93.6 | 77.9 | 61.8 | 93.8 | 60.6 |
 | d3-flash | 85.8 | 77.7 | 64.3 | 95.2 | 57.2 |
 | elephant-1 | 89.6 | 75.9 | **74.5** | **96.8** | 53.9 |
-| H2O-Lightning-4B | 85.2 | 76.3 | 59.9 | 84.6 | 57.3 |
+| joey-1 | 80.0 | 80.5 | 56.5 | 83.0 | 43.7 |
+| H2O-Lightning-4B | 89.0 | 80.0 | 60.4 | 93.0 | **61.4** |
 | d1-2B | 88.2 | 80.7 | 52.2 | 86.2 | 56.3 |
 | d1-3B | 86.6 | 78.7 | 55.7 | 86.2 | 56.8 |
 | laya | 79.0 | 61.9 | 39.5 | 39.2 | 35.1 |
@@ -202,11 +204,14 @@ ahead of it on four of the five; on entailment pplx comes close to Jev,
 Clef does not. elephant-1, a 9B model, is the best on entailment, ahead
 of Jev, and level with the 27B pplx on science questions (its model card
 lists public decision data among its training data without naming the
-datasets). d1-2B, at 1.9B, is level with d1-3B. The
+datasets). joey-1, its 2B sibling, is close to the best on offensive
+tweets and weaker on answer type and sentiment. d1-2B, at 1.9B, is level
+with d1-3B. The
 small models are near chance on entailment and science questions, as
 their model cards lead one to expect. pplx-decider-flash-v1.2, at 4B,
-is close to the 27B on answer type and the best of all on sentiment
-(SST-5). pplx v1.1 is the earlier release of the 27B; v1.2 27B, the
+is close to the 27B on answer type; H2O-Lightning-4B, also 4B, is the
+best of all on sentiment (SST-5), read as its release reads by default
+(each question's prompt whole). pplx v1.1 is the earlier release of the 27B; v1.2 27B, the
 release in the model table, is not measured yet. Every cell's macro-F1 and calibration error, the other
 Laya models and how each model matches its own reference code are in
 [docs/BENCHMARKS.md](https://github.com/armbues/mlx-decision/blob/main/docs/BENCHMARKS.md#accuracy).
@@ -284,7 +289,7 @@ compatible with TypeSafe AI's public Jev API. Clef and clef-flash
 (Cloudflare), pplx-decider (Perplexity), the d3 models (vLLM Semantic
 Router), H2O-Lightning (H2O.ai), Laya
 (Convai Innovations) and Julia 1 (Supersonic Labs) are used under their
-Apache-2.0 licences, elephant-1 and mammoth-1 (Base Labs) under the MIT
+Apache-2.0 licences, elephant-1, mammoth-1 and joey-1 (Base Labs) under the MIT
 licence, d1-2B and d1-3B (LiquidAI) under the LFM Open License v1.0;
 this package downloads them from Hugging Face and does not ship their
 weights.
@@ -304,9 +309,9 @@ the pplx prompts are ported from pplx-decider's releases (v1.1, and v1.2's
 joint request format), the d3 prompt from
 d3-flash's, the Base Labs prompt from [OneJev](https://github.com/OmniJev/OneJev),
 which serves Base Labs' models; the H2O-Lightning
-prompt and the lifting of images out of the state from H2O-Lightning's
-release; the d1 and d1 LFM3 prompts and answer reading were written from
-d1-3B's and d1-2B's documented and observed behaviour, without their
+prompt, its selection of a long state's parts and the lifting of images
+out of the state from H2O-Lightning's release; the d1 LFM3 and d1 prompts and answer reading were written from
+d1-2B's and d1-3B's documented and observed behaviour, without their
 releases' code; the Laya and Julia
 head and input encoding are ported from the
 [laya](https://pypi.org/project/laya/) package and Julia 1's release (all
@@ -316,5 +321,5 @@ Apache-2.0). The Studio's page ships
 [htm](https://github.com/developit/htm) (Apache-2.0). Their licence texts are in `LICENSES/`. The test photos are
 public domain or CC0 (`tests/parity/images/SOURCES.md`). Model weights keep
 their own licence (Clef, clef-flash, pplx-decider, d3, H2O-Lightning,
-Laya, Julia 1: Apache-2.0; elephant-1, mammoth-1: MIT; d1-2B, d1-3B: LFM
+Laya, Julia 1: Apache-2.0; elephant-1, mammoth-1, joey-1: MIT; d1-2B, d1-3B: LFM
 Open License v1.0).

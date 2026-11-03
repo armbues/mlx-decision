@@ -89,11 +89,12 @@ decision as a tool, answered on your Mac. It needs the `mcp` extra.
 The server has two tools:
 
 - `decide` takes the fields of a request body (`state`, `questions`, and
-  `images` for Clef, pplx, d3 and H2O-Lightning) and returns the response body as structured
-  content, plus `truncated`. An invalid request comes back as a tool
+  `images` for Clef, pplx, d3, Base Labs, H2O-Lightning and d1 LFM3) and
+  returns the response body as structured content, plus `truncated`. An invalid request comes back as a tool
   error naming the field, which the agent can read and correct.
-- `model_info` describes the loaded model: family, precision, input
-  limit, option limits and whether it reads images.
+- `model_info` describes the loaded model: family, precision,
+  H2O-Lightning's reading, input limit, option limits and whether it
+  reads images.
 
 The tool descriptions explain decision models to an agent that has never
 heard of them, with an example, and add what matters for the loaded

@@ -51,7 +51,7 @@ file with one JSON value per line.
 - [Settings](#settings)
 - [Jobs and the busy GPU](#jobs-and-the-busy-gpu)
 - [The workspace](#the-workspace): its files from a terminal
-- [Not in 1.0](#not-in-10)
+- [Not in the Studio yet](#not-in-the-studio-yet)
 
 ## Your first decision
 
@@ -94,7 +94,7 @@ on its first request, or with Load on the Models page. `--memory-budget`
 caps the memory loaded models may take (by default the GPU's
 recommended working set); the least recently used are unloaded to stay
 within it. The load options of `run` and `server` (`--max-input-tokens`,
-`--max-image-mp`, `--prefix-cache`, `--noul-floor`,
+`--max-image-mp`, `--prefix-cache`, `--noul-floor`, `--reading`,
 `--no-memory-check`) apply to every model the Studio loads.
 
 The same process also serves the Jev-compatible API of
@@ -343,7 +343,7 @@ memory budget, so it cannot load until the budget is raised),
 Downloading or Converting.
 The status turns into Load or Unload under the pointer. A row's context
 menu has Open in Playground, Load or Unload, Convert…, Copy Name and,
-for a model the Studio made, Delete….
+for a model that may be deleted (below), Delete….
 
 ![The Models page: the models on this Mac, a fitted model under its base, pplx-decider-flash-v1.2 in the inspector](images/models.png)
 
@@ -361,12 +361,20 @@ family's licence note; the fitted models made from it; and how to name
 it from code (`"model": "NAME"` in the API, `-m ...` on the command
 line).
 
-Delete… removes a model the Studio converted or fitted (in the
-workspace's `models/`), after asking, unloading it first. It is off for
-the default model and for a model that fitted models are made from, and
-refused while a job or a batch uses it. Downloaded models are not
-deleted from the Studio: delete the folder, or for the Hugging Face
-cache `hf cache rm model/ORG/NAME`.
+Delete… removes a model from disk, after asking, unloading it first.
+The confirmation says what goes and how much it frees:
+
+- a model the Studio converted or fitted (in the workspace's `models/`);
+- a downloaded model in the Hugging Face cache: the whole repository,
+  every revision of it (other tools share the cache: they download it
+  again when they need it; a file another repository still uses stays);
+- a model in your models folder (`models_dir`): its folder, or for a
+  link there only the link (the folder it points to stays).
+
+A model you named yourself (with `-m` or in the config file's `models`)
+is not deleted from the Studio, nor anything elsewhere on disk. Delete…
+is off for the default model and for a model that fitted models are
+made from, and refused while a job or a batch uses it.
 
 Where models live, under the list, names the places models come from,
 each with its path, how many models it holds and Show in Finder: the
@@ -381,7 +389,7 @@ d3, Base Labs and H2O-Lightning Download as Original, 8-bit or 4-bit (each with 
 size and whether it fits: within the memory budget, over it (it would
 not load until the budget is raised) or too large for this Mac), as
 [`download`](CLI.md#getting-a-model-download) offers them. A model with
-its own terms of use (d1-3B) shows them before it downloads. Other repo
+its own terms of use (d1-2B, d1-3B) shows them before it downloads. Other repo
 id takes any repository of a supported family on the Hugging Face Hub
 (Check first). The
 sheet says where the model goes: into `models_dir`, or the Hugging Face
@@ -389,10 +397,14 @@ cache. An 8-bit or 4-bit copy is quantized as it downloads: the
 full-size files are fetched one at a time, quantized and deleted, so
 only the copy is kept, where the full-size model would have gone.
 
-A download is a job without the GPU: several can run at once, while
-you use the rest of the Studio. It shows in the Downloading group and
-the Jobs list with its progress and Stop; a stopped download leaves no
-half model behind. The model joins the list when it is complete.
+A download at full size is a job without the GPU: several can run at
+once, while you use the rest of the Studio. An 8-bit or 4-bit download
+quantizes each file as it arrives, so it holds the GPU from start to end,
+as a conversion does ([Jobs](#jobs-and-the-busy-gpu)): the sheet says so,
+and Download is off for it while another job has the GPU. A download
+shows in the Downloading group and the Jobs list with its progress and
+Stop; a stopped download leaves no half model behind. The model joins
+the list when it is complete.
 
 ### Convert
 
@@ -425,8 +437,12 @@ the [`data`](TRAINING.md#data-datasets-to-training-files) command does
 (the Hub needs the `training` extra). The sheet offers the five
 benchmark datasets (TREC, TweetEval Offensive, SST-5, OpenBookQA, ANLI
 round 3), each with its question and options, or Another dataset… for
-any dataset on the Hub: a preview of its columns and rows, then its
-shape, one or several columns as the state and one column of labels
+any dataset on the Hub: each split's rows and size as the Hub gives
+them, before anything is read; a preview of its columns, rows and label
+values (a split of up to 50 MB is read whole, a larger one only by its
+first 5,000 rows, streamed, which the sheet notes under the label counts;
+the download reads every row); then its shape, one or several columns as
+the state and one column of labels
 (the dataset then arrives without questions, which you write in the
 Playground), or multiple choice (a question, choices and answer column,
 whose instructions you write in the sheet).
@@ -630,16 +646,17 @@ progress and Stop; its title links to what it made. An ended job stays
 in the list until you close it (its ×, or the clear button in the
 heading for every ended one).
 
-- **Downloads** (of models and datasets) do not need the GPU: several
-  run at once, beside everything else.
-- **Conversions, fits and evaluations** hold the GPU. A job waits for the
-  request the GPU is on, then every model is unloaded and the job runs
-  alone. Until it ends, every page says so: a banner naming the job,
+- **Downloads** of datasets, and of models at full size, do not need
+  the GPU: several run at once, beside everything else.
+- **Conversions, fits, evaluations and 8-bit or 4-bit downloads** hold
+  the GPU (a quantized download converts each file as it arrives). A
+  job waits for the request the GPU is on, then every model is unloaded
+  and the job runs alone. Until it ends, every page says so: a banner naming the job,
   with Stop; Run, Run All, Compare, Load and Unload are off; and the API
   answers 503 "busy", naming the job, with `Retry-After`. Afterwards
   models load again on their next request. One such job runs at a time:
-  Start Fit, Start Evaluation, Convert… and a batch's Start are off
-  while one runs, naming it.
+  Start Fit, Start Evaluation, Convert…, an 8-bit or 4-bit Download and
+  a batch's Start are off while one runs, naming it.
 - **Batches** are not jobs (they run in the Studio's process) but are
   listed with them. A batch does not start while a GPU job runs or
   waits, and a GPU job started while a batch runs is refused with a
@@ -690,12 +707,10 @@ Files you change from a terminal show in the Studio when its tab is
 focused again; a question set open in the Playground is not overwritten
 (see [Question sets](#question-sets)).
 
-## Not in 1.0
+## Not in the Studio yet
 
 - Browsers other than Chrome on macOS are not supported.
 - One GPU job at a time, and no queue.
-- Downloaded models are not deleted from the Studio (delete the folder,
-  or `hf cache rm` for the Hugging Face cache).
 - Convert offers 8-bit and 4-bit, not mixed precision
   ([`convert --target-bits`](CLI.md#quantizing-convert)).
 - Datasets and batches hold no images yet; image questions are for the

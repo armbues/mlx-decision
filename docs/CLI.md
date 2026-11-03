@@ -50,10 +50,15 @@ The state can also come from `--state-file` or stdin (`--state-json` parses
 it as JSON), and questions from a JSON file with `-q questions.json`
 (a questions map or a whole request body). `--json` prints the exact
 response body. `--image FILE` (repeatable) sends images along with the
-state (Clef, pplx, d3, H2O-Lightning, d1 LFM3). `--max-input-tokens N` (also on `chat`,
-`server` and `mcp`) changes the model's input limit, e.g. to give Laya up
-to 8,192 tokens, d1-2B up to 128,000 per set of questions, or d3, Base Labs and pplx v1.2 up to 262,144; `--noul-floor` changes H2O-Lightning's
-[yes/no floor](MODELS.md#h2o-lightning).
+state (Clef, pplx, d3, Base Labs, H2O-Lightning, d1 LFM3). `--max-input-tokens N`
+(also on `chat`, `server` and `mcp`) changes the model's input limit,
+e.g. to give Laya up to 8,192 tokens, d1-2B up to 128,000 per set of
+questions, or pplx v1.2, d3 and Base Labs up to 262,144; `--noul-floor`
+changes H2O-Lightning's [yes/no floor](MODELS.md#h2o-lightning).
+`--reading two-way` or `--reading one-way` (also on `chat`, `server`,
+`web`, `mcp` and `benchmark`) picks how H2O-Lightning from v1.4 reads a
+prompt: two-way, the release's default, or one-way, faster for many
+questions about one long state ([MODELS.md](MODELS.md#h2o-lightning)).
 
 `mlx-decision --version` prints the installed version.
 
@@ -201,6 +206,12 @@ and the next download of the model resumes them). `--events` prints the
 progress as JSON lines for other programs, as [`training fit`](TRAINING.md#progress-events-cancel)
 does, and asks nothing.
 
+Some releases are pinned to the commit mlx-decision was checked against
+(H2O-Lightning-4B at v1.4.2, pplx-decider v1.1 27B): `download` and
+loading by repo id take that commit, not the repository's latest, so a
+later release does not reach you before it is checked. A local folder
+loads as it is.
+
 Clef, pplx, d3, Base Labs and H2O-Lightning models can also be stored quantized. After the model, the menu asks
 for full size, 8-bit or 4-bit, with the size of each and which of them fit
 in the Mac's memory (the largest that fits is the default); `--bits 8` or
@@ -214,9 +225,10 @@ mlx-decision run -m Cloudflare/clef -s "My card was charged twice." --noul "Is i
 The full-size weight files are then fetched one at a time, quantized and
 deleted, so the full-size model never has to fit in memory or on disk:
 Clef 27B in 8-bit takes about 30 GB on disk, plus one 5 GB file while
-the download runs. Each file is read whole, so memory must hold the
-largest one: mammoth-1's first file is 49.8 GB, and storing it quantized
-takes about 57 GB of memory. The result is the same as running
+the download runs. A file is quantized one tensor at a time, so memory
+holds the largest tensor and the output file being written (up to 5 GB),
+not the whole file: converting elephant-1 (one 18.8 GB file) to 8-bit
+peaks at 10 GB. The result is the same as running
 [convert](#quantizing-convert) on a full download. In the Hugging
 Face cache it takes the place of the repo's files, so `-m
 Cloudflare/clef` loads it without fetching anything. `hf cache ls` and
@@ -274,11 +286,11 @@ d3-edge in uniform 4-bit changed 30 clear answers of 276 against its own
 bf16. Use them at full size or 8-bit.
 
 H2O-Lightning takes all of these, mixed precision included (about 4
-minutes to measure). Against the release's code on its test set (271
-questions), the 8-bit copy changed 6 answers, all near ties (largest
-difference 0.035); mixed 4.5 changed 11, 4 of them clear ones (0.16);
-uniform 4-bit 19, 12 of them clear (0.33). For this model 4-bit costs
-more than for clef-flash: prefer 8-bit, or mixed precision on a small Mac.
+minutes to measure). Against the release's code on its test set (v1.4.2
+read two-way, 276 questions), the 8-bit copy changed 1 answer, a near
+tie (largest difference 0.047); uniform 4-bit changed 29, 23 of them
+clear ones (0.49). For this model 4-bit costs more than for clef-flash:
+prefer 8-bit.
 
 `convert` reads one weight file at a time, so a model larger than the
 Mac's memory can be converted: Clef 27B to 8-bit takes about 10 s and

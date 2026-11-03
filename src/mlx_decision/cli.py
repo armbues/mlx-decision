@@ -499,8 +499,8 @@ NoulFloorOption = Annotated[
         min=0,
         max=0.999,
         help="Yes/no answers less sure than this are reported at it, on their side "
-        "(H2O-Lightning; default: the release's 0.801, as evaluated). 0 turns it off, "
-        "for routing uncertain answers elsewhere.",
+        "(H2O-Lightning; default: the release's own: none from v1.4, 0.801 for v1.2.3). "
+        "0 turns it off, for routing uncertain answers elsewhere.",
     ),
 ]
 

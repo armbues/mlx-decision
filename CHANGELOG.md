@@ -8,6 +8,90 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+Base Labs' joey-1 and images for the Base Labs family, H2O-Lightning-4B
+at its current release v1.4.2 read two-way, soft labels for training,
+and the Studio deleting downloads. Nothing stable changes.
+
+### Added
+
+- Base Labs' `baselabs/joey-1` (2B, MIT), the family's third model,
+  through the same API, `run`, `chat`, `server`, `mcp`, `benchmark`,
+  `training` and the Studio, and in the `download` menu after
+  mammoth-1. A release without a stored LM head reads its answer rows
+  from the tied embeddings, as the release does. In bf16 it is within
+  0.010 of the release's runtime on the whole test set and peaks at
+  5.0 GB (8-bit: 3.4 GB), about four times as fast as elephant-1; its
+  8-bit copy changed no answer, its 4-bit copy 5 of them. On the five
+  benchmarks it has the best Offensive accuracy of all local models.
+- Images for the Base Labs models (elephant-1, mammoth-1 and joey-1), as
+  for Clef: any number per request, each scaled to between 65,536 and
+  16,777,216 pixels, `--max-image-mp` lowering the maximum. The
+  releases' serving runtime reads images with another attention than
+  the models were trained with, so mlx-decision reads them as their
+  training code does: on the image test requests elephant-1 is within
+  0.017 of that code and joey-1 within 0.021, both in bf16.
+- H2O-Lightning-4B read two-way, the default of its release v1.4.2: the
+  full-attention layers look both ways over the whole prompt, images
+  included. `--reading one-way` (on `run`, `chat`, `server`, `web`,
+  `mcp` and `benchmark`; Python: `reading=`; `info()` names it) keeps
+  the reading of earlier releases, which shares the state between a
+  request's questions and keeps it for later requests: for many
+  questions about one long state. A fitted model answers in the reading
+  it was fitted in. In bf16 v1.4.2 is within 0.031 of the release's own
+  code in both readings, 4 near ties changed of 276 answers, and the
+  release's three probe answers within its tolerance; on the five
+  benchmarks it is the best local model on sentiment (SST-5: 61.4%).
+- Soft labels in training data: a `choice` or `score` label may be a
+  distribution over the options and a `noul` label the probability of
+  true. Every kind of fit and the calibration train on them; a one-hot
+  distribution trains exactly as the hard label. Fit and evaluation
+  reports gain the log loss. The `data` command's preset
+  `typed-decisions` brings LocalLLaMA's typed-decisions dataset with its
+  gold distributions as soft labels.
+- `scripts/accuracy_benchmark.py --suite typed-decisions` scores a model
+  on the typed-decisions test split with the leaderboard's published
+  scorer; [docs/BENCHMARKS.md](docs/BENCHMARKS.md) has the results.
+- The Studio deletes downloaded models: a Hugging Face cache repo with
+  every revision of it (files another repo uses stay), and a folder or
+  a link in the models folder (for a link only the link goes). Models
+  named in the config file and the default model are not deleted, and
+  the confirmation shows what deleting frees.
+
+### Changed
+
+- H2O-Lightning-4B: `download` and loading by repo id take release
+  v1.4.2, the commit mlx-decision was checked against, so a later
+  release reaches you only with an mlx-decision that has checked it;
+  1.1 fetched the Hub's latest. v1.4.2 has new weights and settings: no
+  floor for yes/no answers, the image temperature and pixel bound of
+  its `serve_config.json`, and its own temperatures for two-way. Long
+  input is read whole up to the 40,960-token context; over it each
+  question keeps the parts of the state most relevant to it (ranked by
+  BM25, ported from the release), so no request is refused for its
+  length. A v1.2.3 folder still loads with that release's settings and
+  32,000-token cut, read one-way only.
+- `perplexity-ai/pplx-decider-v1.1-27b`: `download` and loading by repo
+  id take the commit mlx-decision was checked against; a later update to that repo
+  reads larger images than mlx-decision does.
+- In the Studio, an 8-bit or 4-bit download holds the GPU while it
+  runs, as a conversion does, since it converts each file as it
+  arrives: it does not start beside another GPU job or a batch, and the
+  models answer "busy" until it is done. Full-size downloads still run
+  beside everything.
+- In the Studio's "Another dataset…", each split shows its rows and
+  size as soon as the splits are listed, and a split larger than 50 MB
+  is previewed by its first 5,000 rows, streamed, instead of being
+  downloaded whole for the preview. The download still reads every
+  row.
+
+### Fixed
+
+- H2O-Lightning text is tokenized as H2O.ai trained the model, for
+  v1.2.3 too: Devanagari and vowelled Arabic were split differently.
+- A `training fit --overwrite` (or `fitted.write(overwrite=True)`)
+  stopped while it replaced a folder no longer loses both fits: the
+  next write or load of the folder finishes the replacement.
+
 ## [1.1.0] - 2026-11-01
 
 Two new model families: Base Labs' elephant-1 and mammoth-1, and

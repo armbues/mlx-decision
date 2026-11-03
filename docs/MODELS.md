@@ -17,9 +17,10 @@ memory it needs. The README has a short version of this table.
 | Perplexity's [pplx-decider-flash-v1.2](https://huggingface.co/perplexity-ai/pplx-decider-flash-v1.2) | 4B | text, images | 32,768 tokens per request (up to 262,144) | 9.1 GB of weights (8-bit: 5.1 GB, 4-bit: 3.0 GB) | - | - | all questions of a request in one pass, images up to 1.6 MP; distilled from the 27B |
 | Perplexity's [pplx-decider-v1.2](https://huggingface.co/perplexity-ai/pplx-decider-v1.2) | 27B | text, images | 32,768 tokens per request (up to 262,144) | 52 GB (8-bit: 29 GB, 4-bit: 17 GB) | - | - | as flash, and more accurate (Perplexity's Decision Index 68.1 against 58.9) |
 | vLLM Semantic Router's [d3-flash](https://huggingface.co/vllm-sr/d3-flash) | 9B | text, images | 32,768 tokens per question (up to 262,144) | 19 GB (8-bit: 12 GB) | 0.23 s | - | entailment, knowledge, images, calibrated scores; five more sizes from 0.6B to 27B |
-| Base Labs' [elephant-1](https://huggingface.co/baselabs/elephant-1) | 9B | text | 16,384 tokens per question (up to 262,144) | 18 GB (8-bit: 11 GB) | 0.29 s | - | entailment and science questions, calibrated; a request's questions share one pass over the state |
-| Base Labs' [mammoth-1](https://huggingface.co/baselabs/mammoth-1) | 27B | text | 16,384 tokens per question (up to 262,144) | 8-bit: 33 GB | - | - | as elephant-1; checked only as an 8-bit copy |
-| H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 40,960 tokens per question | 13 GB (8-bit: 9 GB, 4-bit: 7 GB) | 0.18 s | - | fast with long states and many questions, images, calibrated scores |
+| Base Labs' [elephant-1](https://huggingface.co/baselabs/elephant-1) | 9B | text, images | 16,384 tokens per question (up to 262,144) | 18 GB (8-bit: 11 GB) | 0.29 s | - | entailment and science questions, calibrated; a request's questions share one pass over the state |
+| Base Labs' [mammoth-1](https://huggingface.co/baselabs/mammoth-1) | 27B | text, images | 16,384 tokens per question (up to 262,144) | 8-bit: 33 GB | - | - | as elephant-1; checked only as an 8-bit copy |
+| Base Labs' [joey-1](https://huggingface.co/baselabs/joey-1) | 2B | text, images | 16,384 tokens per question (up to 262,144) | 5.0 GB (8-bit: 3.4 GB) | 0.07 s | - | small and fast, as elephant-1 in its reading; offensive tweets, weaker on answer type and sentiment |
+| H2O.ai's [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b) | 4B | text, images | 40,960 tokens per question | 11 GB (8-bit: 9 GB) | 0.12 s | - | sentiment, long states (the parts each question needs), images; read one-way for many questions on one state |
 | LiquidAI's [d1-2B](https://huggingface.co/LiquidAI/d1-2B) | 1.9B | text, images, many languages | 32,768 tokens per set of 16 questions (up to 128,000) | 5.3 GB | 0.04 s | 1.4x | small and fast, images; answers depend on which questions are asked together; commercial use limited by its licence |
 | LiquidAI's [d1-3B](https://huggingface.co/LiquidAI/d1-3B) | 3B | text, many languages | 32,768 tokens per question | 12 GB | 0.06 s | 1.1x | small and fast, many questions on one state; commercial use limited by its licence |
 | [laya](https://huggingface.co/convaiinnovations/laya) | 421M | English text | 512 tokens per question | 1.8 GB | 16 ms | 3.0x | topic classification of English text |
@@ -44,16 +45,17 @@ differ is [below](#how-they-read-a-request).
 By your Mac's memory, among the models measured on the
 [benchmarks](BENCHMARKS.md#accuracy):
 
-- **16 GB**: d1-3B, small and fast (0.06 s a question), about level
-  with H2O-Lightning-4B on the benchmarks, or d1-2B, smaller and faster
-  still (0.04 s), with pictures, level with d1-3B; check their licence
-  before commercial use. H2O-Lightning-4B for long states with many questions
-  (its 8-bit copy when the states are long).
+- **16 GB**: H2O-Lightning-4B, ahead of d1-3B on all five benchmarks
+  and the best of all on sentiment, with images and long states (read
+  one-way when many questions ask about one long state, then its 8-bit
+  copy); d1-3B, small and fast (0.06 s a question), or d1-2B, smaller
+  and faster still (0.04 s), with pictures, level with d1-3B; check
+  their licence before commercial use.
 - **32 GB or more**: clef-flash, the most accurate on classification
   (TREC 96.8%), with images; elephant-1 when entailment matters (ANLI
   round 3: 74.5% against clef-flash's 50.8%, ahead of Jev) and for
-  science questions (OpenBookQA 96.8%), text only; d3-flash for
-  entailment with images (64.3%).
+  science questions (OpenBookQA 96.8%), with images too; d3-flash
+  next on entailment (64.3%).
 - **48 GB or more**: an 8-bit copy of Clef 27B (a little ahead of
   clef-flash on entailment and calibration) or of pplx-decider-v1.2
   (not measured yet; its v1.1 was the only local model close to Jev on
@@ -65,7 +67,8 @@ By your Mac's memory, among the models measured on the
 pplx-decider-flash-v1.2, the model in the Studio's screenshots, fits
 16 GB Macs (9.1 GB) and asks all questions of a request in one pass; on
 the benchmarks it is close to the 27B pplx v1.1 on answer type (TREC
-93.6%) and the best of all on sentiment (SST-5 60.6%). d3-mini (4B, 9.1
+93.6%) and second on sentiment (SST-5 60.6%, after H2O-Lightning-4B's
+61.4%). d3-mini (4B, 9.1
 GB) is level with d3-flash at under half its size (ahead on answer type
 and sentiment, 5 points behind on entailment). Compare
 in the Studio, on your own examples, says more than any benchmark.
@@ -79,9 +82,12 @@ its input limit applies to the whole request; d3, Laya, Julia and pplx
 v1.1 read each question on its own, with the whole state, so their input
 limit applies per question and their time grows with the number of
 questions.
-H2O-Lightning and d1 also read each question on its own, but after the
-state, which they compute once per request, so more questions cost
-little. Base Labs computes the state once too, reading it both ways, and
+d1 also reads each question on its own, but after the state, which it
+computes once per request, so more questions cost little; H2O-Lightning
+does the same when read one-way. Read two-way, its release's default,
+H2O-Lightning reads each question's whole prompt, state included, with
+attention looking both ways over it, so its time grows with the number
+of questions. Base Labs computes the state once too, reading it both ways, and
 then runs the questions together in one batch: each sees the state and
 itself, never the other questions. d1 LFM3 reads the questions in sets of
 16, each set one sequence with the whole state, in which the state's
@@ -158,9 +164,10 @@ clef-flash, a 16,384-token state takes about 10 s the first time and
 are the same as without reuse, within the parity tolerance.
 `--prefix-cache GB` on `run`, `chat`, `server` and `mcp` (Python:
 `prefix_cache_gb`) changes the amount; 0 turns it off. Base Labs,
-H2O-Lightning and d1 keep recent states the same way (d1 only states long enough to be
-worth it). pplx, d3, d1 LFM3, Laya and Julia read the state together with
-the questions, so they have nothing to reuse.
+H2O-Lightning read one-way and d1 keep recent states the same way (d1 only states long enough to be
+worth it). pplx, d3, H2O-Lightning read two-way, d1 LFM3, Laya and Julia
+read the state together with the questions, so they have nothing to
+reuse.
 
 ## pplx
 
@@ -234,7 +241,9 @@ times as long (4,000-token state: 9.5 s for one question, 49 s for
 five). On the [accuracy benchmarks](BENCHMARKS.md#accuracy) its 8-bit copy is the most
 accurate local model overall, well ahead on entailment (ANLI round 3:
 66.8% against 55.2% for Clef 27B; Jev 70.2%). Perplexity reports a
-Decision Index of 61.6 for it (Jev: 57.9).
+Decision Index of 61.6 for it (Jev: 57.9). By repo id it loads the
+release mlx-decision was checked against, not the later update to the
+repo, whose code reads larger images.
 
 ## d3
 
@@ -296,8 +305,8 @@ not run.
 
 ## Base Labs
 
-Base Labs (Baseten) post-trained two Qwen3.5 models for decisions, text
-only, under the MIT licence; their makers serve them with
+Base Labs (Baseten) post-trained three Qwen3.5 models for decisions,
+with text and images, under the MIT licence; their makers serve them with
 [OneJev](https://github.com/OmniJev/OneJev)'s runtime, whose prompt
 mlx-decision uses. A request's prompt starts with the state, which the
 model reads once, its full-attention layers looking both ways over it;
@@ -307,28 +316,42 @@ read out under letter codes. They answer up to 255 options and 2 to 10
 score levels. The input limit applies per question, the state included:
 16,384 tokens by default, the length the models were trained on;
 `--max-input-tokens` (Python: `max_input_tokens`) raises it up to
-262,144. Longer input is refused, never cut. Images are refused (the
-release reads them, but not with the attention it was trained with);
-an image inside the state is read as text.
+262,144. Longer input is refused, never cut.
 
 | Model | Disk (bf16) | The fit check needs | One question, 250-token state |
 |---|---|---|---|
 | [elephant-1](https://huggingface.co/baselabs/elephant-1) (9B) | 18.8 GB | 20.7 GB: 32 GB Macs and up (8-bit 10.3 GB: 16 GB Macs) | 0.29 s |
 | [mammoth-1](https://huggingface.co/baselabs/mammoth-1) (27B) | 54.7 GB | as pplx: 96 GB Macs in bf16, 48 GB in 8-bit | - |
+| [joey-1](https://huggingface.co/baselabs/joey-1) (2B) | 5.5 GB | 6.0 GB: 16 GB Macs and up (8-bit 2.9 GB) | 0.07 s |
 
 elephant-1 peaks at 17.6 GB in bf16 and 10.7 GB in 8-bit on the default
 `benchmark` lengths (up to 15,000 tokens), 20.0 and 13.3 GB at 32,768.
 More questions cost little: five about a 15,000-token state take 11.4 s,
-one 10.6 s, and with the state kept from an earlier request 0.57 s. On
+one 10.6 s, and with the state kept from an earlier request 0.57 s.
+joey-1 peaks at 5.0 GB in bf16 and 3.4 GB in 8-bit on the same lengths
+and is about four times as fast: 2.63 s for five questions about a
+15,000-token state, 0.25 s with the state kept. On
 a 16 GB Mac the 8-bit copy fits the GPU's working set (12.7 GB there)
 up to the default limit, not at 32,768 tokens. The 8-bit copy saves
 memory, not time (7 to 24% slower); it answers as bf16 does (no changed
-answer on the test set), the 4-bit copy changed 9 of 166, so prefer
-8-bit. `download --bits` and [convert](CLI.md#quantizing-convert) write
+answer on the test set), the 4-bit copy changed 9 of 166 (joey-1: 8-bit
+none, 4-bit 5), so prefer 8-bit. `download --bits` and [convert](CLI.md#quantizing-convert) write
 quantized copies; the answer codes' rows of the LM head (all the
 readout uses of it) stay in float32. Storing mammoth-1 quantized reads
 its 49.8 GB first weight file at once, about 57 GB of memory, so on
 Macs with less it does not finish; its 8-bit copy itself needs 33 GB.
+
+Images, as for Clef: any number per request, each scaled to between
+65,536 and 16,777,216 pixels (64 to 16,384 tokens) as in the releases, so
+one full-size image fills the default input limit; `--max-image-mp`
+(Python: `max_image_pixels`) lowers the maximum. An image inside the
+state is read in its place, top-level images at the start of the state.
+Videos are refused. The vision tower loads with the first image
+request. The releases' serving runtime reads images with another
+attention than the models were trained with, so mlx-decision reads them
+as their training code does: on the image test requests (22 requests,
+53 questions) elephant-1 and joey-1 in bf16 are within 0.017 and 0.021
+of that code run in bf16 (mean 0.0018), with no changed answer.
 
 On the [accuracy benchmarks](BENCHMARKS.md#accuracy) elephant-1 is the
 best of the local models on entailment, ahead of Jev (ANLI round 3:
@@ -339,61 +362,104 @@ data among the training data without naming the datasets. Its prompt
 and token ids match the release's runtime for every question of the
 test set; in bf16 its probabilities are within 0.039 of that runtime
 run in bf16 on the same Mac (mean 0.0010), with no changed answer, and
-mlx-decision answers the test set 3.6 times as fast. mammoth-1 was only
+mlx-decision answers the test set 3.6 times as fast. joey-1 is close to
+the best on offensive tweets (TweetEval Offensive: 85.6% accuracy, the
+highest of all, macro-F1 80.5) and level with d1-3B on entailment (ANLI
+round 3: 56.5%), but weak on answer type (TREC 80.0%, with poorly
+calibrated probabilities) and sentiment levels (SST-5: 43.7%); in bf16
+it is within 0.010 of the release's runtime (mean 0.0007), with no
+changed answer. mammoth-1 was only
 checked as an 8-bit copy: it agrees with elephant-1 on 153 of the 166
 top answers; it is not on the benchmarks.
 
 ## H2O-Lightning
 
 H2O.ai's H2O-Lightning-4B, built on Qwen3.5-4B, takes text and images and
-answers 1 to 255 options. Each question is its own sequence, but the
-system prompt and the state come first: they are computed once per
-request and shared by its questions, and kept for later requests on the
-same state as for Clef ([reusing a state](#reusing-a-state)). The input
-limit, 40,960 tokens, applies per question. As in the release, a state
-over 32,000 tokens keeps its first and last 16,000 around a `...` line
-(`truncated` is set), and a question still over the limit is refused.
-`--max-input-tokens` lowers the limit, not raises it; the state is then
-cut to leave room for the request's longest question.
+answers 1 to 255 options. `download` and loading by repo id take its
+release v1.4.2, the one mlx-decision was checked against, so a later
+release reaches you only with an mlx-decision that has checked it. A
+folder of the earlier v1.2.3 still loads, with that release's settings,
+read one-way only. Text is tokenized as H2O.ai trained the model, for
+both releases (before mlx-decision 1.2, Devanagari and vowelled Arabic
+were split differently).
 
-As released, a yes/no answer less sure than 0.801 is reported at 0.801 on
-its side: the answer stays, its probability moves. `--noul-floor 0`
-(Python: `noul_floor=0`, also for `server` and `mcp`) reports the model's
-own probability, for routing uncertain answers elsewhere; a value
-between 0.5 and 1 sets another floor. Other families refuse the option.
+Each question is its own sequence, the system prompt, the state and its
+images first. The release reads it in one of two ways, and so does
+mlx-decision (`--reading two-way|one-way` on `run`, `chat`, `server`,
+`web`, `mcp` and `benchmark`; Python: `reading=`):
+
+- **two-way**, the release's default and mlx-decision's: the
+  full-attention layers look both ways over the whole prompt, images
+  included (the linear-attention layers stay causal). Each question's
+  prompt is read whole, so nothing is shared between questions and the
+  time grows with their number.
+- **one-way**: the system prompt and the state are computed once per
+  request and shared by its questions, and kept for later requests on
+  the same state as for Clef ([reusing a state](#reusing-a-state)). For
+  many questions about one long state: five questions about a
+  15,000-token state take 36.7 s two-way, where one-way reads the state
+  once (6.4 s for one question) and each further question costs little.
+
+H2O.ai trained the model for both and reports it more accurate two-way
+(Decision Index 63.2 against 60.9, 206 against 202 of the 231 public
+JevBench items). A fitted model answers in the reading it was fitted in.
+
+The input limit, 40,960 tokens, applies per question. A state is read
+whole while the question's prompt fits; over that, as in the release,
+each question keeps the parts of the state most relevant to it and its
+options (ranked by BM25, with their headings), or the state's start and
+end when nothing matches, and its own text is cut last; no request is
+refused for its length, and `truncated` is set. `--max-input-tokens`
+lowers the limit, not raises it, and the cut follows it. A v1.2.3 folder
+keeps that release's cut: a state over 32,000 tokens keeps its first and
+last 16,000 around a `...` line, and a question still over the limit is
+refused.
+
+The settings are the release's (`serve_config.json`): its temperatures
+per question type and reading, and no floor for yes/no answers, which
+keep the model's own probability. A v1.2.3 folder keeps that release's
+floor: a yes/no answer less sure than 0.801 is reported at 0.801, the
+answer unchanged. `--noul-floor` (Python: `noul_floor`, also for
+`server` and `mcp`) sets a floor between 0.5 and 1, or `0` for none.
+Other families refuse the option.
 
 | Copy | Disk | The fit check needs | Peak memory (longest states) |
 |---|---|---|---|
-| bf16 (as released) | 9.1 GB | 10.0 GB: 16 GB Macs and up | 12.6 GB |
-| 8-bit | 5.1 GB | 5.7 GB: 16 GB Macs and up | 8.9 GB |
-| mixed 4.5 | 3.3 GB | 3.6 GB: 16 GB Macs and up | 7.2 GB |
-| 4-bit | 3.0 GB | 3.3 GB: 16 GB Macs and up | 7.0 GB |
+| bf16 (as released) | 9.3 GB | 10.3 GB: 16 GB Macs and up | 11.2 GB two-way, 12.6 GB one-way |
+| 8-bit | 5.1 GB | 5.7 GB: 16 GB Macs and up | 8.9 GB one-way |
+| 4-bit | 3.0 GB | 3.3 GB: 16 GB Macs and up | 7.0 GB one-way |
 
-On a 16 GB Mac the full-size model fits, but long states take it to the
-edge of the GPU's working set (12.6 of 12.7 GB); use the 8-bit copy
-there for long states. `download --bits` and
-[convert](CLI.md#quantizing-convert) write the copies; the vision tower stays as
-released.
+The peaks are on states of 28,800 tokens; the one-way ones were measured
+with v1.2.3, which has the same shape. On a 16 GB Mac the full-size
+model fits, but long states read one-way take it to the edge of the
+GPU's working set (12.6 of 12.7 GB); use the 8-bit copy there. The 8-bit
+copy answers as bf16 does (one changed answer of 276, a near tie); the
+4-bit copy changed 29, so prefer 8-bit. `download --bits` and
+[convert](CLI.md#quantizing-convert) write the copies; the vision tower
+stays as released.
 
-One question about a 250-token state takes 0.18 s, five take 0.41 s;
-a 28,800-token state takes 12.2 s with one question and 12.7 s with five,
-and 0.69 s for five new questions once the state is kept. As for Clef,
-the quantized copies save memory, not time: from 1,000 tokens on they
-are 5-17% slower.
+Read two-way, one question about a 250-token state takes 0.12 s; one
+about a 28,800-token state 17.7 s, five 90.9 s. Read one-way, one
+question takes about as long at 4,000 tokens and 23% less at 28,800
+(13.6 s), and new questions on a kept state take a fraction of a second.
+As for Clef, the quantized copies save memory, not time.
 
 Images, as for Clef: up to 4 per request, each
-scaled to at most 1,048,576 pixels as in the release (`--max-image-mp`
-does not apply), placed ahead of the text. The vision tower loads with
-the first image request.
+scaled to at most 1,638,400 pixels as in the release (v1.2.3: 1,048,576;
+`--max-image-mp` does not apply), placed ahead of the text. The vision
+tower loads with the first image request.
 
-On the [accuracy benchmarks](BENCHMARKS.md#accuracy) it is behind the 27B models, ahead
-of clef-flash on entailment (ANLI round 3: 59.9% against 50.8%) and has the
-best calibrated sentiment scores. H2O.ai reports 205 of the 231 public
-JevBench items for the release. Its prompt and token ids match the
-release's code (its shim, with transformers in place of vLLM) for every
-question of the test set; in bf16 its probabilities are within 0.020 of
-that code run in bf16 on the same Mac (mean 0.0014), and the 3 answers
-that changed of 271 were near ties.
+On the [accuracy benchmarks](BENCHMARKS.md#accuracy), read two-way, it is
+the best of all models on sentiment levels (SST-5: 61.4%) and ahead of
+clef-flash on entailment (ANLI round 3: 60.4% against 50.8%); v1.4.2 is
+ahead of v1.2.3 on all five (science questions: 93.0% against 84.6%).
+Its prompt and token ids match the release's code (its shim, with
+transformers in place of vLLM) for every question of the test set in
+both readings, long states included; in bf16 its probabilities are
+within 0.031 of that code run in bf16 on the same Mac (mean 0.0016;
+one-way 0.030), and the 4 answers that changed of 276 were near ties. Its
+release's own three check requests are answered within 0.0032 of the
+answers it ships with.
 
 ## d1 LFM3
 
@@ -495,10 +561,10 @@ twenty 245 ms; a 4,000-token state takes 0.77 s with one question and
 (mlx-decision 0.9 to 1.2 times as fast): it reads the state once for all
 questions too.
 
-On the [accuracy benchmarks](BENCHMARKS.md#accuracy) it is level with H2O-Lightning-4B
-in a third of the time, ahead on answer type, offensive language and
-science questions and behind on entailment (ANLI round 3: 55.7% against
-59.9%). LiquidAI reports it as the best decision model under 10B on the
+On the [accuracy benchmarks](BENCHMARKS.md#accuracy) it is behind
+H2O-Lightning-4B on all five, most on science questions (OpenBookQA:
+86.2% against 93.0%) and entailment (ANLI round 3: 55.7% against
+60.4%). LiquidAI reports it as the best decision model under 10B on the
 Decision Index 0.2.1 (scored by themselves). Its prompt and token ids
 match the release's code for every question of the test set (22
 languages included); in bf16 its probabilities are within 0.030 of that

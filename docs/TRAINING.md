@@ -327,8 +327,9 @@ can also be a fitted model; its fit is then replaced and its base kept.
 The output folder defaults to `<base>-<data name>` in the current folder;
 an existing one is replaced only with `--overwrite`.
 Progress goes to stderr and the report to stdout. The report shows, per
-question, accuracy, macro-F1 and ECE before and after, the kept epoch and
-the time taken. It is also saved in the folder as `training.json`.
+question, accuracy, macro-F1, ECE and log loss (`score` questions also
+mean absolute error) before and after, the kept epoch and the time
+taken. It is also saved in the folder as `training.json`.
 
 ### Splits
 
@@ -572,7 +573,11 @@ can make the model worse at others, so check the questions you rely on
 with `training eval`.
 
 H2O-Lightning's yes/no floor still applies after a fit, and every
-family keeps its input limits and checks.
+family keeps its input limits and checks. An H2O-Lightning fit answers
+in the [reading](MODELS.md#h2o-lightning) its base was read in when it
+was made: two-way for v1.4 unless the fit was made one-way (in Python,
+`fit(..., reading="one-way")`), one-way for v1.2.3. Loading it takes that
+reading by itself; asking for the other one (`--reading`) is refused.
 
 ## Evaluating
 
@@ -583,9 +588,10 @@ mlx-decision training eval -m julia-trec --data trec --compare SupersonicLabs/Ju
 ```
 answer_type (choice, 500 examples)
              julia-trec     Julia-1
-  accuracy        97.4%       16.0%
-  macro-F1        96.0%       14.0%
-  ECE              1.9%       63.1%
+  accuracy        96.6%       16.0%
+  macro-F1        96.2%       14.0%
+  ECE              1.3%       63.1%
+  log loss        0.134       7.649
   confusion, julia-trec (rows: gold, columns: predicted)
   ...
 ```
@@ -639,7 +645,7 @@ options: `validation=` and `holdout=` (as `--validation` and
 `--holdout`; with neither, data without a report split holds back a
 fifth),
 `head_only=`, `early_stop=`, `overwrite=` and
-the loader's options (`max_input_tokens=`).
+the loader's options (`max_input_tokens=`, H2O-Lightning's `reading=`).
 
 ## Not in this version
 

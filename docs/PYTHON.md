@@ -96,28 +96,34 @@ errors below for memory and platform.
 ## Loading options
 
 `load` takes options per model: `max_input_tokens` changes the input limit
-(Laya and Julia up to 8,192, d3, Base Labs and pplx v1.2 up to 262,144; pplx v1.1,
-H2O-Lightning and d1 only lower),
+(Laya and Julia up to 8,192, d1-2B up to 128,000 per set of questions,
+pplx v1.2, d3 and Base Labs up to 262,144; pplx v1.1, H2O-Lightning and
+d1-3B only lower),
 `strict_encoding=False` lets Julia cut what it would otherwise refuse,
 `dtype` sets Laya's and Julia's precision (default float16),
-`max_image_pixels` caps image size for Clef, d3 and pplx (in pixels, at
-least 1,024; `None` keeps only the release's own maximum), `noul_floor` sets
-H2O-Lightning's [yes/no floor](MODELS.md#h2o-lightning), and `prefix_cache_gb` sets
-how much memory Clef, H2O-Lightning and d1 keep for
+`max_image_pixels` caps image size for Clef, pplx, d3, Base Labs and d1
+LFM3 (in pixels, at least 1,024; `None` keeps only the release's own
+maximum), `noul_floor` sets H2O-Lightning's
+[yes/no floor](MODELS.md#h2o-lightning), `reading` sets how
+H2O-Lightning from v1.4 reads a prompt (`"two-way"`, the release's
+default, or `"one-way"`, faster for many questions about one long state;
+a v1.2.3 folder reads one-way only), and `prefix_cache_gb` sets how much
+memory Clef, Base Labs, H2O-Lightning and d1 keep for
 [recent states](MODELS.md#reusing-a-state) (default 2, 0 turns it off).
 `vision=True` loads the vision tower at once rather than with the first
-image request (Clef, pplx, d3, H2O-Lightning).
+image request (Clef, pplx, d3, Base Labs, H2O-Lightning, d1 LFM3).
 `check_memory=False` (by keyword) skips the memory check; a model that
 does not fit raises `mlx_decision.ModelTooLargeError` otherwise, a
 `DecisionError` whose `required` and `available` are in bytes. Without Apple Silicon (no Metal GPU), loading raises
 `mlx_decision.PlatformError`.
 `model.info()` describes the loaded model as JSON data: family,
-precision, input limit, option limits and whether it takes images.
+precision, H2O-Lightning's `reading` (`None` for other families), input
+limit, option limits and whether it takes images.
 
 ## Images
 
-Clef, pplx, d3 and H2O-Lightning take images as file
-paths, bytes, PIL images or data URLs:
+Clef, pplx, d3, Base Labs, H2O-Lightning and d1 LFM3 take images as
+file paths, bytes, PIL images or data URLs:
 
 ```python
 result = model.decide(
