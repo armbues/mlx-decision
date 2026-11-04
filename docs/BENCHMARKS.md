@@ -365,10 +365,12 @@ Each question costs about one pass over the whole state. For many
 questions on one long state, read it one-way (`--reading one-way`): the
 questions then share the system prompt and the state, computed once per
 request. The table below was measured one-way on v1.2.3, in bf16, as an
-8-bit and as a uniform 4-bit copy; v1.4.2 one-way in bf16 took 1.59 /
-6.41 / 13.6 s for one question at 4,000 / 15,000 / 28,800 tokens, so a
-single two-way question costs about the same at 4,000 tokens and up to
-30% more at 28,800. Warm: the same request again with the state kept:
+8-bit and as a uniform 4-bit copy. Measured back to back on v1.4.2 in
+bf16, one question at 4,000 / 15,000 / 28,800 tokens took 1.37 / 6.24 /
+16.4 s two-way and 1.50 / 5.84 / 13.6 s one-way: a single two-way
+question costs about the same at 4,000 tokens, about 7% more at 15,000
+and about 20% more at 28,800 (runs on one Mac vary by up to 10%). Warm:
+the same request again with the state kept:
 
 | State tokens | Questions | Input tokens | bf16 | 8-bit | 4-bit | bf16 warm |
 |---|---|---|---|---|---|---|

@@ -398,7 +398,7 @@ mlx-decision (`--reading two-way|one-way` on `run`, `chat`, `server`,
   the same state as for Clef ([reusing a state](#reusing-a-state)). For
   many questions about one long state: five questions about a
   15,000-token state take 36.7 s two-way, where one-way reads the state
-  once (6.4 s for one question) and each further question costs little.
+  once (5.8 s for one question) and each further question costs little.
 
 H2O.ai trained the model for both and reports it more accurate two-way
 (Decision Index 63.2 against 60.9, 206 against 202 of the 231 public
