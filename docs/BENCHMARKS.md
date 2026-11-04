@@ -934,7 +934,12 @@ Notes:
   far the best calibrated (ECE 0.011). Julia-1 is accurate but nearly
   certain of every answer, so its KL divergence is large (4.21).
 - H2O-Lightning v1.4.2, read two-way, is as accurate as v1.2.3 but less
-  well calibrated (ECE 0.091 against 0.021).
+  well calibrated (ECE 0.091 against 0.021). The weights cause this, not
+  the reading or the yes/no floor: read one-way, v1.4.2 scores 0.688 /
+  0.369 / 0.181 / 0.088, and v1.2.3's floor (0.801) would raise its ECE
+  to 0.101. v1.4.2 keeps v1.2.3's temperatures, but its probabilities
+  are sharper: on choice and score questions its confidence is 9 to 13
+  points above its accuracy (v1.2.3's: under 1).
 - The leaderboard's rows for the same models (third-party runs on vLLM,
   counting a decision whose gold has a tie as right for either option;
   35 of the 2,000 have one) agree with these within 0.003 under that
