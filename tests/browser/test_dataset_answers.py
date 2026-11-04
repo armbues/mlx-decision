@@ -81,7 +81,7 @@ def test_options_from_the_cards_names(tweets, page):
     saved = described(tweets)
     assert saved["answers"]["choice"]["map"]["13"] == "m_a_investments"
     assert len(saved["questions"]["choice"]["criteria"]) == 20
-    expect(page.locator(".ds-banner")).to_have_count(0)  # ready for a fit
+    expect(page.locator(".ds-banner")).to_contain_text("Ready for a fit and a batch.")
 
 
 def test_merge_leave_out_and_yes_no(tweets, page):
@@ -257,3 +257,13 @@ def test_an_open_dataset_follows_a_save_elsewhere(tweets, page):
     )
     assert saved == 200
     expect(page.locator(".question[data-q='fed']")).to_be_visible(timeout=10_000)
+
+
+def test_an_open_dataset_follows_its_rows_written_again(tweets, page):
+    # Downloaded again with the same dataset.json: the rows shown follow.
+    open_studio(page, tweets, "playground/data:tweets")
+    state = page.locator(".state-text")
+    expect(state).to_have_value("tweet 0 about Analyst Update")
+    split = tweets.folder / "train.jsonl"
+    split.write_text(split.read_text().replace("tweet ", "post "))
+    expect(state).to_have_value("post 0 about Analyst Update", timeout=10_000)

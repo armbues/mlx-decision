@@ -91,6 +91,10 @@ and the Studio deleting downloads. Nothing stable changes.
 - A `training fit --overwrite` (or `fitted.write(overwrite=True)`)
   stopped while it replaced a folder no longer loses both fits: the
   next write or load of the folder finishes the replacement.
+- The Studio's Playground keeps a dataset's "Ready for a fit and a
+  batch" banner after saving its questions: the page took its own save
+  for a change made elsewhere, read the dataset again and dropped the
+  banner a moment after showing it.
 
 ## [1.1.0] - 2026-11-01
 

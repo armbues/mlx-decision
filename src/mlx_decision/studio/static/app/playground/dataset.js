@@ -35,26 +35,34 @@ const factsOf = (doc, seed, search) => ({
   matched: doc.matched,
   seed,
   search,
+  shown: shownOf(doc),
 });
+
+// The rows and splits a document shows: the same again after a save of this
+// tab's means nothing else changed.
+const shownOf = (doc) => JSON.stringify([doc.splits, doc.split, doc.total, doc.matched, doc.rows]);
+
+function showDocument(documentName, doc, options, kept = {}) {
+  const draft = fromBody({ state: "", questions: doc.questions });
+  draft.examples = rowsFrom(doc.rows);
+  draft.current = draft.examples[0].uid;
+  draft.answers = answersFromFile(draft, doc.answers);
+  setEntry(documentName, {
+    sha256: doc.sha256,
+    modified: datasetOf(doc.name)?.modified ?? null,
+    baseline: bodyText(draft, true),
+    draft,
+    onDisk: null,
+    dataset: { ...factsOf(doc, options.seed ?? 0, options.search ?? ""), ...kept },
+  });
+}
 
 export async function loadDataset(documentName, options = {}) {
   const name = datasetOfDocument(documentName);
   if (!options.search) rowSearch.value = "";
   if (!dataFiles.value) await reloadData(); // its modified time: a change elsewhere reloads it
   try {
-    const doc = await fetchDocument(name, options);
-    const draft = fromBody({ state: "", questions: doc.questions });
-    draft.examples = rowsFrom(doc.rows);
-    draft.current = draft.examples[0].uid;
-    draft.answers = answersFromFile(draft, doc.answers);
-    setEntry(documentName, {
-      sha256: doc.sha256,
-      modified: datasetOf(name)?.modified ?? null,
-      baseline: bodyText(draft, true),
-      draft,
-      onDisk: null,
-      dataset: factsOf(doc, options.seed ?? 0, options.search ?? ""),
-    });
+    showDocument(documentName, await fetchDocument(name, options), options);
   } catch (error) {
     setEntry(documentName, { error: error.message, status: error.status });
   }
@@ -187,7 +195,9 @@ export function startFromSet() {
 
 // A dataset open here that changes elsewhere (saved in another tab, deleted,
 // downloaded again): reloaded when it has no edits, its split, draw and search
-// kept; with edits it stays, and a save says it changed.
+// kept; with edits it stays, and a save says it changed. This tab's own save
+// changes the modified time too: with the dataset.json it saved, the banner
+// stays ready, and with the same rows too only the time is taken.
 effect(() => {
   const list = dataFiles.value;
   if (!list) return;
@@ -202,7 +212,25 @@ effect(() => {
     }
     if (!value.dataset && !item) continue; // still gone
     if (isEdited(value)) continue;
-    const keep = value.dataset ? { split: value.dataset.split, seed: value.dataset.seed, search: value.dataset.search } : {};
-    loadDataset(documentName, keep);
+    if (!value.dataset) {
+      loadDataset(documentName); // back again
+      continue;
+    }
+    const keep = { split: value.dataset.split, seed: value.dataset.seed, search: value.dataset.search };
+    fetchDocument(item?.name ?? datasetOfDocument(documentName), keep)
+      .then((doc) => {
+        const current = drafts.peek()[documentName];
+        if (!current?.dataset) return;
+        const saved = doc.sha256 === current.sha256;
+        if (saved && shownOf(doc) === current.dataset.shown) setEntry(documentName, { ...current, modified });
+        else if (!isEdited(current)) {
+          if (!keep.search) rowSearch.value = "";
+          showDocument(documentName, doc, keep, saved ? { ready: current.dataset.ready } : {});
+        }
+      })
+      .catch((error) => {
+        const current = drafts.peek()[documentName];
+        if (current?.dataset && !isEdited(current)) setEntry(documentName, { error: error.message, status: error.status });
+      });
   }
 });

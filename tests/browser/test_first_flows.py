@@ -45,7 +45,11 @@ def test_a_dataset_says_it_is_ready_once_its_questions_are_saved(studio, page):
     banner = page.locator(".ds-banner")
     expect(banner).to_contain_text("Not ready for a fit")
     page.get_by_label("Answer for 1", exact=True).select_option("out")
-    page.keyboard.press("Meta+s")
+    # The save changes the folder's modified time, so the page reads the
+    # dataset list again and then the document: the banner outlasts that.
+    document = re.compile(r"/api/data/tweets/document(\?|$)")
+    with page.expect_response(lambda response: document.search(response.url)):
+        page.keyboard.press("Meta+s")
     expect(page.locator(".toast").last).to_contain_text("Saved: tweets is ready for a fit")
     expect(banner).to_contain_text("Ready for a fit and a batch.")
     banner.get_by_role("button", name="Run as Batch…").click()
