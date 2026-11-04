@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 [docs/STABILITY.md](docs/STABILITY.md) calls stable does not break before
 2.0 (before 1.0, minor versions could change the interface).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-04
 
 Base Labs' joey-1 and images for the Base Labs family, H2O-Lightning-4B
 at its current release v1.4.2 read two-way, soft labels for training,
