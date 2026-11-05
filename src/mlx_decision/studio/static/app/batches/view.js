@@ -196,18 +196,25 @@ export function confirmDelete(batch) {
   });
 }
 
-// The command that answers the same rows from a terminal (the workspace as the folder).
-export function command(batch) {
+// The command that answers the same rows from a terminal, run in the batch's
+// folder: its rows name their images there.
+function command(batch) {
   const model = models.value?.find((item) => item.name === batch.model);
   const short = model?.cli?.short ?? ["-m", batch.model];
-  const folder = `batches/${batch.name}`;
-  return ["mlx-decision", "run", ...short, "-q", `${folder}/questions.json`, "--states", `${folder}/rows.jsonl`, "--json"]
+  return ["mlx-decision", "run", ...short, "-q", "questions.json", "--states", "rows.jsonl", "--json"]
     .map(homeWord)
     .join(" ");
 }
 
+// The batch's folder, as a shell word (null before the status has come).
+function folderWord(batch) {
+  const workspace = status.value?.workspace;
+  return workspace ? homeWord(`${workspace}/batches/${batch.name}`) : null;
+}
+
 function copyCommand(batch) {
-  navigator.clipboard.writeText(command(batch)).then(
+  const folder = folderWord(batch);
+  navigator.clipboard.writeText(folder ? `cd ${folder} && ${command(batch)}` : command(batch)).then(
     () => toast("Copied the command"),
     () => toast("Could not copy the command"),
   );
@@ -231,10 +238,10 @@ function Progress({ batch }) {
 }
 
 function Terminal({ batch }) {
-  const workspace = status.value?.workspace;
+  const folder = folderWord(batch);
   return html`
     <details class="gsec batch-cli"><summary class="gsec-head"><h2>From a terminal</h2></summary>
-      <div class="group"><pre class="code-line">${workspace ? `cd ${homeWord(workspace)}\n` : ""}${command(batch)}</pre></div>
+      <div class="group"><pre class="code-line">${folder ? `cd ${folder}\n` : ""}${command(batch)}</pre></div>
     </details>
   `;
 }

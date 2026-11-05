@@ -67,7 +67,8 @@ def methods(family: str) -> list[tuple[str, bool]]:
 def resolve(family: str, method: str) -> list[str]:
     """The kinds a run goes through, in order, for ``method`` (a kind or ``auto``).
 
-    Every run ends with a calibration. Raises ``ValueError`` for a kind the
+    The kinds end with calibrate (``calibration="none"`` drops it later,
+    ``check_calibration``). Raises ``ValueError`` for a kind the
     family does not take (naming the ones it does).
     """
     offered = kinds(family)

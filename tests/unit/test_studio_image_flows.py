@@ -74,6 +74,28 @@ def test_a_batch_answers_from_its_own_links_to_the_images(studio):
     assert (info["state"], info["answered"], info["errors"]) == ("done", 6, 0)
 
 
+def test_the_terminal_command_in_the_batch_folder_reads_the_images(studio, tmp_path, monkeypatch):
+    """The page's From a Terminal runs in the batch's folder, where the rows'
+    image paths point."""
+    from typer.testing import CliRunner
+
+    from mlx_decision.cli import app
+
+    folder = studio.app_state.batches.folder(batch(studio))
+    monkeypatch.chdir(folder)
+    args = ["run", "-m", str(tmp_path / "models" / "eyes"), "-q", "questions.json"]
+    result = CliRunner().invoke(app, [*args, "--states", "rows.jsonl", "--json"])
+    assert result.exit_code == 0, result.output
+    lines = [json.loads(line) for line in result.stdout.splitlines()]
+    assert len(lines) == 6 and not any("error" in line for line in lines)
+    # From the workspace the same paths do not read.
+    monkeypatch.chdir(folder.parent.parent)
+    rows = f"batches/{folder.name}/rows.jsonl"
+    result = CliRunner().invoke(app, [*args[:-1], f"batches/{folder.name}/questions.json",
+                                      "--states", rows, "--json"])  # fmt: skip
+    assert all("error" in json.loads(line) for line in result.stdout.splitlines())
+
+
 def test_a_model_without_images_answers_each_row_with_its_refusal(studio):
     info = wait(studio, batch(studio, model="text"))
     assert info["errors"] == 6

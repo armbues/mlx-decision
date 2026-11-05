@@ -8,6 +8,50 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Images in training data: a line's `images` (file paths relative to
+  the file or dataset folder, or data URLs) and images inside the state,
+  for every kind of fit and `training eval` on the families that read
+  images (all but d1-3B, Laya and Julia, which refuse such data before
+  loading). Every image is opened in the check before a model loads,
+  and a fit's data hash covers the image files. A Clef head fit counts
+  each image's tokens in its memory and disk estimate. d3-edge's readout
+  fit on Oxford-IIIT Pet (37 breeds, 3,680 photos, 3.3 minutes) went
+  from 31.6% to 86.2% on 1,850 test photos.
+- The `data` command's `image` shape: a Hugging Face `Image` column, or
+  a column of image paths in a CSV or JSON-lines file, and its class
+  label (`--image`, `--label`, optionally `--text` as the state),
+  written into a dataset folder's `images/`. `--show` lists each line's
+  image.
+- `training fit --calibration auto|full|temperature|none` (Python:
+  `calibration=`; the Studio's New Fit: Options) picks the closing
+  calibration. `none` leaves the fitted kind's answers as they are, for
+  a program whose thresholds were tuned on the base's probabilities.
+  The report and `training.json` say which calibration each question
+  got.
+- Image datasets in the Studio: Download a Dataset previews image
+  columns as thumbnails and downloads them in the image shape; the
+  Datasets page shows each row's thumbnail and the image in the
+  inspector; the Playground on a dataset shows the rows' images and
+  sends them with Run; a batch links the images into its own folder and
+  keeps standing alone, and Save Answers as a Dataset keeps them; Fit
+  and Evaluate take image datasets. Adding a JSON-lines file whose lines
+  name image files beside it explains how to make it a dataset folder.
+
+### Changed
+
+- The closing calibration after a `readout`, `head` or `finetune` fit
+  is a temperature per question only: the per-option biases, fitted on
+  the dev part (a tenth of the training part), cost accuracy on
+  questions with many options (on Oxford-IIIT Pet 2.9 points) and
+  changed little elsewhere. `--calibration full` gives the biases as
+  before. A calibration alone (`--method calibrate`) keeps them when
+  the training part holds 10 or more examples of every option.
+- The Studio's batch command (From a Terminal, Copy Command) runs in the
+  batch's folder: `cd` into `batches/NAME`, then `mlx-decision run -m
+  MODEL -q questions.json --states rows.jsonl --json`.
+
 ## [1.2.0] - 2026-11-04
 
 Base Labs' joey-1 and images for the Base Labs family, H2O-Lightning-4B

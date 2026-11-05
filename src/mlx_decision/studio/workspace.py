@@ -113,10 +113,10 @@ README when it starts.
   what each label value means, and one JSON-lines file per split) or a
   single JSON-lines file: `mlx-decision training fit -m MODEL --data data/NAME`.
 - `batches/`: a dataset's rows answered by a model, one folder per batch:
-  `batch.json` (what it ran, how far it got), `questions.json`, `rows.jsonl`
-  and `results.jsonl` (one line per row answered).
-  `mlx-decision run -m MODEL -q batches/NAME/questions.json --states
-  batches/NAME/rows.jsonl --json` answers the same rows.
+  `batch.json` (what it ran, how far it got), `questions.json`, `rows.jsonl`,
+  `results.jsonl` (one line per row answered) and, for an image dataset,
+  `images/`. In the batch's folder, `mlx-decision run -m MODEL -q
+  questions.json --states rows.jsonl --json` answers the same rows.
 - `models/`: models the Studio converted or fitted, each a model folder:
   `mlx-decision run -m models/NAME`.
 - `jobs/`: one folder per job (download, convert, fit, eval): `job.json`

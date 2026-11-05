@@ -317,7 +317,9 @@ Questions (or Edit Questions once it has some). The open document is
 then the dataset, and the editor edits its questions: Save writes them
 to the dataset's `dataset.json`. In place of the example chips it shows
 a sample of the dataset's rows (about two per label value, with Shuffle
-and a search); the rows' states are shown, not edited. Each question
+and a search); the rows' states are shown, not edited, and an image
+dataset's rows show their images under the state (pick one for the
+preview), which Run sends with the row. Each question
 has "Answered by", the column whose values are its labels (or none: the
 question is asked, not trained), and for each of the column's values
 the answer it stands for ("Answer for VALUE": an option, a level, yes
@@ -422,6 +424,7 @@ more questions. Fits, evaluations and batches read them from the
 workspace's `data/`, each a dataset folder (a `dataset.json` with the
 questions and one JSON-lines file per split) or a single JSON-lines
 file. The formats are in [TRAINING.md](TRAINING.md#training-data).
+A dataset folder can hold images (its `images/`, named by the lines).
 
 ![The Datasets page: TREC's test split, its question and label counts, and its rows](images/datasets.png)
 
@@ -444,8 +447,13 @@ first 5,000 rows, streamed, which the sheet notes under the label counts;
 the download reads every row); then its shape, one or several columns as
 the state and one column of labels
 (the dataset then arrives without questions, which you write in the
-Playground), or multiple choice (a question, choices and answer column,
-whose instructions you write in the sheet).
+Playground), multiple choice (a question, choices and answer column,
+whose instructions you write in the sheet), or, for a dataset with an
+image column, Image: a picture and its label, with a text column as the
+state if there is one. The preview shows an image column as
+thumbnails, and the download writes the pictures into the folder's
+`images/`, as `data`'s [image shape](TRAINING.md#data-datasets-to-training-files)
+does.
 
 Each split gets a role: Train (what a fit learns from), Report (rows a
 fit does not learn from, which its before-and-after report scores),
@@ -468,7 +476,12 @@ Add (+) takes a file from your Mac into `data/` under a name:
   the questions in the Playground.
 
 An added file is a dataset of one split, `train`, with the role Train;
-a fit then reports on a share of it kept aside.
+a fit then reports on a share of it kept aside. Its lines may carry
+images as data URLs. A file whose lines name image files beside it is
+refused, since the upload holds the file's text only: the sheet says
+how many files it names and gives the commands that make it a dataset
+folder in `data/` (the file as `train.jsonl`, the images beside it, a
+`dataset.json` holding `{"format": 1}`).
 
 ### A dataset
 
@@ -481,8 +494,9 @@ count, and for the shown split:
   lines, has New Question Set from It instead), and in "…" Evaluate on
   It…, Show in Finder and Delete…;
 - its questions with each label's count (pick a label to see its rows);
-- its rows, paged, filtered by label and searched in the states;
-  picking one shows it whole in the inspector;
+- its rows, paged, filtered by label and searched in the states, an
+  image row with a thumbnail; picking one shows it whole in the
+  inspector, its images included;
 - its files, with the commands that read them
   (`mlx-decision training fit -m MODEL --data ...`).
 
@@ -503,6 +517,12 @@ Batches page, or Run as Batch… on a dataset) asks for:
   which of them its labels score;
 - the model, and the batch's name (by default the dataset's and the
   model's).
+
+A batch of an image dataset links the rows' images into its own folder
+(hard links, which take no extra disk space; copies where linking
+fails), so it stands alone, as a batch does: Run the Rest and Run Again
+still answer after the dataset is gone. The model must read images: one
+that does not answers each row with its refusal.
 
 A batch runs in the Studio's process, one row at a time on the same
 worker as the Playground and the API, which are answered between two
@@ -539,12 +559,13 @@ Save Answers as a Dataset… makes a new dataset in `data/` from the
 batch: its questions, and each row's top answers as labels, optionally
 only answers with a [confidence](#running) of at least a threshold (a
 row left with no label is left out). One model's
-answers can so become the training data of another.
+answers can so become the training data of another. An image batch's
+dataset gets the images too.
 
-From a terminal, in the workspace, `mlx-decision run -m MODEL -q
-batches/NAME/questions.json --states batches/NAME/rows.jsonl --json`
-answers the same rows. Copy Command gives the whole line, starting with
-`cd` into the workspace and naming the model's folder.
+From a terminal, in the batch's folder, `mlx-decision run -m MODEL -q
+questions.json --states rows.jsonl --json` answers the same rows (an
+image row names its image in that folder). Copy Command gives the whole
+line, starting with `cd` into the batch's folder and naming the model.
 
 ## Training
 
@@ -568,13 +589,17 @@ The form, from top to bottom:
   tell when to stop early; rows kept aside for the report);
   the labels with their counts, and warnings such as too few examples
   for an option.
-- **Base model**: the model to fit.
+- **Base model**: the model to fit (for an image dataset, one that
+  reads images; the plan refuses others).
 - **Method**: the kinds the base model's family can learn, each a card
   with its memory at the peak (an estimate) and whether that fits this
   Mac; the one `--method auto` would take is marked Recommended.
 - **Result**: Save as, the fitted model's name in the workspace's
   `models/`; Options: the epochs, whether to stop early when the
-  tuning rows get worse, and the seed.
+  tuning rows get worse, the seed, and the Calibration that ends the fit
+  (`auto`, `full`, `temperature` or `none`, as
+  [`--calibration`](TRAINING.md#the-closing-calibration); `none` is not
+  offered for Calibrate).
 
 Start Fit (⌘↩) starts it as a job that holds the GPU. While it runs,
 the page shows its stages (Check, Score before, Train, Calibrate, Score
@@ -584,7 +609,8 @@ time left, the loss where the kind reports one, and the log as
 
 The report shows, per question, Before, After and Change on the rows
 kept aside (accuracy, macro-F1, calibration error, the change in
-points), the kept epoch ("Kept epoch 3 of 4"), how long it took, and
+points), the kept epoch ("Kept epoch 3 of 4"), the calibration used
+("Calibration (auto): temperature only."), how long it took, and
 The fitted model: its name, where it was saved (Show in Finder) and
 Same in a terminal, the command that does the same. Its buttons:
 Compare with BASE in the Playground (the fitted model and its base on
@@ -686,7 +712,7 @@ written whole (to a temporary file, then renamed).
 | `history/NAME.jsonl` | the Playground's runs of a set, a line per run: request, model, answers, timings (a dataset's: `history/datasets/`) | any JSON-lines reader |
 | `history/images/` | each image of the history once, named by its SHA-256 | |
 | `data/NAME/`, `data/NAME.jsonl` | datasets: a folder with `dataset.json` and a JSON-lines file per split, or one JSON-lines file | `mlx-decision training fit -m MODEL --data data/NAME` |
-| `batches/NAME/` | a batch: `batch.json` (what it ran, how far it got), `questions.json`, `rows.jsonl`, `results.jsonl` (a line per row answered) | `mlx-decision run -m MODEL -q batches/NAME/questions.json --states batches/NAME/rows.jsonl --json` |
+| `batches/NAME/` | a batch: `batch.json` (what it ran, how far it got), `questions.json`, `rows.jsonl`, `results.jsonl` (a line per row answered), `images/` (an image batch's) | in the folder: `mlx-decision run -m MODEL -q questions.json --states rows.jsonl --json` |
 | `models/NAME/` | models the Studio converted or fitted | `mlx-decision run -m models/NAME` |
 | `jobs/ID/` | a job: `job.json` (the command, times, outcome), `events.jsonl`, `stderr.log` | |
 | `speed/` | how long requests took on this Mac, per model (the latest 1,000 each); the Models page's Speed | |
@@ -713,8 +739,6 @@ focused again; a question set open in the Playground is not overwritten
 - One GPU job at a time, and no queue.
 - Convert offers 8-bit and 4-bit, not mixed precision
   ([`convert --target-bits`](CLI.md#quantizing-convert)).
-- Datasets and batches hold no images yet; image questions are for the
-  Playground.
 - Rows are not labelled by hand in the Studio; Save Answers as a Dataset
   labels them with a model's answers.
 - No speed or accuracy benchmark page: `mlx-decision benchmark`

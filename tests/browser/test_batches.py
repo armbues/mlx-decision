@@ -128,10 +128,11 @@ def test_a_batch_shows_its_answers_metrics_and_rows(tweets, page):
     expect(inspector).to_contain_text("tweet train 1")
     expect(inspector.locator(".prob")).to_have_count(3)
     expect(inspector).to_contain_text("Expected")
-    # The command that answers the same rows from a terminal.
-    expect(page.locator(".batch-cli")).to_contain_text(
-        "-q batches/tweets-fake/questions.json --states batches/tweets-fake/rows.jsonl --json"
-    )
+    # The command that answers the same rows from a terminal, in the batch's
+    # folder (where an image row's paths point).
+    terminal = page.locator(".batch-cli")
+    expect(terminal).to_contain_text("/batches/tweets-fake\n")
+    expect(terminal).to_contain_text("-q questions.json --states rows.jsonl --json")
     # The batch in the sidebar's list, done.
     expect(page.locator(".batch-list .sb-item", has_text="tweets-fake")).to_have_attribute(
         "aria-current", "true"

@@ -63,7 +63,11 @@ lower is better). Measured on an Apple M5 Pro (20-core GPU, 64 GB):
 | laya | finetune | TweetEval Offensive, 11,916 rows | 77.8 / 61.9 / 7.7 | 84.7 / 78.4 / 5.0 | 17.2 min | 8.9 GB |
 | Julia-1 | finetune | TREC, 5,452 rows | 16.0 / 14.0 / 63.1 | 97.4 / 96.0 / 1.9 | 2.3 min | 4.8 GB |
 
-Every kind also fits a calibration at the end (see below). A fit holds
+Every kind also fits a calibration at the end (see below). These runs
+were made with version 1.2, whose calibration always had a bias per
+option, as `--calibration full` does now; the default since 1.3 leaves
+the biases out after a trained kind
+([The closing calibration](#the-closing-calibration)). A fit holds
 back a fifth of the training data to report on, so these runs trained on
 four fifths of each train split. The clef-flash calibration was a single
 fit over 500 rows from each of the five datasets, one question each. On
@@ -86,6 +90,13 @@ to 0.784 / 0.094, ahead of the published laya-typed-decisions (0.766 /
 0.097. The same d1-3B fit on hard labels (each gold's most likely
 answer) reached 0.765 but KL 1.240: trained on hard labels, a model
 learns to be sure where the data is not.
+
+Images train like text. d3-edge (0.6B), fitted with `readout` on the
+3,680 photos of [Oxford-IIIT Pet](https://huggingface.co/datasets/timm/oxford-iiit-pet)'s
+train split (37 breeds, one photo per line, an empty state) in 3.3
+minutes, went from 31.6 / 27.6 / 4.6 to 86.2 / 86.2 / 3.4 on 1,850 test
+photos (50 per breed). With a one-line state saying what the photos show
+("A photo of a pet cat or dog.") it reached 87.1.
 
 What to expect in general:
 
@@ -129,11 +140,20 @@ correct answer for each question, by question id:
 - `id` is optional: a non-empty string, unique in the file. It defaults
   to the line number.
 - A question without a label is asked but not trained on.
-- Images are not accepted in training data yet.
+- A line may carry images, as a request does: `images` with file paths
+  or data URLs (`"images": ["photos/4711.jpg"]`), or data URLs inside
+  the state. A path is relative to the file's folder (in a
+  [dataset folder](#dataset-folders), to the folder), so a training file
+  works from any working folder. Videos are not accepted.
 
 The whole file is checked before any model loads: every request must be
-valid (the same checks as `run` and the server), and every label must
-name an option of its question. An error names its line.
+valid (the same checks as `run` and the server), every label must name
+an option of its question, and every image must open (a missing,
+unreadable or too large image is an error). An error names its line.
+Image data needs a model that reads images: every family but d1-3B, Laya
+and Julia; the others refuse it before loading. A fit records a hash of
+its data, and for image data the hash covers the image files too, so a
+changed photo shows as changed data.
 
 Soft labels train against their distribution: the trained kinds' loss
 and the calibration's log loss are measured against it, without label
@@ -203,6 +223,8 @@ questions and what each value means live once, in `dataset.json`:
   pick another.
 - A plain JSON-lines file works everywhere a folder does, as a dataset
   of one split.
+- Images live in the folder's `images/`; the lines name them relative to
+  the folder (`"images": ["images/train-00000.jpg"]`).
 - `--value-names "0=Analyst Update,1=Fed | Central Banks"` gives the
   label's values names, kept in `columns` beside their row counts (the
   Studio reads them from the dataset card when it lists them).
@@ -273,6 +295,24 @@ stops and lists the columns.
 | `yesno` | the passage → the state, `--question-column` → the question, a bool label | each row's own `noul` | BoolQ |
 | `rating` | `--text` → the state, a numeric `--label` | a `score` with one level per value (`--levels "bad,ok,good"` describes them) | yelp_review_full |
 | `object` | `--columns A,B` → the state as an object of those columns, `--label` | as `text` | MMLU (question and choices) |
+| `image` | `--image` → the line's image, `--label`, `--text` (if any) → the state | as `text` | Oxford-IIIT Pet, cats_vs_dogs |
+
+**Images.** The `image` shape takes a Hugging Face `Image` column, or a
+column of image file paths in a CSV or JSON-lines file (relative to the
+file). It writes a dataset folder only: each row's image goes into
+`images/` (`images/train-00000.jpg`). PNG, JPEG and WebP files are kept
+as they are, and other formats are converted to PNG. A text column
+becomes the state only when it is named as one (`caption`,
+`description`, `text` and the like, or `--text`); otherwise the state is
+empty and the model reads the image and the question alone. Rows whose
+image is missing, unreadable or too large are left out and counted.
+`--show` lists each line's image with its size and type, and the
+summary the images' count and total size.
+
+```bash
+mlx-decision data hf:timm/oxford-iiit-pet --split train --split test -o pets \
+  --question "Which breed is the animal in the photo?"
+```
 
 The question's wording has no default. Without `--question`, `-q` or a
 preset, the command stops and names these flags. In a terminal, it asks
@@ -346,7 +386,7 @@ warning. The fit still runs, but its numbers are noisy.
 ### Kinds
 
 `--method auto`, the default, picks the family's own kind and follows it
-with a calibration:
+with a calibration ([The closing calibration](#the-closing-calibration)):
 
 | Family | `auto` | What is trained | Written to the fitted folder | Also available |
 |---|---|---|---|---|
@@ -355,7 +395,8 @@ with a calibration:
 | Laya, Julia | `finetune` | the whole encoder and the marker head (`--head-only`: the head alone) | the encoder and head (Julia 0.3 GB, laya 0.8 GB) | `calibrate` |
 
 - **`calibrate`** (every family): one temperature per question, and one
-  bias per option when the question is asked the same way on every line.
+  bias per option when the question is asked the same way on every line
+  and has enough examples ([The closing calibration](#the-closing-calibration)).
   It is fitted to the model's probabilities by minimum log loss, in under
   a second after one scoring pass. Accuracy changes only through the
   biases. The probabilities then match how often the model is right.
@@ -370,7 +411,8 @@ with a calibration:
   release rows are best on dev is only calibrated.
 - **`head`** (Clef): the backbone runs once per example and its hidden
   states are stored on disk, beside the output folder. Their size (2.6
-  MB per ANLI-R3 request) is shown before the run and checked against the
+  MB per ANLI-R3 request, about 9 MB per photo of 500x375 pixels on
+  clef-flash) is shown before the run and checked against the
   free space. The folder is removed when the run ends, also on errors and
   Ctrl-C. The joint head trains on those states in float32: AdamW 5e-5,
   weight decay 0.01, 5% warm-up and a linear decay, 16 requests a step.
@@ -393,9 +435,41 @@ takes. With `--seed` fixed, `calibrate` and `readout` give the same
 fitted model again. Fine-tuning and the head can differ by a point or so
 between runs.
 
+### The closing calibration
+
+A fit ends with a calibration, fitted on the dev part: a temperature per
+question, which makes the probabilities match how often the model is
+right without changing which answer wins, and, where the question is
+asked the same way on every line, a bias per option, which can change
+answers. `--calibration` picks it:
+
+- `auto` (the default): the temperature alone after `readout`, `head` or
+  `finetune`. For `calibrate` alone, the biases too when the training
+  part holds at least 10 examples of every option; otherwise the
+  temperature alone.
+- `full`: a temperature and a bias per option, as every fit had before
+  1.3.
+- `temperature`: no biases.
+- `none`: no closing calibration; the fitted model answers as the
+  trained kind leaves it. For a program whose thresholds were tuned on
+  the base's probabilities, which a calibration would move. Not with
+  `--method calibrate`, which is the calibration.
+
+After a trained kind the biases add little and can cost: they are
+fitted on the dev part, a tenth of the training part, so on a question
+with many options each bias rests on a few examples, while the readout
+or head has already learned the options' balance from many more. On
+Oxford-IIIT Pet (37 breeds, about 10 dev photos per breed) d3-edge's
+readout fit lost 2.9 points of accuracy to its biases; with the
+temperature alone it lost none, and its ECE was 3.5 against 6.4. A calibration
+alone is where the biases pay: they correct a base that leans towards
+some options (on the same photos, +14.5 points from 10 examples per
+breed). The report says what was used (`calibration (auto): breed
+temperature`), and `training.json` records it.
+
 ### Calibration needs data like the target
 
-Every fit ends with a calibration, fitted on the dev part, a slice of
+A fit's calibration is fitted on the dev part, a slice of
 your training data. It can only correct the model's confidence as it is
 on that data. If the model finds the training data much easier (or
 harder) than what it will be asked later, the calibration corrects in
@@ -644,14 +718,14 @@ are `DecisionError`s). Further
 options: `validation=` and `holdout=` (as `--validation` and
 `--holdout`; with neither, data without a report split holds back a
 fifth),
-`head_only=`, `early_stop=`, `overwrite=` and
+`calibration=` (as `--calibration`), `head_only=`, `early_stop=`, `overwrite=` and
 the loader's options (`max_input_tokens=`, H2O-Lightning's `reading=`).
 
 ## Not in this version
 
 - LoRA or full fine-tuning of Clef, pplx, d3, Base Labs, H2O-Lightning, d1 LFM3 or d1. Their
   networks stay frozen, and only the head or the readout rows train.
-- Images in training data.
+- Videos in training data.
 - Multi-label tasks (several correct options for one question).
 - Generating or labelling training data.
 - Publishing fitted models to the Hugging Face Hub. A fitted folder

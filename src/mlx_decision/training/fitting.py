@@ -711,7 +711,8 @@ def fit(
     fitted model to ``output``.
 
     ``method`` is a kind (``calibrate``, ``readout``, ``head``, ``finetune``)
-    or ``auto``, the family's usual kind; every run ends with a calibration.
+    or ``auto``, the family's usual kind; a run ends with the closing
+    ``calibration`` (``auto``, ``full``, ``temperature`` or ``none``).
     ``validation`` scores the report instead of a ``holdout`` share of the
     data (seeded with ``seed``, stratified by label); with neither, a
     dataset folder's report split scores it, else a fifth of the data. ``epochs`` is for the
