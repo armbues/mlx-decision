@@ -96,6 +96,8 @@ NAMES = {
     "columns": (),
     "image": ("image", "img", "picture", "photo", "file", "path", "image_path", "filepath"),
 }  # fmt: skip
+# The image shape's text column, taken only by one of these names.
+CAPTION_NAMES = ("caption", "description", *NAMES["text"])
 # The kinds a role's column may have.
 KINDS = {
     "text": (TEXT,),
@@ -182,7 +184,7 @@ def _resolve(table: Table, shape: str, given: dict[str, str]) -> Mapping:
             continue
         found = candidates(table, role, used)
         if shape == "image" and role == "text":  # by its name only (not pets' image_id)
-            found = [name for name in found if name.lower() in NAMES["text"]]
+            found = [name for name in found if name.lower() in CAPTION_NAMES]
         if len(found) == 1:
             columns[role] = found[0]
             used.add(found[0])

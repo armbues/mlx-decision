@@ -403,3 +403,72 @@ def test_multiple_choice_and_several_columns(studio, page, mmlu):
     assert job.argv[job.argv.index("--shape") + 1] == "object"
     assert job.argv[job.argv.index("--columns") + 1] == "question,choices"  # the preview's order
     assert job.details["label"] == "answer"
+
+
+@pytest.fixture
+def pets_hub(monkeypatch):
+    """A Hub stand-in: org/pets, one split of 8 pictures with a class label, an
+    id and a caption."""
+    import io
+
+    import datasets
+    import PIL.Image
+
+    from mlx_decision.data import sources
+
+    def picture(colour):
+        buffer = io.BytesIO()
+        PIL.Image.new("RGB", (120, 80), colour).save(buffer, "JPEG")
+        return {"bytes": buffer.getvalue(), "path": None}
+
+    features = datasets.Features({
+        "image": datasets.Image(), "label": datasets.ClassLabel(names=["cat", "dog"]),
+        "image_id": datasets.Value("string"), "caption": datasets.Value("string"),
+    })  # fmt: skip
+    rows = {"image": [picture((200, 30, 30) if i % 2 else (30, 30, 200)) for i in range(8)],
+            "label": [i % 2 for i in range(8)], "image_id": [f"p{i}" for i in range(8)],
+            "caption": [f"photo {i}" for i in range(8)]}  # fmt: skip
+    monkeypatch.setattr(sources, "hub_configs", lambda repo, revision=None: [])
+    monkeypatch.setattr(sources, "hub_splits", lambda repo, config=None, revision=None: ["train"])
+    monkeypatch.setattr(
+        sources,
+        "load_hub",
+        lambda repo, config=None, split=None, revision=None: sources._from_dataset(
+            datasets.Dataset.from_dict(rows, features=features), "pets", split, {}
+        ),
+    )
+    sizes = {"train": sources.SplitSize(8, 20_000)}
+    monkeypatch.setattr(sources, "hub_split_sizes", lambda repo, config=None: sizes)
+    monkeypatch.setattr(sources, "hub_card", lambda repo, revision=None: None)
+
+
+def test_an_image_dataset_shows_thumbnails_and_downloads_as_images(studio, page, pets_hub):
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    sheet.locator(".fam[data-preset='any']").click()
+    field = sheet.get_by_label("Hugging Face dataset")
+    field.fill("org/pets")
+    field.press("Enter")
+    thumbs = sheet.locator(".any-table img.any-thumb")
+    expect(thumbs).to_have_count(5)
+    assert thumbs.first.evaluate("img => img.complete && img.naturalWidth") == 120  # not cut
+    expect(sheet.locator(".any-shapes input[value='image']")).to_be_checked()  # the guess
+    expect(sheet.get_by_label("Image column")).to_have_value("image")
+    expect(sheet.get_by_label("Text column")).to_have_value("caption")
+    expect(sheet.get_by_label("Label column")).to_have_value("label")
+    shot(page, "get-image-dataset")
+    sheet.get_by_label("Text column").select_option("")  # none: an empty state
+    sheet.get_by_role("button", name="Download").click()
+    expect(page.locator(".toast")).to_contain_text("Download org/pets")
+    job = next(iter(studio.app.state.jobs.jobs.values()))
+    assert job.details["shape"] == "image" and job.details["text"] is None
+    at = job.argv.index("--shape")
+    assert job.argv[at : at + 6] == ["--shape", "image", "--image", "image", "--label", "label"]
+    assert "--text" not in job.argv
+
+
+def test_a_text_dataset_offers_no_image_shape(studio, page, hub):
+    open_studio(page, studio, "datasets")
+    sheet = open_sheet(page)
+    read_reviews(sheet)
+    expect(sheet.locator(".any-shapes input")).to_have_count(3)

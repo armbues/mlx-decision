@@ -3,9 +3,11 @@
 // them): one column as the state, several columns as the state (an object of
 // them), each with a label column whose values the rows keep (named from the
 // dataset card when it lists them) and arriving without questions, which are
-// written afterwards; or multiple choice, each row asking a question written
-// here with its own choices. The columns apply to every split in the table.
-// It runs `data` as a job.
+// written afterwards; multiple choice, each row asking a question written
+// here with its own choices; or a picture and its label (an image column,
+// shown as thumbnails, written into the dataset folder's images/), with a text
+// column as the state if one is picked. The columns apply to every split in
+// the table. It runs `data` as a job.
 import { computed, signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
@@ -19,8 +21,10 @@ const reading = signal(null); // what is being read, while it is
 const failed = signal(null);
 const config = signal(null);
 const split = signal(null);
-const shape = signal("text"); // "text", "object" or "choice"
+const shape = signal("text"); // "text", "object", "choice" or "image"
 const textColumn = signal(null);
+const imageColumn = signal(null); // the image shape's picture
+const captionColumn = signal(null); // the image shape's optional state
 const labelColumn = signal(null);
 const stateColumns = signal([]); // the object shape's, in the preview's order
 const roles = signal({}); // multiple choice: {question, choices, answer, context}
@@ -42,7 +46,7 @@ export function resetAny(all = false) {
   rowsOf.value = {};
   if (!all) return;
   source.value = "";
-  textColumn.value = labelColumn.value = null;
+  textColumn.value = labelColumn.value = imageColumn.value = captionColumn.value = null;
   shape.value = "text";
   stateColumns.value = [];
   roles.value = {};
@@ -91,6 +95,8 @@ function applyGuess(result) {
   textColumn.value = guess?.shape === "text" ? guess.text : result.text;
   labelColumn.value = (guess?.shape !== "choice" && guess?.label) || result.label;
   stateColumns.value = guess?.shape === "object" ? guess.columns : [];
+  imageColumn.value = guess?.shape === "image" ? guess.image : (result.image_columns?.[0] ?? null);
+  captionColumn.value = guess?.shape === "image" ? guess.text : null;
   roles.value =
     guess?.shape === "choice"
       ? { question: guess.question, choices: guess.choices, answer: guess.answer, context: guess.context ?? null }
@@ -134,6 +140,10 @@ export const anyProblem = computed(() => {
     const named = Object.values(picked).filter(Boolean);
     if (new Set(named).size < named.length) return "Each role takes a column of its own";
     if (!instructions.value.trim()) return "Write the question's instructions";
+  } else if (shape.value === "image") {
+    if (!imageColumn.value) return "Pick the image column";
+    if (!labelColumn.value) return "Pick the label column";
+    if ([imageColumn.value, captionColumn.value].includes(labelColumn.value)) return "The image, text and label are different columns";
   } else {
     if (shape.value === "object" && !stateColumns.value.length) return "Tick the columns that become the state";
     if (shape.value === "text" && !textColumn.value) return "Pick the column that becomes the state";
@@ -152,7 +162,10 @@ export function anyJob() {
     body.instructions = instructions.value.trim();
   } else {
     if (shape.value === "object") body.columns = stateColumns.value;
-    else body.text = textColumn.value;
+    else if (shape.value === "image") {
+      body.image = imageColumn.value;
+      if (captionColumn.value) body.text = captionColumn.value;
+    } else body.text = textColumn.value;
     body.label = labelColumn.value;
     const names = labelInfo.value?.names;
     if (names && Object.keys(names).length) body.value_names = names;
@@ -222,16 +235,23 @@ function Preview() {
       <h4>${rows} · the first ${result.sample.length}</h4>
       <div class="any-table"><table>
         <thead><tr>${result.columns.map((column) => html`<th>${column.name}<small>${column.names ? "classes" : column.kind}</small></th>`)}</tr></thead>
-        <tbody>${result.sample.map((row) => html`<tr>${result.columns.map((column) => html`<td>${row[column.name]}</td>`)}</tr>`)}</tbody>
+        <tbody>${result.sample.map((row) => html`<tr>${result.columns.map((column) => html`<td>${Cell(column, row[column.name])}</td>`)}</tr>`)}</tbody>
       </table></div>
     </div>
   `;
+}
+
+// A preview cell: an image column's thumbnail, else its text.
+function Cell(column, value) {
+  if (column.kind !== "image") return value;
+  return value ? html`<img class="any-thumb" src=${value} alt="" />` : html`<span class="dim">no image</span>`;
 }
 
 const SHAPES = [
   ["text", "One column", "a text the model reads"],
   ["object", "Several columns", "an object of the columns you tick"],
   ["choice", "Multiple choice", "a question with its own choices in each row"],
+  ["image", "Image", "a picture and its label"],
 ];
 
 function LabelSelect() {
@@ -268,8 +288,8 @@ function Wiring() {
   return html`
     <div class="opts">
       <h4>Shape</h4>
-      <div class="choices any-shapes" role="radiogroup" aria-label="Shape">
-        ${SHAPES.map(
+      <div class=${`choices any-shapes${result.image_columns?.length ? " four" : ""}`} role="radiogroup" aria-label="Shape">
+        ${SHAPES.filter(([value]) => value !== "image" || result.image_columns?.length).map(
           ([value, title, text]) => html`<label class="choice" key=${value}>
             <input type="radio" name="any-shape" value=${value} checked=${shape.value === value} onChange=${() => (shape.value = value)} />
             <span><b>${title}</b><small>${text}</small></span>
@@ -293,6 +313,17 @@ function Wiring() {
                   <code>${column.name}</code></label>`,
               )}
           </div></div>
+        <${LabelSelect} />`}
+      ${shape.value === "image" &&
+      html`<label class="any-row"><span>Image</span>
+          <select aria-label="Image column" value=${imageColumn.value ?? ""} onChange=${(event) => (imageColumn.value = event.target.value)}>
+            ${result.image_columns.map((item) => html`<option value=${item}>${item}</option>`)}
+          </select><small>kept in the folder's images/</small></label>
+        <label class="any-row"><span>Text</span>
+          <select aria-label="Text column" value=${captionColumn.value ?? ""} onChange=${(event) => (captionColumn.value = event.target.value || null)}>
+            <option value="">none</option>
+            ${result.text_columns.map((item) => html`<option value=${item}>${item}</option>`)}
+          </select><small>the state, if any</small></label>
         <${LabelSelect} />`}
       ${shape.value === "choice" &&
       html`<${RoleSelect} role="question" label="Question" hint="the state the model reads" />

@@ -403,9 +403,11 @@ def jobs_router(
 
     def any_dataset(body: dict) -> Plan:
         """``hf:ORG/NAME``'s splits, by ``shape``: "text" (default; ``text`` the
-        state's column), "object" (``columns``, the state's columns) or
+        state's column), "object" (``columns``, the state's columns),
         "choice" (``question``, ``choices``, ``answer``, optional ``context``
-        columns and the question's ``instructions``). Text and object rows keep
+        columns and the question's ``instructions``) or "image" (``image``, the
+        picture's column, and an optional ``text`` as the state; the pictures
+        go into the folder's images/). Text, object and image rows keep
         the ``label`` column's values (answered by questions written later;
         ``value_names`` the values' names, from the dataset card); choice rows
         ask the question with their own choices."""
@@ -418,8 +420,8 @@ def jobs_router(
             raise ApiError(400, f"not a dataset's config: {config!r}", param="config")
         splits = get_splits(body, None)
         shape = field(body, "shape", str, required=False) or "text"
-        if shape not in ("text", "object", "choice"):
-            raise ApiError(400, "shape must be text, object or choice", param="shape")
+        if shape not in ("text", "object", "choice", "image"):
+            raise ApiError(400, "shape must be text, object, choice or image", param="shape")
 
         def column(key: str, required: bool = True) -> str | None:
             value = field(body, key, str, required=required)
@@ -465,6 +467,15 @@ def jobs_router(
                     )
                 argv += ["--shape", "object", "--columns", join_list(state), "--label", label]
                 details |= {"columns": state, "label": label}
+            elif shape == "image":
+                image = column("image")
+                text = column("text", required=False)
+                if label in (image, text) or (text is not None and text == image):
+                    raise ApiError(400, "the image, text and label are different columns", "label")
+                argv += ["--shape", "image", "--image", image, "--label", label]
+                if text is not None:
+                    argv += ["--text", text]
+                details |= {"image": image, "text": text, "label": label}
             else:
                 text = column("text")
                 if text == label:

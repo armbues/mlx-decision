@@ -12,8 +12,9 @@ suite's evaluation split marked.
 (the Hub's metadata, nothing read), then, with both settled, the split
 itself (in a thread): a small one whole (into the Hugging Face cache), a
 large one (or one of unknown size) by its first rows, streamed, nothing
-stored. The answer has the columns with their kinds, a few rows, the text
-columns that can be the state and the label columns with each value and
+stored. The answer has the columns with their kinds, a few rows (an image
+cell as a thumbnail, a data URL), the text and image columns that can be
+the state and the line's image, and the label columns with each value and
 its count (in the rows read; and the values' names when the dataset card
 lists them, as ``"LABEL_0": "Analyst Update"``). Downloading either is a
 ``data`` job (``POST /studio/api/jobs``) that writes a dataset folder.
@@ -29,7 +30,8 @@ from fastapi import APIRouter, Request
 from ...data import sources
 from ...data.presets import PRESETS, SPLITS, describe
 from ...data.shapes import class_names, class_of, guess
-from ...data.sources import HUB_PREFIX, LABEL, TEXT, SourceError, Table
+from ...data.sources import HUB_PREFIX, IMAGE, LABEL, TEXT, SourceError, Table, image_bytes
+from ..thumbnails import thumbnail
 from . import ApiError, field, json_body
 from .jobs import MAX_CLASSES, REPO_ID
 
@@ -107,9 +109,10 @@ def datasets_router(max_body_bytes: int = 2**20) -> APIRouter:
         length; None when only its first rows were read and the Hub does not
         say), ``sampled`` (the rows read when not all; else None),
         ``columns`` (``name``, ``kind``, ``names``), ``sample`` (the first
-        rows, cells cut short), ``text_columns`` and ``label_columns``
-        (``name``, ``classes`` as ``[class, count]`` over the rows read),
-        with the guessed ``text`` and ``label``. 400 for a source that is no ``hf:ORG/NAME``,
+        rows, cells cut short, an image cell as a thumbnail's data URL),
+        ``text_columns``, ``image_columns`` and ``label_columns`` (``name``,
+        ``classes`` as ``[class, count]`` over the rows read), with the
+        guessed ``text`` and ``label``. 400 for a source that is no ``hf:ORG/NAME``,
         404 for one the Hub does not show, 422 for one that cannot be read."""
         body = await json_body(request, max_body_bytes)
         source = field(body, "source", str).strip()
@@ -198,15 +201,19 @@ def describe_table(table: Table) -> dict[str, Any]:
         for column in table.columns.values()
     ]
     rows = table.rows(list(range(min(ROWS_SHOWN, table.length))))
-    # A class label's cells by name, as the classes are mapped below.
+
+    def shown(column, value):
+        if column.kind == IMAGE:
+            return thumbnail(image_bytes(table, value))
+        # A class label's cells by name, as the classes are mapped below.
+        return cell(class_of(column, value) if column.names else value)
+
     sample = [
-        {
-            name: cell(class_of(column, row.get(name)) if column.names else row.get(name))
-            for name, column in table.columns.items()
-        }
+        {name: shown(column, row.get(name)) for name, column in table.columns.items()}
         for row in rows
     ]
     text_columns = [column.name for column in table.columns.values() if column.kind == TEXT]
+    image_columns = [column.name for column in table.columns.values() if column.kind == IMAGE]
     label_columns = []
     for column in table.columns.values():
         if column.kind not in (LABEL, TEXT, "int", "bool"):
@@ -244,6 +251,7 @@ def describe_table(table: Table) -> dict[str, Any]:
         "columns": columns,
         "sample": sample,
         "text_columns": text_columns,
+        "image_columns": image_columns,
         "label_columns": label_columns,
         "text": text,
         "label": label,
@@ -254,8 +262,9 @@ def describe_table(table: Table) -> dict[str, Any]:
 def guessed(table: Table, labels: list[str]) -> dict[str, Any] | None:
     """The sheet's shape as the ``data`` command guesses it: ``{shape, ...}``
     with "text" (``text``, ``label``), "object" (``columns``, ``label``; a
-    pair's or a yes / no passage's columns) or "choice" (``question``,
-    ``choices``, ``answer``, ``context``); None when the guess is not clear."""
+    pair's or a yes / no passage's columns), "choice" (``question``,
+    ``choices``, ``answer``, ``context``) or "image" (``image``, ``label``,
+    ``text`` or None); None when the guess is not clear."""
     try:
         mapping = guess(table)
     except SourceError:
@@ -280,6 +289,9 @@ def guessed(table: Table, labels: list[str]) -> dict[str, Any] | None:
             "shape": "choice",
             **{role: columns.get(role) for role in ("question", "choices", "answer", "context")},
         }
+    if mapping.shape == "image":
+        return {"shape": "image", "image": columns["image"], "text": columns.get("text"),
+                "label": label}  # fmt: skip
     return None
 
 
