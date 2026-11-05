@@ -9,7 +9,9 @@ split's label values with their counts, the answers map, what a fit still
 needs (``missing``), where it came from and a few examples. ``GET
 .../examples`` reads a page of a split's examples (``offset``, ``limit``, a
 label or value filter, a search in the states), each state cut to a line;
-``GET .../examples/{index}`` one example whole. ``PUT .../questions``
+``GET .../examples/{index}`` one example whole, ``GET
+.../examples/{index}/images/{n}`` its image (a thumbnail, or the file).
+``PUT .../questions``
 saves a folder's questions and answers map into its ``dataset.json``.
 ``POST .../reveal`` shows it in Finder (a browser on this Mac only).
 ``POST .../set`` saves a question set made from a split's questions and
@@ -25,6 +27,7 @@ columns first.
 """
 
 import asyncio
+import base64
 import json
 import os
 import shutil
@@ -44,9 +47,11 @@ from ...data.make import Made
 from ...data.shapes import Wording, build, class_names, guess
 from ...data.sources import SourceError, table_from_text
 from ...errors import DecisionError
+from ...state_images import sniff_image
 from ...types import parse_request
 from ..jobs import Jobs
 from ..security import on_this_mac
+from ..thumbnails import thumbnail
 from ..workspace import Conflict, NotFound, Workspace, WorkspaceError, check_name
 from . import ApiError, field, json_body
 from .datasets import describe_table
@@ -222,7 +227,39 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
             "questions": chosen.request.get("questions") or {},
             "labels": chosen.labels,
             "values": chosen.values or {},
+            "images": image_count(chosen),
         }
+
+    @router.get("/{name}/examples/{index}/images/{number}")
+    async def example_image(
+        name: str, index: int, number: int, split: str | None = None, size: str = "thumb"
+    ):
+        """An example's ``number``-th image (from 0, of its ``images``): ``size``
+        thumb, a small JPEG (``thumbnails.thumbnail``), or full, the file as
+        it is. Only files inside the dataset's folder (a plain file: its
+        folder) and data URLs are served; 404 for an example or an image
+        that is not there, 422 for one that does not read."""
+        if size not in ("thumb", "full"):
+            raise ApiError(400, "size is thumb or full", param="size")
+        path, found = await read(name, split)
+        if not 0 <= index < len(found.examples):
+            raise NotFound(f"{name} has no example {index} in {found.split}")
+        images = found.examples[index].request.get("images") or []
+        if not 0 <= number < len(images) or not isinstance(images[number], str):
+            raise NotFound(f"example {index} of {name} has no image {number}")
+        data = await asyncio.to_thread(image_data, images[number], found.dataset.root)
+        if data is None:
+            raise NotFound(f"example {index} of {name}: its image {number} is not in the dataset")
+        if size == "thumb":
+            small = await asyncio.to_thread(thumbnail, data)
+            if small is None:
+                raise ApiError(422, "the image does not read", param="number")
+            data, kind = base64.b64decode(small.split(",", 1)[1]), "image/jpeg"
+        else:
+            kind = sniff_image(data)
+            if kind is None:
+                raise ApiError(422, "the image does not read", param="number")
+        return Response(data, media_type=kind, headers={"Cache-Control": "private, max-age=60"})
 
     @router.put("/{name}/questions")
     async def save_questions(name: str, request: Request):
@@ -335,6 +372,16 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
                 raise Conflict(conflict)
             await asyncio.to_thread(save_rows, files, name, text, kind, columns)
             return await describe_data(name)
+        beside = images_beside(text.splitlines())
+        if beside is not None:
+            raise ApiError(
+                422,
+                "its lines name image files beside it, which an upload does not bring: copy "
+                "the file and its images into the data folder as a dataset folder",
+                param="text",
+                code="images_beside",
+                extra={"images": beside},
+            )
         examples, errors = await asyncio.to_thread(
             check_examples, text.splitlines(), ERRORS_SHOWN, uploaded_line
         )
@@ -344,6 +391,34 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         return await describe_data(name)
 
     return router
+
+
+def images_beside(lines: list[str]) -> dict[str, Any] | None:
+    """What image files the lines of an upload name (not data URLs), or None
+    when they name none: ``files`` (how many), ``entries`` (the first part of
+    each relative path, in order: the folders and files to copy beside the
+    file) and ``absolute`` (whether some paths are absolute)."""
+    count, entries, absolute = 0, {}, False
+    for text in lines:
+        if '"images"' not in text:
+            continue
+        try:
+            data = json.loads(text)
+        except ValueError:
+            continue
+        images = data.get("images") if isinstance(data, dict) else None
+        for value in images if isinstance(images, list) else []:
+            if not isinstance(value, str) or value.startswith("data:") or not value.strip():
+                continue
+            count += 1
+            path = Path(value)
+            if path.is_absolute() or value.startswith("~"):
+                absolute = True
+            else:
+                entries.setdefault(path.parts[0], None)
+    if not count:
+        return None
+    return {"files": count, "entries": list(entries), "absolute": absolute}
 
 
 def uploaded_line(data: Any, line: int) -> Example:
@@ -624,12 +699,14 @@ def describe(found: Read) -> dict[str, Any]:
         "created": dataset.created,
         "sample": [
             {
+                "index": index,
                 "id": example.id,
                 "state": preview(example.request.get("state")),
                 "labels": example.labels,
                 "values": example.values or {},
+                "images": image_count(example),
             }
-            for example in examples[:SAMPLE]
+            for index, example in enumerate(examples[:SAMPLE])
         ],
     }
 
@@ -682,6 +759,30 @@ def where(path: Path, found: Read) -> dict[str, Any]:
         "file": str(file),
         "bytes": file.stat().st_size,
     }
+
+
+def image_count(example: Example) -> int:
+    """How many images an example's request holds (its ``images``)."""
+    images = example.request.get("images")
+    return len(images) if isinstance(images, list) else 0
+
+
+def image_data(value: str, root: Path) -> bytes | None:
+    """An example's image as bytes: a data URL decoded, or a file inside
+    ``root`` (the dataset's folder) read; None for anything else."""
+    if value.startswith("data:"):
+        try:
+            return base64.b64decode(value.split(",", 1)[1], validate=True)
+        except (IndexError, ValueError):
+            return None
+    path = Path(value)
+    try:
+        resolved = path.resolve()
+        if root.resolve() not in resolved.parents or not resolved.is_file():
+            return None
+        return resolved.read_bytes()
+    except OSError:
+        return None
 
 
 def state_text(state: Any) -> str:
@@ -737,6 +838,7 @@ def page(
                 "state": one_line(found.examples[index].request.get("state")),
                 "labels": found.examples[index].labels,
                 "values": found.examples[index].values or {},
+                "images": image_count(found.examples[index]),
             }
             for index in shown
         ],

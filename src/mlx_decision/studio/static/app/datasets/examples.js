@@ -1,7 +1,8 @@
-// A dataset split's examples: a paged table (the state cut to a line, the
-// labels, else the label column's values), filtered by a label or a value and
-// searched in the states, read a page at a time from GET /data/NAME/examples;
-// the example picked shows whole in the inspector.
+// A dataset split's examples: a paged table (the state cut to a line, a
+// thumbnail of the example's image, the labels, else the label column's
+// values), filtered by a label or a value and searched in the states, read a
+// page at a time from GET /data/NAME/examples; the example picked shows whole
+// in the inspector, its images too.
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { useEffect, useRef } from "preact/hooks";
@@ -82,6 +83,15 @@ async function loadWhole(picked) {
   } catch (error) {
     if (pickedExample.value === picked) whole.value = { error: error.message };
   }
+}
+
+// An example's image: a thumbnail or the file (GET .../examples/INDEX/images/N),
+// ``version`` (the dataset's modification) keeping a changed one from the cache.
+export function imageUrl(name, split, index, number, size = "thumb", version = null) {
+  const params = new URLSearchParams({ size });
+  if (split) params.set("split", split);
+  if (version != null) params.set("v", version);
+  return `/studio/api/data/${encodeURIComponent(name)}/examples/${index}/images/${number}?${params}`;
 }
 
 function pick(name, split, index) {
@@ -225,7 +235,8 @@ export function ExampleTable({ summary }) {
                  data-index=${row.index} aria-selected=${row.index === picked ? "true" : "false"}
                  onClick=${() => pick(current.name, current.split, row.index)}>
               <span class="ex-id mono" title=${row.id}>${row.id}</span>
-              <span class="ex-state" title=${row.state}>${row.state}</span>
+              <span class="ex-state" title=${row.state}>${row.images > 0 &&
+                html`<img class="ex-thumb" loading="lazy" alt="" src=${imageUrl(current.name, current.split, row.index, 0, "thumb", modified)} />`}${row.state}</span>
               <span class="ex-labels"><${LabelChips} row=${row} many=${many} summary=${summary} /></span>
             </div>`,
           )}
@@ -258,6 +269,7 @@ function meaning(question, label) {
 // ``split``: the split asked for (null: the default one); ``shown``: its name.
 export function ExampleInspector({ name, split = null, shown = null }) {
   const summary = useSummary(name, split);
+  const modified = modifiedOf(name);
   const current = pickedExample.value;
   const picked = current?.name === name && current.split === (shown ?? split) ? current : null;
   const example = picked ? whole.value : null;
@@ -270,7 +282,16 @@ export function ExampleInspector({ name, split = null, shown = null }) {
           ? html`<p class="warn-text">${example.error}</p>`
           : example &&
             html`<div class="idet-head"><div><h2 class="mono">${example.id}</h2><p>Row ${(example.index + 1).toLocaleString("en")}${summary?.examples ? ` of ${summary.examples.toLocaleString("en")}` : ""}</p></div></div>
-              <section class="igroup"><h4>State</h4><pre class=${`ex-whole${typeof example.state === "string" ? "" : " json"}`}>${stateText(example.state)}</pre></section>
+              ${example.images > 0 &&
+              html`<section class="igroup"><h4>${example.images > 1 ? "Images" : "Image"}</h4><div class="ex-images">
+                ${Array.from({ length: example.images }, (_, number) => {
+                  const full = imageUrl(name, picked.split, example.index, number, "full", modified);
+                  return html`<a href=${full} target="_blank" rel="noopener" key=${number} title="Open the image whole"><img class="ex-image" alt=${`Image ${number + 1}`} src=${full} /></a>`;
+                })}
+              </div></section>`}
+              <section class="igroup"><h4>State</h4>${example.state === "" && example.images > 0
+                ? html`<p class="no-label">empty: the model reads the image</p>`
+                : html`<pre class=${`ex-whole${typeof example.state === "string" ? "" : " json"}`}>${stateText(example.state)}</pre>`}</section>
               ${Object.keys(example.values ?? {}).length > 0 &&
               html`<section class="igroup"><h4>Values</h4><dl>
                 ${Object.entries(example.values).map(

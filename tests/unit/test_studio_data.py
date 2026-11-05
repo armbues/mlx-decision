@@ -71,7 +71,8 @@ def test_a_good_file_is_saved_and_described(studio):
     }  # fmt: skip
     assert urgent["labelled"] == 2 and urgent["options"] == ["true", "false"]
     assert len(body["sample"]) == 5 and body["sample"][0] == {
-        "id": "1", "state": "ticket 0", "labels": {"team": "tech"}, "values": {},
+        "index": 0, "id": "1", "state": "ticket 0", "labels": {"team": "tech"}, "values": {},
+        "images": 0,
     }  # fmt: skip
     assert (body["kind"], body["split"], body["missing"]) == ("file", "tickets", [])
     listed = studio.get("/studio/api/data").json()
@@ -129,10 +130,9 @@ def test_an_upload_takes_images_as_data_urls_only(studio):
     lines[0]["images"] = [url]
     lines[1]["images"] = ["images/1.png"]
     response = upload(studio, "pictures", "\n".join(json.dumps(item) for item in lines))
-    assert response.status_code == 400
-    [error] = response.json()["error"]["errors"]
-    assert (error["line"], error["param"]) == (2, "images.0")
-    assert "data URLs" in error["message"]
+    # Image files beside it: the steps to copy them (the image datasets' tests).
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "images_beside"
     assert upload(studio, "pictures", json.dumps(lines[0])).status_code == 200
 
 
@@ -213,6 +213,7 @@ def test_a_page_of_examples(studio):
     assert (body["total"], body["matched"], body["offset"], body["limit"]) == (8, 8, 0, 3)
     assert body["examples"][0] == {
         "index": 0, "id": "1", "state": "ticket 0", "labels": {"team": "tech"}, "values": {},
+        "images": 0,
     }  # fmt: skip
     assert [e["index"] for e in body["examples"]] == [0, 1, 2]
     # The next pages, and one past the end.
@@ -268,7 +269,7 @@ def test_states_cut_to_a_line_and_a_whole_example(studio):
 
     whole = studio.get("/studio/api/data/mixed/examples/0").json()
     assert whole == {"index": 0, "id": "1", "state": long, "questions": {"team": TEAM},
-                     "labels": {"team": "tech"}, "values": {}}  # fmt: skip
+                     "labels": {"team": "tech"}, "values": {}, "images": 0}  # fmt: skip
     assert studio.get("/studio/api/data/mixed/examples/1").json()["state"] == json_state
     assert studio.get("/studio/api/data/mixed/examples/2").status_code == 404
     assert studio.get("/studio/api/data/missing/examples/0").status_code == 404

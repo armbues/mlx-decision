@@ -1,7 +1,8 @@
 // The datasets: the sidebar's list (one row per dataset, marked when it is not
 // ready for a fit) with Download and Add (a JSON-lines file checked as training
 // fit checks it, or a CSV / JSON-lines file of columns kept as a dataset
-// without questions), Delete and Show in Finder.
+// without questions; a file naming image files beside it is copied by hand,
+// the sheet says how), Delete and Show in Finder.
 import { signal } from "@preact/signals";
 import { html } from "htm/preact";
 import { api } from "../api.js";
@@ -67,6 +68,7 @@ async function send(file, name, text, columns = null) {
     toast(`Added ${file.name} as ${where} · ${plural(result.examples, "row")}${more}`);
   } catch (error) {
     if (error.status === 409) askName(file, name, text, error.message, columns);
+    else if (error.code === "images_beside") imagesBeside(file, name, error.body.error.images);
     else if (error.status === 413) tooLarge(file);
     else if (error.status === 400 && error.body?.error?.errors) showErrors(file, text, error.body.error.errors);
     else toast(`Not added: ${error.message}`);
@@ -206,6 +208,49 @@ function tooLarge(file, upload = null) {
       csv
         ? html`<div class="name-field too-large">
             <span>Command</span>
+            <code class="mono">${command}</code>
+            <button class="btn sm" onClick=${copy}>Copy Command</button>
+          </div>`
+        : html`<div class="name-field too-large">
+            <span>Folder</span>
+            <code class="mono" title=${folder?.folder ?? ""}>${folder?.display ?? "data/"}</code>
+            <button class="btn sm" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => reveal("data")}>Show in Finder</button>
+          </div>`,
+    done: "OK",
+  });
+}
+
+// The most files and folders a copy command lists; more: the steps in words.
+const COPIED = 20;
+
+// The file's lines name image files beside it, which an upload does not
+// bring: the steps that make it a dataset folder in data/, and the command
+// that does them, run in the file's folder.
+function imagesBeside(file, given, images) {
+  const folder = dataFolder.value;
+  let name = given;
+  for (let n = 2; nameTaken(name); n += 1) name = `${given}-${n}`;
+  const target = `${folder?.folder ?? "data"}/${name}`;
+  const entries = images.entries ?? [];
+  const copies = entries.length ? ` && cp -R ${entries.map(shellWord).join(" ")} "$D/"` : "";
+  const command =
+    `D=${shellWord(target)} && mkdir "$D" && cp ${shellWord(file.name)} "$D/train.jsonl"${copies}` +
+    ` && printf '{"format": 1}\\n' > "$D/dataset.json"`;
+  const copy = () =>
+    navigator.clipboard.writeText(command).then(
+      () => toast("Copied the command"),
+      () => toast("Could not copy the command"),
+    );
+  const what = entries.length ? `${entries.slice(0, 3).map((entry) => `${entry}`).join(", ")}${entries.length > 3 ? ", …" : ""}` : "";
+  openSheet({
+    title: `${file.name} names image files`,
+    purpose: `Its lines name ${plural(images.files, "image file")}${what ? ` (in ${what})` : ""}. The Studio adds a file's text, not the images beside it: make it a dataset folder in the data folder instead, the file as ${name}/train.jsonl with its images beside it, as the lines name them, and a dataset.json holding {"format": 1}.${
+      images.absolute ? " Paths written whole (from /) are read where they are." : ""
+    }`,
+    Body: () =>
+      entries.length <= COPIED
+        ? html`<div class="name-field too-large">
+            <span>In its folder</span>
             <code class="mono">${command}</code>
             <button class="btn sm" onClick=${copy}>Copy Command</button>
           </div>`

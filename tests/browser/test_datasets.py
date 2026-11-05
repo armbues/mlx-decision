@@ -506,3 +506,80 @@ def test_a_part_says_where_it_was_cut_from(studio, page):
     split = page.locator(".ds-source .kv", has_text="This split")
     expect(split).to_contain_text("train: 80% of train, drawn by label")
     expect(split).not_to_contain_text("[object Object]")
+
+
+def write_pictures(studio, tmp_path=None):
+    """data/pets/: six pictures, red and blue in turn (40 x 30), the question in
+    dataset.json, the state empty."""
+    import io
+
+    import PIL.Image
+
+    folder = studio.workspace / "data" / "pets"
+    (folder / "images").mkdir(parents=True)
+    rows = []
+    for i in range(6):
+        colour = "red" if i % 2 == 0 else "blue"
+        buffer = io.BytesIO()
+        PIL.Image.new("RGB", (40, 30), (220, 20, 20) if colour == "red" else (20, 20, 220)).save(
+            buffer, "PNG"
+        )
+        (folder / "images" / f"{i}.png").write_bytes(buffer.getvalue())
+        rows.append({"id": f"p{i}", "state": "", "images": [f"images/{i}.png"],
+                     "labels": {"pet": colour}})  # fmt: skip
+    (folder / "train.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    question = {"type": "choice", "instructions": "Which colour?",
+                "criteria": {"red": "Red.", "blue": "Blue."}}  # fmt: skip
+    body = {"questions": {"pet": question}, "splits": {"train": {"role": "train"}}}
+    (folder / "dataset.json").write_text(json.dumps(body))
+    return folder
+
+
+def test_an_image_dataset_shows_thumbnails_and_the_image(studio, page):
+    write_pictures(studio)
+    open_studio(page, studio, "datasets/pets")
+    thumbs = page.locator(".ex-rows .ex-thumb")
+    expect(thumbs).to_have_count(6)
+    thumbs.first.scroll_into_view_if_needed()
+    page.wait_for_function("() => document.querySelector('.ex-thumb')?.naturalWidth > 0")
+    assert thumbs.first.evaluate("img => [img.naturalWidth, img.naturalHeight]") == [40, 30]
+    page.locator(".ex-row", has_text="p1").click()
+    inspector = page.locator(".inspector")
+    whole = inspector.locator(".ex-images img.ex-image")
+    expect(whole).to_have_count(1)
+    page.wait_for_function("() => document.querySelector('.ex-image')?.naturalWidth > 0")
+    # The file itself, not the thumbnail: its blue pixels.
+    colour = whole.evaluate(
+        """img => { const c = document.createElement('canvas'); c.width = img.naturalWidth;
+                    c.height = img.naturalHeight; const x = c.getContext('2d');
+                    x.drawImage(img, 0, 0);
+                    return Array.from(x.getImageData(5, 5, 1, 1).data.slice(0, 3)); }"""
+    )
+    assert colour == [20, 20, 220]
+    expect(inspector.locator(".igroup", has_text="State")).to_contain_text(
+        "the model reads the image"
+    )
+    expect(inspector.locator(".igroup", has_text="Labels").locator("code")).to_have_text("blue")
+    shot(page, "datasets-images")
+
+
+def test_adding_a_file_with_images_beside_it_gives_the_steps(studio, page, tmp_path):
+    rows = [json.dumps({"state": "", "images": [f"images/{i}.png"],
+                        "questions": {"team": TEAM}, "labels": {"team": "tech"}})
+            for i in range(3)]  # fmt: skip
+    path = tmp_path / "my pets.jsonl"
+    path.write_text("\n".join(rows) + "\n")
+    open_studio(page, studio, "datasets")
+    add(page, path)
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text("my pets.jsonl names image files")
+    expect(sheet).to_contain_text("Its lines name 3 image files (in images)")
+    target = (studio.workspace / "data" / "my-pets").resolve()
+    command = (f"D={target} && mkdir \"$D\" && cp 'my pets.jsonl' \"$D/train.jsonl\" && "
+               "cp -R images \"$D/\" && printf '{\"format\": 1}\\n' > "
+               "\"$D/dataset.json\"")  # fmt: skip
+    expect(sheet.locator(".too-large code")).to_have_text(command)
+    expect(sheet.get_by_role("button", name="Copy Command")).to_be_visible()
+    shot(page, "datasets-images-beside")
+    sheet.get_by_role("button", name="OK").click()
+    assert not (studio.workspace / "data" / "my-pets").exists()

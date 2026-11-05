@@ -86,8 +86,8 @@ def test_a_split_is_described_and_browsed_before_questions(studio):
     assert body["questions"] == [] and body["missing"] == ["it has no questions yet"]
     assert body["values"] == {"label": [["0", 4], ["1", 4], ["2", 4]]}
     assert body["columns"]["label"]["values"]["1"]["name"] == "Fed | Central Banks"
-    assert body["sample"][0] == {"id": "train/0", "state": "tweet train 0", "labels": {},
-                                 "values": {"label": "0"}}  # fmt: skip
+    assert body["sample"][0] == {"index": 0, "id": "train/0", "state": "tweet train 0",
+                                 "labels": {}, "values": {"label": "0"}, "images": 0}  # fmt: skip
     test = studio.get("/studio/api/data/tweets", params={"split": "test"}).json()
     assert test["split"] == "test" and test["examples"] == 6
     assert studio.get("/studio/api/data/tweets", params={"split": "dev"}).status_code == 404
@@ -102,7 +102,7 @@ def test_a_split_is_described_and_browsed_before_questions(studio):
     )
     whole = studio.get("/studio/api/data/tweets/examples/1", params={"split": "test"}).json()
     assert whole == {"index": 1, "id": "test/1", "state": "tweet test 1", "questions": {},
-                     "labels": {}, "values": {"label": "1"}}  # fmt: skip
+                     "labels": {}, "values": {"label": "1"}, "images": 0}  # fmt: skip
     # No questions: no question set to make from it yet.
     assert studio.post("/studio/api/data/tweets/set", json={}).status_code == 422
 
