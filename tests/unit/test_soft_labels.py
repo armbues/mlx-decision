@@ -251,7 +251,9 @@ def test_a_fine_tune_fits_soft_labels(tmp_path):
     from tiny_models import write_marker
 
     base = write_marker(tmp_path / "tiny-laya", "laya")
-    result = fits_both_ways(tmp_path, base, labelled(30), epochs=1)
+    # The tiny fine-tune's stored weights do not move in one epoch: the biases
+    # of the closing calibration are what differ.
+    result = fits_both_ways(tmp_path, base, labelled(30), epochs=1, calibration="full")
     assert result.kinds == ["finetune", "calibrate"]
 
 

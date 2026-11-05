@@ -181,6 +181,12 @@ def format_fit(report: dict[str, Any], path: str) -> str:
             )
         else:
             lines.append(f"readout {question['question']}: the release's rows were best")
+    calibration = report.get("calibration") or {}
+    if calibration.get("choice") == "none":
+        lines.append("calibration: none")
+    elif calibration.get("questions"):
+        used = ", ".join(f"{q} {kind}" for q, kind in calibration["questions"].items())
+        lines.append(f"calibration ({calibration['choice']}): {used}")
     for warning in report.get("warnings", []):
         lines.append(f"warning: {warning}")
     lines.append(f"took {duration(report['seconds']['total'])}; wrote {path}")

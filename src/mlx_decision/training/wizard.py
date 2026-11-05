@@ -44,6 +44,7 @@ class FitPlan:
     epochs: int | None = None
     head_only: bool = False
     early_stop: bool = True
+    calibration: str = "auto"
     load_options: dict[str, Any] = field(default_factory=dict)
     overwrite: bool = False
 
@@ -94,6 +95,8 @@ class FitPlan:
             words.append("--head-only")
         if not self.early_stop:
             words.append("--no-early-stop")
+        if self.calibration != "auto":
+            words += ["--calibration", self.calibration]
         if "max_input_tokens" in self.load_options:
             words += ["--max-input-tokens", str(self.load_options["max_input_tokens"])]
         if self.overwrite:

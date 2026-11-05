@@ -62,8 +62,14 @@ def test_fit_shows_the_plan_and_reports_before_and_after(tmp_path, base, data, c
     assert "method: calibrate" in result.stderr
     assert "warning: question 'team'" in result.stderr
     assert "team (20 report examples)" in result.stdout
-    assert "accuracy        10.0%       80.0%" in result.stdout
+    # 8 training examples of billing and of sales: auto keeps the temperature alone.
+    assert "calibration (auto): team temperature" in result.stdout
     assert "wrote base-tickets" in result.stdout
+    # With the biases the base's lean to tech is undone.
+    full = cli("fit", "-m", str(base), "--data", str(data), "-o", "full", "--calibration", "full")
+    assert full.exit_code == 0, full.output
+    assert "accuracy        10.0%       80.0%" in full.stdout
+    assert "calibration (full): team full" in full.stdout
 
 
 def test_fit_events_are_json_lines_ending_with_done(tmp_path, base, data, cli):
@@ -118,7 +124,7 @@ def test_the_first_ctrl_c_cancels_and_the_second_interrupts():
 
 
 def test_eval_scores_a_fitted_model_beside_its_base(tmp_path, base, data, cli):
-    fitted = fit(base, data, output=tmp_path / "support").path
+    fitted = fit(base, data, output=tmp_path / "support", calibration="full").path
     result = cli("eval", "-m", str(fitted), "--data", str(data), "--compare", str(base))
     assert result.exit_code == 0, result.output
     lines = result.stdout.splitlines()

@@ -53,6 +53,17 @@ DISK_MARGIN = 2 * 10**9
 MIN_EXAMPLES = 50
 MIN_PER_OPTION = 10
 
+# The closing calibration: ``full`` (a temperature, and a bias per option when
+# every example asks the question the same way), ``temperature`` (no biases),
+# ``none`` (no calibration written) or ``auto``: ``temperature`` after a kind
+# that trains (readout, head, finetune: they learn the options' biases on the
+# fit part, and biases fitted again on the smaller dev part only cost); for a
+# calibration alone (fitted on the whole training part) ``full`` when it holds
+# at least BIAS_MIN_PER_OPTION examples of every option of the question, else
+# ``temperature``.
+CALIBRATIONS = plan.CALIBRATIONS
+BIAS_MIN_PER_OPTION = 10
+
 
 @dataclass(frozen=True)
 class FitResult:
@@ -245,9 +256,45 @@ def shared_states(train: list[Example], report: list[Example]) -> int:
     return sum(1 for example in report if key(example) in seen)
 
 
-def _calibrations(scored: list[Scored], fit: Fit) -> Fit:
+def check_calibration(calibration: str, kinds: list[str]) -> list[str]:
+    """The kinds a run goes through with the ``calibration`` choice (``none``
+    drops the closing ``calibrate``); ``ValueError`` for an unknown choice or
+    ``none`` with nothing else to fit."""
+    if calibration not in CALIBRATIONS:
+        raise ValueError(
+            f"the calibration is one of {', '.join(CALIBRATIONS)}, not {calibration!r}"
+        )
+    if calibration != "none":
+        return kinds
+    if kinds == ["calibrate"]:
+        raise ValueError(
+            "a calibrate fit with no calibration would change nothing; pick another method "
+            "or another calibration"
+        )
+    return [kind for kind in kinds if kind != "calibrate"]
+
+
+def _uses_bias(calibration: str, labels: list[str], options: list[str], trained: bool) -> bool:
+    """Whether the closing calibration fits per-option biases for a question whose
+    calibration examples have ``labels`` (the hard ones, soft labels' most
+    likely); ``trained``: after a kind that trains."""
+    if calibration == "full":
+        return True
+    if calibration == "temperature" or trained:
+        return False
+    counts = Counter(labels)
+    return min(counts[option] for option in options) >= BIAS_MIN_PER_OPTION
+
+
+def _calibrations(
+    scored: list[Scored], fit: Fit, calibration: str = "full", trained: bool = False
+) -> tuple[Fit, dict[str, str]]:
     """A calibration per fitted question (same id, type and options) on ``scored``,
-    added to ``fit``; biases where every example asks it the same way."""
+    added to ``fit``; biases where every example asks it the same way and the
+    ``calibration`` choice wants them (see ``CALIBRATIONS``; ``trained``: after
+    a kind that trains). Also which one
+    each question id got: ``full`` (with biases) or ``temperature``."""
+    used: dict[str, str] = {}
     groups: dict[tuple, tuple[FitQuestion, list[tuple[Scored, str]]]] = {}
     for item in scored:
         if item.raw is None:
@@ -264,10 +311,14 @@ def _calibrations(scored: list[Scored], fit: Fit) -> Fit:
             json.dumps(item.request.questions[qid].model_dump(), sort_keys=True, default=str)
             for item, qid in rows
         }
-        fit.calibrations[fit.add(fitted_question)] = fit_calibration(
-            probabilities, labels, bias=len(wordings) == 1
-        )
-    return fit
+        hard = [item.example.labels[qid] for item, qid in rows]
+        bias = len(wordings) == 1 and _uses_bias(calibration, hard, options, trained)
+        fit.calibrations[fit.add(fitted_question)] = fit_calibration(probabilities, labels, bias)
+        # A question asked in several ways (or with other options) gets a calibration
+        # per way; it counts as full when any of them has biases.
+        if used.get(fitted_question.id) != "full":
+            used[fitted_question.id] = "full" if bias else "temperature"
+    return fit, used
 
 
 @dataclass
@@ -647,6 +698,7 @@ def fit(
     epochs: int = 3,
     head_only: bool = False,
     early_stop: bool = True,
+    calibration: str = "auto",
     on_event: Callable[[Event], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     overwrite: bool = False,
@@ -664,7 +716,9 @@ def fit(
     kinds that train in epochs (at most: with ``early_stop`` an epoch worse on
     dev than the best before it ends the training; the best is kept either
     way); ``head_only`` fine-tunes the marker head without the encoder.
-    ``on_event`` receives the progress;
+    ``calibration`` is the closing calibration (``auto``, ``full``,
+    ``temperature`` or ``none``, see ``CALIBRATIONS``; ``none`` with
+    ``method="calibrate"`` is refused). ``on_event`` receives the progress;
     ``cancel()`` (a callable, or a ``threading.Event``) stops the run at the
     next step with ``Cancelled``. ``load_options`` go to the base's loader.
 
@@ -702,7 +756,7 @@ def fit(
         base, data, validation=validation, holdout=holdout, seed=seed, load_options=load_options
     )
     source, held, origin, splits = prepared.source, prepared.held, prepared.origin, prepared.splits
-    kinds = plan.resolve(origin.family.name, method)
+    kinds = check_calibration(calibration, plan.resolve(origin.family.name, method))
     if head_only and "finetune" not in kinds:
         raise ValueError("head_only applies to finetune")
     training = splits.fit + splits.dev
@@ -825,8 +879,12 @@ def fit(
             store.remove()
 
     check_cancel()
-    emit(Event("calibrate", message="fitting the calibration"))
-    fit_ = _calibrations(calibration_scored, fit_)
+    used: dict[str, str] = {}
+    if calibration == "none":
+        emit(Event("calibrate", message="no closing calibration (calibration none)"))
+    else:
+        emit(Event("calibrate", message="fitting the calibration"))
+        fit_, used = _calibrations(calibration_scored, fit_, calibration, trainer is not None)
     fit_.kinds = kinds
     finish_stage("calibrate")
 
@@ -850,6 +908,7 @@ def fit(
         "epochs": epochs,
         "head_only": head_only,
         "early_stop": early_stop,
+        "calibration": calibration,
         "load_options": {
             key: value if isinstance(value, (bool, int, float, str, type(None))) else str(value)
             for key, value in load_options.items()
@@ -879,6 +938,7 @@ def fit(
         "warnings": warnings,
         "questions": questions,
         "training": training_report,
+        "calibration": {"choice": calibration, "questions": used},
         "calibrations": [
             {
                 "question": question.id,
@@ -887,6 +947,7 @@ def fit(
                 "bias": fit_.calibrations[i].bias,
             }
             for i, question in enumerate(fit_.questions)
+            if i in fit_.calibrations
         ],
         "seconds": seconds,
     }
@@ -900,6 +961,7 @@ def fit(
             for question_id, entry in questions.items()
         },
         "seed": seed,
+        "calibration": {"choice": calibration, "questions": used},
         "data": source.sha256,
         "version": __version__,
         # H2O-Lightning: the mode the features were read in, served so.

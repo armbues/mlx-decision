@@ -21,6 +21,16 @@ import { dataFiles } from "../store/data.js";
 import { homeWord, models, tilde } from "../store/status.js";
 import { toast } from "../store/ui.js";
 
+// Which closing calibration the fit used, per question (``auto`` picks).
+function calibrationNote(calibration) {
+  if (!calibration) return null;
+  if (calibration.choice === "none") return html`<p class="report-note">No closing calibration.</p>`;
+  const used = Object.entries(calibration.questions ?? {});
+  if (!used.length) return null;
+  const words = used.map(([id, kind]) => `${used.length > 1 ? `${id}: ` : ""}${kind === "full" ? "temperature and a bias per option" : "temperature only"}`);
+  return html`<p class="report-note">Calibration (${calibration.choice}): ${words.join("; ")}.</p>`;
+}
+
 const STEPS = [
   ["check", "Check"],
   ["before", "Score before"],
@@ -336,6 +346,7 @@ function Report({ job }) {
         ${Object.entries(report.questions ?? {}).map(([id, entry]) => html`<${QuestionReport} id=${id} entry=${entry} where=${where} />`)}
         ${training.best_epoch != null &&
         html`<p class="report-note">Kept epoch ${training.best_epoch} of ${training.epochs?.length ?? "?"}${training.stopped_early ? " (stopped early: dev loss rose)" : ""}.</p>`}
+        ${calibrationNote(report.calibration)}
         ${(report.warnings ?? []).map((warning) => html`<p class="warn-text">${warning}</p>`)}
       </div>
     </section>

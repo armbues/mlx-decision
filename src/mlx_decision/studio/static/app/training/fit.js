@@ -29,6 +29,13 @@ const seed = signal(0);
 const choice = signal(null); // "method" or "method+head" (the card picked)
 const epochs = signal(3);
 const earlyStop = signal(true);
+const calibration = signal("auto"); // the closing calibration
+const CALIBRATIONS = {
+  auto: "temperature after training; a calibration alone adds a bias per option from 10 training rows of each",
+  full: "a temperature and a bias per option",
+  temperature: "a temperature only",
+  none: "the answers as the method gives them, e.g. for thresholds tuned on the base",
+};
 const name = signal("");
 const named = signal(false); // typed: a new plan keeps it
 const starting = signal(false);
@@ -204,6 +211,7 @@ export async function startFit() {
     if (planned.value.report_split) body.report_split = planned.value.report_split;
   } else body.holdout = holdout.value / 100;
   if (method.head_only) body.head_only = true;
+  if (calibration.value !== "auto" && !(calibration.value === "none" && method.method === "calibrate")) body.calibration = calibration.value;
   if (method.epochs) {
     body.epochs = Number(epochs.value) || 3;
     if (!earlyStop.value) body.early_stop = false;
@@ -384,6 +392,15 @@ export function FitForm() {
               <label class="check"><input type="checkbox" checked=${earlyStop.value} onChange=${(event) => (earlyStop.value = event.target.checked)} /> stop early when the tuning rows get worse</label>
               <span class="hint">the best epoch is kept</span>
             </div></div>`}
+            <div class="row"><label for="fit-calibration">Calibration</label><div class="line">
+              <select id="fit-calibration" value=${method?.method === "calibrate" && calibration.value === "none" ? "auto" : calibration.value}
+                      onChange=${(event) => (calibration.value = event.target.value)}>
+                ${Object.keys(CALIBRATIONS)
+                  .filter((choice) => choice !== "none" || method?.method !== "calibrate")
+                  .map((choice) => html`<option value=${choice}>${choice}</option>`)}
+              </select>
+              <span class="hint">${CALIBRATIONS[method?.method === "calibrate" && calibration.value === "none" ? "auto" : calibration.value]}</span>
+            </div></div>
             <div class="row"><label for="fit-seed">Seed</label><div class="line">
               <input id="fit-seed" type="number" min="0" value=${seed.value} onChange=${(event) => (seed.value = Number(event.target.value) || 0)} />
               <span class="hint">same seed, same split</span>

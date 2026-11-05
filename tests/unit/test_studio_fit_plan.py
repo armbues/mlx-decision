@@ -134,6 +134,9 @@ def test_refusals(studio):
          ["--method", "finetune", "--head-only"]),
         ("tiny-laya", {"method": "calibrate", "holdout": 0.3, "seed": 5, "early_stop": False},
          ["--method", "calibrate", "--holdout", "0.3", "--seed", "5", "--no-early-stop"]),
+        ("tiny-d3", {"method": "readout", "calibration": "none"},
+         ["--method", "readout", "--calibration", "none"]),
+        ("tiny-d3", {"calibration": "auto"}, []),
     ],
 )  # fmt: skip
 def test_the_argv_per_method(studio, models, model, body, flags):
@@ -148,6 +151,13 @@ def test_the_argv_per_method(studio, models, model, body, flags):
         "-o", str(output), *flags,
     ]  # fmt: skip
     studio.post(f"/studio/api/jobs/{job['id']}/stop", json={})
+
+
+def test_a_calibration_is_one_of_the_choices(studio):
+    body = {"kind": "fit", "model": "tiny-d3", "data": "tickets"}
+    for wrong in ({"calibration": "bias"}, {"method": "calibrate", "calibration": "none"}):
+        refused = studio.post("/studio/api/jobs", json={**body, **wrong})
+        assert refused.status_code == 400 and refused.json()["error"]["param"] == "calibration"
 
 
 def test_head_only_goes_with_finetune(studio):

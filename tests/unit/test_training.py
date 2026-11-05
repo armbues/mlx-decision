@@ -57,7 +57,7 @@ def data(tmp_path):
 
 
 def test_a_calibration_fit_moves_answers_towards_the_labels(tmp_path, base, data):
-    result = fit(base, data, output=tmp_path / "support")
+    result = fit(base, data, output=tmp_path / "support", calibration="full")
     assert result.path == tmp_path / "support"
     assert result.kinds == ["calibrate"]
     team = result.metrics["team"]
@@ -132,9 +132,9 @@ def test_a_cancelled_fit_writes_nothing(tmp_path, base, data, stage):
 
 
 def test_the_same_seed_gives_the_same_fit(tmp_path, base, data):
-    first = fit(base, data, output=tmp_path / "a", seed=3)
-    again = fit(base, data, output=tmp_path / "b", seed=3)
-    other = fit(base, data, output=tmp_path / "c", seed=4)
+    first = fit(base, data, output=tmp_path / "a", seed=3, calibration="full")
+    again = fit(base, data, output=tmp_path / "b", seed=3, calibration="full")
+    other = fit(base, data, output=tmp_path / "c", seed=4, calibration="full")
     assert first.report["calibrations"] == again.report["calibrations"]
     assert (tmp_path / "a" / FIT_FILE).read_bytes() == (tmp_path / "b" / FIT_FILE).read_bytes()
     assert first.report["calibrations"] != other.report["calibrations"]

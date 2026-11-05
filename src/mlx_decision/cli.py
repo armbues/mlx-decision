@@ -1985,6 +1985,17 @@ def training_fit(
             "before it (by default that ends the training). The best epoch is kept either way.",
         ),
     ] = False,
+    calibration: Annotated[
+        str,
+        typer.Option(
+            "--calibration",
+            help="The closing calibration: auto (the default: temperature after readout, "
+            "head or finetune; with calibrate alone, full when the training part holds 10 "
+            "or more examples of every option, else temperature), full (a temperature and "
+            "a bias per option), temperature (no biases) or none (the answers as the "
+            "fitted kind gives them, e.g. for thresholds tuned on the base's).",
+        ),
+    ] = "auto",
     max_input_tokens: MaxInputOption = None,
     overwrite: Annotated[
         bool, typer.Option("--overwrite", help="Replace the output folder if it exists.")
@@ -2027,6 +2038,7 @@ def training_fit(
         epochs=epochs,
         head_only=head_only,
         early_stop=not no_early_stop,
+        calibration=calibration,
         load_options=load_options(None, max_input_tokens),
         overwrite=overwrite,
     )
@@ -2062,6 +2074,7 @@ def training_fit(
                 epochs=plan.epochs,
                 head_only=plan.head_only,
                 early_stop=plan.early_stop,
+                calibration=plan.calibration,
                 on_event=on_event,
                 cancel=stop,
                 overwrite=plan.overwrite,

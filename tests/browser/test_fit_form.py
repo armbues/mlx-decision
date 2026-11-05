@@ -84,6 +84,36 @@ def test_the_form_and_start_fit(studio, page):
     expect(page.locator(".sidebar .job small")).to_have_text("Stopped")
 
 
+def test_the_calibration_choice(studio, page):
+    open_studio(page, studio, "training")
+    form = page.locator(".fit-form")
+    form.locator("#fit-data").select_option("support")
+    form.locator("#fit-base").select_option("tiny-clef")
+    form.locator(".adv summary").click()
+    select = form.locator("#fit-calibration")
+    expect(select).to_have_value("auto")
+    expect(select.locator("option")).to_have_text(["auto", "full", "temperature", "none"])
+    hint = select.locator("xpath=following-sibling::span[@class='hint']")
+    expect(hint).to_contain_text("temperature after training")
+    select.select_option("none")
+    expect(hint).to_contain_text("thresholds tuned on the base")
+    # Calibrate alone cannot go without its calibration: none is not offered.
+    form.locator(".method[data-method='calibrate']").click()
+    expect(select.locator("option")).to_have_text(["auto", "full", "temperature"])
+    expect(select).to_have_value("auto")
+    form.locator(".method[data-method='head']").click()
+    expect(select).to_have_value("none")
+    select.select_option("temperature")
+    form.locator("#fit-name").fill("support-temperature")
+    page.keyboard.press("Meta+Enter")
+    expect(page.locator(".centre h1")).to_have_text("Fit support-temperature")
+    job = next(iter(studio.app.state.jobs.jobs.values()))
+    assert job.details["calibration"] == "temperature"
+    assert job.argv[job.argv.index("--calibration") + 1] == "temperature"
+    page.locator(".sidebar .job").get_by_role("button", name=re.compile("^Stop ")).click()
+    expect(page.locator(".sidebar .job small")).to_have_text("Stopped")
+
+
 def test_a_family_without_a_main_kind_offers_calibrate(studio, page):
     open_studio(page, studio, "training")
     form = page.locator(".fit-form")

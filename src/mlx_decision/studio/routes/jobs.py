@@ -31,6 +31,7 @@ from ...download import recorded_repo
 from ...fitted import REPORT_FILE
 from ...flags import join_list, join_pairs
 from ...gpu import Gpu
+from ...training.plan import CALIBRATIONS
 from ...training.plan import KINDS as FIT_KINDS
 from ...watchdog import remove
 from ..catalog import option_arguments
@@ -231,6 +232,17 @@ def jobs_router(
             if method != "finetune":
                 raise ApiError(400, "head_only goes with the finetune method", param="head_only")
             argv.append("--head-only")
+        calibration = field(body, "calibration", str, required=False)
+        if calibration is not None:
+            if calibration not in CALIBRATIONS:
+                listed = ", ".join(CALIBRATIONS)
+                raise ApiError(400, f"calibration must be one of {listed}", param="calibration")
+            if calibration == "none" and method == "calibrate":
+                raise ApiError(
+                    400, "a calibrate fit needs a calibration other than none", param="calibration"
+                )
+            if calibration != "auto":
+                argv += ["--calibration", calibration]
         details = {
             "model": base,
             "data": data_name,
@@ -244,6 +256,7 @@ def jobs_router(
             "seed": seed,
             "early_stop": early_stop,
             "head_only": head_only,
+            "calibration": calibration,
         }
         return Plan(argv, holds_gpu=True, title=f"Fit {name}", details=details, output=output)
 
