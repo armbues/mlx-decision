@@ -556,7 +556,9 @@ class Prepared:
         """Memory the kinds need beyond the model's weights."""
         every = self.splits.holdout + self.splits.fit + self.splits.dev
         questions = plan.labelled(every)
-        tokens = max((plan.clef_tokens(example) for example in every), default=0)
+        tokens = 0
+        if "head" in kinds:
+            tokens = max(plan.head_tokens(every, self.origin.path, self.load_options), default=0)
         return max(
             plan.kind_bytes(kind, self.origin.path, self.load_options, head_only, questions, tokens)
             for kind in kinds

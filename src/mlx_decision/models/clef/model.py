@@ -90,12 +90,15 @@ class ClefBackend:
         )
 
     def head_size(self, request: Request) -> int:
-        """Bytes of the request's hidden states (text requests: tokenized only)."""
+        """Bytes of the request's hidden states: tokenized only, images counted
+        from their headers (nothing runs)."""
+        opened, config = [], None
         if request.images:
-            raise ValueError("images are not stored for training")
+            config = image_config(self.path, self.max_image_pixels)
+            opened = open_images(request.images)
         # The hidden states come out of the backbone's last norm, in its dtype.
         norm = self.backbone.language_model.model.norm.weight
-        return len(self.encode(request).input_ids) * norm.size * norm.itemsize
+        return len(self.encode(request, opened, config).input_ids) * norm.size * norm.itemsize
 
     def head_inputs(self, request: Request) -> HeadInputs:
         """The backbone's part of answering: hidden states, ids and spans, no head."""

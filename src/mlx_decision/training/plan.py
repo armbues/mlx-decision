@@ -2,17 +2,23 @@
 
 The estimate counts the model's weights and what the kind keeps beside them
 (optimizer state, activations, kept features, stored states); token counts
-are guessed from the requests' length (four characters a token), so nothing
-is loaded to estimate. Time is not estimated: it depends on the Mac's chip
-far more than on anything known before loading.
+are guessed from the requests' length (four characters a token) and their
+images (a head fit: from the image headers and the release's processor
+settings; else a fixed guess), so no model is loaded to estimate. Time is
+not estimated: it depends on the Mac's chip far more than on anything known
+before loading.
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ..data.format import Example, Splits
+from ..errors import DecisionError
 from ..memory import required_bytes
+from ..state_images import lift_images
 
 KINDS = ("calibrate", "readout", "head", "finetune")
 # The share of the data that scores a fit's report when nothing else does.
@@ -31,6 +37,9 @@ MAIN_KIND = {
 }
 
 CHARS_PER_TOKEN = 4
+# Tokens an image is guessed at where its model's processor is not read: about
+# a megapixel, at 32 x 32 pixels a token as the Qwen-style towers cut them.
+IMAGE_TOKENS = 1024
 
 
 def kinds(family: str) -> list[str]:
@@ -70,9 +79,30 @@ def resolve(family: str, method: str) -> list[str]:
     return [method] if method == "calibrate" else [method, "calibrate"]
 
 
-def request_tokens(example: Example) -> int:
-    """About the tokens of an example's request: its JSON length over four."""
-    return max(1, len(json.dumps(example.request, ensure_ascii=False)) // CHARS_PER_TOKEN)
+def _without_images(request: dict[str, Any]) -> tuple[dict[str, Any], list[Any]]:
+    """The request without its images (those in the state left as their
+    ``[image N]`` placeholders), and the images."""
+    images = list(request.get("images") or [])
+    rest = {key: value for key, value in request.items() if key != "images"}
+    try:
+        state, lifted = lift_images(rest.get("state"), len(images))
+    except DecisionError:
+        lifted = []  # the model's check names it
+    if lifted:
+        rest["state"] = state
+        images += [raw for raw, _ in lifted]
+    return rest, images
+
+
+def request_tokens(example: Example, image_tokens: Callable[[Any], int] | None = None) -> int:
+    """About the tokens of an example's request: its JSON length over four,
+    without the images, plus each image's tokens (``image_tokens``, else
+    ``IMAGE_TOKENS``)."""
+    rest, images = _without_images(example.request)
+    text = max(1, len(json.dumps(rest, ensure_ascii=False, default=str)) // CHARS_PER_TOKEN)
+    if image_tokens is None:
+        return text + IMAGE_TOKENS * len(images)
+    return text + sum(image_tokens(image) for image in images)
 
 
 @dataclass(frozen=True)
@@ -116,9 +146,40 @@ CLEF_PROMPT_TOKENS = 130
 STATE_BYTES = 2
 
 
-def clef_tokens(example: Example) -> int:
-    """About the tokens of an example in Clef's prompt."""
-    return request_tokens(example) + CLEF_PROMPT_TOKENS
+def clef_image_tokens(path: Path, options: dict) -> Callable[[Any], int]:
+    """An image's tokens in Clef's prompt, from its header and the release's
+    processor settings (``max_image_pixels`` as the loader takes it), the
+    start and end markers included; ``IMAGE_TOKENS`` for one that does not open."""
+    from ..backbones.qwen3_5.preprocess import image_tokens
+    from ..images import open_image
+    from ..models.clef.model import DEFAULT_MAX_IMAGE_PIXELS
+    from ..models.qwen import image_config
+
+    config = image_config(path, options.get("max_image_pixels", DEFAULT_MAX_IMAGE_PIXELS))
+
+    def count(image: Any) -> int:
+        try:
+            opened = open_image(image, 0)
+            return image_tokens(opened.height, opened.width, config) + 2
+        except (DecisionError, ValueError):
+            return IMAGE_TOKENS
+
+    return count
+
+
+def clef_tokens(example: Example, image_tokens: Callable[[Any], int] | None = None) -> int:
+    """About the tokens of an example in Clef's prompt (images as
+    ``image_tokens`` counts them, else guessed)."""
+    return request_tokens(example, image_tokens) + CLEF_PROMPT_TOKENS
+
+
+def head_tokens(examples: list[Example], path: Path, options: dict) -> list[int]:
+    """Each example's tokens in Clef's prompt, its images counted from their
+    headers (opened only when there are images)."""
+    count = None
+    if any(_without_images(example.request)[1] for example in examples):
+        count = clef_image_tokens(path, options)
+    return [clef_tokens(example, count) for example in examples]
 
 
 def head_parameters(path: Path) -> tuple[int, int]:
@@ -178,11 +239,12 @@ def estimate(
 ) -> Estimate:
     """Peak memory and disk of a run on ``splits``."""
     every = splits.holdout + splits.fit + splits.dev
-    disk = 0
-    if kinds[0] == "head":
+    disk = tokens = 0
+    if "head" in kinds:
+        counts = head_tokens(every, path, options)
         _, hidden = head_parameters(path)
-        disk = sum(clef_tokens(example) for example in every) * hidden * STATE_BYTES
+        disk = sum(counts) * hidden * STATE_BYTES
+        tokens = max(counts, default=0)
     questions = labelled(every)
-    tokens = max((clef_tokens(example) for example in every), default=0)
     extra = max(kind_bytes(kind, path, options, head_only, questions, tokens) for kind in kinds)
     return Estimate(required_bytes(path, options) + extra, disk)
