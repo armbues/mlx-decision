@@ -52,6 +52,15 @@ All notable changes to this project are documented here. The format follows
   batch's folder: `cd` into `batches/NAME`, then `mlx-decision run -m
   MODEL -q questions.json --states rows.jsonl --json`.
 
+### Fixed
+
+- A readout fit of a pplx or d3 model answered its yes/no questions
+  with the release's rows once loaded: the fitted folder names the
+  options true, false, these families read them false, true, and the
+  served model did not match the two. Its choice and score questions
+  were not affected. Fitted folders written before are now served
+  with their fitted rows, without fitting again.
+
 ## [1.2.0] - 2026-11-04
 
 Base Labs' joey-1 and images for the Base Labs family, H2O-Lightning-4B

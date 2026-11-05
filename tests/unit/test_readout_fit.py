@@ -12,7 +12,7 @@ from mlx_decision.data.format import Example, training_splits
 from mlx_decision.fitted import FIT_FILE
 from mlx_decision.models.readout import Features, Readout, group_logits, option_logits
 from mlx_decision.registry import MARKER_FILE
-from mlx_decision.training import Cancelled, fit, plan
+from mlx_decision.training import Cancelled, evaluate, fit, plan
 from mlx_decision.training.fitting import _readouts
 from mlx_decision.training.readout import fit_readout, search_steps
 from mlx_decision.training.scoring import Scored, reread, score
@@ -179,6 +179,12 @@ def test_every_reading_family_fits_a_readout_end_to_end(tmp_path, family, short_
         for question_id, values in served.items():
             for option, p in values.items():
                 assert p == pytest.approx(adjusted[question_id][option], abs=1e-5)
+    # And what the report says: the fitted rows are served for every question
+    # (pplx and d3 order a noul's options false, true; the folder true, false).
+    evaluated = evaluate(result.path, holdout).models[0].questions
+    for question_id, metrics in result.metrics.items():
+        after = metrics["after"]
+        assert evaluated[question_id]["log_loss"] == pytest.approx(after["log_loss"], abs=2e-4)
 
 
 def test_the_same_seed_gives_the_same_readout(tmp_path, short_search):

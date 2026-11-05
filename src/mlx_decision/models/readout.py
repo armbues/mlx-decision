@@ -94,6 +94,15 @@ def read_out(features: Features, readout: Readout | None = None) -> list[float]:
 
 
 def pick(readouts: dict[str, Readout] | None, question_id: str, option_ids: list[str]):
-    """The readout for a question, if there is one for its options."""
+    """The readout for a question, if there is one for its options.
+
+    A fitted folder names a readout's options in the question's order (a
+    noul's true, false), while its rows and biases are in the family's order
+    (pplx and d3 read a noul false, true), as they were fitted: the same
+    options in another order are that readout, named in the family's order."""
     readout = (readouts or {}).get(question_id)
-    return readout if readout is not None and readout.option_ids == option_ids else None
+    if readout is None or sorted(readout.option_ids) != sorted(option_ids):
+        return None
+    if readout.option_ids == option_ids:
+        return readout
+    return Readout(list(option_ids), readout.rows, readout.bias)
