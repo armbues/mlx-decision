@@ -135,7 +135,8 @@ JSONL or Parquet file into labelled examples; `training fit` fits a model
 to them in minutes, on the Mac it runs on, and `training eval` compares
 it with its base. The result is a small folder that loads like any
 model. On TREC, a fit takes d1-3B from 86.6% to 96.4% in 4 minutes on
-an M5 Pro. In the Studio, the Datasets and Training pages do the same
+an M5 Pro; a LoRA fit takes d3-edge from 30% to 90% on photos of 37 pet
+breeds in 17 minutes. In the Studio, the Datasets and Training pages do the same
 without the command line.
 [docs/TRAINING.md](https://github.com/armbues/mlx-decision/blob/main/docs/TRAINING.md)
 

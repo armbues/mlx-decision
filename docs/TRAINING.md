@@ -99,6 +99,14 @@ minutes, went from 31.6 / 27.6 / 4.6 to 86.2 / 86.2 / 3.4 on 1,850 test
 photos (50 per breed). With a one-line state saying what the photos show
 ("A photo of a pet cat or dog.") it reached 87.1.
 
+LoRA adapts the network where the readout fit stops. On the same photos
+and state, `--method lora` on d3-edge went from 30.3 / 26.8 / 5.9 to
+90.2 / 90.1 / 1.8, in 16.7 minutes (13.9 of them training, two epochs)
+and about 4 GB. On text it added less: on 3,000 rows of SST-5 (five
+sentiment levels, 2,210 test rows), d3-edge went from 42.5 to 52.5
+accuracy in 2.9 minutes, where a readout fit of the same rows reaches
+about 51.
+
 What to expect in general:
 
 - **Julia** gains the most: on TREC its release guesses (16%), and after
@@ -110,6 +118,10 @@ What to expect in general:
   memory.
 - **laya** gains on tasks its pre-training covered less well, such as
   offensive language.
+- **d3 and d1 LFM3** gain most from `lora` where the network has to
+  see something new, such as pet breeds in photos; on text tasks it has
+  landed within a point or two of the readout fit, at many times its
+  time.
 - **Clef** gains little from its head alone (2 to 3 points on entailment).
   Its calibration fit is the useful one: it makes the probabilities
   trustworthy when Clef is overconfident, as on ANLI-R3 (ECE 20.9 → 2.8).
