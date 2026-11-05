@@ -14,12 +14,13 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 import mlx.core as mx
 
 from ..backbones.qwen3_5.load import has_vision_weights, load_text_model
 from ..backbones.qwen3_5.tokenizer import load_tokenizer
-from ..backend import BackendOutput, Capabilities
+from ..backend import BackendOutput, Capabilities, TrainingPass
 from ..errors import DecisionError
 from ..types import Request
 from .qwen import (
@@ -27,8 +28,8 @@ from .qwen import (
     count_image_tokens,
     image_config,
     image_features,
-    image_inputs,
     open_images,
+    place_images,
     precision,
     prepare,
 )
@@ -161,8 +162,9 @@ class LetterBackend:
             expanded += [pad] * next(images) if token == pad else [token]
         return expanded
 
-    def passes(self, request: Request) -> tuple[list[Encoded], list[mx.array]]:
-        """Every question's encoding and last hidden state."""
+    def prepared(self, request: Request) -> tuple[list[Encoded], list, mx.array | None]:
+        """Every question's encoding, the request's images cut into patches and
+        their vision features (None without images)."""
         # Image sizes come from the file headers, so the input limit is checked
         # before any image is decoded or cut into patches.
         opened, config = [], None
@@ -174,6 +176,11 @@ class LetterBackend:
         )
         images = [prepare(image, index, config) for index, image in opened]
         features = image_features(self.load_vision(), images) if images else None
+        return encoded, images, features
+
+    def passes(self, request: Request) -> tuple[list[Encoded], list[mx.array]]:
+        """Every question's encoding and last hidden state."""
+        encoded, images, features = self.prepared(request)
         hidden = [self.last_hidden(q.input_ids, images, features) for q in encoded]
         return encoded, hidden
 
@@ -222,19 +229,78 @@ class LetterBackend:
         ``images`` (prepared) and their vision ``features`` fill the image
         pad tokens of ``input_ids``.
         """
-        ids = mx.array(input_ids)[None]
         if images:
-            embeddings, positions = image_inputs(
-                self.backbone, self.load_vision(), self.tokenizer, input_ids, images, features
-            )
-            return self.backbone(ids, embeddings[None], positions)[0]
-        return self.backbone(ids)[0]
+            if features is None:
+                features = image_features(self.load_vision(), images)
+            return self._with_images(input_ids, features, [image.grid for image in images])
+        return self.backbone(mx.array(input_ids)[None])[0]
+
+    def _with_images(self, input_ids: list[int], features: mx.array, grids: list) -> mx.array:
+        merge = self.load_vision().args.spatial_merge_size
+        embeddings, positions = place_images(
+            self.backbone, self.tokenizer, input_ids, features, grids, merge
+        )
+        return self.backbone(mx.array(input_ids)[None], embeddings[None], positions)[0]
 
     def last_hidden(self, input_ids: list[int], images=(), features=None) -> mx.array:
         """One pass: the final hidden state at the last token, in float32."""
         last = self.hidden_states(input_ids, images, features)[-1].astype(mx.float32)
         mx.eval(last)
         return last
+
+    # LoRA training (``backend.Adaptable``)
+
+    @property
+    def decoder_layer(self) -> type:
+        return type(self.backbone.language_model.layers[0])
+
+    def network(self):
+        return self.backbone
+
+    def adapter_targets(self) -> list[tuple[str, Any, tuple[str, ...]]]:
+        """The MLP projections of every decoder layer."""
+        return [
+            (f"layers.{index}.mlp", layer.mlp, ("gate_proj", "up_proj", "down_proj"))
+            for index, layer in enumerate(self.backbone.language_model.layers)
+        ]
+
+    def training_passes(self, request: Request) -> list[TrainingPass]:
+        """One pass per question; the images' vision features computed now (and
+        evaluated), shared by the request's passes."""
+        encoded, images, features = self.prepared(request)
+        frozen = None
+        if features is not None:
+            mx.eval(features)
+            frozen = (features, [image.grid for image in images])
+        return [
+            TrainingPass(
+                q.input_ids,
+                {q.question_id: self.question_features(q.option_ids, None)},
+                frozen,
+                images=frozen is not None,
+            )
+            for q in encoded
+        ]
+
+    def pass_hidden(self, passes: list[TrainingPass]) -> list[mx.array]:
+        """Each pass's hidden state at its last token (``[1, width]``, float32): a
+        pass with images alone, text passes as one right-padded batch (the
+        full-attention layers masked past each row's end when non-causal)."""
+        if any(p.images for p in passes):
+            if len(passes) != 1:
+                raise ValueError("a pass with images runs alone")
+            (single,) = passes
+            hidden = self._with_images(single.tokens, *single.frozen)
+            return [hidden[-1:].astype(mx.float32)]
+        if len(passes) == 1:
+            return [self.backbone(mx.array(passes[0].tokens)[None])[0, -1:].astype(mx.float32)]
+        lengths = [p.length for p in passes]
+        widest = max(lengths)
+        ids = mx.array([p.tokens + [0] * (widest - p.length) for p in passes])
+        causal = self.backbone.language_model.model.causal
+        hidden = self.backbone(ids) if causal else self.backbone(ids, lengths=mx.array(lengths))
+        last = hidden[mx.arange(len(passes)), mx.array(lengths) - 1].astype(mx.float32)
+        return [last[i : i + 1] for i in range(len(passes))]
 
     def probabilities(
         self, input_ids: list[int], count: int, images=(), features=None

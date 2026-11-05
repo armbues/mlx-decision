@@ -12,7 +12,9 @@ added (the Models page's memory card); with ``slow`` also ``fake-slow`` (1.5 s a
 probabilities; Compare's Stop and its notes where models differ). With
 ``empty`` it serves no models at all (a first start); with ``convertible``
 also ``tiny-clef``, the tiny Clef of ``tests/tiny_models.py``, which
-Convert offers; ``max_body_bytes`` sets the most a request (an upload) holds.
+Convert offers; with ``adaptable`` also ``tiny-d3``, the tiny d3 of
+``tests/tiny_models.py``, for which New Fit offers LoRA;
+``max_body_bytes`` sets the most a request (an upload) holds.
 With ``downloads`` it lists downloaded models too (Delete for them): the
 Hugging Face cache this process uses (``huggingface_hub.constants.HF_HUB_CACHE``,
 which the caller points at a scratch folder) gains ``org/fake-cached`` (two
@@ -110,6 +112,7 @@ def write_studio(
     convertible: bool = False,
     max_body_bytes: int | None = None,
     downloads: bool = False,
+    adaptable: bool = False,
 ) -> FastAPI:
     """Write the fake models under ``home/fake-models`` and the sample sets in
     ``home/ws/sets`` (kept when there), and build the Studio for ``port``."""
@@ -142,6 +145,11 @@ def write_studio(
 
         if not (models / "tiny-clef").exists():
             write_clef(models / "tiny-clef")
+    if adaptable:  # a real model whose family takes a lora fit
+        from tiny_models import write_d3
+
+        if not (models / "tiny-d3").exists():
+            write_d3(models / "tiny-d3")
     if empty:  # a first start: no models, a budget like a 16 GB Mac's
         pool = ModelPool([], budget=int(12.7 * GB))
     elif sizes:

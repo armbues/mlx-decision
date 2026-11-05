@@ -16,7 +16,9 @@
 # model without lm_head,
 # and the weight names of checkpoints saved without the ``model.`` prefix;
 # the config's ``layer_types``, when given, sets which layers are full
-# attention (pruned models break the every-fourth-layer pattern).
+# attention (pruned models break the every-fourth-layer pattern); in
+# training mode the Gated DeltaNet layers run MLX's differentiable chunked
+# rule (``gated_delta_training``) instead of the per-token ops.
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
@@ -26,7 +28,7 @@ import mlx.nn as nn
 
 from .base import BaseModelArgs, create_attention_mask
 from .cache import ArraysCache, ConcatenateKVCache
-from .gated_delta import gated_delta_update, normalize_qk
+from .gated_delta import gated_delta_training, gated_delta_update, normalize_qk
 from .qwen3_next import Qwen3NextAttention as Attention
 from .qwen3_next import Qwen3NextMLP as MLP
 from .qwen3_next import Qwen3NextRMSNormGated as RMSNormGated
@@ -186,18 +188,14 @@ class GatedDeltaNet(nn.Module):
         state = cache[1] if cache else None
         q, k = normalize_qk(q, k, inv_scale=self.head_k_dim**-0.5, eps=1e-6)
 
-        out, state = gated_delta_update(
-            q,
-            k,
-            v,
-            a,
-            b,
-            self.A_log,
-            self.dt_bias,
-            state,
-            None,
-            use_kernel=not self.training,
-        )
+        if self.training:
+            out, state = gated_delta_training(
+                q, k, v, a, b, self.A_log, self.dt_bias, state
+            )
+        else:
+            out, state = gated_delta_update(
+                q, k, v, a, b, self.A_log, self.dt_bias, state, None
+            )
 
         if cache is not None:
             cache[1] = state

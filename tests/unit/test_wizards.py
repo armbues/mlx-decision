@@ -287,7 +287,8 @@ def test_without_a_terminal_the_defaults_apply(tmp_path, fit_data, monkeypatch):
     assert missing.exit_code == 1 and "pass -m MODEL" in missing.stderr
     plan = FitPlan(model="m", data="d.jsonl", early_stop=False).with_defaults(default_output)
     assert plan.arguments()[-1] == "--no-early-stop"
-    assert (plan.method, plan.holdout, plan.epochs, plan.output) == ("auto", 0.2, 3, "m-d")
+    # The epochs stay open: the kind's default (3, lora 2).
+    assert (plan.method, plan.holdout, plan.epochs, plan.output) == ("auto", 0.2, None, "m-d")
 
 
 # flag values

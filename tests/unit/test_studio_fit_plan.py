@@ -71,6 +71,8 @@ def test_the_estimates_are_the_wizards(studio, models, model):
     body = planned.json()
     prepared = prepare(models / model, studio.data, holdout=0.2, seed=0)
     menu = wizard._choices(prepared)  # what `training fit` asks in a terminal
+    # LoRA is not one of the form's methods: the Studio offers it apart.
+    menu = [(key, text) for key, text in menu if key[0] != "lora"]
     assert [(m["method"], m["head_only"]) for m in body["methods"]] == [key for key, _ in menu]
     for method, (_, text) in zip(body["methods"], menu, strict=True):
         peak = float(re.search(r"peak ([\d.]+) GB", text).group(1))
@@ -137,6 +139,8 @@ def test_refusals(studio):
         ("tiny-d3", {"method": "readout", "calibration": "none"},
          ["--method", "readout", "--calibration", "none"]),
         ("tiny-d3", {"calibration": "auto"}, []),
+        ("tiny-d3", {"method": "lora", "epochs": 1, "learning_rate": 3e-5, "rank": 4},
+         ["--method", "lora", "--epochs", "1", "--learning-rate", "3e-05", "--rank", "4"]),
     ],
 )  # fmt: skip
 def test_the_argv_per_method(studio, models, model, body, flags):
@@ -158,6 +162,28 @@ def test_a_calibration_is_one_of_the_choices(studio):
     for wrong in ({"calibration": "bias"}, {"method": "calibrate", "calibration": "none"}):
         refused = studio.post("/studio/api/jobs", json={**body, **wrong})
         assert refused.status_code == 400 and refused.json()["error"]["param"] == "calibration"
+
+
+def test_lora_is_planned_apart_and_its_settings_go_with_it(studio, models):
+    body = plan(studio, "tiny-d3").json()
+    assert [m["method"] for m in body["methods"]] == ["readout", "calibrate"]
+    lora = body["lora"]
+    assert lora["kinds"] == ["lora", "calibrate"]
+    assert (lora["epochs"], lora["learning_rate"], lora["rank"]) == (2, 1e-4, 8)
+    prepared = prepare(models / "tiny-d3", studio.data, holdout=0.2, seed=0)
+    assert lora["peak_bytes"] == prepared.estimate(["lora", "calibrate"], False).peak_bytes
+    assert lora["fits"] == (lora["peak_bytes"] <= body["working_set"])
+    assert "minutes" in lora["description"]
+    assert plan(studio, "tiny-clef").json()["lora"] is None
+    fit = {"kind": "fit", "model": "tiny-d3", "data": "tickets"}
+    for wrong, param in (
+        ({"method": "readout", "rank": 4}, "method"),
+        ({"method": "lora", "rank": 0}, "rank"),
+        ({"method": "lora", "learning_rate": 0}, "learning_rate"),
+        ({"method": "lora", "learning_rate": 2}, "learning_rate"),
+    ):
+        refused = studio.post("/studio/api/jobs", json={**fit, **wrong})
+        assert refused.status_code == 400 and refused.json()["error"]["param"] == param, wrong
 
 
 def test_head_only_goes_with_finetune(studio):

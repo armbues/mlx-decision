@@ -46,14 +46,15 @@ FIT_FILE = "fit.safetensors"
 REPORT_FILE = "training.json"
 # Kinds that change answers per question, and kinds whose tensors load into the base.
 QUESTION_KINDS = ("calibrate", "readout")
-WEIGHT_KINDS = ("head", "finetune")
+WEIGHT_KINDS = ("head", "finetune", "lora")
 # The tensor groups of ``fit.safetensors`` (the name before the first dot) and the
 # kinds that write them; a fit with any other group or kind is from a newer version.
 TENSOR_GROUPS = {
     "calibration": ("calibrate",),
-    "readout": ("readout",),
+    "readout": ("readout", "lora"),
     "head": ("head", "finetune"),
     "encoder": ("finetune",),
+    "lora": ("lora",),
 }
 # The tensors of the question kinds, per question index: the names they hold.
 # (A weight kind's tensors are its model's parameters; its family's loader

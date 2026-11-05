@@ -1,9 +1,10 @@
 # Training
 
 mlx-decision can fit a decision model to your own labelled examples, on
-the Mac it runs on, and serve the result like any other model. Four kinds
-of fit cover the seven model families, from a calibration in seconds to
-fine-tuning a whole encoder. None of them needs more than MLX.
+the Mac it runs on, and serve the result like any other model. Five kinds
+of fit cover the nine model families, from a calibration in seconds to
+fine-tuning a whole encoder or adapting a network with LoRA. None of
+them needs more than MLX.
 
 Training is newer than the rest of mlx-decision: the flags of `data` and
 `training`, the Python training API and `dataset.json` are provisional
@@ -391,7 +392,7 @@ with a calibration ([The closing calibration](#the-closing-calibration)):
 | Family | `auto` | What is trained | Written to the fitted folder | Also available |
 |---|---|---|---|---|
 | Clef | `head` | the decision head on top of the frozen backbone | the head (clef-flash: 244 MB) | `calibrate` |
-| pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1 | `readout` | each option's readout row and a bias, on the frozen network | rows and biases (kilobytes) | `calibrate` |
+| pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1 | `readout` | each option's readout row and a bias, on the frozen network | rows and biases (kilobytes) | `calibrate`; `lora` for d3 and d1 LFM3 |
 | Laya, Julia | `finetune` | the whole encoder and the marker head (`--head-only`: the head alone) | the encoder and head (Julia 0.3 GB, laya 0.8 GB) | `calibrate` |
 
 - **`calibrate`** (every family): one temperature per question, and one
@@ -421,11 +422,27 @@ with a calibration ([The closing calibration](#the-closing-calibration)):
   in bf16 with float32 master weights and moments, and activations are
   recomputed per layer (gradient checkpointing). The fitted weights are
   stored in bf16.
+- **`lora`** (d3, d1 LFM3; never `auto`'s pick): adapts the network
+  itself. Small low-rank adapters (LoRA) go on the MLP projections of
+  every decoder layer, and train together with each question's readout
+  rows and option biases (starting from the release's rows, or from a
+  fitted base's readout fit). The loss runs through the model's own
+  prompt and readout, as it answers; the vision tower runs once per
+  image and stays frozen. AdamW 1e-4 (`--learning-rate`; above about
+  3e-4 the fit breaks down), a short warm-up and a linear decay; rank 8
+  (`--rank`; the adapters' scale is 16 / rank, so the learning rate
+  stays right when the rank changes). Text examples go in batches of up
+  to 4,096 tokens and 16 rows, examples with images one at a time with 8
+  summed per step; activations are recomputed per layer. Where a
+  readout fit takes seconds after its scoring pass, LoRA takes minutes:
+  about 0.12 s per photo on d3-edge and 0.35 s per Doom frame on d1-2B
+  per epoch on the M5 Pro above. It needs an unquantized base (a
+  quantized copy is refused; fit the model it was converted from).
 
 The trained kinds use cross-entropy with label smoothing 0.1 plus a Brier
 term (against a soft label's distribution: no smoothing); the readout fit
 uses the cross-entropy alone. `head` and
-`finetune` train for 3 epochs (`--epochs`). After each epoch they score
+`finetune` train for 3 epochs, `lora` for 2 (`--epochs`). After each epoch they score
 the dev part, keep the epoch with the lowest dev loss, and stop when an
 epoch is worse than the best one before it. `--no-early-stop` trains
 every epoch (the best is still kept).
@@ -495,8 +512,13 @@ activations, kept hidden states). It shows the estimate and checks it
 against this Mac's GPU working set, the same check the other commands
 make, which is about two thirds of the memory on a 16 GB Mac. A run over
 it is refused, and the message names smaller runs that would fit
-(`--head-only`, `--method calibrate`) or a quantized copy to convert
-first. A head fit also shows the disk its stored states need.
+(`--head-only`, `--method readout` for a LoRA fit, `--method
+calibrate`) or a quantized copy to convert first. A head fit also shows
+the disk its stored states need. A LoRA fit counts the adapters with
+their optimizer state, one recomputed layer of its longest example and
+the vision tower's rows of every training image, which it keeps for the
+run (about 0.3 MB per pet photo on d3-edge, 1.2 MB per Doom frame on
+d1-2B).
 
 Peak memory of the `auto` runs, estimated by `training fit` for these
 datasets (measured, where the run above was made), and the smallest Mac
@@ -593,7 +615,8 @@ A fitted model is a folder:
   algorithm that made it, the kinds, the questions with their options,
   the metrics, the seed and the data file's hash.
 - `fit.safetensors`: the trained tensors only. The base's weights are
-  not copied.
+  not copied. A LoRA fit's adapters are fused into the base's weights
+  when it loads, so it answers as fast as the base.
 - `training.json`: the full report and the options of the run.
 
 It loads anywhere a model does, and its name is the folder's name:
@@ -699,9 +722,9 @@ result = fit(
                                    # reports on its test split), a file, or a
                                    # list of data.format.Example
     output="julia-trec",
-    method="auto",                 # calibrate, readout, head, finetune
+    method="auto",                 # calibrate, readout, head, finetune, lora
     seed=0,
-    epochs=3,
+    epochs=None,                   # the kind's default: 3, lora 2
     on_event=lambda event: print(event.as_json()),
     cancel=stop.is_set,
 )
@@ -718,13 +741,16 @@ are `DecisionError`s). Further
 options: `validation=` and `holdout=` (as `--validation` and
 `--holdout`; with neither, data without a report split holds back a
 fifth),
-`calibration=` (as `--calibration`), `head_only=`, `early_stop=`, `overwrite=` and
+`calibration=` (as `--calibration`), `learning_rate=` and `rank=` (lora),
+`head_only=`, `early_stop=`, `overwrite=` and
 the loader's options (`max_input_tokens=`, H2O-Lightning's `reading=`).
 
 ## Not in this version
 
-- LoRA or full fine-tuning of Clef, pplx, d3, Base Labs, H2O-Lightning, d1 LFM3 or d1. Their
-  networks stay frozen, and only the head or the readout rows train.
+- LoRA for Clef, pplx, Base Labs, H2O-Lightning and d1 (their networks
+  stay frozen, and only the head or the readout rows train), and full
+  fine-tuning of any of the LLM-based families.
+- LoRA on a quantized base, or on the attention and DeltaNet projections.
 - Videos in training data.
 - Multi-label tasks (several correct options for one question).
 - Generating or labelling training data.

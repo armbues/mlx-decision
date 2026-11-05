@@ -30,6 +30,19 @@ All notable changes to this project are documented here. The format follows
   a program whose thresholds were tuned on the base's probabilities.
   The report and `training.json` say which calibration each question
   got.
+- A `lora` kind of fit for d3 and d1 LFM3 models (`training fit
+  --method lora`, Python `method="lora"`): low-rank adapters on the MLP
+  projections of every layer, trained with each question's readout rows
+  through the model's own prompt and readout, on text and images.
+  `--rank` and `--learning-rate` change its defaults (rank 8, 1e-4),
+  `--epochs` defaults to 2. The fitted folder holds the adapters, fused
+  into the base's weights when it loads, so it answers at the base's
+  speed. `auto` still picks the readout fit, which takes seconds where
+  LoRA takes minutes; the summary before a fit names both. The memory
+  estimate counts the adapters, one recomputed layer and the vision
+  tower's rows it keeps for every training image. In the Studio's New
+  Fit, a panel below the method cards offers it with its own options
+  and Start LoRA Fit.
 - Image datasets in the Studio: Download a Dataset previews image
   columns as thumbnails and downloads them in the image shape; the
   Datasets page shows each row's thumbnail and the image in the

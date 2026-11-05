@@ -21,9 +21,8 @@ from ..interactive import ask, confirm, pick, say
 from . import plan as kinds_plan
 from .console import plan_lines
 
-EPOCH_KINDS = ("head", "finetune")
+EPOCH_KINDS = tuple(kinds_plan.EPOCHS)
 DEFAULT_HOLDOUT = kinds_plan.DEFAULT_HOLDOUT
-DEFAULT_EPOCHS = 3
 
 
 class Cancelled(Exception):
@@ -45,6 +44,8 @@ class FitPlan:
     head_only: bool = False
     early_stop: bool = True
     calibration: str = "auto"
+    learning_rate: float | None = None
+    rank: int | None = None
     load_options: dict[str, Any] = field(default_factory=dict)
     overwrite: bool = False
 
@@ -67,14 +68,13 @@ class FitPlan:
 
     def with_defaults(self, default_output) -> "FitPlan":
         """Open values filled with the defaults (``auto``, a dataset folder's
-        report split, else a 0.2 holdout, 3 epochs, ``default_output(model,
-        data)``); model and data stay as they are."""
+        report split, else a 0.2 holdout, ``default_output(model, data)``; the
+        epochs stay open: the kind's default); model and data stay as they are."""
         self.method = self.method or "auto"
         if self.validation is None and self.holdout is None:
             self.validation = self.report_split()
         if self.validation is None and self.holdout is None:
             self.holdout = DEFAULT_HOLDOUT
-        self.epochs = self.epochs or DEFAULT_EPOCHS
         if self.output is None and self.model is not None and self.data is not None:
             self.output = str(default_output(self.model, Path(self.data)))
         return self
@@ -89,7 +89,8 @@ class FitPlan:
             words += ["--holdout", f"{self.holdout:g}"]
         if self.seed:
             words += ["--seed", str(self.seed)]
-        if self.epochs not in (None, DEFAULT_EPOCHS):
+        # auto: the kinds it picks that train in epochs take 3.
+        if self.epochs not in (None, kinds_plan.EPOCHS.get(self.method or "auto", 3)):
             words += ["--epochs", str(self.epochs)]
         if self.head_only:
             words.append("--head-only")
@@ -97,6 +98,10 @@ class FitPlan:
             words.append("--no-early-stop")
         if self.calibration != "auto":
             words += ["--calibration", self.calibration]
+        if self.learning_rate is not None:
+            words += ["--learning-rate", f"{self.learning_rate:g}"]
+        if self.rank is not None:
+            words += ["--rank", str(self.rank)]
         if "max_input_tokens" in self.load_options:
             words += ["--max-input-tokens", str(self.load_options["max_input_tokens"])]
         if self.overwrite:
@@ -154,6 +159,8 @@ def _choices(prepared) -> list[tuple[tuple[str, bool], str]]:
         name = ", then ".join(kinds) + (" (head only)" if head_only else "")
         if method == main:
             name += "  [auto]" if not head_only else ""
+        if method == "lora":
+            name += "  (adapts the network: minutes)"
         peak = estimate.peak_bytes / 1e9
         text = f"{name:<36} peak {peak:.1f} GB"
         if estimate.disk_bytes:
@@ -206,7 +213,9 @@ def ask_fit(plan: FitPlan, default_output) -> FitPlan:
             plan.holdout = DEFAULT_HOLDOUT
     if plan.epochs is None and kinds[0] in EPOCH_KINDS:
         answer = _ask(
-            "Epochs (the best is kept): ", default=str(DEFAULT_EPOCHS), validator=_whole()
+            "Epochs (the best is kept): ",
+            default=str(kinds_plan.EPOCHS[kinds[0]]),
+            validator=_whole(),
         )
         plan.epochs = int(answer)
     if plan.output is None:

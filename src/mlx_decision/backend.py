@@ -121,3 +121,47 @@ class Trainable(Protocol):
     def items(self, request: Request) -> dict[str, Any]: ...
 
     def scores(self, items: list[Any]) -> tuple[Any, Any]: ...
+
+
+@dataclass
+class TrainingPass:
+    """One sequence of a request as a LoRA fit runs it: its token ids, each of
+    its questions' readout (by id, in the order of their answer slots; the
+    ``Features`` without ``hidden``), the family's frozen inputs (such as
+    the vision tower's rows, computed once) and whether it holds images."""
+
+    tokens: list[int]
+    questions: dict[str, "Features"]
+    frozen: Any = None
+    images: bool = False
+    truncated: bool = False
+
+    @property
+    def length(self) -> int:
+        return len(self.tokens)
+
+
+@runtime_checkable
+class Adaptable(Protocol):
+    """A family whose network a LoRA fit adapts (d3, d1 LFM3).
+
+    ``network()`` is the text model the adapters go into; ``adapter_targets()``
+    the projections they wrap, as ``(prefix, module, names)`` with prefixes
+    named after the weights; ``decoder_layer`` the class each checkpointed
+    layer is. ``training_passes(request)`` encodes a checked request into the
+    sequences it runs (any images through the vision tower now, frozen);
+    ``pass_hidden(passes)`` runs passes as one batch (text passes only, or a
+    single pass with images) and gives each pass's final hidden states at its
+    questions' answer slots (float32, ``[questions, width]``), differentiable
+    and not evaluated, as serving computes them.
+    """
+
+    decoder_layer: type
+
+    def network(self) -> Any: ...
+
+    def adapter_targets(self) -> list[tuple[str, Any, tuple[str, ...]]]: ...
+
+    def training_passes(self, request: Request) -> list[TrainingPass]: ...
+
+    def pass_hidden(self, passes: list[TrainingPass]) -> list[Any]: ...

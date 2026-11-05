@@ -39,7 +39,7 @@ from tokenizers import Tokenizer
 
 from ...backbones.lfm3.language import SetLayout
 from ...backbones.lfm3.load import load_text_model, load_vision
-from ...backend import BackendOutput, Capabilities
+from ...backend import BackendOutput, Capabilities, TrainingPass
 from ...errors import DecisionError
 from ...types import Choice, Noul, Request, Score
 from ..qwen import open_images, precision
@@ -299,7 +299,6 @@ class D1Lfm3Backend:
     def hidden_states(self, sets: list[Packed], features: mx.array | None = None) -> list:
         """The final hidden state (float32) at each question's answer slot, set by set
         in question order. ``features`` replace the image tokens of every row."""
-        image = self.tokenizer.token_to_id(PICTURE_TOKEN)
         out = []
         start = 0
         while start < len(sets):
@@ -312,37 +311,42 @@ class D1Lfm3Backend:
                     break
                 widest = wider
                 end += 1
-            chunk = sets[start:end]
-            ids = [packed.ids + [0] * (widest - len(packed.ids)) for packed in chunk]
-            question = [[-1] * widest for _ in chunk]
-            for row, packed in zip(question, chunk, strict=True):
-                for index, (first, last) in enumerate(packed.spans):
-                    row[first:last] = [index] * (last - first)
-            layout = SetLayout(
-                [len(packed.ids) for packed in chunk],
-                [packed.state_length for packed in chunk],
-                mx.array(question, dtype=mx.int32),
-            )
-            tokens = mx.array(ids)
-            if features is None:
-                hidden = self.model(tokens, layout=layout)
-            else:
-                embeddings = self.model.model.embed_tokens(tokens)
-                # Every row starts with the same pictures, so their slots agree.
-                slots = [i for i, token in enumerate(chunk[0].ids) if token == image]
-                if len(slots) != features.shape[0]:
-                    raise ValueError(
-                        f"{len(slots)} image tokens for {features.shape[0]} picture rows"
-                    )
-                embeddings[:, mx.array(slots)] = features.astype(embeddings.dtype)
-                hidden = self.model(input_embeddings=embeddings, layout=layout)
-            rows = mx.array([n for n, packed in enumerate(chunk) for _ in packed.ends])
-            slots = mx.array([e for packed in chunk for e in packed.ends])
-            last = hidden[rows, slots].astype(mx.float32)
+            last = self.rows_hidden(sets[start:end], features)
             mx.eval(last)
             out += [last[i] for i in range(last.shape[0])]
             start = end
         return out
+
+    def rows_hidden(self, chunk: list[Packed], features: mx.array | None = None) -> mx.array:
+        """One right-padded batch of sets: the final hidden states (float32,
+        ``[answer slots, width]``) at every row's answer slots in order, not
+        evaluated. ``features`` replace the image tokens of every row."""
+        image = self.tokenizer.token_to_id(PICTURE_TOKEN)
+        widest = max(len(packed.ids) for packed in chunk)
+        ids = [packed.ids + [0] * (widest - len(packed.ids)) for packed in chunk]
+        question = [[-1] * widest for _ in chunk]
+        for row, packed in zip(question, chunk, strict=True):
+            for index, (first, last) in enumerate(packed.spans):
+                row[first:last] = [index] * (last - first)
+        layout = SetLayout(
+            [len(packed.ids) for packed in chunk],
+            [packed.state_length for packed in chunk],
+            mx.array(question, dtype=mx.int32),
+        )
+        tokens = mx.array(ids)
+        if features is None:
+            hidden = self.model(tokens, layout=layout)
+        else:
+            embeddings = self.model.model.embed_tokens(tokens)
+            # Every row starts with the same pictures, so their slots agree.
+            slots = [i for i, token in enumerate(chunk[0].ids) if token == image]
+            if len(slots) != features.shape[0]:
+                raise ValueError(f"{len(slots)} image tokens for {features.shape[0]} picture rows")
+            embeddings[:, mx.array(slots)] = features.astype(embeddings.dtype)
+            hidden = self.model(input_embeddings=embeddings, layout=layout)
+        rows = mx.array([n for n, packed in enumerate(chunk) for _ in packed.ends])
+        slots = mx.array([e for packed in chunk for e in packed.ends])
+        return hidden[rows, slots].astype(mx.float32)
 
     def passes(self, request: Request) -> tuple[Encoded, dict[str, mx.array]]:
         """The request's encoding and each question's last hidden state by id."""
@@ -354,6 +358,57 @@ class D1Lfm3Backend:
         hidden = self.hidden_states(encoded.sets, self.picture_features(pictures))
         ids = [qid for packed in encoded.sets for qid in packed.question_ids]
         return encoded, dict(zip(ids, hidden, strict=True))
+
+    # LoRA training (``backend.Adaptable``)
+
+    @property
+    def decoder_layer(self) -> type:
+        return type(self.model.layers[0])
+
+    def network(self):
+        return self.model
+
+    def adapter_targets(self) -> list[tuple[str, Any, tuple[str, ...]]]:
+        """The MLP projections of every decoder layer."""
+        return [
+            (f"layers.{index}.feed_forward", layer.feed_forward, ("w1", "w3", "w2"))
+            for index, layer in enumerate(self.model.layers)
+        ]
+
+    def training_passes(self, request: Request) -> list[TrainingPass]:
+        """One pass per set; the pictures' rows computed now (and evaluated),
+        shared by the request's sets."""
+        opened, pictures = self.open_pictures(request)
+        encoded = self.encode(request, pictures.tokens)
+        self.prepare_pictures(opened, pictures)
+        features = self.picture_features(pictures)
+        return [
+            TrainingPass(
+                packed.ids,
+                {
+                    qid: self.question_features(
+                        encoded.questions[qid], encoded.option_ids[qid], None, encoded.truncated
+                    )
+                    for qid in packed.question_ids
+                },
+                (packed, features),
+                images=features is not None,
+                truncated=encoded.truncated,
+            )
+            for packed in encoded.sets
+        ]
+
+    def pass_hidden(self, passes: list[TrainingPass]) -> list[mx.array]:
+        """Each pass's hidden states at its questions' answer slots (``[questions,
+        width]``, float32): a pass with pictures alone, text passes as one batch."""
+        if any(p.images for p in passes) and len(passes) != 1:
+            raise ValueError("a pass with images runs alone")
+        hidden = self.rows_hidden([p.frozen[0] for p in passes], passes[0].frozen[1])
+        out, start = [], 0
+        for p in passes:
+            out.append(hidden[start : start + len(p.questions)])
+            start += len(p.questions)
+        return out
 
     # The readout
 
@@ -450,6 +505,7 @@ def load(
     max_input_tokens: int | None = None,
     vision: bool = False,
     max_image_pixels: int | None = None,
+    fit_weights: Path | None = None,
 ) -> D1Lfm3Backend:
     """Load d1-2B from a release folder.
 
@@ -459,6 +515,8 @@ def load(
     around a "..." line, keeping its start and end. ``vision=True`` loads the
     vision tower now, not with the first picture. ``max_image_pixels`` lowers
     the release's cap on pictures (1,638,400 pixels), down to 65,536.
+    ``fit_weights`` is a LoRA fit's ``fit.safetensors``: its adapters are fused
+    into the text model's weights (applied unfused when they are quantized).
     """
     limit = _input_limit(max_input_tokens)
     for name in REQUIRED_FILES:
@@ -479,7 +537,12 @@ def load(
         _capabilities(limit, images, pixels),
         path,
     )
+    backend.precision = precision(path, model)
+    if fit_weights is not None:
+        from ...adapters import load_adapters
+
+        load_adapters(backend.adapter_targets(), fit_weights)
+        mx.eval(model.parameters())
     if vision and images:
         backend.vision  # noqa: B018 (loads it)
-    backend.precision = precision(path, model)
     return backend

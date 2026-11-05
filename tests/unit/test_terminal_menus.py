@@ -8,7 +8,7 @@ from test_readout_fit import labelled
 
 from mlx_decision.data.format import write_examples
 from terminal import DOWN, ENTER, Terminal
-from tiny_models import write_d1
+from tiny_models import write_d1, write_d3
 
 
 def test_data_menus_end_with_a_command_that_writes_the_same_file(tmp_path):
@@ -67,6 +67,32 @@ def test_fit_menus_offer_the_kinds_with_their_memory_and_run(tmp_path):
     assert term.wait(300) == 0, term.text()
     assert "wrote tiny-d1-tickets" in term.text()
     assert (tmp_path / "tiny-d1-tickets" / "mlx_decision.json").exists()
+
+
+def test_fit_menus_offer_lora_beside_the_readout(tmp_path):
+    write_d3(tmp_path / "tiny-d3")
+    write_examples(tmp_path / "tickets.jsonl", labelled(40))
+    term = Terminal(["training", "fit", "-m", "tiny-d3", "--data", "tickets.jsonl"], tmp_path)
+    term.expect("Method:")
+    term.expect("calibrate")
+    screen = term.text()
+    assert "readout, then calibrate  [auto]" in screen
+    lora = next(line for line in screen.splitlines() if "lora, then calibrate" in line)
+    assert "(adapts the network: minutes)" in lora and "peak" in lora
+    term.send(DOWN + ENTER)
+    term.expect("Report on:")
+    term.send(ENTER)
+    term.expect("Epochs (the best is kept): 2")  # lora's default
+    term.send(ENTER)
+    term.expect("Write the fitted model to:")
+    term.send(ENTER)
+    screen = term.expect("Start?")
+    assert "--method lora" in screen and "--epochs" not in screen
+    term.send("y")
+    assert term.wait(300) == 0, term.text()
+    screen = term.text()
+    assert "method: lora, then calibrate (rank 8" in screen
+    assert "kept epoch" in screen and "wrote tiny-d3-tickets" in screen
 
 
 def test_no_input_never_asks(tmp_path):

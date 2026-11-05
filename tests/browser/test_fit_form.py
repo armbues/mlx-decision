@@ -226,3 +226,56 @@ def test_report_overlap_is_said(studio, page):
         "5 of 5 examples in copy have a state that is also in support: the report would "
         "score examples the fit learns from"
     )
+
+
+def test_lora_is_offered_beside_the_methods_with_its_own_start(make_studio, page):
+    studio = make_studio(adaptable=True, convertible=True)
+    labels = ["tech"] * 30 + ["billing"] * 12 + ["sales"] * 18
+    lines = [
+        json.dumps({"state": f"ticket {i}", "questions": {"team": TEAM}, "labels": {"team": label}})
+        for i, label in enumerate(labels)
+    ]
+    (studio.workspace / "data" / "support.jsonl").write_text("\n".join(lines) + "\n")
+    open_studio(page, studio, "training")
+    form = page.locator(".fit-form")
+    form.locator("#fit-data").select_option("support")
+    form.locator("#fit-base").select_option("tiny-d3")
+    # The form's methods stay as they are; LoRA is not one of them.
+    expect(form.locator(".method .mt b")).to_have_text(["Readout", "Calibrate"])
+    expect(form.locator(".method[data-method='readout']")).to_have_attribute("aria-checked", "true")
+    panel = form.locator(".lora-panel")
+    expect(panel.locator(".mt b")).to_have_text("Adapt the network itself (LoRA)")
+    expect(panel).to_contain_text("Takes minutes, not seconds.")
+    expect(panel).to_contain_text(re.compile(r"Memory at the peak\s*about [\d.]+ (MB|GB)"))
+    expect(panel.locator(".fit")).to_have_text("Fits this Mac")
+    summary = panel.locator(".lora-options summary")
+    expect(summary).to_contain_text("epochs 2 · learning rate 1e-4 · rank 8")
+    shot(page, "fit-form-lora")
+    summary.click()
+    panel.locator("#lora-rate").fill("abc")
+    start = panel.get_by_role("button", name="Start LoRA Fit")
+    expect(start).to_be_disabled()
+    expect(start).to_have_attribute("title", re.compile("learning rate between 0 and 1"))
+    panel.locator("#lora-rate").fill("3e-5")
+    panel.locator("#lora-rank").select_option("4")
+    panel.locator("#lora-epochs").fill("1")
+    expect(summary).to_contain_text("epochs 1 · learning rate 3e-5 · rank 4")
+    form.locator("#fit-name").fill("support-lora")
+    expect(start).to_be_enabled()
+    start.click()
+    expect(page.locator(".centre h1")).to_have_text("Fit support-lora")
+    job = next(iter(studio.app.state.jobs.jobs.values()))
+    assert job.details["method"] == "lora"
+    details = job.details
+    assert (details["rank"], details["learning_rate"], details["epochs"]) == (4, 3e-5, 1)
+    argv = job.argv
+    assert argv[argv.index("--method") + 1] == "lora"
+    assert argv[argv.index("--rank") + 1] == "4"
+    assert argv[argv.index("--learning-rate") + 1] == "3e-05"
+    page.locator(".sidebar .job").get_by_role("button", name=re.compile("^Stop ")).click()
+    expect(page.locator(".sidebar .job small")).to_have_text("Stopped")
+    # A family without LoRA shows no panel.
+    page.locator(".run-btn", has_text="New Fit").click()
+    form.locator("#fit-base").select_option("tiny-clef")
+    expect(form.locator(".method .mt b")).to_have_text(["Head", "Calibrate"])
+    expect(form.locator(".lora-panel")).to_have_count(0)

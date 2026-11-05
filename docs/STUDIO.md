@@ -593,7 +593,12 @@ The form, from top to bottom:
   reads images; the plan refuses others).
 - **Method**: the kinds the base model's family can learn, each a card
   with its memory at the peak (an estimate) and whether that fits this
-  Mac; the one `--method auto` would take is marked Recommended.
+  Mac; the one `--method auto` would take is marked Recommended. For d3
+  and d1 LFM3 models, a panel below the cards offers LoRA, Adapt the
+  network itself ([`--method lora`](TRAINING.md#kinds)): what it does,
+  that it takes minutes, its memory at the peak, its own Options
+  (epochs, learning rate, rank) and its own Start LoRA Fit button. Start
+  Fit keeps running the card picked above.
 - **Result**: Save as, the fitted model's name in the workspace's
   `models/`; Options: the epochs, whether to stop early when the
   tuning rows get worse, the seed, and the Calibration that ends the fit

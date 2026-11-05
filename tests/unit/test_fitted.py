@@ -456,7 +456,7 @@ def test_new_fits_name_their_fingerprint_algorithm(tmp_path, base):
 @pytest.mark.parametrize(
     ("changes", "named"),
     [
-        ({"kinds": ["calibrate", "lora"]}, "its fit has the kind 'lora'"),
+        ({"kinds": ["calibrate", "qlora"]}, "its fit has the kind 'qlora'"),
         ({"fingerprint_algorithm": "blake3"}, "its base's fingerprint uses the algorithm 'blake3'"),
         ({"format": 2}, "its format is 2"),
     ],
@@ -473,9 +473,9 @@ def test_a_fit_from_a_newer_version_is_refused_naming_what_it_does_not_know(
 
 def test_a_tensor_group_no_kind_owns_is_refused_before_anything_loads(tmp_path, base):
     folder = write_fitted(tmp_path / "fit", base, team_fit())
-    tensors = {**mx.load(str(folder / "fit.safetensors")), "lora.0.a": mx.zeros((2, 2))}
+    tensors = {**mx.load(str(folder / "fit.safetensors")), "qlora.0.a": mx.zeros((2, 2))}
     mx.save_safetensors(str(folder / "fit.safetensors"), tensors)
-    newer = "fit: its fit.safetensors holds 'lora.0.a', .*a newer mlx-decision wrote"
+    newer = "fit: its fit.safetensors holds 'qlora.0.a', .*a newer mlx-decision wrote"
     with pytest.raises(ValueError, match=newer):
         mlx_decision.load(folder)
     marker = json.loads((folder / MARKER_FILE).read_text())

@@ -18,19 +18,27 @@ def image_inputs(backbone, vision, tokenizer, input_ids, images, features=None):
     ``features`` are the vision tower's outputs for ``images`` when already
     computed (several sequences with the same images); otherwise computed here.
     """
+    if features is None:
+        features = image_features(vision, images)
+    grids = [image.grid for image in images]
+    return place_images(
+        backbone, tokenizer, input_ids, features, grids, vision.args.spatial_merge_size
+    )
+
+
+def place_images(backbone, tokenizer, input_ids, features, grids, merge: int):
+    """``image_inputs`` from the vision tower's ``features`` and the images'
+    patch ``grids`` (the tower's ``merge`` size), without the images themselves."""
     import numpy as np
 
     from ..backbones.qwen3_5.positions import position_ids
 
-    grids = [image.grid for image in images]
-    if features is None:
-        features = image_features(vision, images)
     embed = backbone.language_model.model.embed_tokens
     embeddings = embed(mx.array(input_ids))
     pad = tokenizer.token_to_id(IMAGE_PAD)
     slots = mx.array(np.flatnonzero(np.asarray(input_ids) == pad).astype(np.int32))
     embeddings[slots] = features.astype(embeddings.dtype)
-    positions = position_ids(input_ids, pad, grids, vision.args.spatial_merge_size)
+    positions = position_ids(input_ids, pad, grids, merge)
     return embeddings, positions
 
 

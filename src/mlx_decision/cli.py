@@ -1946,9 +1946,9 @@ def training_fit(
         typer.Option(
             "--method",
             help="auto (the family's own kind, then calibrate; the default), calibrate (every "
-            "family), head (Clef), readout (pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1) "
-            "or "
-            "finetune (Laya, Julia).",
+            "family), head (Clef), readout (pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1), "
+            "finetune (Laya, Julia) or lora (d3, d1 LFM3: adapts the network itself; minutes "
+            "where readout takes seconds).",
         ),
     ] = None,
     validation: Annotated[
@@ -1971,7 +1971,25 @@ def training_fit(
     epochs: Annotated[
         int | None,
         typer.Option(
-            min=1, help="Epochs of the head and finetune kinds; the best is kept. Default: 3."
+            min=1,
+            help="Epochs of the head, finetune and lora kinds; the best is kept. Default: 3 "
+            "(lora: 2).",
+        ),
+    ] = None,
+    learning_rate: Annotated[
+        float | None,
+        typer.Option(
+            "--learning-rate",
+            help="lora: the peak learning rate (AdamW, linear decay). Default: 1e-4; above "
+            "3e-4 the fit breaks down.",
+        ),
+    ] = None,
+    rank: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            help="lora: the adapters' rank (their scale follows it: 16 / rank, so the "
+            "learning rate stays right). Default: 8.",
         ),
     ] = None,
     head_only: Annotated[
@@ -2039,6 +2057,8 @@ def training_fit(
         head_only=head_only,
         early_stop=not no_early_stop,
         calibration=calibration,
+        learning_rate=learning_rate,
+        rank=rank,
         load_options=load_options(None, max_input_tokens),
         overwrite=overwrite,
     )
@@ -2075,6 +2095,8 @@ def training_fit(
                 head_only=plan.head_only,
                 early_stop=plan.early_stop,
                 calibration=plan.calibration,
+                learning_rate=plan.learning_rate,
+                rank=plan.rank,
                 on_event=on_event,
                 cancel=stop,
                 overwrite=plan.overwrite,

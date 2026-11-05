@@ -100,12 +100,28 @@ def plan_lines(metrics: dict[str, Any]) -> list[str]:
     for question_id, counts in (metrics.get("labels") or {}).items():
         listed = ", ".join(f"{label} {count:,}" for label, count in counts.items())
         lines.append(f"labels: {question_id}: {listed}")
-    lines.append("method: " + ", then ".join(metrics["kinds"]))
+    kinds = metrics["kinds"]
+    lines.append("method: " + ", then ".join(kinds))
+    lines += method_lines(kinds[0], metrics.get("method"), metrics.get("lora_offered", False))
     estimate = metrics["estimate"]
     text = f"memory: about {estimate['peak_gb']} GB at the peak"
     if estimate.get("disk_gb"):
         text += f", {estimate['disk_gb']} GB on disk while it runs"
     lines.append(text)
+    return lines
+
+
+def method_lines(kind: str, asked: str | None, lora_offered: bool) -> list[str]:
+    """What the fit's kind does (naming ``auto``'s pick) and, where the family
+    takes it and it is not the one asked for, the LoRA path."""
+    from .plan import DOES
+
+    does = DOES.get(kind)
+    lines = []
+    if does is not None:
+        lines.append(f"  {'auto picked ' if asked == 'auto' else ''}{kind}: {does}")
+    if lora_offered and kind != "lora":
+        lines.append(f"  --method lora {DOES['lora']}")
     return lines
 
 
@@ -166,6 +182,16 @@ def format_fit(report: dict[str, Any], path: str) -> str:
         lines += _rows([entry["before"], entry["after"]], ["before", "after"])
         lines.append("")
     training = report.get("training") or {}
+    options = report.get("options") or {}
+    if options.get("kinds"):
+        text = "method: " + ", then ".join(options["kinds"])
+        if "rank" in training:
+            text += (
+                f" (rank {training['rank']}, learning rate {training['learning_rate']:g}; "
+                f"{training['trainable_parameters'] / 1e6:.2f} M trained parameters, "
+                f"{training['seconds_per_example']:.3g} s per example)"
+            )
+        lines.append(text)
     if "best_epoch" in training:
         text = f"kept epoch {training['best_epoch']} of {len(training['epochs'])}"
         if training.get("stopped_early"):

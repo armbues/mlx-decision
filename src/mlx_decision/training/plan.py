@@ -20,7 +20,7 @@ from ..errors import DecisionError
 from ..memory import required_bytes
 from ..state_images import lift_images
 
-KINDS = ("calibrate", "readout", "head", "finetune")
+KINDS = ("calibrate", "readout", "head", "finetune", "lora")
 # The closing calibration's choices (``fitting.CALIBRATIONS`` says what they do).
 CALIBRATIONS = ("auto", "full", "temperature", "none")
 # The share of the data that scores a fit's report when nothing else does.
@@ -37,6 +37,19 @@ MAIN_KIND = {
     "laya": "finetune",
     "julia": "finetune",
 }
+# The families a ``lora`` fit adapts (offered beside their main kind, never
+# ``auto``'s pick: it takes minutes where the readout takes seconds).
+LORA_FAMILIES = ("d3", "d1lfm3")
+# The kinds that train in epochs, and their default number of epochs.
+EPOCHS = {"head": 3, "finetune": 3, "lora": 2}
+# What each kind does, as the summary before a fit and the menus say it.
+DOES = {
+    "readout": "trains the answer rows on the model's frozen features, seconds",
+    "head": "trains the decision head on the model's stored states",
+    "finetune": "trains the model's own weights",
+    "calibrate": "fits the confidence only; the answers stay",
+    "lora": "adapts the network itself: minutes",
+}
 
 CHARS_PER_TOKEN = 4
 # Tokens an image is guessed at where its model's processor is not read: about
@@ -45,21 +58,28 @@ IMAGE_TOKENS = 1024
 
 
 def kinds(family: str) -> list[str]:
-    """The kinds a family can be fitted with: its main kind, if any, and ``calibrate``."""
+    """The kinds a family can be fitted with: its main kind, if any, ``lora``
+    where it adapts, and ``calibrate``."""
     main = MAIN_KIND.get(family)
-    return [main, "calibrate"] if main else ["calibrate"]
+    found = [main] if main else []
+    if family in LORA_FAMILIES:
+        found.append("lora")
+    return [*found, "calibrate"]
 
 
 def methods(family: str) -> list[tuple[str, bool]]:
     """What a fit of the family can be asked to do, as ``(method, head_only)``,
     in the order a menu offers them: the family's main kind (``auto``'s pick;
-    finetune also with the head alone), then ``calibrate``."""
+    finetune also with the head alone), ``lora`` where it adapts, then
+    ``calibrate``."""
     main = MAIN_KIND.get(family)
     entries = []
     if main is not None:
         entries.append((main, False))
         if main == "finetune":
             entries.append((main, True))
+    if family in LORA_FAMILIES:
+        entries.append(("lora", False))
     entries.append(("calibrate", False))
     return entries
 
@@ -149,6 +169,91 @@ CLEF_PROMPT_TOKENS = 130
 STATE_BYTES = 2
 
 
+# The lora fit (d3, d1 LFM3; measured on d3-edge and d1-2B, 125 to 3,300
+# tokens): 24 bytes per trained parameter (float32 weights, gradients and
+# their sum over a step, two moments, the kept epoch's copy); a checkpointed
+# step's peak, LORA_STEP_BYTES plus LORA_TOKEN_BYTES per token, hidden unit
+# and layer of the longest pass (d3-edge 19.5, d1-2B 17.8; the step's own
+# fixed part 0.45 to 0.93 GB); the vision tower's rows of every training
+# image, kept for the run, at 2 bytes per image token and hidden unit.
+LORA_PARAMETER_BYTES = 24
+LORA_STEP_BYTES = 800_000_000
+LORA_TOKEN_BYTES = 20
+FEATURE_BYTES = 2
+LORA_RANK = 8  # training.lora.RANK, the default
+
+
+def lora_sizes(path: Path) -> tuple[int, int, int]:
+    """The text model's hidden size, MLP width and layers, from ``config.json``."""
+    config = json.loads((path / "config.json").read_text())
+    text = config.get("text_config", config)
+    return text["hidden_size"], text["intermediate_size"], text["num_hidden_layers"]
+
+
+def lora_parameters(path: Path, rank: int = LORA_RANK) -> int:
+    """Adapter parameters on the MLP projections of every layer (three a layer,
+    each ``rank`` by inputs plus outputs)."""
+    hidden, width, layers = lora_sizes(path)
+    return layers * 3 * rank * (hidden + width)
+
+
+def lora_image_tokens(family: str, path: Path, options: dict) -> Callable[[Any], int]:
+    """An image's tokens in a d3 or d1 LFM3 prompt, from its header and the
+    release's processor settings (``max_image_pixels`` as the loader takes it);
+    ``IMAGE_TOKENS`` for one that does not open."""
+    from dataclasses import replace
+
+    from ..backbones.qwen3_5.preprocess import ImageConfig, image_tokens
+    from ..images import open_image
+
+    if family == "d3":
+        from ..models.d3.model import MAX_IMAGE_PIXELS, MIN_IMAGE_PIXELS
+
+        top = min(options.get("max_image_pixels") or MAX_IMAGE_PIXELS, MAX_IMAGE_PIXELS)
+        config = replace(
+            ImageConfig.from_folder(path), min_pixels=min(MIN_IMAGE_PIXELS, top), max_pixels=top
+        )
+
+        def size(width: int, height: int) -> tuple[int, int]:
+            return width, height
+    else:
+        from ..models.d1lfm3.config import settings
+        from ..models.d1lfm3.prompt import picture_size
+
+        config = ImageConfig.from_folder(path)
+        top = options.get("max_image_pixels") or settings(path).max_pixels
+
+        def size(width: int, height: int) -> tuple[int, int]:
+            return picture_size(width, height, top)
+
+    def count(image: Any) -> int:
+        try:
+            opened = open_image(image, 0)
+            width, height = size(opened.width, opened.height)
+            return image_tokens(height, width, config)
+        except (DecisionError, ValueError):
+            return IMAGE_TOKENS
+
+    return count
+
+
+def lora_tokens(examples: list[Example], path: Path, options: dict) -> tuple[int, int]:
+    """The longest example's tokens and all examples' image tokens (the rows the
+    run keeps), images counted from their headers."""
+    from ..registry import detect_family
+
+    longest = kept = 0
+    count = None
+    for example in examples:
+        _, images = _without_images(example.request)
+        if images and count is None:
+            count = lora_image_tokens(detect_family(path).name, path, options)
+        pictures = sum(count(image) for image in images) if images else 0
+        longest = max(longest, request_tokens(example, lambda _: 0) + pictures)
+        kept += pictures
+    return longest, kept
+
+
 def clef_image_tokens(path: Path, options: dict) -> Callable[[Any], int]:
     """An image's tokens in Clef's prompt, from its header and the release's
     processor settings (``max_image_pixels`` as the loader takes it), the
@@ -207,10 +312,11 @@ def kind_bytes(
     head_only: bool = False,
     questions: int = 0,
     tokens: int = 0,
+    kept: int = 0,
 ) -> int:
     """Memory a kind needs beyond the model's weights and their margin; ``questions``
     is the labelled questions of the whole data (readout), ``tokens`` its longest
-    request's (head)."""
+    request's (head, lora), ``kept`` the training part's image tokens (lora)."""
     from ..models.marker.model import sizes
     from .finetune import BATCH_TOKENS
     from .head import SHARD_BYTES
@@ -220,6 +326,11 @@ def kind_bytes(
     if kind == "head":
         parameters, _ = head_parameters(path)
         return parameters * HEAD_PARAMETER_BYTES + tokens * HEAD_TOKEN_BYTES + SHARD_BYTES
+    if kind == "lora":
+        hidden, _, layers = lora_sizes(path)
+        step = LORA_STEP_BYTES + LORA_TOKEN_BYTES * tokens * hidden * layers
+        features = kept * hidden * FEATURE_BYTES
+        return lora_parameters(path) * LORA_PARAMETER_BYTES + step + features
     if kind != "finetune":
         return 0  # calibrate keeps a few numbers per example
     size = sizes(path)
@@ -242,12 +353,17 @@ def estimate(
 ) -> Estimate:
     """Peak memory and disk of a run on ``splits``."""
     every = splits.holdout + splits.fit + splits.dev
-    disk = tokens = 0
+    disk = tokens = kept = 0
     if "head" in kinds:
         counts = head_tokens(every, path, options)
         _, hidden = head_parameters(path)
         disk = sum(counts) * hidden * STATE_BYTES
         tokens = max(counts, default=0)
+    if "lora" in kinds:
+        tokens, _ = lora_tokens(every, path, options)
+        _, kept = lora_tokens(splits.fit + splits.dev, path, options)
     questions = labelled(every)
-    extra = max(kind_bytes(kind, path, options, head_only, questions, tokens) for kind in kinds)
+    extra = max(
+        kind_bytes(kind, path, options, head_only, questions, tokens, kept) for kind in kinds
+    )
     return Estimate(required_bytes(path, options) + extra, disk)

@@ -1111,6 +1111,17 @@ a.sb-item { color: var(--fg); }
 .method .est-note { color: var(--fg-3); font-size: 10.5px; }
 .pill-tag { font-size: 10.5px; font-weight: 600; color: var(--accent); background: var(--selection); padding: 1px 6px; border-radius: 5px; }
 .method-foot { margin: 0; padding: 0 12px 12px; color: var(--fg-2); font-size: 11.5px; }
+.lora-panel { margin: 0 12px 12px; border: 1px solid var(--sep-strong); border-radius: 9px; padding: 11px 12px; display: grid; gap: 6px; }
+.lora-panel .mt b { font: 600 13.5px var(--font-display); }
+.lora-panel p { margin: 0; font-size: 12px; color: var(--fg-2); }
+.lora-panel .est { display: flex; gap: 16px; font-size: 11.5px; padding-top: 6px; border-top: 0.5px solid var(--sep); }
+.lora-panel .est b { font-weight: 600; }
+.lora-panel .fit { font-size: 11px; font-weight: 600; }
+.lora-panel .fit.ok { color: var(--green); }
+.lora-panel .fit.no { color: var(--red); }
+.lora-panel .lora-options summary .hint { margin-left: 8px; }
+.lora-panel .lora-start { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.lora-panel .lora-start .note { margin: 0; flex: 1; color: var(--fg-2); font-size: 11.5px; }
 .adv summary { padding: 9px 12px; color: var(--fg-2); cursor: default; }
 .start-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .start-bar .note { margin: 0; flex: 1 1 300px; }

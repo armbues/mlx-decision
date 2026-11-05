@@ -232,6 +232,18 @@ def jobs_router(
             if method != "finetune":
                 raise ApiError(400, "head_only goes with the finetune method", param="head_only")
             argv.append("--head-only")
+        learning_rate = field(body, "learning_rate", (int, float), required=False)
+        rank = field(body, "rank", int, required=False)
+        if (learning_rate is not None or rank is not None) and method != "lora":
+            raise ApiError(400, "learning_rate and rank go with the lora method", param="method")
+        if learning_rate is not None:
+            if not 0 < learning_rate < 1:
+                raise ApiError(400, "learning_rate must be between 0 and 1", "learning_rate")
+            argv += ["--learning-rate", f"{learning_rate:g}"]
+        if rank is not None:
+            if not 1 <= rank <= 256:
+                raise ApiError(400, "rank must be from 1 to 256", param="rank")
+            argv += ["--rank", str(rank)]
         calibration = field(body, "calibration", str, required=False)
         if calibration is not None:
             if calibration not in CALIBRATIONS:
@@ -257,6 +269,8 @@ def jobs_router(
             "early_stop": early_stop,
             "head_only": head_only,
             "calibration": calibration,
+            "learning_rate": learning_rate,
+            "rank": rank,
         }
         return Plan(argv, holds_gpu=True, title=f"Fit {name}", details=details, output=output)
 

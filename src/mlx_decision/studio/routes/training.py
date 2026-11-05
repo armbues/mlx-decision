@@ -27,6 +27,7 @@ from ...data.dataset import read_for
 from ...errors import DecisionError
 from ...gpu import Gpu
 from ...memory import working_set
+from ...training import lora as lora_defaults
 from ...training import plan as kinds_plan
 from ...training.fitting import label_counts, prepare, report_mismatch, shared_states
 from ...training.wizard import DEFAULT_HOLDOUT, EPOCH_KINDS
@@ -46,6 +47,8 @@ DESCRIPTIONS = {
     "full fine-tune.",
     "calibrate": "Only makes the confidence match how often it is right; the answers stay "
     "the same.",
+    "lora": "Trains small adapters inside the model with its answer rows, where the methods "
+    "above leave the model as it is. Takes minutes, not seconds.",
 }
 
 
@@ -179,9 +182,21 @@ def describe(prepared, limit: int) -> dict[str, Any]:
     family = prepared.family
     main = kinds_plan.MAIN_KIND.get(family)
     methods = []
+    lora = None
     for method, head_only in kinds_plan.methods(family):
         kinds = kinds_plan.resolve(family, method)
         estimate = prepared.estimate(kinds, head_only)
+        if method == "lora":  # offered beside the form's methods, not as one
+            lora = {
+                "kinds": kinds,
+                "description": DESCRIPTIONS["lora"],
+                "epochs": kinds_plan.EPOCHS["lora"],
+                "learning_rate": lora_defaults.LEARNING_RATE,
+                "rank": lora_defaults.RANK,
+                "peak_bytes": estimate.peak_bytes,
+                "fits": estimate.peak_bytes <= limit,
+            }
+            continue
         methods.append(
             {
                 "method": method,
@@ -200,6 +215,7 @@ def describe(prepared, limit: int) -> dict[str, Any]:
         "family": family,
         "base": prepared.origin.name,
         "methods": methods,
+        "lora": lora,
         "splits": {
             "examples": len(prepared.source.examples),
             "fit": len(splits.fit),

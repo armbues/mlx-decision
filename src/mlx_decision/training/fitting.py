@@ -139,6 +139,7 @@ class _Base:
     fingerprint: str
     family: Any
     name: str
+    fitted: Any = None  # the FittedFolder it came from, if any
 
 
 def _base(model: str | Path) -> _Base:
@@ -147,7 +148,7 @@ def _base(model: str | Path) -> _Base:
         folder = open_folder(path)  # its fit is replaced, its base kept
         reference = folder.marker["base"]
         return _Base(folder.base, reference, folder.marker["fingerprint"], folder.family,
-                     folder.base_name)  # fmt: skip
+                     folder.base_name, folder)  # fmt: skip
     reference = base_reference(model, path)
     name = reference["repo_id"].rsplit("/", 1)[-1] if "repo_id" in reference else path.name
     return _Base(path, reference, fingerprint(path), detect_family(path), name)
@@ -466,6 +467,157 @@ def _finetune(
     )
 
 
+def _quantized(path: Path) -> bool:
+    """Whether a model folder holds quantized weights (a converted copy)."""
+    from ..registry import MARKER_FILE
+
+    found = path / "config.json"
+    config = json.loads(found.read_text()) if found.exists() else {}
+    marker = path / MARKER_FILE
+    mixed = json.loads(marker.read_text()).get("mixed") if marker.exists() else None
+    return bool(config.get("quantization") or mixed)
+
+
+def _start_readouts(origin: _Base) -> Fit | None:
+    """The fitted base's question kinds (its readouts), when the base is a fitted model."""
+    if origin.fitted is None:
+        return None
+    from ..fitted import read_fit
+
+    return read_fit(origin.fitted.path, origin.fitted.marker)
+
+
+def _lora(model, splits, origin: _Base, settings: dict, seed, emit, cancelled, rest: float,
+          early_stop: bool):  # fmt: skip
+    """Adapters and the fitted questions' readouts trained on the fit part (dev
+    picks the epoch); the network holds the kept epoch's adapters afterwards.
+    ``settings``: epochs, learning rate, rank."""
+    from ..backend import Adaptable
+    from ..models.readout import Readout
+    from . import lora
+
+    backend = model.backend
+    if not isinstance(backend, Adaptable):
+        raise ValueError(f"{backend.name} cannot be fitted with lora")
+    start = _start_readouts(origin)
+    fit = Fit([])
+    rows: list = []
+    biases: list = []
+    first: dict[int, Any] = {}
+    varies: set[int] = set()
+    refusals: list[DecisionError] = []
+
+    def items(examples: list[Example]) -> list:
+        result = []
+        for example in examples:
+            check_cancel_()
+            try:
+                request = model.check(example.request)
+                passes = backend.training_passes(request)
+            except DecisionError as error:
+                refusals.append(error)
+                continue  # refused, as scoring would
+            for passed in passes:
+                golds = {}
+                for question_id, features in passed.questions.items():
+                    if question_id not in example.labels:
+                        continue
+                    question = FitQuestion.of(question_id, request.questions[question_id])
+                    index = fit.add(question)
+                    if index == len(rows):
+                        found = _matching(start, question, features)
+                        rows.append(found.rows if found is not None else features.rows)
+                        width = len(features.groups)
+                        biases.append(found.bias if found is not None else mx.zeros(width))
+                        first[index] = features
+                    elif not _same_rows(first[index], features):
+                        varies.add(index)
+                    golds[question_id] = (index, example.gold(question_id, features.option_ids))
+                if golds:
+                    result.append(lora.Item(passed, golds))
+        return result
+
+    def check_cancel_() -> None:
+        if cancelled is not None and cancelled():
+            raise Cancelled()
+
+    emit(Event("train", message="preparing the training examples"))
+    fit_items, dev_items = items(splits.fit), items(splits.dev)
+    for index in sorted(varies):
+        question = fit.questions[index]
+        reason = "its examples score other tokens (the options are worded differently)"
+        emit(Event("train", message=f"warning: {question.id!r} is not trained: {reason}"))
+    if varies:
+        fit_items, dev_items = (
+            [
+                lora.Item(item.passed, kept)
+                for item in part
+                if (kept := {q: g for q, g in item.golds.items() if g[0] not in varies})
+            ]
+            for part in (fit_items, dev_items)
+        )
+    if not fit_items:
+        first_refusal = refusals[0] if refusals else None
+        why = f": {first_refusal.message}" if first_refusal is not None else ""
+        raise ValueError(f"no training examples to fit adapters on{why}")
+    rank = settings["rank"]
+    adapter_count = lora.add_adapters(backend, rank, seed=seed)
+    trainee = lora.Trainee(backend.network(), rows, biases)
+    on_step, on_epoch = _reporters(emit, rest)
+    trained = lora.train(
+        backend,
+        trainee,
+        fit_items,
+        dev_items,
+        epochs=settings["epochs"],
+        learning_rate=settings["learning_rate"],
+        seed=seed,
+        early_stop=early_stop,
+        on_step=on_step,
+        on_epoch=on_epoch,
+        cancelled=cancelled,
+    )
+    for index, (row, bias) in enumerate(trained.readouts):
+        if index not in varies:
+            fit.readouts[index] = Readout(list(first[index].option_ids), row, bias)
+    report = {
+        "epochs": trained.epochs,
+        "best_epoch": trained.best,
+        "stopped_early": trained.stopped,
+        "rank": rank,
+        "scale": lora.scale_for(rank),
+        "learning_rate": settings["learning_rate"],
+        "targets": "mlp",
+        "adapter_parameters": adapter_count,
+        "trainable_parameters": trained.parameters,
+        "examples": trained.examples,
+        "seconds_per_example": round(trained.seconds / len(trained.epochs) / trained.examples, 5),
+    }
+    tensors = {f"lora.{name}": value for name, value in trained.adapters.items()}
+    tensors["lora.scale"] = mx.array(lora.scale_for(rank), dtype=mx.float32)
+    return fit, tensors, report
+
+
+def _matching(start: Fit | None, question: FitQuestion, features):
+    """The fitted base's readout for ``question``, if it has one that fits ``features``."""
+    if start is None or question not in start.questions:
+        return None
+    found = start.readouts.get(start.questions.index(question))
+    if found is None or found.rows.shape != features.rows.shape:
+        return None
+    return found
+
+
+def _same_rows(first, other) -> bool:
+    return (
+        other.option_ids == first.option_ids
+        and other.groups == first.groups
+        and other.temperature == first.temperature
+        and other.rows.shape == first.rows.shape
+        and bool(mx.array_equal(other.rows, first.rows))
+    )
+
+
 def _reporters(emit, rest: float):
     """``on_step`` and ``on_epoch`` callbacks of an epoch-based kind, as events;
     ``rest`` is the seconds left after training."""
@@ -609,11 +761,15 @@ class Prepared:
         """Memory the kinds need beyond the model's weights."""
         every = self.splits.holdout + self.splits.fit + self.splits.dev
         questions = plan.labelled(every)
-        tokens = 0
+        tokens = kept = 0
+        path, options = self.origin.path, self.load_options
         if "head" in kinds:
-            tokens = max(plan.head_tokens(every, self.origin.path, self.load_options), default=0)
+            tokens = max(plan.head_tokens(every, path, options), default=0)
+        if "lora" in kinds:
+            tokens, _ = plan.lora_tokens(every, path, options)
+            _, kept = plan.lora_tokens(self.splits.fit + self.splits.dev, path, options)
         return max(
-            plan.kind_bytes(kind, self.origin.path, self.load_options, head_only, questions, tokens)
+            plan.kind_bytes(kind, path, options, head_only, questions, tokens, kept)
             for kind in kinds
         )
 
@@ -674,6 +830,9 @@ def check_memory(prepared: Prepared, kinds: list[str], head_only: bool) -> None:
         smaller = []
         if "finetune" in kinds and not head_only:
             smaller.append(("training the head alone (--head-only", kinds, True))
+        if "lora" in kinds:
+            readout = [kind if kind != "lora" else "readout" for kind in kinds]
+            smaller.append(("a readout fit (--method readout", readout, False))
         if kinds != ["calibrate"]:
             smaller.append(("a calibration alone (--method calibrate", ["calibrate"], False))
         weights = required_bytes(origin.path, prepared.load_options)
@@ -697,10 +856,12 @@ def fit(
     validation: str | Path | list[Example] | None = None,
     holdout: float | None = None,
     seed: int = 0,
-    epochs: int = 3,
+    epochs: int | None = None,
     head_only: bool = False,
     early_stop: bool = True,
     calibration: str = "auto",
+    learning_rate: float | None = None,
+    rank: int | None = None,
     on_event: Callable[[Event], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     overwrite: bool = False,
@@ -762,11 +923,24 @@ def fit(
     kinds = check_calibration(calibration, plan.resolve(origin.family.name, method))
     if head_only and "finetune" not in kinds:
         raise ValueError("head_only applies to finetune")
+    if (learning_rate is not None or rank is not None) and "lora" not in kinds:
+        raise ValueError("learning_rate and rank apply to lora")
+    if "lora" in kinds and _quantized(origin.path):
+        raise ValueError(
+            f"{origin.name} is a quantized copy; a lora fit trains on unquantized weights "
+            "(fit the model it was converted from)"
+        )
+    if rank is not None and rank < 1:
+        raise ValueError(f"rank must be 1 or more, not {rank}")
+    if learning_rate is not None and not learning_rate > 0:
+        raise ValueError(f"learning_rate must be more than 0, not {learning_rate}")
     training = splits.fit + splits.dev
     warnings = prepared.warnings
     for warning in warnings:
         emit(Event("check", message=f"warning: {warning}"))
     trainer = kinds[0] if kinds[0] != "calibrate" else None
+    if epochs is None:
+        epochs = plan.EPOCHS.get(trainer or "", 3)
     estimate = prepared.estimate(kinds, head_only)
     check_memory(prepared, kinds, head_only)
     emit(
@@ -779,6 +953,8 @@ def fit(
                 "dev": len(splits.dev),
                 "labels": label_counts(training),
                 "kinds": kinds,
+                "method": method,
+                "lora_offered": origin.family.name in plan.LORA_FAMILIES,
                 "estimate": estimate.as_json(),
                 "source": source.source,
                 "validation": held.source if held is not None else None,
@@ -795,18 +971,19 @@ def fit(
     # the readout and head fits, which read the kept features or stored states
     # again) or, after fine-tuning, dev and the holdout again.
     reads, stores = trainer == "readout", trainer == "head"
-    again = trainer == "finetune"
+    # The kinds that change the network: dev and the holdout are scored again.
+    again = trainer in ("finetune", "lora")
     passes = splits.holdout + (splits.dev + splits.holdout if again else training)
     clock = Clock(sum(plan.request_tokens(example) for example in passes))
 
-    def scoring(stage: str, examples: list[Example]) -> list[Scored]:
+    def scoring(stage: str, examples: list[Example], features: bool = reads) -> list[Scored]:
         def on_step(done: int, example: Example) -> None:
             clock.step(plan.request_tokens(example))
             emit(Event(stage, done, len(examples), eta_s=clock.eta()))
 
         clock.start()
         try:
-            return score(model, examples, on_step, cancelled, features=reads, store=store)
+            return score(model, examples, on_step, cancelled, features=features, store=store)
         finally:
             clock.stop()
             finish_stage(stage)
@@ -819,6 +996,7 @@ def fit(
         emit(Event("before", metrics=before))
         tensors: dict = {}
         training_report = None
+        adapter_meta = None
         fit_ = Fit([])
         if not again:
             training_scored = scoring("features", training)
@@ -858,6 +1036,30 @@ def fit(
             # holdout scores the report.
             calibration_scored = rehead(dev_part, store, model.backend)
             after_scored = rehead(holdout_scored, store, model.backend)
+        elif trainer == "lora":
+            from . import lora
+
+            rest = clock.eta() or 0.0
+            settings = {
+                "epochs": epochs,
+                "learning_rate": lora.LEARNING_RATE if learning_rate is None else learning_rate,
+                "rank": lora.RANK if rank is None else rank,
+            }
+            fit_, tensors, training_report = _lora(
+                model, splits, origin, settings, seed, emit, cancelled, rest, early_stop
+            )
+            adapter_meta = {
+                "rank": settings["rank"],
+                "scale": training_report["scale"],
+                "targets": "mlp",
+            }
+            finish_stage("train")
+            # The adapted network and the trained readouts: dev fits the
+            # calibration, the holdout scores the report.
+            reader = FittedBackend(output.name, model.backend, fit_, origin.reference)
+            calibration_scored = reread(scoring("calibrate", splits.dev, True), reader.readouts)
+            after_scored = reread(scoring("after", splits.holdout, True), reader.readouts)
+            training_scored = calibration_scored  # what the report counts: dev, as trained
         elif trainer is not None:
             # After training, dev and the holdout are scored again at the speed the
             # holdout was scored before.
@@ -912,6 +1114,11 @@ def fit(
         "head_only": head_only,
         "early_stop": early_stop,
         "calibration": calibration,
+        **(
+            {"learning_rate": training_report["learning_rate"], "rank": adapter_meta["rank"]}
+            if adapter_meta
+            else {}
+        ),
         "load_options": {
             key: value if isinstance(value, (bool, int, float, str, type(None))) else str(value)
             for key, value in load_options.items()
@@ -967,6 +1174,7 @@ def fit(
         "calibration": {"choice": calibration, "questions": used},
         "data": source.sha256,
         "version": __version__,
+        **({"lora": adapter_meta} if adapter_meta else {}),
         # H2O-Lightning: the mode the features were read in, served so.
         **({"reading": reading} if (reading := getattr(model.backend, "reading", None)) else {}),
     }

@@ -43,6 +43,7 @@ def load(
     max_input_tokens: int | None = None,
     vision: bool = False,
     max_image_pixels: int | None = None,
+    fit_weights: Path | None = None,
 ) -> LetterBackend:
     """Load a d3 model from a release folder or a converted copy.
 
@@ -50,6 +51,16 @@ def load(
     32,768, at most 262,144, the backbone's context); longer input is
     refused, not cut. ``vision=True`` loads the vision tower now, not with the first
     image. Images are resized to the release's bounds (at most 1.6 MP);
-    ``max_image_pixels`` lowers the maximum.
+    ``max_image_pixels`` lowers the maximum. ``fit_weights`` is a LoRA fit's
+    ``fit.safetensors``: its adapters are fused into the backbone's weights
+    (applied unfused when they are quantized).
     """
-    return load_letter(path, PRESET, max_input_tokens, vision, max_image_pixels)
+    backend = load_letter(path, PRESET, max_input_tokens, vision, max_image_pixels)
+    if fit_weights is not None:
+        import mlx.core as mx
+
+        from ...adapters import load_adapters
+
+        load_adapters(backend.adapter_targets(), fit_weights)
+        mx.eval(backend.backbone.parameters())
+    return backend

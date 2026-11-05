@@ -3,6 +3,9 @@
 # Copied from mlx-lm (https://github.com/ml-explore/mlx-lm), file
 # mlx_lm/models/gated_delta.py at commit 5cfec4cb39deba54210b3ff4d86f2337c7bc10b5,
 # under the MIT License. See LICENSES/mlx-lm-MIT.txt.
+#
+# Added for mlx-decision: ``gated_delta_training``, the rule through MLX's
+# differentiable chunked op, for training.
 
 import os
 from functools import partial
@@ -649,3 +652,27 @@ def gated_delta_update(
     ):
         return gated_delta_ops(q, k, v, g, beta, state, mask)
     return gated_delta_kernel(q, k, v, g, beta, state, mask)
+
+
+def gated_delta_training(
+    q: mx.array,
+    k: mx.array,
+    v: mx.array,
+    a: mx.array,
+    b: mx.array,
+    A_log: mx.array,
+    dt_bias: mx.array,
+    state: Optional[mx.array] = None,
+) -> Tuple[mx.array, mx.array]:
+    """The gated delta rule as ``gated_delta_update`` computes it (no mask, beta
+    in [0, 1]), through ``mx.fast.gated_delta_update``: chunked and
+    differentiable, so a training pass costs about what the kernel does
+    (the per-token ops path is many times slower in the backward pass)."""
+    beta = mx.sigmoid(b)
+    g = compute_g(A_log, a, dt_bias)
+    if state is None:
+        B, _, _, Dk = q.shape
+        Hv, Dv = v.shape[-2:]
+        state = mx.zeros((B, Hv, Dv, Dk), dtype=mx.float32)
+    y, state = mx.fast.gated_delta_update(q, k, v, g, beta, state)
+    return y, state

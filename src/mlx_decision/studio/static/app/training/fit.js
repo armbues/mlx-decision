@@ -3,7 +3,9 @@
 // report split by default, a share kept aside, or another dataset), the split
 // and labels, the base model, the method cards the
 // base's family offers (each with its memory estimate and the fit check, as
-// `training fit`'s menu has them), the result's name and the options. Start Fit (⌘↩) starts `training fit` as a job;
+// `training fit`'s menu has them), LoRA beside them where the family takes it
+// (its own panel, options and Start LoRA Fit), the result's name and the
+// options. Start Fit (⌘↩) starts `training fit` as a job;
 // the Studio builds its command line.
 import { computed, effect, signal } from "@preact/signals";
 import { html } from "htm/preact";
@@ -36,6 +38,11 @@ const CALIBRATIONS = {
   temperature: "a temperature only",
   none: "the answers as the method gives them, e.g. for thresholds tuned on the base",
 };
+// LoRA's own options (its panel beside the methods), as typed.
+const loraEpochs = signal(2);
+const loraRate = signal("1e-4");
+const loraRank = signal(8);
+const RANKS = [2, 4, 8, 16, 32];
 const name = signal("");
 const named = signal(false); // typed: a new plan keeps it
 const starting = signal(false);
@@ -176,46 +183,74 @@ async function plan(model, data, split, report, share, order) {
   }
 }
 
-// Why Start Fit is off, or null.
-export const notReady = computed(() => {
+// Why a fit with ``entry`` (a method card, or the plan's LoRA) cannot start
+// (``button`` names its button), or null.
+function blocked(entry, button) {
   const job = gpuJob.value;
-  if (job) return `${job.title} has the GPU: Start Fit is off until it is done`;
+  if (job) return `${job.title} has the GPU: ${button} is off until it is done`;
   if (models.value && models.value.length === 0) return NO_MODELS;
   if (!fitData.value) return "Download or add a dataset first, on the Datasets page";
   if (notReadyData.value) return notReadyData.value;
   if (planError.value) return planError.value;
   const current = planned.value;
-  if (!current || !picked.value || current.data !== fitData.value || reportOf(current) !== reportValue.value || (trainSplit.value && current.split !== trainSplit.value))
+  if (!current || !entry || current.data !== fitData.value || reportOf(current) !== reportValue.value || (trainSplit.value && current.split !== trainSplit.value))
     return "Reading the data…";
-  if (!picked.value.fits) return "The method needs more memory than this Mac's GPU working set";
+  if (!entry.fits) return "The method needs more memory than this Mac's GPU working set";
   const value = name.value.trim();
   if (!NAME.test(value)) return "Give the fitted model a name: letters, digits, '.', '_' or '-'";
   if ((models.value ?? []).some((model) => model.name === value)) return `A model named ${value} exists already`;
   return null;
+}
+
+// What LoRA's own options say is wrong, or null.
+const loraOptions = computed(() => {
+  const rate = Number(loraRate.value);
+  if (!(rate > 0 && rate < 1)) return "Give LoRA a learning rate between 0 and 1, such as 1e-4";
+  if (!(Number(loraEpochs.value) >= 1)) return "Give LoRA 1 or more epochs";
+  return null;
 });
+
+// Why Start Fit is off, or null.
+export const notReady = computed(() => blocked(picked.value, "Start Fit"));
+// Why Start LoRA Fit is off, or null.
+export const notReadyLora = computed(() => blocked(planned.value?.lora, "Start LoRA Fit") ?? loraOptions.value);
 
 export async function startFit() {
   if (notReady.value || starting.value) return;
   const method = picked.value;
+  const extra = {};
+  if (method.head_only) extra.head_only = true;
+  if (method.epochs) extra.epochs = Number(epochs.value) || 3;
+  await start(method.method, extra, method.epochs);
+}
+
+export async function startLoraFit() {
+  if (notReadyLora.value || starting.value) return;
+  const extra = { epochs: Number(loraEpochs.value) || 2 };
+  const lora = planned.value.lora;
+  if (Number(loraRate.value) !== lora.learning_rate) extra.learning_rate = Number(loraRate.value);
+  if (Number(loraRank.value) !== lora.rank) extra.rank = Number(loraRank.value);
+  await start("lora", extra, true);
+}
+
+// Start ``training fit`` as a job with ``method``; ``epochs``: it trains in epochs.
+async function start(method, extra, inEpochs) {
   const body = {
     kind: "fit",
     model: planned.value.model,
     data: planned.value.data,
     split: planned.value.split,
     name: name.value.trim(),
-    method: method.method,
+    method,
     seed: Number(seed.value) || 0,
+    ...extra,
   };
   if (planned.value.report) {
     body.report = planned.value.report;
     if (planned.value.report_split) body.report_split = planned.value.report_split;
   } else body.holdout = holdout.value / 100;
-  if (method.head_only) body.head_only = true;
-  if (calibration.value !== "auto" && !(calibration.value === "none" && method.method === "calibrate")) body.calibration = calibration.value;
-  if (method.epochs) {
-    body.epochs = Number(epochs.value) || 3;
-    if (!earlyStop.value) body.early_stop = false;
-  }
+  if (calibration.value !== "auto" && !(calibration.value === "none" && method === "calibrate")) body.calibration = calibration.value;
+  if (inEpochs && !earlyStop.value) body.early_stop = false;
   starting.value = true;
   try {
     const { job } = await api("/jobs", { method: "POST", body });
@@ -312,6 +347,44 @@ function MethodCard({ method }) {
   `;
 }
 
+// LoRA for the families that take it: an action of its own beside the
+// methods, with what it does, its estimate, its options and its own start.
+function LoraPanel({ lora }) {
+  const reason = notReadyLora.value;
+  return html`
+    <div class="lora-panel" aria-label="LoRA">
+      <span class="mt"><b>Adapt the network itself (LoRA)</b></span>
+      <p>${lora.description}</p>
+      <span class="est num">
+        <span>Memory at the peak <b>about ${size(lora.peak_bytes)}</b></span>
+        <span class=${`fit ${lora.fits ? "ok" : "no"}`}>${lora.fits ? "Fits this Mac" : "More than this Mac's GPU working set"}</span>
+      </span>
+      <details class="adv lora-options"><summary>Options <span class="hint num">epochs ${loraEpochs.value} · learning rate ${loraRate.value} · rank ${loraRank.value}</span></summary>
+        <div class="form">
+          <div class="row"><label for="lora-epochs">Epochs</label><div class="line">
+            <input id="lora-epochs" type="number" min="1" max="20" value=${loraEpochs.value} onInput=${(event) => (loraEpochs.value = event.target.value)} />
+            <span class="hint">the best is kept; one or two are usually enough</span>
+          </div></div>
+          <div class="row"><label for="lora-rate">Learning rate</label><div class="line">
+            <input id="lora-rate" class="mono" value=${loraRate.value} spellcheck=${false} onInput=${(event) => (loraRate.value = event.target.value.trim())} />
+            <span class="hint">3e-5 to 1e-4; above 3e-4 the fit breaks down</span>
+          </div></div>
+          <div class="row"><label for="lora-rank">Rank</label><div class="line">
+            <select id="lora-rank" value=${String(loraRank.value)} onChange=${(event) => (loraRank.value = Number(event.target.value))}>
+              ${RANKS.map((rank) => html`<option value=${String(rank)}>${rank}</option>`)}
+            </select>
+            <span class="hint">the adapters' size; the learning rate stays right for each</span>
+          </div></div>
+        </div>
+      </details>
+      <div class="lora-start">
+        <span class="note">${reason && reason !== notReady.value ? reason : ""}</span>
+        <button class="btn" disabled=${Boolean(reason) || starting.value} title=${reason ?? "Start LoRA Fit"} onClick=${startLoraFit}>Start LoRA Fit</button>
+      </div>
+    </div>
+  `;
+}
+
 function gpuNote() {
   const loaded = [...loadedNames.value];
   const unloaded = loaded.length ? `${loaded.join(", ")} ${loaded.length === 1 ? "is" : "are"} unloaded, and ` : "";
@@ -372,6 +445,7 @@ export function FitForm() {
       html`<section class="gsec"><div class="gsec-head"><h2>Method</h2><span class="tag">What ${result.base} can learn</span></div>
         <div class="group">
           <div class="methods" role="radiogroup" aria-label="Method">${result.methods.map((m) => html`<${MethodCard} key=${key(m)} method=${m} />`)}</div>
+          ${result.lora && html`<${LoraPanel} lora=${result.lora} />`}
           <p class="method-foot">Memory is an estimate, checked before the fit starts; the time shows once it runs.</p>
         </div></section>`}
 
