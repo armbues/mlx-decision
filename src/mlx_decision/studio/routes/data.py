@@ -39,7 +39,7 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 
 from ...data.dataset import DATASET_FILE, Dataset, SplitOut, open_dataset, write_dataset
-from ...data.format import DataError, Example, _label, check_examples
+from ...data.format import DataError, Example, _label, check_examples, parse_example
 from ...data.make import Made
 from ...data.shapes import Wording, build, class_names, guess
 from ...data.sources import SourceError, table_from_text
@@ -335,13 +335,30 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
                 raise Conflict(conflict)
             await asyncio.to_thread(save_rows, files, name, text, kind, columns)
             return await describe_data(name)
-        examples, errors = await asyncio.to_thread(check_examples, text.splitlines(), ERRORS_SHOWN)
+        examples, errors = await asyncio.to_thread(
+            check_examples, text.splitlines(), ERRORS_SHOWN, uploaded_line
+        )
         if errors:
             raise BadData(errors)
         await asyncio.to_thread(files.save_data, name, text.encode("utf-8"))
         return await describe_data(name)
 
     return router
+
+
+def uploaded_line(data: Any, line: int) -> Example:
+    """A line of an uploaded file: its images only as data URLs, since an
+    upload brings no image files."""
+    images = data.get("images") if isinstance(data, dict) else None
+    for index, value in enumerate(images if isinstance(images, list) else []):
+        if isinstance(value, str) and not value.startswith("data:"):
+            raise DataError(
+                "an uploaded file's images are data URLs (data:image/png;base64,...); "
+                "it brings no image files",
+                line,
+                f"images.{index}",
+            )
+    return parse_example(data, line)
 
 
 DOCUMENT_ROWS = 40  # the most rows the Playground shows of a dataset

@@ -116,6 +116,26 @@ def test_bad_lines_are_named(studio):
         assert error["message"] == message and error["errors"][0]["line"] is None
 
 
+def test_an_upload_takes_images_as_data_urls_only(studio):
+    import base64
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), (200, 30, 30)).save(buffer, "PNG")
+    url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    lines = [json.loads(line(0)), json.loads(line(1))]
+    lines[0]["images"] = [url]
+    lines[1]["images"] = ["images/1.png"]
+    response = upload(studio, "pictures", "\n".join(json.dumps(item) for item in lines))
+    assert response.status_code == 400
+    [error] = response.json()["error"]["errors"]
+    assert (error["line"], error["param"]) == (2, "images.0")
+    assert "data URLs" in error["message"]
+    assert upload(studio, "pictures", json.dumps(lines[0])).status_code == 200
+
+
 def test_a_name_clash_and_escapes_are_refused(studio):
     assert upload(studio, "tickets", GOOD).status_code == 200
     clash = upload(studio, "tickets", GOOD)

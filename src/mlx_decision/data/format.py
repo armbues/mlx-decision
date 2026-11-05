@@ -10,14 +10,20 @@ probability of true (a number from 0 to 1). A soft label that puts all of its
 weight on one answer is that answer, a hard label. An optional ``id`` (a
 string, unique in the file) names the example; without one it is the line
 number. Questions without a label are asked but not
-trained on. Images are not supported.
+trained on. A line may hold images as a request does (``images``, and images
+inside the state): data URLs, or file paths relative to the folder the file
+is in (a dataset folder: the folder, whose ``images/`` holds them). Paths
+are read as absolute paths, so the examples answer from any working folder.
+Videos are refused.
 
 A dataset folder (``dataset``) holds such files, one per split, whose lines
 may take their questions and labels from the folder's ``dataset.json``.
 
 A file is checked as a whole before any model work: every request passes the
 checks every model makes, every label is an answer of its question; the first
-error names its line.
+error names its line. Every image is opened as a model opens it (its type
+and size read, not decoded), so a missing or unreadable image is an error of
+its line.
 """
 
 import json
@@ -190,24 +196,96 @@ def _label(question: Noul | Choice | Score, value: Any, param: str, line: int) -
     )
 
 
-def parse_example(data: Any, line: int) -> Example:
-    """One line's object as an example; ``DataError`` naming the line and field."""
+def resolve_image(value: str, root: Path | None) -> str:
+    """An image of a line as the model reads it: a data URL as it is, a file
+    path made absolute against ``root`` (the folder the line's file is in;
+    None: the working folder's)."""
+    if value.startswith("data:"):
+        return value
+    path = Path(value).expanduser()
+    if not path.is_absolute() and root is not None:
+        path = root / path
+    return str(path.absolute())
+
+
+def image_files(request: dict[str, Any], root: Path | None = None) -> list[Path]:
+    """The files a request's ``images`` name (data URLs left out), resolved as
+    the reader resolves them; entries that are not text are skipped."""
+    images = request.get("images")
+    if not isinstance(images, list):
+        return []
+    return [
+        Path(resolve_image(value, root))
+        for value in images
+        if isinstance(value, str) and not value.startswith("data:")
+    ]
+
+
+def _resolve_images(images: list[Any], root: Path | None, line: int) -> list[str]:
+    resolved = []
+    for index, value in enumerate(images):
+        if not isinstance(value, str) or not value.strip():
+            raise DataError("an image is a file path or a data URL", line, f"images.{index}")
+        resolved.append(resolve_image(value, root))
+    return resolved
+
+
+def _open_images(given: list[Any], images: list[str], state: Any, line: int) -> None:
+    """Open every image of a line (its header, as a model does before
+    answering): a missing, unreadable or oversized one is the line's error."""
+    from ..images import open_image
+
+    for index, (written, value) in enumerate(zip(given, images, strict=True)):
+        where = f"images.{index}"
+        named = "" if value.startswith("data:") else f"{written}: "
+        try:
+            if named:
+                path = Path(value)
+                if not path.is_file():
+                    raise DecisionError("no such image file")
+                try:
+                    value = path.read_bytes()
+                except OSError as error:
+                    raise DecisionError(error.strerror or "cannot be read") from None
+            open_image(value, index, allow_paths=False)
+        except DecisionError as error:
+            raise DataError(named + error.message, line, where) from None
+    try:
+        _, lifted = lift_images(state, len(images))
+        for index, (raw, _) in enumerate(lifted, len(images)):
+            try:
+                open_image(raw, index, allow_paths=False)
+            except DecisionError as error:
+                raise DecisionError(error.message, param=lifted[index - len(images)][1]) from None
+    except DecisionError as error:
+        raise DataError(error.message, line, error.param) from None
+
+
+def parse_example(
+    data: Any, line: int, root: Path | None = None, open_images: bool = True
+) -> Example:
+    """One line's object as an example; ``DataError`` naming the line and field.
+    Image paths are relative to ``root`` (None: the working folder);
+    ``open_images`` opens every image (off to browse a dataset quickly)."""
     if not isinstance(data, dict):
         raise DataError('a line must be an object: {"state": ..., "labels": ...}', line)
     body = {key: value for key, value in data.items() if key not in ("id", "labels")}
     example_id = data.get("id", str(line))
     if not isinstance(example_id, str) or not example_id.strip():
         raise DataError("an id is a non-empty string", line, "id")
-    for field in ("images", "videos"):
-        if body.get(field):
-            raise DataError("training data cannot hold images", line, field)
+    if body.get("videos"):
+        raise DataError("training data cannot hold videos", line, "videos")
     try:
         request = parse_request(body)
-        _, images = lift_images(request.state)
     except DecisionError as error:
         raise DataError(error.message, line, error.param) from None
-    if images:
-        raise DataError("training data cannot hold images", line, images[0][1])
+    if request.images:
+        given = list(request.images)
+        body["images"] = _resolve_images(given, root, line)
+        if open_images:
+            _open_images(given, body["images"], request.state, line)
+    elif open_images:
+        _open_images([], [], request.state, line)
     if "labels" not in data:
         raise DataError("no labels: an object from question id to the correct answer", line)
     if not isinstance(data["labels"], dict):
@@ -297,9 +375,15 @@ def check_examples(
 
 
 def read_examples(path: str | Path) -> list[Example]:
-    """The examples of a JSON lines file, checked as a whole."""
+    """The examples of a JSON lines file, checked as a whole (image paths
+    relative to the file's folder)."""
+    root = Path(path).parent
+
+    def parse(data: Any, line: int) -> Example:
+        return parse_example(data, line, root)
+
     with open(path, "rb") as file:
-        return parse_examples(file)
+        return parse_examples(file, parse)
 
 
 def write_examples(path: str | Path, examples: Iterable[Example]) -> int:

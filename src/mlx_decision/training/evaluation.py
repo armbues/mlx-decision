@@ -19,7 +19,7 @@ from ..fitted import Fit, FittedBackend, option_ids
 from ..metrics import confusion
 from ..types import parse_request
 from .events import Event
-from .fitting import read_data
+from .fitting import read_data, refuse_images
 from .plan import request_tokens
 from .scoring import Clock, records, score, summary
 
@@ -158,6 +158,8 @@ def evaluate(
     labelled = _labelled(source.examples)
     if not labelled:
         raise ValueError("the data has no labels to score against")
+    for name in [model] + ([compare] if compare is not None else []):
+        refuse_images(name, source.examples, load_options)
     info = {"file": source.source, "sha256": source.sha256, "examples": len(source.examples)}
     scored = [
         _score_model(name, source.examples, labelled, emit, cancelled, check_memory, load_options)

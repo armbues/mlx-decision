@@ -117,12 +117,12 @@ def test_ids_are_unique_including_line_numbers():
     assert (error.line, error.param, error.message) == (2, "id", "the same id as line 1")
 
 
-def test_images_are_refused():
-    error = error_of(line({}, images=["data:image/png;base64,AAAA"]))
-    assert (error.param, error.message) == ("images", "training data cannot hold images")
+def test_images_are_read_and_videos_refused():
     png = base64.b64encode(bytes.fromhex("89504e470d0a1a0a0000000d49484452") + bytes(64)).decode()
     error = error_of(line({}, state={"text": "hi", "photo": f"data:image/png;base64,{png}"}))
-    assert (error.param, error.message) == ("state.photo", "training data cannot hold images")
+    assert error.param == "state.photo" and "not a readable" in error.message
+    error = error_of(line({}, videos=["data:video/mp4;base64,AAAA"]))
+    assert (error.param, error.message) == ("videos", "training data cannot hold videos")
 
 
 def test_a_file_without_examples_or_labels_is_refused():

@@ -22,8 +22,8 @@ from typing import Any
 import mlx.core as mx
 
 from .. import __version__
-from ..data.dataset import read_for
-from ..data.format import Example, training_splits
+from ..data.dataset import digest_file, read_for
+from ..data.format import Example, image_files, training_splits
 from ..errors import DecisionError
 from ..fitted import (
     Fit,
@@ -39,7 +39,8 @@ from ..fitted import write as write_fitted
 from ..hub import resolve_model_path
 from ..memory import ModelTooLargeError, check_fits, gb, required_bytes
 from ..model import DecisionModel, load
-from ..registry import FITTED, check_options, detect_family
+from ..registry import FITTED, check_options, detect_family, static_capabilities
+from ..state_images import lift_images
 from ..types import parse_request
 from . import plan
 from .calibrate import fit_calibration
@@ -86,7 +87,36 @@ def read_data(data: str | Path | list[Example], purpose: str = "train") -> Data:
         return Data(read.examples, read.sha256, read.description)
     examples = list(data)
     lines = "".join(json.dumps(e.to_json(), ensure_ascii=False) + "\n" for e in examples)
-    return Data(examples, hashlib.sha256(lines.encode()).hexdigest(), None)
+    digest = hashlib.sha256(lines.encode())
+    for example in examples:
+        for image in image_files(example.request):
+            digest_file(digest, image)
+    return Data(examples, digest.hexdigest(), None)
+
+
+def _has_images(example: Example) -> bool:
+    if example.request.get("images"):
+        return True
+    try:
+        return bool(lift_images(example.request.get("state"))[1])
+    except DecisionError:
+        return False  # the model's check names it
+
+
+def refuse_images(model: str | Path, examples: list[Example], options: dict) -> None:
+    """Refuse data with images for a model that reads none (Laya, Julia, d1-3B),
+    before it loads."""
+    found = next((example for example in examples if _has_images(example)), None)
+    if found is None:
+        return
+    path = resolve_model_path(model)
+    if static_capabilities(path, **options).supports_images:
+        return
+    name = str(model).rstrip("/").rsplit("/", 1)[-1]
+    raise DecisionError(
+        f"the data holds images (example {found.id} first) and {name} does not read "
+        "images; use a model that does, or data without them"
+    )
 
 
 @dataclass
@@ -561,6 +591,7 @@ def prepare(
     held = read_data(validation, "report") if validation is not None else None
     origin = _base(base)
     check_options(origin.family, load_options)
+    refuse_images(origin.path, source.examples + (held.examples if held else []), load_options)
     splits = training_splits(
         source.examples,
         holdout=holdout,

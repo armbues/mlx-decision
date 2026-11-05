@@ -188,7 +188,7 @@ def test_errors_name_the_split_file_and_line(saved, tmp_path):
     with pytest.raises(DataError) as error:
         read_for(out)
     assert str(error.value).startswith("train.jsonl line 2: ")
-    assert "images are not used for training yet" in str(error.value)
+    assert str(error.value).endswith("a: no such image file")
 
 
 def test_a_stop_before_the_rename_leaves_nothing(tmp_path):

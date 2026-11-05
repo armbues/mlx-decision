@@ -25,7 +25,8 @@ columns, as text), or ``labels`` as a plain file has them, and ``questions``
 only where they differ per row. Reading a split fills in the dataset's
 questions and maps the values to labels, so everything after the reader sees
 the examples a plain file gives. A plain ``.jsonl`` file is a dataset of one
-split.
+split. Image paths in a line are relative to the folder (``images/17.jpg``),
+in a plain file to the file's folder; the reader makes them absolute.
 """
 
 import hashlib
@@ -36,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import DecisionError
-from .format import DataError, Example, parse_example, parse_examples
+from .format import DataError, Example, image_files, parse_example, parse_examples, resolve_image
 
 DATASET_FILE = "dataset.json"
 # The version of dataset.json this one writes and reads (missing means 1).
@@ -102,6 +103,11 @@ class Dataset:
     @property
     def name(self) -> str:
         return self.path.name if self.folder else self.path.name.removesuffix(SPLIT_SUFFIX)
+
+    @property
+    def root(self) -> Path:
+        """The folder the lines' image paths are relative to."""
+        return self.path if self.folder else self.path.parent
 
     def split_path(self, split: str) -> Path:
         return self.path / f"{split}{SPLIT_SUFFIX}" if self.folder else self.path
@@ -214,18 +220,11 @@ class Dataset:
                 raise DataError("values must be an object from column to a value", line, "values")
             values = {k: raw_value(v) for k, v in values.items() if v is not None}
         body = {key: value for key, value in data.items() if key != "values"}
-        if body.get("images"):
-            raise DataError(
-                "images are not used for training yet (a dataset folder keeps them as paths "
-                "into its images/ folder for a later version)",
-                line,
-                "images",
-            )
         questions = body.get("questions")
         if questions is None:
             if not self.questions:
                 if lenient:
-                    return _unasked(data, line, values)
+                    return _unasked(data, line, values, self.root)
                 raise DataError("no questions: the line has none and the dataset none yet", line)
             questions = body["questions"] = self.questions
         labels = dict(body.get("labels") or {})
@@ -248,16 +247,25 @@ class Dataset:
                 )
             labels[question_id] = mapped
         body["labels"] = labels
-        return replace(parse_example(body, line), values=values)
+        example = parse_example(body, line, self.root, open_images=not lenient)
+        return replace(example, values=values)
 
     def read(self, split: str | None = None, lenient: bool = False) -> list[Example]:
         """The examples of ``split`` (a plain file: its only one), checked as a
         whole; ``lenient`` as ``parse_line`` (a dataset without labels yet)."""
         if not self.folder:
+            root = self.root
+
+            def plain(data: Any, line: int) -> Example:
+                return parse_example(data, line, root)
+
+            def browse(data: Any, line: int) -> Example:
+                return _plain_lenient(data, line, root)
+
             with open(self.path, "rb") as file:
                 if lenient:
-                    return parse_examples(file, _plain_lenient, require_labels=False)
-                return parse_examples(file)
+                    return parse_examples(file, browse, require_labels=False)
+                return parse_examples(file, plain)
         split = split or next(iter(self.splits))
         path = self.split_path(split)
         with open(path, "rb") as file:
@@ -271,15 +279,35 @@ class Dataset:
 
     def sha256(self, split: str | None = None) -> str:
         """The SHA-256 a fit records for its data: a plain file's bytes; a split's
-        bytes and the questions and answers its lines take from ``dataset.json``."""
+        bytes and the questions and answers its lines take from ``dataset.json``;
+        then the bytes of the image files the lines name, in order (data without
+        image files hashes as before they were read)."""
         digest = hashlib.sha256()
-        with open(self.split_path(split or next(iter(self.splits))), "rb") as file:
+        path = self.split_path(split or next(iter(self.splits)))
+        with open(path, "rb") as file:
             for block in iter(lambda: file.read(2**20), b""):
                 digest.update(block)
         if self.folder:
             shared = {"questions": self.questions, "answers": self.answers}
             digest.update(json.dumps(shared, sort_keys=True, ensure_ascii=False).encode())
+        for image in self._image_files(path):
+            digest_file(digest, image)
         return digest.hexdigest()
+
+    def _image_files(self, path: Path) -> list[Path]:
+        """The image files the lines of ``path`` name, in order."""
+        found = []
+        with open(path, "rb") as file:
+            for raw in file:
+                if b'"images"' not in raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(data, dict):
+                    found.extend(image_files(data, self.root))
+        return found
 
     def describe(self, split: str | None = None) -> str:
         """How runs name what they read: the file, or the dataset and its split."""
@@ -322,25 +350,43 @@ def check_format(path: Path, loaded: dict[str, Any]) -> None:
         )
 
 
-def _unasked(data: dict, line: int, values: dict[str, str] | None) -> Example:
-    """A line of a dataset without questions: its id, state and values."""
+def digest_file(digest, path: Path) -> None:
+    """Add a file's bytes to ``digest`` (a missing one adds nothing: reading
+    the data fails on it first)."""
+    try:
+        with open(path, "rb") as file:
+            for block in iter(lambda: file.read(2**20), b""):
+                digest.update(block)
+    except OSError:
+        pass
+
+
+def _unasked(data: dict, line: int, values: dict[str, str] | None, root: Path) -> Example:
+    """A line of a dataset without questions: its id, state, images (paths
+    made absolute) and values."""
     example_id = data.get("id", str(line))
     if not isinstance(example_id, str) or not example_id.strip():
         raise DataError("an id is a non-empty string", line, "id")
     if "state" not in data:
         raise DataError("a line needs a state", line, "state")
     request = {k: v for k, v in data.items() if k not in ("id", "values", "labels")}
+    if isinstance(request.get("images"), list):
+        request["images"] = [
+            resolve_image(value, root) if isinstance(value, str) else value
+            for value in request["images"]
+        ]
     return Example(example_id, request, {}, values)
 
 
-def _plain_lenient(data: Any, line: int) -> Example:
+def _plain_lenient(data: Any, line: int, root: Path) -> Example:
     """A plain file's line read to browse or answer it: one without questions
-    keeps its state; one without labels is an example without them."""
+    keeps its state; one without labels is an example without them. Images
+    are not opened."""
     if isinstance(data, dict) and not data.get("questions"):
-        return _unasked(data, line, None)
+        return _unasked(data, line, None, root)
     if isinstance(data, dict) and "labels" not in data:
         data = {**data, "labels": {}}
-    return parse_example(data, line)
+    return parse_example(data, line, root, open_images=False)
 
 
 def read_description(folder: Path) -> Dataset:
