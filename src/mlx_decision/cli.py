@@ -2368,7 +2368,8 @@ def question_from_file(path: Path) -> tuple[str, dict]:
 
 
 def show_made(made, count: int) -> None:
-    """The first examples as JSON lines, then the label counts."""
+    """The first examples as JSON lines (each image file listed with its size
+    instead of the pixels), then the label counts."""
     for example in made.examples[:count]:
         line = example.to_json()
         if example.values:
@@ -2376,8 +2377,27 @@ def show_made(made, count: int) -> None:
             if not line["labels"]:
                 del line["labels"]
         typer.echo(json.dumps(line, ensure_ascii=False))
+        for name in example.request.get("images") or []:
+            if name in made.images:
+                typer.echo(f"  {name}: {image_size(made.images[name])}")
     typer.echo("")
     typer.echo(summary_of_made(made))
+
+
+def image_size(data: bytes) -> str:
+    """An image file's pixels, type and bytes: ``500x375 JPEG, 24 KB``."""
+    import io
+
+    import PIL.Image
+
+    with PIL.Image.open(io.BytesIO(data)) as image:
+        return f"{image.width}x{image.height} {image.format}, {byte_size(len(data))}"
+
+
+def byte_size(count: int) -> str:
+    if count >= 10**6:
+        return f"{count / 1e6:.1f} MB"
+    return f"{max(round(count / 1e3), 1)} KB"
 
 
 def summary_of_made(made) -> str:
@@ -2393,6 +2413,9 @@ def summary_of_made(made) -> str:
             values = body["values"].items()
             listed = ", ".join(f"{value} {info['rows']:,}" for value, info in values)
             lines.append(f"values: {column}: {listed}")
+    if made.images:
+        total = sum(len(data) for data in made.images.values())
+        lines.append(f"images: {len(made.images):,} files in images/, {byte_size(total)}")
     for reason, count in made.skipped.items():
         lines.append(f"skipped {count:,} rows: {reason}")
     return "\n".join(lines)
@@ -2460,11 +2483,20 @@ def data_command(
     shape: Annotated[
         str | None,
         typer.Option(
-            help="text, pair, choice, yesno, rating or object (several columns as the "
-            "state: --columns). Default: guessed from the columns."
+            help="text, pair, choice, yesno, rating, object (several columns as the "
+            "state: --columns) or image (an image column and its class, written into the "
+            "dataset folder's images/; a text column, if named so, is the state). Default: "
+            "guessed from the columns."
         ),
     ] = None,
     text: ColumnFlag = None,
+    image: Annotated[
+        str | None,
+        typer.Option(
+            help="The image column (a Hugging Face Image feature, or image file paths in a "
+            "CSV or JSON lines file, relative to it). Overrides the guess."
+        ),
+    ] = None,
     columns: Annotated[
         str | None,
         typer.Option(
@@ -2571,6 +2603,7 @@ def data_command(
         show=show,
         shape=shape,
         columns={
+            "image": image,
             "text": text,
             "columns": columns,
             "label": label,

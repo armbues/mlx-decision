@@ -6,7 +6,8 @@ columns, build one labelled question per row, and check the result as
 ``training fit`` will read it. Presets take their source, split commit and
 wording from ``presets``. Into a dataset folder (``-o`` without ``.jsonl``)
 the rows keep their raw label values with a map to the answers, and the
-wording may be left out (``raw``: rows without questions).
+wording may be left out (``raw``: rows without questions). The image shape
+writes only into a folder, its images into the folder's ``images/``.
 """
 
 import json
@@ -55,6 +56,7 @@ class Made:
     skipped: Counter = field(default_factory=Counter)
     value_column: str | None = None
     classes: list[str] = field(default_factory=list)
+    images: dict[str, bytes] = field(default_factory=dict)  # file name in the folder -> bytes
 
     def answers(self) -> dict[str, dict]:
         """The map from the value column's values to each question's answers,
@@ -109,14 +111,22 @@ def rows_to_read(length: int, limit: int | None, sample: int | None, seed: int) 
 
 def checked(examples: list[Example]) -> list[Example]:
     """``examples`` as ``training fit`` reads them back (the format's checks),
-    keeping their raw values; rows without questions as they are."""
+    keeping their raw values and requests (image paths relative to the
+    folder, whose images ``build`` checked); rows without questions as they are."""
     if not examples:
         raise SourceError("no row gave an example")
     if "questions" not in examples[0].request:
         return examples
     lines = [json.dumps(example.to_json(), ensure_ascii=False) for example in examples]
-    read = parse_examples(lines)
-    return [replace(new, values=old.values) for new, old in zip(read, examples, strict=True)]
+
+    def parse(data, line):
+        return parse_example(data, line, open_images=False)
+
+    read = parse_examples(lines, parse)
+    return [
+        replace(new, request=old.request, values=old.values)
+        for new, old in zip(read, examples, strict=True)
+    ]
 
 
 def make(
@@ -156,7 +166,7 @@ def make(
     fields.setdefault("id", default_id(table))
     indices = rows_to_read(table.length, limit, sample, seed)
     built = build(table, mapping, Wording(**fields), indices, raw=raw)
-    made = Made(checked(built.examples), table, mapping, built.skipped)
+    made = Made(checked(built.examples), table, mapping, built.skipped, images=built.images)
     kept = mapping.shape in VALUE_SHAPES
     value_column = mapping.columns.get("label") if kept else None
     if value_column is not None:
@@ -444,12 +454,14 @@ def write_folder(
         source=source_of(plans[0], made[0]),
         created=datetime.now(UTC).isoformat(timespec="seconds"),
     )
-    write_dataset(plans[0].output, dataset, outs, before_rename)
+    images = {name: data for made_one in made for name, data in made_one.images.items()}
+    write_dataset(plans[0].output, dataset, outs, before_rename, files=images)
     return outs
 
 
 # The flag of each column role, in the order commands list them.
 COLUMN_FLAGS = {
+    "image": "--image",
     "text": "--text",
     "columns": "--columns",
     "label": "--label",
@@ -516,6 +528,15 @@ class DataPlan:
         return self.folder and not self.has_wording()
 
     def make(self) -> Made:
+        made = self._make()
+        if made.images and self.output is not None and not self.folder:
+            raise SourceError(
+                "the image shape writes into a dataset folder, its images into images/: "
+                "-o FOLDER (a path without .jsonl)"
+            )
+        return made
+
+    def _make(self) -> Made:
         return make(
             self.source,
             preset=self.preset,

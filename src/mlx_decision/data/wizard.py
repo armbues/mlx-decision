@@ -21,13 +21,13 @@ from . import presets as preset_data
 from .make import DataPlan, Made
 from .shapes import (
     KINDS,
-    OPTIONAL,
     ROLES,
     SHAPES,
     candidates,
     class_names,
     default_id,
     guess,
+    optional,
     rating_values,
     state_columns,
 )
@@ -48,6 +48,7 @@ SHAPE_TEXT = {
     "yesno": "a passage and a yes/no question about it",
     "rating": "a text and a number on a scale",
     "object": "several columns together and their class",
+    "image": "an image and its class (into a dataset folder)",
 }
 PRESET_TEXT = {
     "trec": "TREC: the kind of answer a question asks for (6 classes)",
@@ -157,12 +158,16 @@ def ask_shape_and_columns(plan: DataPlan, table: Table) -> None:
         fitting = [c for c in table.columns.values() if c.kind in KINDS[role]]
         columns = fitting or list(table.columns.values())
         options = [(c.name, c.describe()) for c in columns if c.name not in used]
-        if role in OPTIONAL:
+        if optional(plan.shape, role):
             options.append((NONE, NONE))
         default = guessed.columns.get(role) if guessed else None
+        if default is None and guessed is not None and optional(plan.shape, role):
+            default = NONE  # the guess left it out
         if default is None:
             found = candidates(table, role, used)
-            default = found[0] if len(found) == 1 else (NONE if role in OPTIONAL else None)
+            default = (
+                found[0] if len(found) == 1 else (NONE if optional(plan.shape, role) else None)
+            )
         picked = _pick(f"{role.capitalize()} column:", options, default)
         plan.columns[role] = None if picked == NONE else picked
         if picked != NONE:
@@ -254,7 +259,9 @@ def _build(
 def ask_output(plan: DataPlan, table: Table | None) -> None:
     name = table.name if table is not None else (plan.preset or "data")
     split = f"-{plan.split}" if plan.split else ""
-    default = f"{default_id(table) if table is not None else name}{split}.jsonl"
+    default = f"{default_id(table) if table is not None else name}{split}"
+    if plan.shape != "image":  # the image shape writes a folder
+        default += ".jsonl"
     plan.output = _ask("Write to: ", default=default, completer=PathCompleter(expanduser=True))
 
 

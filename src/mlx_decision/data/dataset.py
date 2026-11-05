@@ -568,12 +568,19 @@ def partial_folder(folder: str | Path) -> Path:
     return folder.with_name(f".{folder.name}.partial")
 
 
-def write_dataset(folder: str | Path, dataset: Dataset, splits: list[SplitOut], before_rename=None):
+def write_dataset(
+    folder: str | Path,
+    dataset: Dataset,
+    splits: list[SplitOut],
+    before_rename=None,
+    files: dict[str, bytes] | None = None,
+):
     """Write ``dataset.json`` and the split files to a partial folder beside
     ``folder``, then rename it into place: the dataset appears whole or not at
     all. The questions go into ``dataset.json`` when every line asks the same
-    ones (else each line keeps its own). ``before_rename`` may raise to stop.
-    ``FileExistsError`` when ``folder`` exists."""
+    ones (else each line keeps its own). ``files`` are written too, by their
+    path in the folder (the lines' images: ``images/NAME``). ``before_rename``
+    may raise to stop. ``FileExistsError`` when ``folder`` exists."""
     import shutil
 
     folder = Path(folder)
@@ -593,6 +600,12 @@ def write_dataset(folder: str | Path, dataset: Dataset, splits: list[SplitOut], 
                 for example in out.examples:
                     obj = line_json(example, shared is not None, mapped)
                     file.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        for name, data in (files or {}).items():
+            target = partial / name
+            if partial.resolve() not in target.resolve().parents:
+                raise ValueError(f"{name}: not a path inside the dataset folder")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
         text = json.dumps(dataset.to_json(), indent=2, ensure_ascii=False) + "\n"
         (partial / DATASET_FILE).write_text(text, encoding="utf-8")
         if before_rename is not None:

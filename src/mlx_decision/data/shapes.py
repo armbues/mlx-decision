@@ -15,13 +15,18 @@
   keyed by their names (a class label's cells by name), a class column the
   answer as in ``text``. Its columns are named (``--columns A,B``), never
   guessed; naming them picks the shape.
+- ``image``: an image column is the line's image, a class column the answer
+  as in ``text``; a text column (taken only when its name says so) is the
+  state, else the state is empty. Only into a dataset folder: the images
+  are written into its ``images/`` folder (``ImageFile``).
 
 ``guess`` finds the shape and the columns from the kinds and common names,
 taking what the caller gives; a guess that is not clear stops with the
 columns listed. ``Wording`` holds the question's id, instructions, options
 and label map; ``build`` turns rows into examples. The text, pair, rating and
 object shapes keep each row's raw label in the example's ``values`` (for a
-dataset folder); with ``raw`` they ask no question and keep only that.
+dataset folder); with ``raw`` they ask no question and keep only that (the
+image shape too).
 """
 
 import re
@@ -32,11 +37,25 @@ from typing import Any
 
 from ..flags import join_list, split_list
 from .format import Example
-from .sources import BOOL, FLOAT, INT, LABEL, LIST, OBJECT, OTHER, TEXT, Column, SourceError, Table
+from .sources import (
+    BOOL,
+    FLOAT,
+    IMAGE,
+    INT,
+    LABEL,
+    LIST,
+    OBJECT,
+    OTHER,
+    TEXT,
+    Column,
+    SourceError,
+    Table,
+    image_bytes,
+)
 
-SHAPES = ("text", "pair", "choice", "yesno", "rating", "object")
+SHAPES = ("text", "pair", "choice", "yesno", "rating", "object", "image")
 # The shapes whose rows keep their label's raw value (and may ask nothing).
-VALUE_SHAPES = ("text", "pair", "rating", "object")
+VALUE_SHAPES = ("text", "pair", "rating", "object", "image")
 # The columns each shape reads, and the flag that names each.
 ROLES = {
     "text": ("text", "label"),
@@ -45,9 +64,13 @@ ROLES = {
     "yesno": ("text", "question", "label"),
     "rating": ("text", "label"),
     "object": ("columns", "label"),
+    "image": ("image", "label", "text"),
 }
 OPTIONAL = {"context"}
+# Optional in one shape only (the image shape's text).
+OPTIONAL_IN = {"image": {"text"}}
 FLAGS = {
+    "image": "--image",
     "text": "--text",
     "columns": "--columns",
     "label": "--label",
@@ -71,6 +94,7 @@ NAMES = {
     "answer": ("answerkey", "answer_key", "answer", "label", "correct"),
     "context": ("context", "fact1", "passage", "article", "support"),
     "columns": (),
+    "image": ("image", "img", "picture", "photo", "file", "path", "image_path", "filepath"),
 }  # fmt: skip
 # The kinds a role's column may have.
 KINDS = {
@@ -82,7 +106,8 @@ KINDS = {
     "choices": (LIST, OBJECT),
     "answer": (TEXT, INT, LABEL, OTHER),
     "context": (TEXT,),
-    "columns": (TEXT, INT, FLOAT, BOOL, LABEL, LIST, OBJECT, OTHER),
+    "columns": (TEXT, INT, FLOAT, BOOL, LABEL, LIST, OBJECT, OTHER, IMAGE),
+    "image": (IMAGE,),
 }
 # A rating's label column, when its name says so.
 RATING_NAMES = ("stars", "rating", "score")
@@ -105,9 +130,14 @@ def candidates(table: Table, role: str, used: set[str]) -> list[str]:
         return named
     if role == "label":
         return [c.name for c in fitting if c.kind == LABEL]
-    if role == "text":
+    if role in ("text", "image"):
         return [c.name for c in fitting]
     return []
+
+
+def optional(shape: str, role: str) -> bool:
+    """Whether the shape may leave the role's column out."""
+    return role in OPTIONAL or role in OPTIONAL_IN.get(shape, set())
 
 
 def state_columns(value: str) -> list[str]:
@@ -151,10 +181,12 @@ def _resolve(table: Table, shape: str, given: dict[str, str]) -> Mapping:
         if role in columns:
             continue
         found = candidates(table, role, used)
+        if shape == "image" and role == "text":  # by its name only (not pets' image_id)
+            found = [name for name in found if name.lower() in NAMES["text"]]
         if len(found) == 1:
             columns[role] = found[0]
             used.add(found[0])
-        elif not found and role in OPTIONAL:
+        elif not found and optional(shape, role):
             columns[role] = None
         else:
             which = "is not clear" if found else "is not found"
@@ -189,6 +221,8 @@ def guess(table: Table, shape: str | None = None, given: dict[str, str] | None =
         c.kind == BOOL for c in table.columns.values()
     ):
         tried.append("yesno")
+    if any(c.kind == IMAGE for c in table.columns.values()):
+        tried.append("image")
     if not tried:
         label = next((names[n] for n in NAMES["label"] if n in names), None)
         if label is not None and label.kind in (INT, FLOAT) and label.name.lower() in RATING_NAMES:
@@ -221,10 +255,64 @@ class Wording:
 
 @dataclass
 class Built:
-    """Examples built from rows, and the rows left out with why (counted)."""
+    """Examples built from rows, the rows left out with why (counted), and the
+    image files the examples name (the image shape: path -> bytes)."""
 
     examples: list[Example] = field(default_factory=list)
     skipped: Counter = field(default_factory=Counter)
+    images: dict[str, bytes] = field(default_factory=dict)
+
+
+# The image types a line's file may have as it is; others are written as PNG.
+IMAGE_SUFFIXES = {"PNG": "png", "JPEG": "jpg", "WEBP": "webp"}
+
+
+def image_file(raw: bytes) -> tuple[bytes, str] | str:
+    """An image's bytes as a dataset folder keeps them, and their suffix: PNG,
+    JPEG and WebP as they are, other types Pillow reads as PNG. The reason
+    as text when the image cannot be used (it does not read, or is larger
+    than the readers take)."""
+    import io
+
+    import PIL.Image
+
+    from ..errors import DecisionError
+    from ..images import open_image
+
+    try:
+        with PIL.Image.open(io.BytesIO(raw)) as image:
+            kind = image.format
+            if kind not in IMAGE_SUFFIXES:
+                buffer = io.BytesIO()
+                image.convert("RGB").save(buffer, "PNG")
+                raw, kind = buffer.getvalue(), "PNG"
+    except PIL.Image.DecompressionBombError:
+        return "image too large"
+    except (PIL.UnidentifiedImageError, OSError, ValueError):
+        return "unreadable image"
+    try:
+        open_image(raw, 0, allow_paths=False)
+    except DecisionError as error:
+        return "image too large" if "too large" in error.message else "unreadable image"
+    return raw, IMAGE_SUFFIXES[kind]
+
+
+def _row_image(table: Table, mapping: Mapping, index: int, row: dict, built: Built) -> str | None:
+    """The image shape's row image, kept in ``built.images`` as
+    ``images/SPLIT-INDEX.SUFFIX``; None (the reason counted) when it cannot be used."""
+    raw = image_bytes(table, row.get(mapping.columns["image"]))
+    if raw is None:
+        built.skipped["no image"] += 1
+        return None
+    found = image_file(raw)
+    if isinstance(found, str):
+        built.skipped[found] += 1
+        return None
+    data, suffix = found
+    width = max(5, len(str(max(table.length - 1, 0))))
+    name = f"images/{table.split or 'rows'}-{index:0{width}d}.{suffix}"
+    built.images[name] = data
+    return name
 
 
 def _raw(value: Any) -> str:
@@ -402,15 +490,18 @@ def _example(
     question: dict | None,
     label: str | None,
     values: dict[str, str] | None = None,
+    image: str | None = None,
 ):
     """The example of row ``index``: id from the table's name and split, one
-    question (none for a raw row: its ``values`` only)."""
+    question (none for a raw row: its ``values`` only), its image file's name."""
     name = f"{table.name}:{table.split}/{index}" if table.split else f"{table.name}/{index}"
+    request: dict[str, Any] = {"state": state}
+    if image is not None:
+        request["images"] = [image]
     if question is None:
-        return Example(name, {"state": state}, {}, values)
-    return Example(
-        name, {"state": state, "questions": {question_id: question}}, {question_id: label}, values
-    )
+        return Example(name, request, {}, values)
+    request["questions"] = {question_id: question}
+    return Example(name, request, {question_id: label}, values)
 
 
 def _state(table: Table, shape: str, columns: dict, row: dict) -> Any:
@@ -422,6 +513,9 @@ def _state(table: Table, shape: str, columns: dict, row: dict) -> Any:
             column, value = table.columns[name], row.get(name)
             state[name] = class_of(column, value) if column.names else value
         return state
+    if shape == "image":
+        text = row.get(columns["text"]) if columns.get("text") else None
+        return "" if text is None else text
     return row[columns["text"]]
 
 
@@ -435,8 +529,14 @@ def _raw_rows(table: Table, mapping: Mapping, indices: list[int], rows: list[dic
         if name is None:
             built.skipped["no label"] += 1
             continue
+        image = None
+        if mapping.shape == "image":
+            image = _row_image(table, mapping, index, row, built)
+            if image is None:
+                continue
         state = _state(table, mapping.shape, mapping.columns, row)
-        built.examples.append(_example(table, index, state, "", None, None, {column_name: name}))
+        values = {column_name: name}
+        built.examples.append(_example(table, index, state, "", None, None, values, image))
     return built
 
 
@@ -455,7 +555,7 @@ def build(
             )
         return _raw_rows(table, mapping, indices, rows)
     built = Built()
-    if shape in ("text", "pair", "object"):
+    if shape in ("text", "pair", "object", "image"):
         _require_instructions(wording, shape)
         question, ids = _class_question(table, mapping, wording)
         label_column = table.columns[columns["label"]]
@@ -473,11 +573,15 @@ def build(
                 )
             if question["type"] == "noul":
                 option = "true" if option == ids[0] else "false"
+            image = None
+            if shape == "image":
+                image = _row_image(table, mapping, index, row, built)
+                if image is None:
+                    continue
             state = _state(table, shape, columns, row)
+            values = {columns["label"]: name}
             built.examples.append(
-                _example(
-                    table, index, state, wording.id, question, option, {columns["label"]: name}
-                )
+                _example(table, index, state, wording.id, question, option, values, image)
             )
         return built
     if shape == "choice":

@@ -1,11 +1,15 @@
 """Where examples come from: a Hugging Face dataset, a saved dataset folder, or a file.
 
 ``open_source`` gives a ``Table``: the columns with their kinds (a class
-label's names, text, numbers, lists, ...) and a sample value each, the row
-count, and the rows by index. Hugging Face datasets (``hf:ORG/NAME``, read
-through the HF cache), folders written by ``datasets``' ``save_to_disk``
-and Parquet files need the ``training`` extra (the ``datasets`` library);
-CSV and JSON lines files are read with the standard library.
+label's names, text, numbers, lists, images, ...) and a sample value each,
+the row count, and the rows by index. An image column is a Hugging Face
+``Image`` feature (read undecoded: ``{"bytes", "path"}``) or, in a CSV or
+JSON lines file, a text column whose every value is an image file's path
+(relative to the file's folder); ``image_bytes`` reads a cell's image.
+Hugging Face datasets (``hf:ORG/NAME``, read through the HF cache),
+folders written by ``datasets``' ``save_to_disk`` and Parquet files need
+the ``training`` extra (the ``datasets`` library); CSV and JSON lines
+files are read with the standard library.
 """
 
 import csv
@@ -19,9 +23,11 @@ from typing import Any
 HUB_PREFIX = "hf:"
 INSTALL_HINT = "pip install 'mlx-decision[training]'"
 # Column kinds.
-TEXT, INT, FLOAT, BOOL, LABEL, LIST, OBJECT, OTHER = (
-    "text", "int", "float", "bool", "label", "list", "object", "other"
+TEXT, INT, FLOAT, BOOL, LABEL, LIST, OBJECT, OTHER, IMAGE = (
+    "text", "int", "float", "bool", "label", "list", "object", "other", "image"
 )  # fmt: skip
+# The file names a CSV or JSON lines column of image paths ends in.
+IMAGE_PATH = re.compile(r"\.(png|jpe?g|webp|gif|bmp|tiff?)$", re.IGNORECASE)
 
 
 class SourceError(ValueError):
@@ -42,7 +48,10 @@ class Column:
         kind = f"class label: {', '.join(self.names[:6])}" if self.names else self.kind
         if self.names and len(self.names) > 6:
             kind += ", ..."
-        sample = json.dumps(self.sample, ensure_ascii=False, default=str)
+        sample = self.sample
+        if self.kind == IMAGE:  # a file name, not the bytes
+            sample = sample.get("path") if isinstance(sample, dict) else sample
+        sample = json.dumps(sample, ensure_ascii=False, default=str)
         if len(sample) > 40:
             sample = sample[:39] + "…"
         return f"{self.name} ({kind}, e.g. {sample})"
@@ -51,7 +60,8 @@ class Column:
 @dataclass
 class Table:
     """A source's rows: ``name`` (the dataset's or file's, for default ids),
-    ``split`` (Hub and saved datasets), the columns and ``length``."""
+    ``split`` (Hub and saved datasets), the columns and ``length``; ``base``
+    the folder a file's image paths are relative to."""
 
     name: str
     split: str | None
@@ -60,6 +70,7 @@ class Table:
     read: Callable[[list[int]], list[dict]] = field(repr=False)
     values: Callable[[str], list] = field(repr=False)
     origin: dict[str, Any] = field(default_factory=dict)
+    base: Path | None = None
 
     def rows(self, indices: list[int]) -> list[dict]:
         """The rows at ``indices``, as plain dicts, in that order."""
@@ -87,6 +98,8 @@ def _datasets():
 
 def _feature_column(name: str, feature, sample) -> Column:
     datasets = _datasets()
+    if isinstance(feature, datasets.Image):
+        return Column(name, IMAGE, None, sample)
     if isinstance(feature, datasets.ClassLabel):
         return Column(name, LABEL, list(feature.names), sample)
     if isinstance(feature, datasets.Value):
@@ -112,6 +125,11 @@ def _feature_column(name: str, feature, sample) -> Column:
 
 
 def _from_dataset(dataset, name: str, split: str | None, origin: dict) -> Table:
+    datasets = _datasets()
+    for column, feature in dataset.features.items():
+        if isinstance(feature, datasets.Image) and feature.decode:
+            # Read as stored: the image's bytes are written as they are.
+            dataset = dataset.cast_column(column, datasets.Image(decode=False))
     first = dataset[0] if len(dataset) else {}
     columns = {
         column: _feature_column(column, feature, first.get(column))
@@ -421,12 +439,16 @@ def _jsonl_rows(lines: Iterable[str], where: str) -> list[dict]:
     return rows
 
 
-def _from_rows(rows: list[dict], name: str, origin: dict) -> Table:
+def _from_rows(rows: list[dict], name: str, origin: dict, base: Path | None = None) -> Table:
     names = list(dict.fromkeys(key for row in rows for key in row))
     columns = {}
     for column in names:
         values = [row.get(column) for row in rows]
-        columns[column] = Column(column, _kind(values), None, values[0] if values else None)
+        kind = _kind(values)
+        present = [v for v in values if v not in (None, "")]
+        if kind == TEXT and present and all(IMAGE_PATH.search(v.strip()) for v in present):
+            kind = IMAGE
+        columns[column] = Column(column, kind, None, values[0] if values else None)
     return Table(
         name,
         None,
@@ -435,7 +457,30 @@ def _from_rows(rows: list[dict], name: str, origin: dict) -> Table:
         lambda indices: [rows[i] for i in indices],
         lambda column: [row.get(column) for row in rows],
         origin,
+        base,
     )
+
+
+def image_bytes(table: Table, value: Any) -> bytes | None:
+    """A cell of an image column as its file's bytes: a Hugging Face image's
+    stored bytes (or its file), a path relative to the table's file; None
+    when there is no image or its file cannot be read."""
+    path = None
+    if isinstance(value, dict):
+        if value.get("bytes"):
+            return bytes(value["bytes"])
+        path = value.get("path")
+    elif isinstance(value, str) and value.strip():
+        path = value.strip()
+    if not path:
+        return None
+    file = Path(path).expanduser()
+    if not file.is_absolute() and table.base is not None:
+        file = table.base / file
+    try:
+        return file.read_bytes()
+    except OSError:
+        return None
 
 
 def table_from_text(text: str, kind: str, name: str) -> Table:
@@ -470,7 +515,7 @@ def load_file(path: Path) -> Table:
         raise SourceError(f"{path}: not a .csv, .jsonl or .parquet file")
     if not rows:
         raise SourceError(f"{path} holds no rows")
-    return _from_rows(rows, path.stem, {"path": str(path)})
+    return _from_rows(rows, path.stem, {"path": str(path)}, path.parent)
 
 
 def open_source(
