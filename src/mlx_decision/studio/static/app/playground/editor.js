@@ -350,6 +350,20 @@ function RowValues({ item }) {
   `;
 }
 
+// A row's images, read-only: each opens larger in the preview.
+function RowImages({ item }) {
+  if (!item.images?.length) return null;
+  return html`<div class="thumbs">
+    ${item.images.map(
+      (url, index) => html`<figure class="thumb" key=${index}>
+        <button class="thumb-open" title="Show larger" aria-label=${`Show image ${index + 1} larger`}
+                onClick=${() => openPreview(item.images, index)}><img src=${url} alt=${`Image ${index + 1}`} /></button>
+        <figcaption class="num">[image ${index + 1}]</figcaption>
+      </figure>`,
+    )}
+  </div>`;
+}
+
 function RowState() {
   const current = example.value;
   const json = current.stateMode === "json";
@@ -364,6 +378,7 @@ function RowState() {
         <div class="state-box">
           <textarea class=${`field state-text ${json ? "mono" : ""}`} aria-label="State of the row" readonly
                     rows=${rowsFor(current.stateText)} value=${current.stateText}></textarea>
+          <${RowImages} item=${current} />
           <${RowValues} item=${current} />
           <div class="state-foot">
             <span>${json ? "Sent as JSON; the model reads keys and values" : `${current.stateText.length.toLocaleString("en")} characters, plain text`} · read-only</span>

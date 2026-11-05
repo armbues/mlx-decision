@@ -12,12 +12,16 @@ happens to the dataset::
     batch.json      what it runs and how far it got (``summary``)
     questions.json  {"questions": ...}: the questions as asked
     rows.jsonl      the rows to answer: row, id, state, labels (and the
-                    row's own questions where they differ from the shared)
+                    row's own questions where they differ from the shared;
+                    its images, by their path in this folder)
     results.jsonl   one line per row answered, in order: row, response or
                     error, latency_ms, input_tokens, truncated
+    images/...      the rows' image files, linked from the dataset's folder
+                    (as the dataset names them; hard links, else copies)
 
 ``mlx-decision run -m MODEL -q questions.json --states rows.jsonl --json``
-answers the same rows (a request ignores the fields it does not know).
+answers the same rows (a request ignores the fields it does not know; run
+in the folder, so the image paths read).
 A row's labels are the dataset's for a question asked as the dataset asks
 it (the same id, type and options).
 
@@ -50,7 +54,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..data.dataset import open_dataset
+from ..data.dataset import link_file, open_dataset
 from ..errors import DecisionError
 from ..gpu import Busy, Gpu
 from ..memory import ModelTooLargeError
@@ -312,11 +316,14 @@ class Batches:
 
         shared = asked if asked is not None else first_questions(examples, data.questions)
         lines, labelled = [], set()
+        files: dict[str, Path] = {}  # the rows' image files, by their path in the batch
         for index in picked:
             example = examples[index]
             own = example.request.get("questions") or {}
             row = {"row": index, "id": example.id}
             row.update({k: v for k, v in example.request.items() if k not in NOT_ASKED})
+            if isinstance(row.get("images"), list):
+                row["images"] = [own_image(value, data.root, files) for value in row["images"]]
             if asked is None and own and own != shared:
                 row["questions"] = own
             questions = asked if asked is not None else (own or shared)
@@ -351,6 +358,8 @@ class Batches:
             "passes": [],
         }
         try:
+            for path, source in files.items():
+                link_file(source, folder / path)
             self.files.write(folder / QUESTIONS_FILE, encode({"questions": shared}))
             self.files.write(folder / ROWS_FILE, b"".join(line(row) for row in lines))
             (folder / RESULTS_FILE).touch()
@@ -469,6 +478,11 @@ class Batches:
             info["answered"], info["errors"] = len(done), errors
             shared = await asyncio.to_thread(self.questions, batch.name)
             handle = await asyncio.to_thread(open, batch.folder / RESULTS_FILE, "ab")
+
+            def check_own(chosen: str, body: Any) -> None:
+                # The rows' images are the batch's own files: read them.
+                self.models.check(chosen, body, allow_paths=True)
+
             for row in rows:
                 if batch.stop_requested:
                     break
@@ -476,8 +490,10 @@ class Batches:
                 request.setdefault("questions", shared)
                 started = time.perf_counter()
                 try:
+                    if isinstance(request.get("images"), list):
+                        request["images"] = row_images(request["images"], batch.folder)
                     answered = await self.gpu.run(
-                        answer, self.gpu.pool, info["model"], request, self.models.check
+                        answer, self.gpu.pool, info["model"], request, check_own
                     )
                 except Busy as error:
                     state, message = "stopped", str(error)
@@ -594,6 +610,8 @@ class Batches:
         try:
             for file in (QUESTIONS_FILE, ROWS_FILE):
                 self.files.write(folder / file, (source / file).read_bytes())
+            for path in image_files_of(source):
+                link_file(source / path, folder / path)
             (folder / RESULTS_FILE).touch()
             fresh = {
                 **info,
@@ -611,6 +629,58 @@ class Batches:
             remove_folder(folder)
             raise
         return folder
+
+
+def own_image(value: Any, root: Path, files: dict[str, Path]) -> Any:
+    """A row's image as the batch keeps it: a file inside the dataset's folder
+    (``root``) by its path there, noted in ``files`` to link in; a data URL, or
+    a file elsewhere (by its whole path), as it is."""
+    if not isinstance(value, str) or value.startswith("data:"):
+        return value
+    path = Path(value)
+    try:
+        relative = path.resolve().relative_to(root.resolve())
+    except (ValueError, OSError):
+        return value  # outside the dataset's folder: read where it is
+    if not path.is_file():
+        return value  # missing: the row's answer says so
+    files[relative.as_posix()] = path
+    return relative.as_posix()
+
+
+def row_images(images: list[Any], folder: Path) -> list[Any]:
+    """A row's images for the model: paths in the batch's folder made whole;
+    a path that would leave the folder is refused (a data URL as it is)."""
+    out = []
+    for index, value in enumerate(images):
+        if (
+            isinstance(value, str)
+            and not value.startswith("data:")
+            and not Path(value).is_absolute()
+        ):
+            path = (folder / value).resolve()
+            if folder.resolve() not in path.parents:
+                raise DecisionError(
+                    "an image path leaves the batch's folder", param=f"images.{index}"
+                )
+            value = str(path)
+        out.append(value)
+    return out
+
+
+def image_files_of(folder: Path) -> list[str]:
+    """The image files a batch's rows name inside its folder (their paths there)."""
+    found = []
+    for row in read_lines(folder / ROWS_FILE):
+        for value in row.get("images") or []:
+            inside = (
+                isinstance(value, str)
+                and not value.startswith("data:")
+                and not Path(value).is_absolute()
+            )
+            if inside and (folder / value).is_file() and value not in found:
+                found.append(value)
+    return found
 
 
 def first_questions(examples, questions: dict[str, Any] | None) -> dict[str, Any]:

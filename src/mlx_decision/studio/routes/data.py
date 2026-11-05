@@ -305,7 +305,8 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         at most 40); or with ``search`` the rows whose state holds it
         (``matched`` counts them). Each row: ``index``, ``id``, ``name`` (the id
         without the prefix every id of the split shares up to a ':', such as
-        the dataset's name), ``state``, ``values``, ``labels``. 400 for a plain
+        the dataset's name), ``state``, ``values``, ``labels`` and, with
+        images, ``images`` as data URLs (``row_images``). 400 for a plain
         file (its lines hold their own questions)."""
         path, found = await read(name, split)
         if not found.dataset.folder:
@@ -509,10 +510,29 @@ def sample_rows(found: Read, seed: int, per: int, search: str | None) -> dict[st
                 "state": examples[index].request.get("state"),
                 "values": examples[index].values or {},
                 "labels": examples[index].labels,
+                **row_images(examples[index], dataset.root),
             }
             for index in picked
         ],
     }
+
+
+def row_images(example: Example, root: Path) -> dict[str, Any]:
+    """A Playground row's ``images``, as data URLs (the page sends them back to
+    run it): its files inside the dataset's folder read; none when it has no
+    images. An image that cannot be read is left out, ``missing`` counting it."""
+    images = example.request.get("images")
+    if not isinstance(images, list) or not images:
+        return {}
+    urls, missing = [], 0
+    for value in images:
+        data = image_data(value, root) if isinstance(value, str) else None
+        kind = sniff_image(data) if data else None
+        if kind is None:
+            missing += 1
+            continue
+        urls.append(f"data:{kind};base64,{base64.b64encode(data).decode()}")
+    return {"images": urls, **({"images_missing": missing} if missing else {})}
 
 
 def describe_splits(dataset: Dataset) -> list[dict[str, Any]]:

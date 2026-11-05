@@ -246,11 +246,13 @@ def report_mismatch(
 
 
 def shared_states(train: list[Example], report: list[Example]) -> int:
-    """How many examples of ``report`` have a state that is also in ``train``:
-    examples the report would score although the fit learned from them."""
+    """How many examples of ``report`` have a state (with the same images, as
+    their files or data URLs) that is also in ``train``: examples the report
+    would score although the fit learned from them."""
 
     def key(example: Example) -> str:
-        return json.dumps(example.request.get("state"), sort_keys=True)
+        images = example.request.get("images") or []
+        return json.dumps([example.request.get("state"), images], sort_keys=True, default=str)
 
     seen = {key(example) for example in train}
     return sum(1 for example in report if key(example) in seen)

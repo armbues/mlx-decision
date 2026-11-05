@@ -106,6 +106,7 @@ def check_request(
     capabilities: Capabilities,
     name: str,
     open_images: bool = False,
+    allow_paths: bool = False,
 ) -> Request:
     """Validate a request for a model with ``capabilities``, named ``name`` in the
     errors, without the model loaded: what ``DecisionModel.check`` does.
@@ -115,7 +116,9 @@ def check_request(
     tokenizer (input length) are checked only when the model answers. With
     ``open_images``, each image is also opened (its header read, not
     decoded), as the models do before answering, so an unreadable or
-    oversized image is refused here too; files are not read.
+    oversized image is refused here too; files are not read (with
+    ``allow_paths``, image paths are read and opened as well: for requests
+    the caller built, never for what a client sent).
     """
     checked, lifted = _checked(request, capabilities, name)
     if open_images:
@@ -123,7 +126,7 @@ def check_request(
 
         for index, image in enumerate(checked.images or ()):
             try:
-                open_image(image, index, allow_paths=False)
+                open_image(image, index, allow_paths=allow_paths)
             except DecisionError as error:
                 raise _in_state(error, lifted) from None
     return checked

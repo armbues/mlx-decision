@@ -185,3 +185,61 @@ def test_the_page_light_and_dark(studio, page, theme):
     expect(page.locator(".examples.rows .ex-chip")).to_have_count(8)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     shot(page, f"dataset-questions-{theme}")
+
+
+def write_pets(studio):
+    """data/pets/: six pictures (40 x 30), red and blue in turn, the question
+    in dataset.json, the state empty."""
+    import io
+
+    import PIL.Image
+
+    folder = studio.workspace / "data" / "pets"
+    (folder / "images").mkdir(parents=True)
+    rows = []
+    for i in range(6):
+        colour = "red" if i % 2 == 0 else "blue"
+        buffer = io.BytesIO()
+        PIL.Image.new("RGB", (40, 30), (220, 20, 20) if colour == "red" else (20, 20, 220)).save(
+            buffer, "PNG"
+        )
+        (folder / "images" / f"{i}.png").write_bytes(buffer.getvalue())
+        rows.append({"id": f"p{i}", "state": "", "images": [f"images/{i}.png"],
+                     "labels": {"pet": colour}})  # fmt: skip
+    (folder / "train.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    question = {"type": "choice", "instructions": "Which colour?",
+                "criteria": {"red": "Red.", "blue": "Blue."}}  # fmt: skip
+    body = {"questions": {"pet": question}, "splits": {"train": {"role": "train"}}}
+    (folder / "dataset.json").write_text(json.dumps(body))
+    return folder
+
+
+def test_an_image_datasets_rows_show_and_send_their_images(studio, page):
+    write_pets(studio)
+    open_studio(page, studio, "playground/data:pets")
+    chips = page.locator(".examples.rows .ex-chip")
+    expect(chips).to_have_count(6)
+    expect(page.locator(".thumb-open")).to_have_count(1)  # the row's picture
+    page.locator(".thumb-open").click()
+    expect(page.locator(".lightbox figcaption")).to_contain_text("40 × 30")
+    page.keyboard.press("Escape")
+    shot(page, "dataset-images-playground")
+    pick_model(page, "fake-vision")
+    page.locator(".run-btn").click()
+    expect(page.locator(".ex-grid tbody tr")).to_have_count(6, timeout=15_000)
+    history = studio.workspace / "history" / "datasets" / "pets.jsonl"
+    first = json.loads(history.read_text().splitlines()[0])
+    assert len(first["request"]["images"]) == 1  # sent with its picture
+
+
+def test_run_as_batch_on_an_image_dataset(studio, page):
+    write_pets(studio)
+    open_studio(page, studio, "datasets/pets")
+    page.locator(".centre .pane-head").get_by_role("button", name="Run as Batch…").click()
+    sheet = page.locator(".sheet")
+    sheet.locator("#batch-model").select_option("fake-vision")
+    sheet.get_by_role("button", name="Start").click()
+    expect(page).to_have_url(re.compile(r"#/batches/pets-fake-vision$"))
+    expect(page.locator(".batch-progress")).to_have_class(re.compile(r"\bdone\b"), timeout=30_000)
+    expect(page.locator(".batch-progress")).to_contain_text("6 answered")
+    expect(page.locator(".batch-progress")).not_to_contain_text("error")

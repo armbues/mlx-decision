@@ -120,14 +120,15 @@ class Models:
             self._fingerprints[name] = fingerprint(self.gpu.pool.specs[name].path)
         return self._fingerprints[name]
 
-    def check(self, name: str, body: Any) -> None:
+    def check(self, name: str, body: Any, allow_paths: bool = False) -> None:
         """``check_request`` against the model's static capabilities; raises
-        ``DecisionError`` (with ``param`` "model" when they cannot be read)."""
+        ``DecisionError`` (with ``param`` "model" when they cannot be read).
+        ``allow_paths``: image files are opened too (a batch's own rows)."""
         try:
             capabilities = self.capabilities(name)
         except (ValueError, OSError) as error:
             raise DecisionError(f"cannot read what {name} takes: {error}", param="model") from None
-        check_request(body, capabilities, name, open_images=True)
+        check_request(body, capabilities, name, open_images=True, allow_paths=allow_paths)
 
 
 class Recorder:

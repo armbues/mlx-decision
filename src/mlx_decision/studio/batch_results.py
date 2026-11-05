@@ -401,6 +401,8 @@ class Results:
         joined = self._joined(name)
         shared, entries = joined.shared, joined.entries
         examples, left_out = [], 0
+        images: dict[str, Path] = {}  # the rows' image files, linked into the dataset
+        batch_folder = self.root / name
         for entry in entries:
             if entry.result is None or entry.error is not None:
                 continue
@@ -415,6 +417,11 @@ class Results:
             request = dict(entry.request)
             if request.get("questions") == shared:
                 request["questions"] = shared  # the same object: shared in dataset.json
+            for value in request.get("images") or []:
+                if isinstance(value, str) and not value.startswith("data:"):
+                    file = batch_folder / value
+                    if not Path(value).is_absolute() and file.is_file():
+                        images[value] = file  # the same path in the new folder
             examples.append(Example(entry.id, request, labels))
         if not examples:
             raise BatchError("no row has an answer to keep as a label", param="threshold")
@@ -431,7 +438,7 @@ class Results:
         dataset = Dataset(folder, source=source)
         meta = {"role": "train", "examples": len(examples), "split": info.get("split")}
         try:
-            write_dataset(folder, dataset, [SplitOut(split, examples, meta)])
+            write_dataset(folder, dataset, [SplitOut(split, examples, meta)], files=images)
         except FileExistsError:
             raise BatchError(
                 f"a dataset named {folder.name} exists already", status=409, param="name"

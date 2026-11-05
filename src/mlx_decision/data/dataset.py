@@ -32,6 +32,7 @@ in a plain file to the file's folder; the reader makes them absolute.
 import hashlib
 import json
 import os
+import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -350,6 +351,16 @@ def check_format(path: Path, loaded: dict[str, Any]) -> None:
         )
 
 
+def link_file(source: Path, target: Path) -> None:
+    """``target`` as a hard link to ``source`` (no copy on the same disk), else
+    a copy; its folders made."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+
+
 def digest_file(digest, path: Path) -> None:
     """Add a file's bytes to ``digest`` (a missing one adds nothing: reading
     the data fails on it first)."""
@@ -573,16 +584,15 @@ def write_dataset(
     dataset: Dataset,
     splits: list[SplitOut],
     before_rename=None,
-    files: dict[str, bytes] | None = None,
+    files: dict[str, bytes | Path] | None = None,
 ):
     """Write ``dataset.json`` and the split files to a partial folder beside
     ``folder``, then rename it into place: the dataset appears whole or not at
     all. The questions go into ``dataset.json`` when every line asks the same
     ones (else each line keeps its own). ``files`` are written too, by their
-    path in the folder (the lines' images: ``images/NAME``). ``before_rename``
+    path in the folder (the lines' images: ``images/NAME``): bytes, or a file
+    linked in (``link_file``). ``before_rename``
     may raise to stop. ``FileExistsError`` when ``folder`` exists."""
-    import shutil
-
     folder = Path(folder)
     if folder.exists():
         raise FileExistsError(f"{folder} exists")
@@ -604,8 +614,11 @@ def write_dataset(
             target = partial / name
             if partial.resolve() not in target.resolve().parents:
                 raise ValueError(f"{name}: not a path inside the dataset folder")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
+            if isinstance(data, Path):
+                link_file(data, target)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
         text = json.dumps(dataset.to_json(), indent=2, ensure_ascii=False) + "\n"
         (partial / DATASET_FILE).write_text(text, encoding="utf-8")
         if before_rename is not None:
