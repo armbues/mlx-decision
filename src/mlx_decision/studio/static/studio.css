@@ -1398,6 +1398,9 @@ a.sb-item { color: var(--fg); }
 .report-table tbody th { font-weight: 400; color: var(--fg-2); }
 .report-table .r { text-align: right; }
 .report-table td b { font-weight: 600; }
+/* A mix's report per dataset */
+.source-table tbody th { color: var(--fg); white-space: nowrap; }
+.source-table td small { color: var(--fg-2); font-size: 11px; }
 .change { font-weight: 600; }
 .change.better { color: var(--green); }
 .change.worse { color: var(--red); }

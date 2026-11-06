@@ -630,7 +630,9 @@ time left, the loss where the kind reports one, and the log as
 
 The report shows, per question, Before, After and Change on the rows
 kept aside (accuracy, macro-F1, calibration error, the change in
-points), the kept epoch ("Kept epoch 3 of 4"), the calibration used
+points; for a mix, a Per dataset table follows: each dataset's
+accuracy and calibration error before and after, held-out ones
+marked), the kept epoch ("Kept epoch 3 of 4"), the calibration used
 ("Calibration (auto): temperature only."), how long it took, and
 The fitted model: its name, where it was saved (Show in Finder) and
 Same in a terminal, the command that does the same. Its buttons:
@@ -649,7 +651,7 @@ model its base, to see what the fit changed), the dataset and split
 (its evaluate split preselected), and the questions it scores. Start
 Evaluation runs `training eval` as a job that holds the GPU, loading
 the models one at a time; the report puts both models side by side with
-the differences. When the rows are the ones a fitted model learned
+the differences, on a mix also per dataset. When the rows are the ones a fitted model learned
 from, the Studio warns that the evaluation includes its training data.
 
 ## Settings

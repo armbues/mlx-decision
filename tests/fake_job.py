@@ -20,7 +20,8 @@ it does not know are ignored (the job's own arguments).
                    with a loss for the epoch kinds, then a fitted model
                    over -m at -o with its ``training.json``; with
                    ``training eval``, each model's load and scoring, then
-                   both models' results
+                   both models' results; on a mix (--data in a folder whose
+                   dataset.json has ``mix``) both say each source too
     (with ``data`` in the arguments, an -o ending in .jsonl is written as a
     file, a training example as ``data`` writes one; another -o as a dataset
     folder: ``dataset.json`` and a file per --split, or per part as --roles
@@ -112,6 +113,20 @@ def fit_script(steps: int, output: Path) -> list[dict]:
     return events
 
 
+def mix_sources() -> list[tuple[str, bool]]:
+    """The mix --data names, as (source name, held out); empty for other data."""
+    data = option("--data")
+    if not data:
+        return []
+    folder = Path(data) if Path(data).is_dir() else Path(data).parent
+    try:
+        body = json.loads((folder / "dataset.json").read_text())
+    except (OSError, ValueError):
+        return []
+    sources = (body.get("mix") or {}).get("sources") or []
+    return [(Path(s["path"]).name.removesuffix(".jsonl"), bool(s.get("held_out"))) for s in sources]
+
+
 def eval_script(steps: int) -> list[dict]:
     """The events of a ``training eval --events`` run: each model (-m, then
     --compare) loaded and scored on ``steps`` examples, then the results."""
@@ -137,6 +152,14 @@ def eval_script(steps: int) -> list[dict]:
                               "sales": {"billing": 0, "tech": 0, "sales": 3}},
             }},
         })  # fmt: skip
+        sources = {
+            source: {"team": {"n": 10, "refused": 0, "truncated": 0,
+                              "accuracy": (right - 2 * place) / 20, "macro_f1": 0.5,
+                              "ece": round(0.05 + 0.02 * place, 4)}}
+            for place, (source, _) in enumerate(mix_sources())
+        }  # fmt: skip
+        if sources:
+            results[-1]["sources"] = sources
     data = {"file": option("--data"), "sha256": "0" * 64, "examples": 20}
     events.append({"stage": "done", "metrics": {"data": data, "models": results}})
     return events
@@ -164,6 +187,13 @@ def write_fit(output: Path) -> None:
         "warnings": [],
         "seconds": {"total": 4.2},
     }  # fmt: skip
+    sources = {
+        source: {"held_out": held,
+                 "questions": {"team": {"before": BEFORE, "after": BEFORE if held else AFTER}}}
+        for source, held in mix_sources()
+    }  # fmt: skip
+    if sources:
+        report["sources"] = sources
     (output / "training.json").write_text(json.dumps(report, indent=2))
 
 

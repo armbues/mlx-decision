@@ -6,7 +6,8 @@ import json
 import re
 
 import pytest
-from drive import open_studio, shot
+from drive import open_studio, shot, start_job
+from fake_studio import fake_jobs
 
 expect = pytest.importorskip("playwright.sync_api").expect
 pytestmark = pytest.mark.browser
@@ -141,3 +142,39 @@ def test_the_fit_form_mixes_datasets_and_picks_the_mix(mixed, page):
         "seed": 0,
     }
     expect(page.locator(".sidebar")).to_be_visible()
+
+
+def test_a_fit_and_an_evaluation_on_a_mix_report_each_dataset(mixed, page):
+    fake_jobs(mixed.app, steps=5, every=0.02, fits=True)
+    open_studio(page, mixed, "training")
+    job = start_job(page, mixed, kind="fit", model="fake", data="blend", name="blend-fit",
+                    method="calibrate", seed=0)  # fmt: skip
+    page.goto(f"{mixed.base}/#/training/{job['id']}")
+    table = page.locator(".source-table")
+    expect(table).to_be_visible(timeout=20_000)
+    expect(page.locator(".source-report h3")).to_have_text("Per dataset")
+    expect(table.locator("thead th")).to_have_text(
+        ["Dataset", "Question", "Rows", "Before", "After", "Change"]
+    )
+    teams, alarms = table.locator("[data-source=teams]"), table.locator("[data-source=alarms]")
+    expect(teams.locator("td")).to_have_text(
+        ["team", "12", "50.0% / 21.0% ECE", "83.3% / 6.1% ECE", re.compile(r"\+33\.3 pts")]
+    )
+    expect(alarms.locator("th .ds-q-type")).to_have_text("Held out")
+    expect(alarms.locator("td").last).to_have_text("±0")
+    expect(page.locator(".source-report .report-note")).to_contain_text("scored, not trained on")
+    shot(page, "fit-report-mix")
+
+    job = start_job(page, mixed, kind="eval", model="fake", data="blend", split="report",
+                    compare="fake-strict")  # fmt: skip
+    page.goto(f"{mixed.base}/#/training/{job['id']}")
+    table = page.locator(".source-table")
+    expect(table).to_be_visible(timeout=20_000)
+    expect(table.locator("thead th")).to_have_text(
+        ["Dataset", "Question", "Rows", "fake", "fake-strict", "Difference"]
+    )
+    expect(table.locator("[data-source=teams] td")).to_have_text(
+        ["team", "10", "90.0% / 5.0% ECE", "70.0% / 5.0% ECE", re.compile(r"\+20\.0 pts")]
+    )
+    expect(table.locator("[data-source=alarms] td").nth(2)).to_have_text("80.0% / 7.0% ECE")
+    shot(page, "eval-report-mix")

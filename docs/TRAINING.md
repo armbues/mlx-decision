@@ -307,8 +307,13 @@ one fit on all five.
 | Laya `finetune`, alone | 96.2 | 83.6 | 43.5 | 54.2 | 53.8 |
 | Laya `finetune`, the mix | 96.2 | 85.7 | 43.0 | 54.8 | 54.6 |
 
-Every dataset in the mix is within 0.6 standard errors of its own fit,
-and SST-5 is better in the mix. The mix took about as long as the five
+In this run every dataset in the mix is within 0.6 standard errors of
+its own fit, and SST-5 is better in the mix. Three more runs of the
+d3-edge mix, as a mix folder through `training fit` with seeds 0 to 2,
+kept TREC, Offensive, ANLI-R3 and SST-5 within one standard error on
+average, but OpenBookQA came out at 65.8% against its own fit's 68.4%,
+on every seed. So a mix can cost a dataset a couple of points; the
+report per source shows it. The mix took about as long as the five
 fits one after another (10 and 11 minutes on an M5 Pro) and as much
 memory as one.
 

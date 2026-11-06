@@ -308,12 +308,55 @@ function QuestionReport({ id, entry, where }) {
   `;
 }
 
+// A mix's report per dataset: a row per dataset and question, accuracy and
+// ECE in each column (``columns``: [label, entryOf(source, question)]) and,
+// with ``change`` [from, to] (column indices) and its ``label``, the change
+// in accuracy, the ``to`` column in bold. ``held`` marks the held-out datasets.
+function SourceTable({ rows, columns, change = null, label = "Change", held = new Set(), note }) {
+  if (!rows.length) return null;
+  return html`
+    <div class="q-report source-report">
+      <h3>Per dataset</h3>
+      <table class="report-table source-table">
+        <thead><tr><th>Dataset</th><th>Question</th><th class="r">Rows</th>
+          ${columns.map(([label]) => html`<th class="r">${label}</th>`)}
+          ${change && html`<th class="r">${label}</th>`}</tr></thead>
+        <tbody>${rows.map(([source, question]) => {
+          const entries = columns.map(([, entryOf]) => entryOf(source, question));
+          const n = entries.find(Boolean)?.n ?? 0;
+          const [from, to] = change ? [entries[change[0]], entries[change[1]]] : [];
+          return html`<tr key=${`${source}/${question}`} data-source=${source}>
+            <th><code>${source}</code>${held.has(source) && html` <span class="ds-q-type">Held out</span>`}</th>
+            <td><code>${question}</code></td>
+            <td class="r num">${n.toLocaleString("en")}</td>
+            ${entries.map((entry, index) => html`<td class="r num">${change?.[1] === index ? html`<b>${percent(entry?.accuracy)}</b>` : percent(entry?.accuracy)}<small> / ${percent(entry?.ece)} ECE</small></td>`)}
+            ${change && html`<td class="r num"><${Change} before=${from?.accuracy} after=${to?.accuracy} up=${true} /></td>`}
+          </tr>`;
+        })}</tbody>
+      </table>
+      ${note && html`<p class="report-note">${note}</p>`}
+    </div>
+  `;
+}
+
 async function revealFit(id) {
   try {
     await api(`/jobs/${encodeURIComponent(id)}/reveal`, { method: "POST" });
   } catch (error) {
     toast(`Could not show it in Finder: ${error.message}`);
   }
+}
+
+// A fit on a mix: accuracy and ECE per dataset, before and after.
+function FitSources({ sources }) {
+  const rows = Object.entries(sources).flatMap(([source, info]) => Object.keys(info.questions).map((question) => [source, question]));
+  const held = new Set(Object.entries(sources).filter(([, info]) => info.held_out).map(([source]) => source));
+  const columns = [
+    ["Before", (source, question) => sources[source].questions[question].before],
+    ["After", (source, question) => sources[source].questions[question].after],
+  ];
+  const note = held.size ? "Accuracy / ECE on each dataset's report rows. A held-out dataset was scored, not trained on: what the fit does to a question outside its data." : "Accuracy / ECE on each dataset's report rows.";
+  return html`<${SourceTable} rows=${rows} columns=${columns} change=${[0, 1]} held=${held} note=${note} />`;
 }
 
 function Report({ job }) {
@@ -344,6 +387,7 @@ function Report({ job }) {
     <section class="gsec"><div class="gsec-head"><h2>Report</h2><span class="tag">scored ${where === "kept aside" ? "on the rows kept aside" : where.replace(/^in /, "on ")}, before and after the fit</span></div>
       <div class="group report-group">
         ${Object.entries(report.questions ?? {}).map(([id, entry]) => html`<${QuestionReport} id=${id} entry=${entry} where=${where} />`)}
+        ${report.sources && html`<${FitSources} sources=${report.sources} />`}
         ${training.best_epoch != null &&
         html`<p class="report-note">Kept epoch ${training.best_epoch} of ${training.epochs?.length ?? "?"}${training.stopped_early ? " (stopped early: dev loss rose)" : ""}.</p>`}
         ${calibrationNote(report.calibration)}
@@ -371,6 +415,17 @@ function Report({ job }) {
 // ---------- an evaluation's report ----------
 
 const value = (key, entry) => (entry?.[key] == null ? "–" : key === "mae" ? entry[key].toFixed(3) : percent(entry[key]));
+
+// An evaluation on a mix: accuracy and ECE per dataset, for each model.
+function EvalSources({ first, second }) {
+  const scored = second ? [first, second] : [first];
+  const sources = [...new Set(scored.flatMap((model) => Object.keys(model.sources ?? {})))];
+  const rows = sources.flatMap((source) => [...new Set(scored.flatMap((model) => Object.keys(model.sources?.[source] ?? {})))].map((question) => [source, question]));
+  const columns = scored.map((model) => [html`<code>${model.name}</code>`, (source, question) => model.sources?.[source]?.[question]]);
+  // As the tables above: the first model against the second.
+  return html`<${SourceTable} rows=${rows} columns=${columns} change=${second ? [1, 0] : null} label="Difference"
+    note="Accuracy / ECE on each dataset's rows." />`;
+}
 
 function EvalReport({ job }) {
   const [state, setState] = useState(null);
@@ -421,6 +476,7 @@ function EvalReport({ job }) {
             </details>
           </div>`;
         })}
+        ${first.sources && html`<${EvalSources} first=${first} second=${second} />`}
         ${second && html`<p class="report-note">Difference: ${first.name} against ${second.name}, in points; green where ${first.name} does better.</p>`}
       </div>
     </section>
