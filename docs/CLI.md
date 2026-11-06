@@ -29,20 +29,20 @@ refund (noul): no, p(yes) 0.110
   ███
 
 team (choice): billing, confidence 0.98
-  billing    0.989  ████████████████████████
-  technical  0.007
+  billing    0.988  ████████████████████████
+  technical  0.008
   sales      0.004
 
 anger (score): 2.05 on 1-3, confidence 0.54
    1  0.128  ███                       calm
-   2  0.695  █████████████████         annoyed
-   3  0.177  ████                      angry
+   2  0.691  █████████████████         annoyed
+   3  0.180  ████                      angry
 
 clef-flash · 291 input tokens
 ```
 
 A score's answer is the expected level, weighted by the probabilities:
-1 × 0.128 + 2 × 0.695 + 3 × 0.177 = 2.05 on a scale of 1 to 3. The text
+1 × 0.128 + 2 × 0.691 + 3 × 0.180 = 2.05 on a scale of 1 to 3. The text
 counts levels from 1, as people rate; `--json` and the API give Jev's
 value, which counts from 0 (here 1.05, levels `"0"` to `"2"`).
 
@@ -150,7 +150,7 @@ Type a state and finish it with a blank line. /help lists the commands, Ctrl-D q
 state> My card was charged twice this month.
 
 team (choice): billing, confidence 0.93
-  billing    0.951  ███████████████████████
+  billing    0.950  ███████████████████████
   technical  0.028  █
   sales      0.021  █
 

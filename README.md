@@ -61,18 +61,18 @@ mlx-decision run -m perplexity-ai/pplx-decider-flash-v1.2 \
 ```
 
 ```
-refund (noul): yes, p(yes) 0.872
+refund (noul): yes, p(yes) 0.865
   █████████████████████
 
-team (choice): billing, confidence 0.90
-  billing    0.934  ██████████████████████
-  technical  0.059  █
+team (choice): billing, confidence 0.91
+  billing    0.941  ███████████████████████
+  technical  0.052  █
   sales      0.008
 
-anger (score): 2.32 on 1-3, confidence 0.24
-   1  0.094  ██                        calm
-   2  0.492  ████████████              annoyed
-   3  0.414  ██████████                angry
+anger (score): 2.31 on 1-3, confidence 0.23
+   1  0.101  ██                        calm
+   2  0.489  ████████████              annoyed
+   3  0.410  ██████████                angry
 
 pplx-decider-flash-v1.2 · 147 input tokens
 ```
