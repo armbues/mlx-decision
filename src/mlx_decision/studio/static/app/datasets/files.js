@@ -270,7 +270,7 @@ export function deleteData(name) {
   const item = datasetOf(name);
   const folder = item?.kind === "folder";
   const where = folder ? `data/${name}/` : `data/${name}.jsonl`;
-  const splits = folder ? ` (${plural(item.splits.length, "split")})` : "";
+  const splits = item?.mix ? "" : folder ? ` (${plural(item.splits.length, "split")})` : "";
   openSheet({
     title: `Delete the dataset ${name}?`,
     // A fit or an evaluation that reads it: why Delete is off, with its Stop.
@@ -281,7 +281,9 @@ export function deleteData(name) {
             <button class="btn sm" onClick=${() => stopJob(reader.id)}>Stop ${reader.kind === "eval" ? "the Evaluation" : "the Fit"}</button></p>`
         : null;
     },
-    purpose: `The dataset ${where}${splits} is deleted${folder ? ", and the history of its questions tried in the Playground" : ""}. This cannot be undone; models fitted on it stay.`,
+    purpose: item?.mix
+      ? `The mix ${where} is deleted; the datasets it mixes stay. This cannot be undone; models fitted on it stay.`
+      : `The dataset ${where}${splits} is deleted${folder ? ", and the history of its questions tried in the Playground" : ""}. This cannot be undone; models fitted on it stay.`,
     actions: () => [
       {
         label: "Delete",
@@ -320,17 +322,22 @@ export async function revealData(name) {
 
 // What keeps a dataset from a fit, said on its row; null when it is ready.
 export const notReadyText = (item) => (item?.error ? item.error : item?.missing?.length ? `Not ready for a fit: ${item.missing.join("; ")}` : null);
+// A mix's row: what it mixes, the held-out sources said.
+const mixText = (item) => {
+  const held = item.mix.held_out.length ? ` (held out: ${item.mix.held_out.join(", ")})` : "";
+  return `${item.name}: a mix of ${item.mix.sources.join(", ")}${held}`;
+};
 // A plain file of a folder's name, which the list cannot show beside it.
 const hiddenText = (item) => (item?.hides ? `data/${item.hides} has this name too and is not listed: rename it to see it` : null);
 
 function Row({ item, picked }) {
   const open = item.name === picked;
   const problem = notReadyText(item);
-  const splits = item.kind === "folder" ? item.splits.length : 0;
+  const splits = item.kind === "folder" && !item.mix ? item.splits.length : 0; // a mix's are always three
   return html`
     <li key=${item.name} class=${open ? "open" : ""}>
       <a class="sb-item" href=${href("datasets", item.name)} aria-current=${open ? "true" : undefined}
-         title=${[problem ?? (splits > 1 ? `${item.name}: ${item.splits.map((split) => split.name).join(", ")}` : item.name), hiddenText(item)].filter(Boolean).join(" · ")}>
+         title=${[problem ?? (item.mix ? mixText(item) : splits > 1 ? `${item.name}: ${item.splits.map((split) => split.name).join(", ")}` : item.name), hiddenText(item)].filter(Boolean).join(" · ")}>
         <${icons.File} /><span class="label">${item.name}</span>
         ${problem
           ? html`<span class="mark-warn" role="img" aria-label="Not ready for a fit"><${icons.StatusIcon} kind="warn" /></span>`

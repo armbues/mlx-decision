@@ -1308,6 +1308,11 @@ a.sb-item { color: var(--fg); }
 .sheet .st-parts label { display: inline-flex; align-items: center; gap: 6px; }
 .sheet .st-parts .setting-input { width: 58px; padding: 2px 6px; }
 .ds-source dl { margin: 0; }
+/* A mix's sources: each links to its own page */
+.ds-sources dl { margin: 0; }
+.ds-sources dt a { color: var(--accent); text-decoration: none; }
+.ds-sources dt a:hover { text-decoration: underline; }
+.ds-sources > .hint { margin: 6px 2px 0; font-size: 11.5px; color: var(--fg-2); }
 .ds-siblings { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .kv dd.ds-siblings small { display: inline; color: var(--fg-2); margin: 0; }
 .ds-siblings .gone { color: var(--fg-3); text-decoration: line-through; }

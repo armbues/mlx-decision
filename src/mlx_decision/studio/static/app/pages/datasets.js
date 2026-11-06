@@ -18,7 +18,7 @@ import { openGetDataset } from "../datasets/get.js";
 import { FileGroup, Labels, Values, useSummary } from "../datasets/summary.js";
 import { ROLE_WORDS } from "../datasets/splits.js";
 import { NOT_THIS_MAC, fileSize, onThisMac, plural } from "../format.js";
-import { navigate } from "../router.js";
+import { href, navigate } from "../router.js";
 import { dataFiles, datasetOf, described, summaryKey } from "../store/data.js";
 import { inspectorMode, toast } from "../store/ui.js";
 import { evalOn } from "../training/evaluate.js";
@@ -138,6 +138,26 @@ function Source({ summary }) {
   `;
 }
 
+// A mix's sources: each with its rows in the split shown, the cap on its
+// train rows and whether it is held out; a source in data/ links to its page.
+function Sources({ summary }) {
+  const mix = summary.mix;
+  const held = mix.sources.some((source) => source.held_out);
+  return html`
+    <section class="gsec ds-sources"><div class="gsec-head"><h2>Sources</h2><span class="tag">${plural(mix.sources.length, "dataset")} · seed ${mix.seed}</span></div>
+      <div class="group"><dl>
+        ${mix.sources.map(
+          (source) => html`<div class="kv" key=${source.name} data-source=${source.name}>
+            <dt>${source.dataset ? html`<a class="mono" href=${href("datasets", source.dataset)}>${source.name}</a>` : html`<code title=${source.path}>${source.name}</code>`}</dt>
+            <dd>${plural(source.rows, "row")} in <code>${summary.split}</code>${source.cap != null ? ` · at most ${source.cap.toLocaleString("en")} train rows` : ""}${source.held_out ? html` <span class="ds-q-type">Held out</span>` : ""}</dd>
+          </div>`,
+        )}
+      </dl></div>
+      ${held && html`<p class="hint">A held-out source is scored in a fit's report but not trained on: it shows what the fit does to a question outside its data.</p>`}
+    </section>
+  `;
+}
+
 // The splits as tabs: each with its role and count.
 function SplitTabs({ name, summary }) {
   if (summary.kind !== "folder") return null;
@@ -179,7 +199,7 @@ function onIt(name, run, what) {
   openSheet({
     title: `${name} is not ready for ${what}`,
     purpose: `Missing: ${item.missing.join("; ")}. Write the questions first, then the answer each label value stands for.`,
-    ...(item.kind === "folder"
+    ...(item.kind === "folder" && !item.mix
       ? {
           actions: [
             {
@@ -222,13 +242,17 @@ function Picked({ name }) {
         <button class="btn" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => revealData(name)}>Show in Finder</button>
         <button class="btn" onClick=${() => deleteData(name)}>Delete…</button>
       </div>`}`;
-  const folder = summary.kind === "folder";
+  const mix = summary.mix;
+  const folder = summary.kind === "folder" && !mix; // a folder whose questions are its own
   const asked = summary.questions.length > 0;
+  const about = mix
+    ? `A mix of ${plural(mix.sources.length, "dataset")} · ${plural(summary.questions.length, "question")}`
+    : `${summary.kind === "folder" ? "" : `${plural(summary.examples, "row")} · `}${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}`;
   return html`
     <div class="pane-head">
       <div>
         <h1 class="mono">${name}</h1>
-        <p>${folder ? "" : `${plural(summary.examples, "row")} · `}${plural(summary.questions.length, "question")} · ${fileSize(summary.bytes)}</p>
+        <p>${about}</p>
       </div>
       <div class="actions">
         <button class="btn primary" onClick=${() => openNewBatch({ dataset: name, split: splitOf(name) })}
@@ -252,7 +276,7 @@ function Picked({ name }) {
     </div>
     <${NotReady} name=${name} summary=${summary} />
     <${SplitTabs} name=${name} summary=${summary} />
-    ${(summary.source || folder) && html`<${Source} summary=${summary} />`}
+    ${mix ? html`<${Sources} summary=${summary} />` : (summary.source || folder) && html`<${Source} summary=${summary} />`}
     <${Questions} summary=${summary} />
     <${ValuesSection} summary=${summary} />
     <${ExampleTable} summary=${summary} />

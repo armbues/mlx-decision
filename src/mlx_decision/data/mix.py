@@ -269,6 +269,19 @@ def _check_questions(folder: Path, examples: list[Example]) -> None:
             )
 
 
+def _source_splits(o: _Opened, split: str) -> list[str]:
+    """The source's splits the mix's ``split`` reads rows from."""
+    if split == "evaluate":
+        name = o.evaluate_split()
+        return [name] if name is not None else []
+    report = o.report_split()
+    if split == "train" and o.source.held_out and report is not None:
+        return []
+    if split == "report" and report is not None:
+        return [report]
+    return [o.train_split()]
+
+
 def sha256(folder: Path, mix: Mix, split: str) -> str:
     """The hash a fit records: the mix itself (sources, caps, seed) and the
     hash of every source split the mix's ``split`` reads."""
@@ -277,17 +290,44 @@ def sha256(folder: Path, mix: Mix, split: str) -> str:
         json.dumps({"mix": mix.to_json(), "split": split}, sort_keys=True).encode()
     )
     for o in open_sources(folder, mix):
-        if split == "evaluate":
-            names = [o.evaluate_split()]
-        elif split == "train" and o.source.held_out and o.report_split() is not None:
-            names = []
-        else:
-            report = o.report_split() if split == "report" else None
-            names = [report] if report is not None else [o.train_split()]
-        for name in names:
-            if name is not None:
-                digest.update(f"{o.name}:{name}:{o.dataset.sha256(name)}\n".encode())
+        for name in _source_splits(o, split):
+            digest.update(f"{o.name}:{name}:{o.dataset.sha256(name)}\n".encode())
     return digest.hexdigest()
+
+
+def files(folder: Path, mix: Mix, split: str) -> list[Path]:
+    """The files the mix's ``split`` reads (its ``dataset.json``, then each
+    source's and its split files), to tell when it changed on disk."""
+    from .dataset import DATASET_FILE
+
+    _check_split(folder, split)
+    found = [folder / DATASET_FILE]
+    for o in open_sources(folder, mix):
+        if o.dataset.folder:
+            found.append(o.dataset.path / DATASET_FILE)
+        found += [o.dataset.split_path(name) for name in _source_splits(o, split)]
+    return found
+
+
+def roots(folder: Path, mix: Mix) -> dict[str, Path]:
+    """Each source's folder its lines' image paths are inside, by its name."""
+    return {o.name: o.dataset.root for o in open_sources(folder, mix)}
+
+
+def describe(folder: Path, mix: Mix) -> list[dict[str, Any]]:
+    """Each source as a page shows it: ``name``, ``path`` (as written),
+    ``location`` (resolved), ``cap`` (the one that applies, None for every
+    row) and ``held_out``."""
+    return [
+        {
+            "name": o.name,
+            "path": o.source.path,
+            "location": str(_resolve(folder, o.source)),
+            "cap": o.source.cap if o.source.cap is not None else mix.cap,
+            "held_out": o.source.held_out,
+        }
+        for o in open_sources(folder, mix)
+    ]
 
 
 def write_mix(folder: str | Path, mix: Mix, created: str | None = None) -> Path:

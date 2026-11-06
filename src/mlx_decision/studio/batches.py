@@ -284,7 +284,12 @@ class Batches:
             asked = body.get("questions") if isinstance(body, dict) else None
             if not isinstance(asked, dict) or not asked:
                 raise BatchError(f"the set {questions_from} has no questions", param="questions")
-        elif data.folder and not data.questions and not data.first_line().get("questions"):
+        elif (
+            data.folder
+            and data.mix is None  # a mix's rows carry their sources' questions
+            and not data.questions
+            and not data.first_line().get("questions")
+        ):
             raise BatchError(
                 f"{dataset} has no questions yet: write them in the Playground or pick a "
                 "question set",
@@ -323,7 +328,9 @@ class Batches:
             row = {"row": index, "id": example.id}
             row.update({k: v for k, v in example.request.items() if k not in NOT_ASKED})
             if isinstance(row.get("images"), list):
-                row["images"] = [own_image(value, data.root, files) for value in row["images"]]
+                root = data.image_root(example)
+                prefix = f"{example.source}/" if example.source else ""  # a mix's sources apart
+                row["images"] = [own_image(value, root, files, prefix) for value in row["images"]]
             if asked is None and own and own != shared:
                 row["questions"] = own
             questions = asked if asked is not None else (own or shared)
@@ -631,10 +638,11 @@ class Batches:
         return folder
 
 
-def own_image(value: Any, root: Path, files: dict[str, Path]) -> Any:
+def own_image(value: Any, root: Path, files: dict[str, Path], prefix: str = "") -> Any:
     """A row's image as the batch keeps it: a file inside the dataset's folder
-    (``root``) by its path there, noted in ``files`` to link in; a data URL, or
-    a file elsewhere (by its whole path), as it is."""
+    (``root``) by its path there (after ``prefix``: a mix's source), noted in
+    ``files`` to link in; a data URL, or a file elsewhere (by its whole path),
+    as it is."""
     if not isinstance(value, str) or value.startswith("data:"):
         return value
     path = Path(value)
@@ -644,8 +652,9 @@ def own_image(value: Any, root: Path, files: dict[str, Path]) -> Any:
         return value  # outside the dataset's folder: read where it is
     if not path.is_file():
         return value  # missing: the row's answer says so
-    files[relative.as_posix()] = path
-    return relative.as_posix()
+    kept = prefix + relative.as_posix()
+    files[kept] = path
+    return kept
 
 
 def row_images(images: list[Any], folder: Path) -> list[Any]:

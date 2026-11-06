@@ -504,6 +504,16 @@ A dataset without questions, or with values no option stands for, has
 a banner that says what is missing, and Fit on It… and Evaluate on It…
 offer Write Questions instead of the form.
 
+A [mix](TRAINING.md#mixes-of-datasets) is a folder whose `dataset.json`
+lists other datasets. Its row's tooltip names them and the held-out
+ones. Its page shows the train, report and evaluate splits as tabs, and
+its sources with each one's rows in the split shown, its cap on train
+rows and a Held out mark; a source in `data/` links to its page. Its
+rows have ids that start with their source's name. A mix's questions
+are its sources', so it offers New Question Set from It instead of
+Write Questions; Run as Batch…, Fit on It… and Evaluate on It… read it
+as one dataset.
+
 ## Batches
 
 A batch answers a dataset's rows with a model and, where the dataset

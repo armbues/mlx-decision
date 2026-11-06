@@ -883,7 +883,8 @@ def dataset_summary(path: Path) -> dict[str, Any]:
     ``name``, ``role``, ``examples``, the source ``split``, ``sample``,
     ``part``), ``questions`` (their ids), ``missing`` (what a fit still
     needs), ``source``, ``hides`` (a plain file of the folder's name, which
-    the list cannot show beside it) and, when it does not read, ``error``."""
+    the list cannot show beside it), for a mix ``mix`` (its ``sources``'
+    names and the ``held_out`` ones) and, when it does not read, ``error``."""
     folder = path.is_dir()
     files = [p for p in path.iterdir() if p.is_file()] if folder else [path]
     stats = [p.stat() for p in files]
@@ -920,6 +921,17 @@ def dataset_summary(path: Path) -> dict[str, Any]:
     asked = dataset.questions or dataset.first_line().get("questions")
     summary["questions"] = list(asked) if isinstance(asked, dict) else []
     summary["source"] = dataset.source
+    if dataset.mix is not None:
+        from ..data import mix
+
+        try:
+            sources = mix.describe(path, dataset.mix)
+        except DecisionError:
+            sources = []  # ``missing`` says why
+        summary["mix"] = {
+            "sources": [source["name"] for source in sources],
+            "held_out": [source["name"] for source in sources if source["held_out"]],
+        }
     return summary
 
 

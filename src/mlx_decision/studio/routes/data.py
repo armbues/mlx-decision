@@ -66,6 +66,7 @@ PAGE_LIMIT = 200  # the most examples a page holds
 CACHED_FILES = 4  # splits kept read, for paging through them
 SET_EXAMPLES = 10  # examples a set made from a dataset holds
 UPLOAD_KINDS = ("csv", "jsonl")
+MIX_QUESTIONS = "{name} is a mix: its questions are its sources'; write or edit them on a source"
 
 
 class Read:
@@ -96,11 +97,11 @@ class ReadFiles:
             split = dataset.with_role("train") or next(iter(dataset.splits))
         if split not in dataset.splits:
             raise NotFound(f"{dataset.name} has no split {split!r}")
-        path = dataset.split_path(split)
+        path = dataset.split_path(split)  # a mix's is virtual: the key only
         stamps = []
-        for one in (path, location / DATASET_FILE) if dataset.folder else (path,):
+        for one in dataset.files(split):
             stat = one.stat()
-            stamps.append((stat.st_size, stat.st_mtime_ns))
+            stamps.append((str(one), stat.st_size, stat.st_mtime_ns))
         stamp = tuple(stamps)
         with self.lock:
             kept = self.kept.get(path)
@@ -176,7 +177,7 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         """One split of a dataset, described (see the module); 404 when there
         is none, 422 when it no longer reads."""
         path, found = await read(name, split)
-        summary = await asyncio.to_thread(describe, found)
+        summary = await asyncio.to_thread(describe, found, files.root / "data")
         return {"name": name, **where(path, found), **summary}
 
     @router.get("/{name}/examples")
@@ -244,10 +245,12 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         path, found = await read(name, split)
         if not 0 <= index < len(found.examples):
             raise NotFound(f"{name} has no example {index} in {found.split}")
-        images = found.examples[index].request.get("images") or []
+        chosen = found.examples[index]
+        images = chosen.request.get("images") or []
         if not 0 <= number < len(images) or not isinstance(images[number], str):
             raise NotFound(f"example {index} of {name} has no image {number}")
-        data = await asyncio.to_thread(image_data, images[number], found.dataset.root)
+        root = await asyncio.to_thread(found.dataset.image_root, chosen)
+        data = await asyncio.to_thread(image_data, images[number], root)
         if data is None:
             raise NotFound(f"example {index} of {name}: its image {number} is not in the dataset")
         if size == "thumb":
@@ -274,6 +277,8 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
             raise ApiError(400, f"{name} is a plain file: its lines hold their own questions")
         readers(name)
         dataset, _ = await asyncio.to_thread(open_dataset, path)
+        if dataset.mix is not None:
+            raise ApiError(400, MIX_QUESTIONS.format(name=name))
         questions = body.get("questions", {})
         answers = body.get("answers", {})
         loaded = field(body, "loaded", str, required=False)
@@ -311,6 +316,8 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
         path, found = await read(name, split)
         if not found.dataset.folder:
             raise ApiError(400, f"{name} is a plain file: its lines hold their own questions")
+        if found.dataset.mix is not None:
+            raise ApiError(400, MIX_QUESTIONS.format(name=name))
         if not 1 <= per <= 10:
             raise ApiError(400, "per is 1 to 10", param="per")
         digest = await asyncio.to_thread(file_hash, path / DATASET_FILE)
@@ -655,7 +662,7 @@ class BadData(ApiError):
         super().__init__(400, str(errors[0]), param="text", extra={"errors": listed})
 
 
-def describe(found: Read) -> dict[str, Any]:
+def describe(found: Read, data_dir: Path | None = None) -> dict[str, Any]:
     """What the page shows about a split: ``split``, ``splits`` (each
     ``name``, ``role``, ``examples``, the source ``split``, ``sample``,
     ``part``), ``examples`` (how many in this split), ``questions`` (per
@@ -665,7 +672,8 @@ def describe(found: Read) -> dict[str, Any]:
     ``values`` (per value column its values here as ``[value, count]`` in
     the column's order), ``columns`` (the dataset's, with names), ``answers``,
     ``missing``, ``source``, ``created`` and ``sample`` (the first few
-    examples: ``id``, a preview of the state, the labels, the values)."""
+    examples: ``id``, a preview of the state, the labels, the values); a mix
+    also ``mix`` (``describe_mix``)."""
     dataset, examples = found.dataset, found.examples
     questions: dict[str, dict[str, Any]] = {}
     counts: dict[str, Counter] = {}
@@ -705,7 +713,9 @@ def describe(found: Read) -> dict[str, Any]:
         order = list((body.get("values") or {}).keys())
         order += sorted(v for v in here if v is not None and v not in order)
         values[column] = [[value, here.get(value, 0)] for value in order]
+    extra = {"mix": describe_mix(found, data_dir)} if dataset.mix is not None else {}
     return {
+        **extra,
         "split": found.split,
         "kind": "folder" if dataset.folder else "file",
         "splits": describe_splits(dataset),
@@ -729,6 +739,44 @@ def describe(found: Read) -> dict[str, Any]:
             for index, example in enumerate(examples[:SAMPLE])
         ],
     }
+
+
+def describe_mix(found: Read, data_dir: Path | None) -> dict[str, Any]:
+    """A mix's ``seed``, ``cap`` and ``sources``: each ``name``, ``path`` (as
+    written), ``cap`` (the one that applies), ``held_out``, ``rows`` (its rows
+    in the split shown) and ``dataset`` (its name in the workspace's
+    ``data/``, when it is one there, else None)."""
+    from ...data import mix
+
+    dataset = found.dataset
+    counts = Counter(example.source for example in found.examples)
+    sources = []
+    for source in mix.describe(dataset.path, dataset.mix):
+        location = Path(source.pop("location"))
+        sources.append(
+            {
+                **source,
+                "rows": counts.get(source["name"], 0),
+                "dataset": workspace_name(location, data_dir),
+            }
+        )
+    return {"seed": dataset.mix.seed, "cap": dataset.mix.cap, "sources": sources}
+
+
+def workspace_name(location: Path, data_dir: Path | None) -> str | None:
+    """The name in ``data_dir`` of the dataset at ``location`` (``data/NAME/``,
+    ``data/NAME.jsonl`` or a split file ``data/NAME/SPLIT.jsonl``), or None."""
+    if data_dir is None:
+        return None
+    try:
+        parts = location.resolve().relative_to(data_dir.resolve()).parts
+    except (ValueError, OSError):
+        return None
+    if len(parts) == 1:
+        return parts[0].removesuffix(".jsonl")
+    if len(parts) == 2 and parts[1].endswith(".jsonl"):
+        return parts[0]
+    return None
 
 
 def set_from(examples: list[Example]) -> dict[str, Any]:
@@ -772,7 +820,8 @@ def where(path: Path, found: Read) -> dict[str, Any]:
     """The dataset's ``path`` (its folder or file), the same with the home folder
     as ``~`` (``display``), the split's file (``file``) and its size
     (``bytes``)."""
-    file = found.dataset.split_path(found.split)
+    dataset = found.dataset
+    file = dataset.path / DATASET_FILE if dataset.mix else dataset.split_path(found.split)
     return {
         "path": str(path),
         "display": tilde(str(path)),

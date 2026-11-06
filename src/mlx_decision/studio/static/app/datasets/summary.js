@@ -118,7 +118,9 @@ export function FileGroup({ summary }) {
     <section class="igroup file-group"><h4>${folder ? "Folder" : "File"}</h4><dl>
       <div class="kv"><dt>Path</dt><dd><code title=${summary.path}>${summary.display}${folder ? "/" : ""}</code>
         <button class="btn sm" disabled=${!onThisMac} title=${onThisMac ? null : NOT_THIS_MAC} onClick=${() => revealData(summary.name)}>Show in Finder</button></dd></div>
-      ${folder && html`<div class="kv"><dt>Split</dt><dd><code>${summary.split}.jsonl</code></dd></div>`}
+      ${summary.mix
+        ? html`<div class="kv"><dt>File</dt><dd><code>dataset.json</code> <span class="hint">lists the sources; their rows stay in theirs</span></dd></div>`
+        : folder && html`<div class="kv"><dt>Split</dt><dd><code>${summary.split}.jsonl</code></dd></div>`}
       <div class="kv"><dt>Size</dt><dd>${fileSize(summary.bytes)}</dd></div>
       <div class="kv"><dt>Used by</dt><dd>
         <code>mlx-decision training fit -m MODEL --data ${path}</code>

@@ -105,6 +105,8 @@ class Dataset:
     extra: dict[str, Any] = field(default_factory=dict)
     # A mix of other datasets (``mix.py``): its splits are read from theirs.
     mix: Mix | None = None
+    # A mix's sources' folders by name, found once (``image_root``).
+    _roots: dict[str, Path] | None = field(default=None, repr=False, compare=False)
 
     @property
     def name(self) -> str:
@@ -317,6 +319,27 @@ class Dataset:
         for image in self._image_files(path):
             digest_file(digest, image)
         return digest.hexdigest()
+
+    def files(self, split: str | None = None) -> list[Path]:
+        """The files reading ``split`` opens (a mix: its own and its sources'),
+        to tell when it changed on disk."""
+        if self.mix is not None:
+            from . import mix
+
+            return mix.files(self.path, self.mix, split or "train")
+        path = self.split_path(split or next(iter(self.splits)))
+        return [path, self.path / DATASET_FILE] if self.folder else [path]
+
+    def image_root(self, example: Example) -> Path:
+        """The folder ``example``'s image paths are inside: ``root``, for a mix
+        its source's."""
+        if self.mix is None or example.source is None:
+            return self.root
+        if self._roots is None:
+            from . import mix
+
+            self._roots = mix.roots(self.path, self.mix)
+        return self._roots.get(example.source, self.root)
 
     def _image_files(self, path: Path) -> list[Path]:
         """The image files the lines of ``path`` name, in order."""
