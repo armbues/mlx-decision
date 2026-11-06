@@ -188,7 +188,7 @@ def main() -> None:
         help="fit a preset on another split (e.g. anli-r3=dev_r3); repeatable",
     )
     fit_parser.add_argument("--seed", type=int, default=0)
-    fit_parser.add_argument("--epochs", type=int, default=3, help="head and finetune kinds")
+    fit_parser.add_argument("--epochs", type=int, help="epochs (default: the kind's, 3, lora 2)")
     fit_parser.add_argument("--no-early-stop", action="store_true", help="train every epoch")
     fit_parser.add_argument("--name", help="the run's name in the report (default: the folder)")
     fit_parser.add_argument("--estimate", action="store_true", help="print the estimate only")
