@@ -246,12 +246,18 @@ def _question_kinds(examples: list[Example]) -> dict[str, tuple]:
 
 
 def report_mismatch(
-    train: list[Example], report: list[Example], train_name: str, report_name: str
+    train: list[Example],
+    report: list[Example],
+    train_name: str,
+    report_name: str,
+    more: bool = False,
 ) -> str | None:
     """Why ``report`` cannot score a fit on ``train``: other labelled questions,
-    or the same question with another type or other options; None when it can."""
+    or the same question with another type or other options; None when it can.
+    ``more``: the report may label questions the training data does not (a
+    mix's report split, with its held-out sources' questions)."""
     ours, theirs = _question_kinds(train), _question_kinds(report)
-    if set(ours) != set(theirs):
+    if set(ours) != set(theirs) and not (more and set(ours) <= set(theirs)):
         return (
             f"{report_name} labels other questions than {train_name}: "
             f"{', '.join(sorted(theirs)) or 'none'} against {', '.join(sorted(ours))}"

@@ -1308,6 +1308,15 @@ a.sb-item { color: var(--fg); }
 .sheet .st-parts label { display: inline-flex; align-items: center; gap: 6px; }
 .sheet .st-parts .setting-input { width: 58px; padding: 2px 6px; }
 .ds-source dl { margin: 0; }
+/* Mix Datasets…: a row per dataset, picked, its cap and Held out */
+.sheet .mix-table .st-head, .sheet .mix-table .st-row { grid-template-columns: minmax(0, 1fr) 80px 110px 64px; }
+.sheet .mix-table .st-name.check { display: flex; align-items: center; gap: 8px; }
+.sheet .mix-table .setting-input { width: 100px; padding: 2px 6px; }
+.sheet .mix-table input:disabled { opacity: 0.4; }
+.sheet .mix-form { margin-top: 12px; }
+.sheet .mix-form .line { display: flex; align-items: center; gap: 8px; }
+.sheet .mix-form .setting-input { width: 90px; padding: 2px 6px; }
+.sheet .mix-form .setting-input.mix-name { width: 200px; }
 /* A mix's sources: each links to its own page */
 .ds-sources dl { margin: 0; }
 .ds-sources dt a { color: var(--accent); text-decoration: none; }

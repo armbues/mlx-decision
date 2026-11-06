@@ -266,3 +266,16 @@ def test_data_without_sources_reports_none(sources, tmp_path):
     assert "per source" not in format_fit(result.report, str(result.path))
     evaluated = evaluate(base, sources / "tickets")
     assert evaluated.models[0].sources == {} and "sources" not in evaluated.models[0].as_json()
+
+
+def test_the_studios_command_line_reads_the_mixs_split_files(sources, tmp_path):
+    """The Studio names a mix's splits as files that are not there."""
+    folder = mix_folder(sources, THREE)
+    base = write_model(tmp_path / "base")
+    result = CliRunner().invoke(app, [
+        "training", "fit", "-m", str(base), "--data", str(folder / "train.jsonl"),
+        "--validation", str(folder / "report.jsonl"), "-o", str(tmp_path / "fitted"),
+    ])  # fmt: skip
+    assert result.exit_code == 0, result.output
+    written = json.loads((tmp_path / "fitted" / "training.json").read_text())
+    assert written["sources"]["moods"]["held_out"] is True

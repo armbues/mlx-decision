@@ -13,7 +13,8 @@ fitted model's default name. With ``report`` (a dataset and its
 ``report_split``, by default its report split; the same dataset's other
 split too) the report is scored on that split instead of a share of
 ``data``: refused when
-it labels other questions (ids, types, options), and a warning when
+it labels other questions (ids, types, options; a mix's own report split
+may add its held-out sources' questions), and a warning when
 examples of it have a state that is also in ``data``. The fit itself is a job (``POST
 /studio/api/jobs`` with ``kind`` "fit").
 """
@@ -113,6 +114,7 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
         picked = pick_split(files, body, "data", "train", "split")
         data_name, data = picked.name, picked.path
         report_name, report, report_split = None, None, None
+        own_report = False  # a mix's own report split: its held-out sources' questions too
         if body.get("report") is not None:
             other = pick_split(files, body, "report", "report")
             report_name, report, report_split = other.name, other.path, other.split
@@ -120,6 +122,7 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
                 raise ApiError(400, "report on another split than the one to train on", "report")
             if other.dataset.folder:
                 report_name = f"{other.name} ({other.split})"
+            own_report = picked.dataset.mix is not None and other.name == picked.name
         holdout = field(body, "holdout", (int, float), required=False)
         holdout = DEFAULT_HOLDOUT if holdout is None else float(holdout)
         if not HOLDOUT_MIN <= holdout <= HOLDOUT_MAX:
@@ -139,7 +142,11 @@ def training_router(gpu: Gpu, files: Workspace, max_body_bytes: int) -> APIRoute
             )
             if prepared.held is not None:
                 why = report_mismatch(
-                    prepared.source.examples, prepared.held.examples, data_name, report_name
+                    prepared.source.examples,
+                    prepared.held.examples,
+                    data_name,
+                    report_name,
+                    more=own_report,
                 )
                 if why:
                     raise ReportMismatch(why)

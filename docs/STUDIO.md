@@ -598,7 +598,13 @@ The form, from top to bottom:
   (rows to train on; rows to tune on, which pick the best epoch and
   tell when to stop early; rows kept aside for the report);
   the labels with their counts, and warnings such as too few examples
-  for an option.
+  for an option. Mix Datasets… picks several ready datasets into a
+  [mix](TRAINING.md#mixes-of-datasets): each with an optional cap on
+  its train rows and a Held out mark (scored in the report, not trained
+  on), a cap for the others (2,000 to start with), a seed and a name.
+  Save Mix writes it to `data/` and picks it; its report split holds
+  every dataset, held-out ones included, and the fit's report shows
+  each one.
 - **Base model**: the model to fit (for an image dataset, one that
   reads images; the plan refuses others).
 - **Method**: the kinds the base model's family can learn, each a card

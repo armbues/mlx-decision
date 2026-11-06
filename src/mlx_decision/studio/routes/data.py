@@ -52,7 +52,14 @@ from ...types import parse_request
 from ..jobs import Jobs
 from ..security import on_this_mac
 from ..thumbnails import thumbnail
-from ..workspace import Conflict, NotFound, Workspace, WorkspaceError, check_name
+from ..workspace import (
+    Conflict,
+    NotFound,
+    Workspace,
+    WorkspaceError,
+    check_name,
+    dataset_summary,
+)
 from . import ApiError, field, json_body
 from .datasets import describe_table
 from .sets import reveal
@@ -171,6 +178,18 @@ def data_router(files: Workspace, jobs: Jobs, max_body_bytes: int) -> APIRouter:
             return await asyncio.to_thread(describe_table, table)
         except SourceError as error:
             raise ApiError(422, str(error), param="text") from None
+
+    @router.post("/mix", status_code=201)
+    async def new_mix(request: Request):
+        """``{name, sources: [{name, cap, held_out}], cap, seed}`` -> the new mix
+        as the list shows it (``dataset_summary``): ``data/NAME/dataset.json``
+        listing the workspace's datasets ``sources`` names. 400 for a name or a
+        cap that cannot be, fewer than two sources or every one held out; 404
+        for a source that is not there; 409 for a name taken; 422 for a source
+        a mix cannot hold (another mix)."""
+        body = await json_body(request, max_body_bytes)
+        folder = await asyncio.to_thread(save_mix, files, body)
+        return await asyncio.to_thread(dataset_summary, folder)
 
     @router.get("/{name}")
     async def describe_data(name: str, split: str | None = None):
@@ -593,6 +612,50 @@ def save_rows(files: Workspace, name: str, text: str, kind: str, columns: dict) 
             if (conflict := files.data_conflict(name)) is not None:
                 raise Conflict(conflict)
             shutil.move(str(staged), folder)
+    files.changed("data", name, "saved")
+    return folder
+
+
+def save_mix(files: Workspace, body: dict) -> Path:
+    """Write the mix ``body`` asks for into ``data/`` (see ``new_mix``)."""
+    from ...data.mix import parse_mix, write_mix
+
+    name = field(body, "name", str)
+    try:
+        check_name(name, "a mix's name")
+    except WorkspaceError as error:
+        raise ApiError(400, error.message, param="name") from None
+    picked = body.get("sources")
+    if not isinstance(picked, list) or len(picked) < 2:
+        raise ApiError(400, "a mix needs two datasets or more", param="sources")
+    sources = []
+    for index, source in enumerate(picked):
+        if not isinstance(source, dict) or not isinstance(source.get("name"), str):
+            raise ApiError(400, f"sources[{index}] needs the name of a dataset", param="sources")
+        try:
+            location = files.dataset_location(check_name(source["name"], "a dataset's name"))
+        except NotFound:
+            raise ApiError(404, f"no dataset is named {source['name']}", param="sources") from None
+        except WorkspaceError as error:
+            raise ApiError(400, error.message, param="sources") from None
+        entry = {"path": f"../{location.name}", "held_out": source.get("held_out", False)}
+        if source.get("cap") is not None:
+            entry["cap"] = source["cap"]
+        sources.append(entry)
+    described = {"sources": sources, "cap": body.get("cap"), "seed": body.get("seed", 0)}
+    folder = files.dataset_folder(name)
+    try:
+        mix = parse_mix(folder / DATASET_FILE, described)
+    except DecisionError as error:
+        message = str(error).removeprefix(f"{folder / DATASET_FILE}: ")
+        raise ApiError(400, message, param="sources") from None
+    with files.lock:
+        if (conflict := files.data_conflict(name)) is not None:
+            raise Conflict(conflict)
+        try:
+            write_mix(folder, mix, created=datetime.now(UTC).isoformat(timespec="seconds"))
+        except DecisionError as error:
+            raise ApiError(422, str(error).removeprefix(f"{folder}: "), param="sources") from None
     files.changed("data", name, "saved")
     return folder
 

@@ -65,7 +65,9 @@ All notable changes to this project are documented here. The format follows
   source (`--json` and Python: each model's `sources`). The Studio's
   Datasets page shows a mix with its sources (rows per split, caps, the
   held-out ones, links to them), and batches, fits and evaluations
-  read it as one dataset.
+  read it as one dataset. New Fit's Mix Datasets… makes one: several
+  datasets, a cap per dataset and for the others, held-out marks, a
+  seed and a name.
 - A `finetune`, `head` or `lora` fit warns that it changes the answers
   to questions outside its data too, without a new calibration, and
   that a mix keeps a question. [Training](docs/TRAINING.md#mixes-of-datasets)

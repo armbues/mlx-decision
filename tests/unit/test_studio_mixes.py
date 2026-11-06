@@ -120,3 +120,60 @@ def test_the_fit_plan_reads_a_mix_as_one_dataset(studio):
     planned = studio.post("/studio/api/fit/plan", json={"model": "eyes", "data": "both"})
     assert planned.status_code == 200, planned.text
     assert planned.json()["splits"]["examples"] == 5
+
+
+# A new mix
+
+
+def new_mix(studio, **body):
+    return studio.post("/studio/api/data/mix", json=body)
+
+
+def test_a_new_mix_lists_the_workspaces_datasets(studio):
+    sources = [{"name": "pets"}, {"name": "more", "held_out": True, "cap": 3}]
+    made = new_mix(studio, name="pair", cap=4, seed=2, sources=sources)
+    assert made.status_code == 201, made.text
+    assert made.json()["name"] == "pair"
+    assert made.json()["mix"] == {"sources": ["pets", "more"], "held_out": ["more"]}
+    body = json.loads((studio.data / "pair" / DATASET_FILE).read_text())
+    assert body["format"] == 2 and "created" in body
+    assert body["mix"] == {"sources": [{"path": "../pets"},
+                                       {"path": "../more", "cap": 3, "held_out": True}],
+                           "cap": 4, "seed": 2}  # fmt: skip
+    assert not list((studio.data / "pair").glob(".*"))  # no staged file left
+    train = studio.get("/studio/api/data/pair?split=train").json()
+    assert {s["name"]: s["rows"] for s in train["mix"]["sources"]} == {"pets": 3, "more": 0}
+    planned = studio.post("/studio/api/fit/plan", json={"model": "eyes", "data": "pair"})
+    assert planned.status_code == 200, planned.text
+
+
+def test_a_plain_file_is_a_source_by_its_file(studio):
+    line = {"state": "s", "questions": {"q": {"type": "noul"}}, "labels": {"q": True}}
+    (studio.data / "notes.jsonl").write_text(json.dumps(line) + "\n")
+    made = new_mix(studio, name="pair", sources=[{"name": "pets"}, {"name": "notes"}])
+    assert made.status_code == 201, made.text
+    body = json.loads((studio.data / "pair" / DATASET_FILE).read_text())
+    assert [s["path"] for s in body["mix"]["sources"]] == ["../pets", "../notes.jsonl"]
+
+
+def two(first="pets", second="more", held=False, **body):
+    sources = [{"name": first, "held_out": held}, {"name": second, "held_out": held}]
+    return {"name": "pair", "sources": sources, **body}
+
+
+@pytest.mark.parametrize(
+    ("body", "status", "message"),
+    [
+        ({"name": "pair", "sources": [{"name": "pets"}]}, 400, "two datasets or more"),
+        (two(name=".x"), 400, "a mix's name"),
+        (two(second="gone"), 404, "no dataset is named gone"),
+        (two(cap=0), 400, "cap must be"),
+        (two(held=True), 400, "every source of the mix is held out"),
+        (two(name="pets"), 409, "exists already"),
+        (two(second="both"), 422, "is a mix itself"),
+    ],
+)
+def test_a_mix_that_cannot_be_says_why(studio, body, status, message):
+    made = new_mix(studio, **body)
+    assert made.status_code == status and message in made.text, made.text
+    assert not (studio.data / "pair").exists()

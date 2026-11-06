@@ -343,5 +343,8 @@ def write_mix(folder: str | Path, mix: Mix, created: str | None = None) -> Path:
     body: dict[str, Any] = {"format": MIX_FORMAT, "mix": mix.to_json()}
     if created is not None:
         body["created"] = created
-    (folder / DATASET_FILE).write_text(json.dumps(body, indent=1, ensure_ascii=False) + "\n")
+    # Written whole, then renamed: a folder is a dataset once its file is there.
+    staged = folder / f".{DATASET_FILE}.partial"
+    staged.write_text(json.dumps(body, indent=1, ensure_ascii=False) + "\n")
+    staged.replace(folder / DATASET_FILE)
     return folder

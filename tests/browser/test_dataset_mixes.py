@@ -103,3 +103,41 @@ def test_a_mix_light_and_dark(mixed, page, theme):
     centre = page.locator(".centre")
     assert centre.evaluate("e => e.scrollWidth <= e.clientWidth")
     shot(page, f"datasets-mix-{theme}")
+
+
+def test_the_fit_form_mixes_datasets_and_picks_the_mix(mixed, page):
+    open_studio(page, mixed, "training")
+    form = page.locator(".fit-form")
+    expect(form.locator("#fit-data")).to_have_value("alarms")  # the first
+    form.get_by_role("button", name="Mix Datasets…").click()
+    sheet = page.locator(".sheet")
+    expect(sheet.locator("h2")).to_have_text("Mix Datasets")
+    # Ready datasets that are not mixes, alarms (the form's) picked to start with.
+    rows = sheet.locator(".mix-table .st-row")
+    expect(rows.locator("code")).to_have_text(["alarms", "teams", "tickets"])
+    expect(sheet.get_by_label("Mix alarms")).to_be_checked()
+    save = sheet.get_by_role("button", name="Save Mix")
+    expect(save).to_be_disabled()
+    expect(sheet.locator(".warn-text")).to_have_text("Pick two datasets or more")
+    sheet.get_by_label("Mix teams").check()
+    sheet.get_by_label("Hold out alarms").check()
+    sheet.get_by_label("Cap of teams").fill("12")
+    expect(sheet.get_by_label("Cap of alarms")).to_have_attribute("placeholder", "2,000")
+    expect(sheet.locator("#mix-name")).to_have_value("mix")
+    shot(page, "fit-mix-sheet")
+    save.click()
+    expect(sheet).to_have_count(0)
+    expect(form.locator("#fit-data")).to_have_value("mix")
+    expect(form).to_contain_text("A mix of alarms, teams; held out: alarms. The report shows each")
+    # The report is the mix's report split: a fifth of teams' 12 and of alarms' 10.
+    expect(form.locator(".split-legend")).to_contain_text("4 in report for the report")
+    body = json.loads((mixed.workspace / "data" / "mix" / "dataset.json").read_text())
+    assert body["mix"] == {
+        "sources": [
+            {"path": "../alarms.jsonl", "held_out": True},
+            {"path": "../teams.jsonl", "cap": 12},
+        ],
+        "cap": 2000,
+        "seed": 0,
+    }
+    expect(page.locator(".sidebar")).to_be_visible()

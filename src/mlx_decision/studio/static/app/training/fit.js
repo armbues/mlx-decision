@@ -21,6 +21,7 @@ import { NO_MODELS, NoModels } from "../components/no-models.js";
 import { batches } from "../store/batches.js";
 import { loadedNames, models, status } from "../store/status.js";
 import { toast } from "../store/ui.js";
+import { openMix } from "./mix.js";
 
 const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$/;
 
@@ -408,7 +409,13 @@ export function FitForm() {
             </select>
             ${result && result.data === data && html`<span class="hint num">${dataItem.value?.kind === "folder" ? `its ${result.split} split: ` : ""}${plural(result.splits.examples, "row")}</span>`}
             ${data && html`<a class="hint-link" href=${href("datasets", data)}>Show in Datasets</a>`}
+            <button class="btn sm" title="Pick several datasets into a mix, for one fit on all of them"
+                    onClick=${() => openMix({ first: data, onSaved: (made) => (chosenData.value = made) })}>Mix Datasets…</button>
           </div></div>
+          ${dataItem.value?.mix &&
+          html`<div class="row"><label></label><span class="hint">A mix of ${dataItem.value.mix.sources.join(", ")}${
+            dataItem.value.mix.held_out.length ? html`; held out: ${dataItem.value.mix.held_out.join(", ")}` : ""
+          }. The report shows each dataset.</span></div>`}
           ${notReadyData.value &&
           html`<p class="warn-text">${notReadyData.value}${
             dataItem.value?.kind === "folder" && !dataItem.value?.error
