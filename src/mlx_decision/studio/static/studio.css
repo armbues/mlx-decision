@@ -983,6 +983,7 @@ a.sb-item { color: var(--fg); }
 .sheet .notice { display: flex; gap: 8px; padding: 9px 11px; border-radius: 8px; background: var(--orange-fill); font-size: 12px; }
 .sheet .notice.info { background: var(--fill); }
 .sheet .notice .ic { width: 14px; height: 14px; color: var(--orange); flex: none; margin-top: 1px; }
+.sheet .teacher-note { margin: 10px 0 0; }
 .sheet .notice.info .ic { color: var(--fg-2); }
 .sheet .checking { display: flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: 12px; }
 .sheet .checking .ic { width: 14px; height: 14px; color: var(--accent); animation: spin 0.9s linear infinite; }

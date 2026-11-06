@@ -31,6 +31,14 @@ def soft_label(answer: Mapping[str, Any]) -> Any:
     return {key: float(value) for key, value in answer["probabilities"].items()}
 
 
+def target(answer: Mapping[str, Any]) -> dict[str, float]:
+    """An answer's distribution as ``Example.targets`` holds a soft label:
+    option id (a level as its key, "true" / "false") to probability."""
+    if answer["type"] == "noul":
+        return {"true": float(answer["noul"]), "false": 1 - float(answer["noul"])}
+    return {key: float(value) for key, value in answer["probabilities"].items()}
+
+
 def hard_label(answer: Mapping[str, Any]) -> Any:
     """An answer as a hard label: true or false, the option, the level."""
     if answer["type"] == "noul":

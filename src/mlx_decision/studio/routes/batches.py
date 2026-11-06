@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
+from ...training.teacher import LABELS, Teacher, describe_teacher
 from ..batch_results import PAGE, UNSURE, Results
 from ..batches import Batch, Batches
 from ..security import on_this_mac
@@ -149,15 +150,35 @@ def batches_router(
         files.changed("batches", name, "deleted")  # every tab's list
         return {"deleted": name}
 
+    def teacher_of(name: str) -> Teacher:
+        """The batch's model as a teacher: what its folder says, or its name
+        alone when it is no longer listed."""
+        model = batches.get(name).get("model")
+        spec = batches.gpu.pool.specs.get(model)
+        return describe_teacher(spec.path, model) if spec is not None else Teacher(model or name)
+
+    @router.get("/{name}/teacher")
+    async def teacher(name: str):
+        """``{teacher, measured, note}`` (``Results.teacher``): the batch's model
+        as a teacher, for Save Answers as a Dataset to say what its students
+        inherit."""
+        found = await asyncio.to_thread(teacher_of, name)
+        return await asyncio.to_thread(results.teacher, name, found)
+
     @router.post("/{name}/dataset", status_code=201)
     async def save_dataset(name: str, request: Request):
-        """``{name, threshold}`` -> ``{dataset: {name, examples, left_out, split}}``:
-        the answers saved as a dataset in ``data/``."""
+        """``{name, threshold, labels}`` -> ``{dataset: {name, examples,
+        left_out, split, labels, note}}``: the answers saved as a dataset in
+        ``data/``, as soft labels (``labels`` soft, the default) or top answers
+        (hard)."""
         body = await json_body(request, max_body_bytes)
         target = field(body, "name", str)
         threshold = field(body, "threshold", (int, float), required=False)
         if threshold is not None and not 0 <= threshold <= 1:
             raise ApiError(400, "threshold is between 0 and 1", param="threshold")
+        labels = field(body, "labels", str, required=False) or "soft"
+        if labels not in LABELS:
+            raise ApiError(400, "labels are soft or hard", param="labels")
         running = batches.running
         if running is not None and running.name.casefold() == name.casefold():
             raise ApiError(409, f"{name} is running: stop it or wait until it is done")
@@ -165,7 +186,10 @@ def batches_router(
         if (conflict := await asyncio.to_thread(files.data_conflict, target)) is not None:
             raise ApiError(409, conflict, param="name")
         folder = files.dataset_folder(target)
-        saved = await asyncio.to_thread(results.save_dataset, name, folder, threshold)
+        found = await asyncio.to_thread(teacher_of, name)
+        saved = await asyncio.to_thread(
+            results.save_dataset, name, folder, threshold, labels, found
+        )
         files.changed("data", target, "saved")
         return {"dataset": saved}
 

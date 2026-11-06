@@ -19,6 +19,7 @@ from mlx_decision.metrics import metrics, record
 from mlx_decision.pool import ModelPool, discover
 from mlx_decision.studio import create_studio
 from mlx_decision.studio.routes.batches import BatchMessages
+from mlx_decision.training import fit
 
 HERE = "http://127.0.0.1:8000"
 API = "/studio/api/batches"
@@ -186,12 +187,17 @@ def test_the_answers_saved_as_a_dataset_train_a_fit(studio):
     wait(studio, name)
     saved = studio.post(f"{API}/{name}/dataset", json={"name": "tweets-by-fake"})
     assert saved.status_code == 201
-    assert saved.json()["dataset"] == {
+    body = saved.json()["dataset"]
+    note = body.pop("note")
+    assert body == {
         "name": "tweets-by-fake",
         "examples": 12,
         "left_out": 0,
         "split": "train",
+        "labels": "soft",
     }
+    # fake answers the labelled rows badly: its students would inherit that.
+    assert note.startswith("fake's probabilities are off on the labelled rows (ECE topic")
     folder = studio.data / "tweets-by-fake"
     dataset, _ = open_dataset(folder)
     assert dataset.missing() == []
@@ -205,6 +211,19 @@ def test_the_answers_saved_as_a_dataset_train_a_fit(studio):
     }
     examples = read_for(folder, "train").examples
     assert [e.labels["topic"] for e in examples] == [answers[i] for i in range(12)]
+    # Soft labels by default: each answer's distribution.
+    probabilities = {
+        r["row"]: r["response"]["answers"]["topic"]["probabilities"]
+        for r in studio.app_state.batches.results(name)
+    }
+    for i, example in enumerate(examples):
+        assert example.targets["topic"] == pytest.approx(probabilities[i], abs=1e-6)
+    assert dataset.source["labels"] == "soft" and dataset.source["teacher"] == {"name": "fake"}
+    assert dataset.source["note"] == note and "topic" in dataset.source["measured"]
+    # A fit takes the soft labels.
+    base = studio.app_state.gpu.pool.specs["fake"].path
+    fitted = fit(base, folder, output=studio.data.parent / "taught", holdout=0.25)
+    assert fitted.metrics["topic"]["after"]["n"] == 3
     assert [e.id for e in examples] == [f"train/{i}" for i in range(12)]
     listed = [item["name"] for item in studio.get("/studio/api/data").json()["files"]]
     assert "tweets-by-fake" in listed
@@ -217,6 +236,26 @@ def test_the_answers_saved_as_a_dataset_train_a_fit(studio):
     assert (
         studio.post(f"{API}/{name}/dataset", json={"name": "x", "threshold": 2}).status_code == 400
     )
+
+
+def test_hard_labels_are_the_top_answers(studio):
+    name = started(studio, split="train")
+    wait(studio, name)
+    saved = studio.post(f"{API}/{name}/dataset", json={"name": "hard", "labels": "hard"})
+    assert saved.status_code == 201 and saved.json()["dataset"]["labels"] == "hard"
+    examples = read_for(studio.data / "hard", "train").examples
+    assert all(example.targets is None for example in examples)
+    bad = studio.post(f"{API}/{name}/dataset", json={"name": "x", "labels": "both"})
+    assert bad.status_code == 400 and bad.json()["error"]["param"] == "labels"
+
+
+def test_the_teacher_says_what_its_students_inherit(studio):
+    name = started(studio, split="train")
+    wait(studio, name)
+    about = studio.get(f"{API}/{name}/teacher").json()
+    assert about["teacher"] == {"name": "fake"}
+    assert set(about["measured"]) == {"topic"}
+    assert about["note"].startswith("fake's probabilities are off on the labelled rows")
 
 
 def test_a_threshold_keeps_only_the_sure_answers(studio):

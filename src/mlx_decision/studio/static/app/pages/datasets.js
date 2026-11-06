@@ -131,6 +131,13 @@ function Source({ summary }) {
           ${source.preset && html`The <b>${source.preset}</b> preset: `}${source.source === "upload" ? "A file you added" : html`<code>${repo}</code>`}${hub ? " on the Hugging Face Hub" : ""}${source.config ? html`, subset <code>${source.config}</code>` : ""}
           ${source.revision && html`<small>At commit <code>${source.revision.slice(0, 7)}</code></small>`}
         </dd></div>`}
+        ${source.teacher &&
+        html`<div class="kv" data-kv="teacher"><dt>Labels</dt><dd>
+          ${source.labels === "hard" ? "The top answers" : "The probabilities"} of <code>${source.teacher.name}</code>${
+            source.teacher.base ? html`, fitted on <code>${source.teacher.base}</code>` : ""
+          }${source.threshold != null ? `, where it was at least ${Math.round(source.threshold * 100)}% sure` : ""}
+          ${source.note && html`<small class="warn-text">${source.note}.</small>`}
+        </dd></div>`}
         ${(meta.part || meta.sample) &&
         html`<div class="kv"><dt>This split</dt><dd><code>${summary.split}</code>${meta.split && meta.split !== summary.split ? html` from <code>${meta.split}</code>` : ""}: ${taken}</dd></div>`}
       </dl></div>

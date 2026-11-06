@@ -260,7 +260,8 @@ function NewBatch() {
 
 // ---------- Save Answers as a Dataset ----------
 
-const saving = signal(null); // {batch, name, keep, threshold}
+const saving = signal(null); // {batch, name, keep, threshold, labels: soft or hard}
+const teacherNote = signal(null); // GET /batches/NAME/teacher: what a student would inherit
 
 function saveWhyNot() {
   const current = saving.value;
@@ -275,11 +276,16 @@ function saveWhyNot() {
 
 export function openSaveDataset(batch) {
   const base = `${batch.dataset}-by-${batch.model}`.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 70);
-  saving.value = { batch, name: freeName(base), keep: false, threshold: 0.8 };
+  saving.value = { batch, name: freeName(base), keep: false, threshold: 0.8, labels: "soft" };
   error.value = null;
+  teacherNote.value = null;
+  api(`/batches/${encodeURIComponent(batch.name)}/teacher`).then(
+    (about) => saving.value?.batch === batch && (teacherNote.value = about),
+    () => {}, // the note is advice: none when it cannot be read
+  );
   openSheet({
     title: "Save Answers as a Dataset",
-    purpose: `${batch.model}'s answers to ${plural(batch.answered, "row")} of ${batch.dataset} become the labels of a new dataset.`,
+    purpose: `${batch.model}'s answers to ${plural(batch.answered, "row")} of ${batch.dataset} become the labels of a new dataset, to train another model on (distillation).`,
     Body: SaveDataset,
     actions: () => [{ label: busy.value ? "Saving…" : "Save", primary: true, disabled: Boolean(saveWhyNot()) || busy.value, onSelect: save }],
   });
@@ -292,7 +298,7 @@ async function save() {
   error.value = null;
   try {
     const name = current.name.trim();
-    const body = { name, threshold: current.keep ? current.threshold : null };
+    const body = { name, threshold: current.keep ? current.threshold : null, labels: current.labels };
     const { dataset } = await api(`/batches/${encodeURIComponent(current.batch.name)}/dataset`, { method: "POST", body });
     closeSheet();
     dataChanged();
@@ -315,6 +321,14 @@ function SaveDataset() {
       <label for="save-name">Name</label>
       <input id="save-name" type="text" spellcheck=${false} value=${current.name} onInput=${(event) => set({ name: event.target.value })} />
       <span class="label">Labels</span>
+      <div class="radio-col" role="radiogroup" aria-label="Labels">
+        <label><input type="radio" name="save-labels" checked=${current.labels === "soft"} onChange=${() => set({ labels: "soft" })} />
+          Probabilities <span class="pill-tag">Recommended</span></label>
+        <small class="hint">Each answer's probabilities, as soft labels: a student learns how sure ${current.batch.model} was, and does better than on top answers alone.</small>
+        <label><input type="radio" name="save-labels" checked=${current.labels === "hard"} onChange=${() => set({ labels: "hard" })} /> Top answers</label>
+        <small class="hint">The most likely answer only.</small>
+      </div>
+      <span class="label">Rows</span>
       <div class="radio-col">
         <label><input type="checkbox" checked=${current.keep} onChange=${(event) => set({ keep: event.target.checked })} />
           Only answers with a confidence of at least
@@ -323,6 +337,7 @@ function SaveDataset() {
         <small class="hint">A row with no answer kept is left out. One split, <code>${current.batch.split}</code>, with the role train.</small>
       </div>
     </div>
+    ${teacherNote.value?.note && html`<p class="notice teacher-note" role="note">${teacherNote.value.note}.</p>`}
     ${(error.value || (why && current.name.trim())) && html`<p class="warn-text">${error.value ?? why}</p>`}
   `;
 }

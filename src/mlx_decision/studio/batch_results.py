@@ -24,6 +24,7 @@ from typing import Any
 from ..data.dataset import Dataset, SplitOut, write_dataset
 from ..data.format import Example
 from ..metrics import confusion, metrics, record
+from ..training.teacher import LABELS, Teacher, confidence, target, teacher_note
 from ..types import _round_floats as round_floats
 from .batches import BATCH_FILE, QUESTIONS_FILE, RESULTS_FILE, ROWS_FILE, BatchError, read_lines
 from .workspace import NotFound
@@ -389,15 +390,44 @@ class Results:
 
     # Save Answers as a Dataset
 
+    def measured_ece(self, name: str) -> dict[str, float]:
+        """Per labelled question of the batch, the ECE of its answers."""
+        out = {}
+        for qid, summary in self.analyse(name)["questions"].items():
+            ece = (summary.get("metrics") or {}).get("ece")
+            if ece is not None:
+                out[qid] = ece
+        return out
+
+    def teacher(self, name: str, teacher: Teacher) -> dict[str, Any]:
+        """``{teacher, measured, note}``: the batch's model as a teacher, the
+        ECE its answers have on the rows' labels (per question, when they have
+        labels) and the note on what its students would inherit, or None."""
+        measured = self.measured_ece(name)
+        joined = self._joined(name)
+        note = teacher_note(teacher, joined.questions, measured or None)
+        return {"teacher": teacher.as_json(), "measured": measured, "note": note}
+
     def save_dataset(
-        self, name: str, folder: Path, threshold: float | None = None
+        self,
+        name: str,
+        folder: Path,
+        threshold: float | None = None,
+        labels: str = "soft",
+        teacher: Teacher | None = None,
     ) -> dict[str, Any]:
-        """``folder`` (a new dataset folder): the batch's answered rows with the
-        top answers as labels, by question only where the confidence is at least
-        ``threshold``; a row left with no label is left out. One split, ``train``
-        with the role train, from the batch's split (its ``split``); ``source``
-        names the batch."""
+        """``folder`` (a new dataset folder): the batch's answered rows with its
+        answers as labels: each one's distribution (``labels`` soft, a soft
+        label) or its top answer (hard), by question only where the confidence
+        is at least ``threshold``; a row left with no label is left out. One
+        split, ``train`` with the role train, from the batch's split (its
+        ``split``); ``source`` names the batch, the labels' kind and the
+        teacher (``teacher``, else the batch's model by name) with its note."""
+        if labels not in LABELS:
+            raise BatchError("labels are soft or hard", param="labels")
         info = json.loads((self.root / name / BATCH_FILE).read_bytes())
+        teacher = teacher or Teacher(info.get("model") or name)
+        about = self.teacher(name, teacher)
         joined = self._joined(name)
         shared, entries = joined.shared, joined.entries
         examples, left_out = [], 0
@@ -406,12 +436,13 @@ class Results:
         for entry in entries:
             if entry.result is None or entry.error is not None:
                 continue
-            labels = {
-                qid: key
-                for qid, (key, confidence, _) in entry.picked.items()
-                if threshold is None or confidence >= threshold
+            answers = (entry.result.get("response") or {}).get("answers", {})
+            kept = {
+                qid: answer
+                for qid, answer in answers.items()
+                if threshold is None or confidence(answer) >= threshold
             }
-            if not labels:
+            if not kept:
                 left_out += 1
                 continue
             request = dict(entry.request)
@@ -422,7 +453,11 @@ class Results:
                     file = batch_folder / value
                     if not Path(value).is_absolute() and file.is_file():
                         images[value] = file  # the same path in the new folder
-            examples.append(Example(entry.id, request, labels))
+            tops = {qid: entry.picked[qid][0] for qid in kept}
+            targets = {qid: target(answer) for qid, answer in kept.items()}
+            examples.append(
+                Example(entry.id, request, tops, targets=targets if labels == "soft" else None)
+            )
         if not examples:
             raise BatchError("no row has an answer to keep as a label", param="threshold")
         split = "train"
@@ -434,6 +469,10 @@ class Results:
             "model": info.get("model"),
             "fingerprint": info.get("fingerprint"),
             "threshold": threshold,
+            "labels": labels,
+            "teacher": about["teacher"],
+            **({"measured": about["measured"]} if about["measured"] else {}),
+            "note": about["note"],
         }
         dataset = Dataset(folder, source=source)
         meta = {"role": "train", "examples": len(examples), "split": info.get("split")}
@@ -448,6 +487,8 @@ class Results:
             "examples": len(examples),
             "left_out": left_out,
             "split": split,
+            "labels": labels,
+            "note": about["note"],
         }
 
 

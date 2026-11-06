@@ -77,6 +77,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Save Answers as a Dataset writes each answer's probabilities as soft
+  labels by default (Top answers keeps the old hard labels), so a
+  student learns how sure the teacher was. The dataset's source names
+  the teacher, its fit and calibration, and the sheet and the Datasets
+  page say when the teacher's calibration is poor or unknown, since a
+  student inherits it.
 - The closing calibration after a `readout`, `head` or `finetune` fit
   is a temperature per question only: the per-option biases, fitted on
   the dev part (a tenth of the training part), cost accuracy on

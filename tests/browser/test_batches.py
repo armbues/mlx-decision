@@ -7,7 +7,7 @@ import re
 import shutil
 
 import pytest
-from drive import menu_item, open_studio, put_set
+from drive import menu_item, open_studio, put_set, shot
 from playwright.sync_api import expect
 
 from mlx_decision.data.dataset import Dataset, SplitOut, open_dataset, write_dataset
@@ -237,12 +237,37 @@ def test_export_save_answers_and_delete(tweets, page):
     menu_item(page, "Save Answers as a Dataset…").click()
     sheet = page.locator(".sheet")
     expect(sheet.locator("#save-name")).to_have_value("tweets-by-fake")
+    # Probabilities (soft labels) by default; fake answers the labelled rows badly.
+    labels = sheet.get_by_role("radiogroup", name="Labels")
+    expect(labels.get_by_role("radio", name=re.compile("^Probabilities"))).to_be_checked()
+    expect(sheet.locator(".teacher-note")).to_contain_text(
+        "fake's probabilities are off on the labelled rows (ECE topic"
+    )
+    expect(sheet.locator(".teacher-note")).to_contain_text("a student trained on its probabilities")
+    page.wait_for_timeout(300)  # the sheet's slide-in, for the screenshot
+    shot(page, "save-answers-sheet")
     sheet.get_by_role("button", name="Save").click()
     expect(page).to_have_url(re.compile(r"#/datasets/tweets-by-fake$"))
     saved = page.locator(".toast", has_text="Saved")
     expect(saved).to_contain_text("Saved 9 rows as tweets-by-fake")
     dataset, _ = open_dataset(tweets.workspace / "data" / "tweets-by-fake")
     assert dataset.missing() == [] and dataset.source["batch"] == "tweets-fake"
+    assert dataset.source["labels"] == "soft"
+    assert all(example.targets for example in dataset.read("train"))
+    taught = page.locator(".ds-source [data-kv=teacher]")
+    expect(taught).to_contain_text("The probabilities of fake")
+    expect(taught.locator(".warn-text")).to_contain_text("fake's probabilities are off")
+    # Top answers, as a second dataset.
+    open_studio(page, tweets, "batches/tweets-fake")
+    page.get_by_role("button", name="More actions for tweets-fake").click()
+    menu_item(page, "Save Answers as a Dataset…").click()
+    sheet.get_by_role("radiogroup", name="Labels").get_by_role("radio", name="Top answers").check()
+    sheet.get_by_role("button", name="Save").click()
+    expect(page).to_have_url(re.compile(r"#/datasets/tweets-by-fake-2$"))
+    hard, _ = open_dataset(tweets.workspace / "data" / "tweets-by-fake-2")
+    assert hard.source["labels"] == "hard"
+    assert all(example.targets is None for example in hard.read("train"))
+    expect(page.locator(".ds-source [data-kv=teacher]")).to_contain_text("The top answers of fake")
     # Delete.
     open_studio(page, tweets, "batches/tweets-fake")
     page.get_by_role("button", name="More actions for tweets-fake").click()
