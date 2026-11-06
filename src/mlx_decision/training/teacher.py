@@ -110,7 +110,12 @@ def describe_teacher(path: str | Path, name: str | None = None) -> Teacher:
     kinds = tuple(block.get("kinds") or ())
     closing = block.get("calibration") or {}
     choice = closing.get("choice", "auto" if "calibrate" in kinds else None)
-    calibrated = frozenset(closing.get("questions") or {}) if choice != "none" else frozenset()
+    # The questions the closing calibration covers; a marker without that list
+    # (written before it was kept) calibrated every question of its fit.
+    listed = closing.get("questions")
+    if listed is None:
+        listed = [q.get("id") for q in block.get("questions") or [] if isinstance(q, dict)]
+    calibrated = frozenset(listed) if choice not in (None, "none") else frozenset()
     ece = {
         question: float(entry["after"]["ece"])
         for question, entry in (block.get("metrics") or {}).items()

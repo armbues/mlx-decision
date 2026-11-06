@@ -3,10 +3,22 @@
 ``fit(base, data, output=...)`` runs the stages and reports progress as
 ``Event``s; a fitted model folder is the result, loaded like any model.
 ``evaluate(model, data, compare=...)`` scores models on labelled data.
+``label(teacher, data, output=...)`` writes a teacher's answers as a dataset.
 """
 
 from .evaluation import EvalResult, ModelEval, evaluate
 from .events import Cancelled, Event
 from .fitting import FitResult, fit
+from .labelling import LabelResult, label
 
-__all__ = ["Cancelled", "EvalResult", "Event", "FitResult", "ModelEval", "evaluate", "fit"]
+__all__ = [
+    "Cancelled",
+    "EvalResult",
+    "Event",
+    "FitResult",
+    "LabelResult",
+    "ModelEval",
+    "evaluate",
+    "fit",
+    "label",
+]

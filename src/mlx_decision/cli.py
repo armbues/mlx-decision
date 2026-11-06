@@ -1868,7 +1868,7 @@ def benchmark(
 
 
 training_app = typer.Typer(
-    help="Fit a model to your labelled data, and score models on it.",
+    help="Fit a model to your labelled data, score models on it, and label data with a teacher.",
     no_args_is_help=True,
 )
 app.add_typer(training_app, name="training")
@@ -2354,6 +2354,125 @@ def training_eval(
         typer.echo(json.dumps(result.as_json(), indent=2, ensure_ascii=False))
     else:
         typer.echo(format_eval(result))
+
+
+@training_app.command("label")
+@ends_with_an_event
+def training_label(
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            "-m",
+            help="The teacher: a model folder, Hugging Face repo id or name in models_dir "
+            "(a fitted one answers with its fit). A teacher with a closing calibration "
+            "passes good probabilities on.",
+        ),
+    ] = None,
+    data: Annotated[
+        Path | None,
+        typer.Option(
+            "--data",
+            help="The rows to label: a dataset folder (its train split; or name a split's "
+            "file in it), a mix, or JSON lines. Rows need questions, not labels; with "
+            "labels, the teacher is scored on them too.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="The new dataset folder. Default: <data>-<teacher> in the current folder.",
+        ),
+    ] = None,
+    split: Annotated[
+        str | None, typer.Option("--split", help="Another split of the dataset to label.")
+    ] = None,
+    hard: Annotated[
+        bool,
+        typer.Option(
+            "--hard",
+            help="Write each answer's top answer as the label instead of its probabilities "
+            "(soft labels, the default, train a better student).",
+        ),
+    ] = False,
+    threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--threshold",
+            help="Leave out answers less sure than this confidence (0 to 1); a row with "
+            "none left is left out.",
+        ),
+    ] = None,
+    sample: Annotated[
+        int | None, typer.Option("--sample", help="Label this many rows, drawn at random.")
+    ] = None,
+    seed: Annotated[int, typer.Option("--seed", help="Seed of --sample.")] = 0,
+    overwrite: Annotated[
+        bool, typer.Option("--overwrite", help="Replace the output folder if it exists.")
+    ] = False,
+    max_input_tokens: MaxInputOption = None,
+    no_memory_check: NoMemoryCheckOption = False,
+    events: Annotated[
+        bool,
+        typer.Option(
+            "--events",
+            help="Print the progress as JSON lines on stdout instead of a progress bar and "
+            'the report; the last is {"stage": "done"} with the report in "metrics", or '
+            '{"stage": "error"} or {"stage": "cancelled"}.',
+        ),
+    ] = False,
+) -> None:
+    """Label a dataset with a teacher's answers (distillation): the teacher answers
+    every row and a new dataset folder is written with its probabilities as soft
+    labels (or its top answers with --hard), to fit a student on."""
+    from .training import Cancelled, label
+    from .training.console import Progress, format_label, interrupt_cancels
+
+    if model is None:
+        fail("pass -m TEACHER")
+    if data is None:
+        fail("pass --data DATASET (rows with questions)")
+    model = model_reference(model, read_config())
+    progress = Progress(sys.stderr, sys.stderr.isatty())
+    with interrupt_cancels(sys.stderr) as stop, watched(events, stop):
+        try:
+            result = label(
+                model,
+                data,
+                output=output,
+                split=split,
+                labels="hard" if hard else "soft",
+                threshold=threshold,
+                sample=sample,
+                seed=seed,
+                overwrite=overwrite,
+                on_event=echo_event if events else progress,
+                cancel=stop,
+                check_memory=not no_memory_check,
+                **load_options(None, max_input_tokens),
+            )
+        except Cancelled:
+            progress.close()
+            if events:
+                echo_event(stage_event("cancelled", "stopped before the end; nothing written"))
+            say_cancelled("cancelled; nothing written")
+            raise typer.Exit(130) from None
+        except FileExistsError as error:
+            progress.close()
+            message = str(error).replace("(pass overwrite", "(pass --overwrite")
+            if events:
+                echo_event(stage_event("error", message))
+            fail(message)
+        except (DecisionError, FileNotFoundError, ValueError, PlatformError) as error:
+            progress.close()
+            if events:
+                echo_event(stage_event("error", str(error)))
+            fail(str(error))
+    progress.close()
+    if not events:
+        typer.echo(format_label(result))
 
 
 def pairs(value: str | None, flag: str) -> dict[str, str] | None:

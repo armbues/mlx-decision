@@ -74,6 +74,14 @@ All notable changes to this project are documented here. The format follows
   that a mix keeps a question. [Training](docs/TRAINING.md#mixes-of-datasets)
   explains mixes, with what one keeps and what a fit on one dataset
   does to the others' questions, measured on d3-edge and Laya.
+- `training label -m TEACHER --data DATA [-o FOLDER]` (Python
+  `mlx_decision.training.label`): a teacher answers every row of a
+  dataset (any `training fit` reads, mixes included; rows need
+  questions, not labels) and a new dataset folder is written with its
+  probabilities as soft labels, or its top answers with `--hard`
+  (`--threshold`, `--sample`, `--split`, `--events`). On labelled data
+  it reports the teacher's accuracy and ECE there, and it notes when the
+  teacher's calibration is poor or unknown, which a student inherits.
 
 ### Changed
 

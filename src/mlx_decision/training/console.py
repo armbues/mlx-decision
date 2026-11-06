@@ -305,3 +305,30 @@ def format_eval(result) -> str:
     source = data["file"] or "examples"
     lines.append(f"{data['examples']:,} examples from {source}")
     return "\n".join(lines)
+
+
+def format_label(result) -> str:
+    """A labelling run's report: what was written, the teacher on the data's
+    own labels (when it has them) and the note on its calibration."""
+    soft = result.labels == "soft"
+    kind = "soft labels (its probabilities)" if soft else "hard labels (its top answers)"
+    lines = [f"{result.examples:,} rows labelled by {result.teacher.name}, as {kind}"]
+    if result.left_out:
+        lines.append(f"left out: {result.left_out:,} rows with no answer as sure as the threshold")
+    if result.refused:
+        lines.append(f"refused by the teacher: {result.refused:,} rows")
+    if result.teacher.base:
+        calibration = result.teacher.calibration or "none"
+        lines.append(
+            f"teacher: fitted on {result.teacher.base} ({', '.join(result.teacher.kinds)}; "
+            f"calibration {calibration})"
+        )
+    for question, measured in result.measured.items():
+        lines.append(
+            f"teacher on the data's labels, {question}: accuracy {_percent(measured['accuracy'])}, "
+            f"ECE {_percent(measured['ece'])}"
+        )
+    if result.note:
+        lines.append(f"note: {result.note}")
+    lines.append(f"took {duration(result.seconds)}; wrote {result.path}")
+    return "\n".join(lines)
