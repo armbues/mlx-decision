@@ -566,10 +566,18 @@ with the row's `id`), Save Answers as a Dataset…, Copy Command, Show
 in Finder and Delete….
 
 Save Answers as a Dataset… makes a new dataset in `data/` from the
-batch: its questions, and each row's top answers as labels, optionally
-only answers with a [confidence](#running) of at least a threshold (a
-row left with no label is left out). One model's
-answers can so become the training data of another. An image batch's
+batch: its questions, and each row's answers as labels: Probabilities
+(the default: each answer's probabilities, as soft labels) or Top
+answers, optionally only answers with a [confidence](#running) of at
+least a threshold (a row left with no label is left out). One model's
+answers can so become the training data of another
+([distillation](TRAINING.md#a-teachers-labels-training-label);
+`training label` does the same from a terminal). A student inherits
+its teacher's calibration, so the sheet says when the batch's model is
+poorly calibrated (an ECE above 5% on the batch's labels or its fit's
+report) or not known to be (a release model, or a fit without a closing
+calibration): fit it first. The new dataset's Where it came from names
+the teacher, the kind of labels and that note. An image batch's
 dataset gets the images too.
 
 From a terminal, in the batch's folder, `mlx-decision run -m MODEL -q

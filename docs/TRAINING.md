@@ -450,6 +450,62 @@ and the output file. It then shows the preview, asks for confirmation
 and finally prints the equivalent command. `--no-input` turns the menus
 off.
 
+### A teacher's labels: `training label`
+
+A larger model's answers can label data for a smaller one
+(distillation): the teacher answers every row, and its probabilities
+become the rows' labels. Rows need questions, not labels, so a pool of
+unlabelled rows works too.
+
+```bash
+mlx-decision data --preset sst5 --split train --sample 3000 -o sst5
+mlx-decision training label -m perplexity-ai/pplx-decider-flash-v1.2 --data sst5
+mlx-decision training fit -m convaiinnovations/laya --data sst5-pplx-decider-flash-v1.2
+```
+
+`training label` reads any dataset `training fit` reads (its train
+split, `--split` another; mixes too) and writes a new dataset folder
+(`-o`, by default `<data>-<teacher>`) with one train split. The labels
+are each answer's probabilities, as [soft labels](#format); `--hard`
+writes the top answer instead. `--threshold P` leaves out answers less
+sure than a [confidence](STUDIO.md#running) of P, and a row with none
+left is left out; `--sample N` (with `--seed`) labels N rows. When the
+rows have labels of their own, they are not kept, but the teacher is
+scored on them: the report shows its accuracy and ECE there. The
+folder's `dataset.json` records the teacher (and for a fitted one its
+base, kinds and calibration) in `source`. A fitted teacher answers with
+its fit. Progress, `--events` and Ctrl-C work as in
+[`training fit`](#progress-events-cancel). In the Studio, a batch's
+Save Answers as a Dataset does the same ([Studio](STUDIO.md#batches)).
+
+What it buys, on SST-5 with pplx flash (60.5% on the test split) as the
+teacher, students fitted on 3,000 rows and scored on the 2,210 test
+rows (accuracy, %):
+
+| Student | the dataset's labels | teacher, top answers | teacher, probabilities |
+|---|---|---|---|
+| Laya `finetune` | 55.3 | 55.7 | 57.4 |
+| d3-edge `lora` | 52.6 | 53.0 | 54.5 |
+| d3-edge `readout` | 51.1 | 50.5 to 52.0 | 50.5 to 52.0 |
+
+The probabilities beat the top answers by about 2 points for the
+students that change weights (`finetune`, `lora`); a readout fit stays
+at its own plateau whatever labels it gets. On all 8,544 rows the
+teacher's probabilities were worth about what the dataset's labels are
+(Laya 59.5 against 58.2): a teacher labels an unlabelled pool about as
+well as people would, but does not lift a student past its own limit.
+
+**The student inherits the teacher's calibration.** Its closing
+calibration is fitted to the teacher's labels, so a teacher whose
+probabilities are off passes that on: pplx flash as released (ECE
+13.5%) gave its students ECEs of 11 to 16%, the same teacher after a
+readout fit (ECE 2.7%) about 2%. So fit the teacher first, a
+calibration alone takes seconds, and label with the fitted model.
+`training label` and the Studio say so in a note when a teacher's
+calibration is poor (an ECE above 5% on the data's labels or its fit's
+report) or unknown (a release, or a fit without a closing calibration
+for the question).
+
 ## Fitting
 
 ```bash
@@ -806,7 +862,7 @@ examples, not the training file.
 ```python
 import threading
 
-from mlx_decision.training import evaluate, fit
+from mlx_decision.training import evaluate, fit, label
 
 stop = threading.Event()            # stop.set() from another thread cancels
 
@@ -826,6 +882,15 @@ print(result.metrics["answer_type"]["after"])
 
 report = evaluate("julia-trec", "trec", compare="SupersonicLabs/Julia-1")  # its test split
 print(report.as_json())
+
+taught = label(
+    "julia-trec",                  # the teacher
+    "trec",                        # rows with questions; labels optional
+    output="trec-taught",
+    labels="soft",                 # or "hard": the top answers
+    threshold=None, sample=None, seed=0,
+)
+print(taught.examples, taught.measured, taught.note)
 ```
 
 `fit` raises `Cancelled` when cancelled (nothing written),
@@ -841,7 +906,9 @@ the loader's options (`max_input_tokens=`, H2O-Lightning's `reading=`).
 On a [mix](#mixes-of-datasets), `result.sources` holds the report per
 source (`held_out`, and per question `before` and `after`), and each of
 `evaluate`'s models has `sources` (per source and question, its
-metrics).
+metrics). `label` takes `split=`, `overwrite=`, `on_event=`, `cancel=`
+and the loader's options too, and raises `FileExistsError` for an
+output that exists (without `overwrite=True`).
 
 ## Not in this version
 
@@ -851,6 +918,8 @@ metrics).
 - LoRA on a quantized base, or on the attention and DeltaNet projections.
 - Videos in training data.
 - Multi-label tasks (several correct options for one question).
-- Generating or labelling training data.
+- Generating training data: a teacher labels rows that exist
+  ([`training label`](#a-teachers-labels-training-label)), it does not
+  write new ones.
 - Publishing fitted models to the Hugging Face Hub. A fitted folder
   refers to its base, so share it together with the base's repo id.

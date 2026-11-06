@@ -86,9 +86,10 @@ is cheap the old form keeps working for a while. Most become stable once
 training on several datasets at once is done.
 
 - The training Python API, `mlx_decision.training`: `fit`, `evaluate`,
-  `FitResult`, `EvalResult`, `Event`, `Cancelled` and the report
-  dictionaries.
-- The flags of `data`, `training fit` and `training eval`.
+  `label`, `FitResult`, `EvalResult`, `LabelResult`, `Event`,
+  `Cancelled` and the report dictionaries.
+- The flags of `data`, `training fit`, `training eval` and `training
+  label`.
 - `dataset.json` in a dataset folder (its `format` number guards it: a
   dataset from a later release is refused).
 - What `metrics` holds in `--events` lines, and the stages before the
