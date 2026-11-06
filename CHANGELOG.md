@@ -63,6 +63,11 @@ All notable changes to this project are documented here. The format follows
   before and after (held-out ones marked) in its output, `training.json`
   and `FitResult.sources`; `training eval` on a mix adds a table per
   source (`--json` and Python: each model's `sources`).
+- A `finetune`, `head` or `lora` fit warns that it changes the answers
+  to questions outside its data too, without a new calibration, and
+  that a mix keeps a question. [Training](docs/TRAINING.md#mixes-of-datasets)
+  explains mixes, with what one keeps and what a fit on one dataset
+  does to the others' questions, measured on d3-edge and Laya.
 
 ### Changed
 

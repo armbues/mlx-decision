@@ -170,6 +170,30 @@ def _questions(examples: list[Example]) -> dict[str, list[tuple[Example, Any]]]:
     return asked
 
 
+# What each kind that changes a part all questions share trains.
+SHARED_PARTS = {
+    "finetune": "the encoder",
+    "head": "the decision head",
+    "lora": "the network (through its adapters)",
+}
+
+
+def outside_warnings(kinds: list[str], head_only: bool = False) -> list[str]:
+    """A fit that changes what every question goes through also changes the
+    answers to questions outside its data, which keep their old calibration
+    (readout and calibrate fits are per question and leave them alone)."""
+    kind = kinds[0]
+    if kind not in SHARED_PARTS:
+        return []
+    part = "the marker head" if kind == "finetune" and head_only else SHARED_PARTS[kind]
+    degree = " (less than after a finetune)" if kind == "lora" else ""
+    return [
+        f"{kind} trains {part}, which every question goes through: answers to questions "
+        f"outside this data change too{degree}, without a new calibration; to keep a "
+        "question as it is, add data for it, e.g. as a source of a mix"
+    ]
+
+
 def _warnings(training: list[Example]) -> list[str]:
     """What makes a fit on ``training`` unreliable: few examples, rare options."""
     warnings = []
@@ -958,7 +982,7 @@ def fit(
     if learning_rate is not None and not learning_rate > 0:
         raise ValueError(f"learning_rate must be more than 0, not {learning_rate}")
     training = splits.fit + splits.dev
-    warnings = prepared.warnings
+    warnings = prepared.warnings + outside_warnings(kinds, head_only)
     for warning in warnings:
         emit(Event("check", message=f"warning: {warning}"))
     trainer = kinds[0] if kinds[0] != "calibrate" else None

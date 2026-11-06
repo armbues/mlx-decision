@@ -247,6 +247,82 @@ questions and what each value means live once, in `dataset.json`:
   alike. Keys this release does not know are kept when it writes the
   file again (the Studio saving questions, for one).
 
+### Mixes of datasets
+
+A *mix* is a dataset folder whose `dataset.json` lists other datasets
+instead of holding rows. A fit on a mix learns every source's questions
+at once, and its report shows each source before and after; `training
+eval` on a mix shows each source too.
+
+```json
+{"format": 2,
+ "mix": {"sources": [{"path": "../trec"},
+                     {"path": "../sst5", "cap": 3000},
+                     {"path": "../openbookqa", "held_out": true}],
+         "cap": 2000, "seed": 0}}
+```
+
+```bash
+mlx-decision data --preset trec --split train --split test -o trec
+mlx-decision data --preset sst5 --split train --split test -o sst5
+mkdir mix
+echo '{"format": 2, "mix": {"sources": [{"path": "../trec"}, {"path": "../sst5"}], "cap": 2000}}' > mix/dataset.json
+mlx-decision training fit -m vllm-sr/d3-edge --method lora --data mix
+mlx-decision training eval -m d3-edge-mix --data mix --compare vllm-sr/d3-edge
+```
+
+- `path` is a dataset folder, one of its split files or a plain
+  JSON-lines file, relative to the mix's folder (or absolute). Sources
+  are read as they are when the fit runs, and the fit's data hash
+  covers all of them, the caps and the seed.
+- `cap` is the most train rows taken from a source: its own `cap`, else
+  the mix's, every row without either. They are sampled with `seed`.
+  Equal caps were enough to keep every source about as good as fitted
+  alone (below).
+- The mix has three splits, `train`, `report` and `evaluate`, each the
+  sources' splits of that role together. A source without a report
+  split reports on a fifth of its capped train rows, which are then not
+  trained on. `evaluate` takes each source's evaluate split, else its
+  report split.
+- A `held_out` source is scored in the report and by `training eval`
+  but not trained on: it shows what the fit does to a question outside
+  its data. The report marks it with `*`.
+- Example ids start with their source's name (`trec/17`). Questions of
+  different types mix. Two sources may share a question id only when
+  they ask it the same way; otherwise the fit names both.
+- A mix cannot hold another mix. Mixes are `format` 2, so releases
+  before mixes refuse them with the format message.
+
+What a mix keeps, measured with 2,000 train rows from each of the five
+coverage datasets and scored on their test splits (accuracy, %): each
+dataset fitted on its own ("alone", scored on its own dataset) against
+one fit on all five.
+
+| | TREC | Offensive | ANLI-R3 | OpenBookQA | SST-5 |
+|---|---|---|---|---|---|
+| d3-edge base | 73.8 | 77.2 | 37.9 | 57.8 | 42.5 |
+| d3-edge `lora`, alone | 95.2 | 83.7 | 44.2 | 68.4 | 49.2 |
+| d3-edge `lora`, the mix | 95.4 | 82.9 | 43.2 | 67.2 | 52.9 |
+| Laya base | 79.0 | 77.8 | 39.5 | 39.2 | 35.1 |
+| Laya `finetune`, alone | 96.2 | 83.6 | 43.5 | 54.2 | 53.8 |
+| Laya `finetune`, the mix | 96.2 | 85.7 | 43.0 | 54.8 | 54.6 |
+
+Every dataset in the mix is within 0.6 standard errors of its own fit,
+and SST-5 is better in the mix. The mix took about as long as the five
+fits one after another (10 and 11 minutes on an M5 Pro) and as much
+memory as one.
+
+A fit also changes the questions it was not fitted on. The Laya model
+fitted on TREC alone lost 9.4 points on OpenBookQA and gained 5.9 on
+SST-5, and those questions' ECE rose as high as 28%, since only the
+fitted questions get a new calibration. d3-edge's LoRA fits moved the
+other datasets by about a point (3.1 at most). Readout and calibration
+fits are per question and leave other questions as they were. Nothing
+carries over to a question outside the data: held out of a mix of the
+other four, OpenBookQA stayed at the base's score on d3-edge and lost
+5.0 points on Laya. So put every question a fitted model should keep
+into its mix. A `finetune`, `head` or `lora` fit says so in a warning.
+
 ### `data`: datasets to training files
 
 ```bash
@@ -382,7 +458,8 @@ an existing one is replaced only with `--overwrite`.
 Progress goes to stderr and the report to stdout. The report shows, per
 question, accuracy, macro-F1, ECE and log loss (`score` questions also
 mean absolute error) before and after, the kept epoch and the time
-taken. It is also saved in the folder as `training.json`.
+taken; for a [mix](#mixes-of-datasets), a table per source follows. It
+is also saved in the folder as `training.json`.
 
 ### Splits
 
@@ -756,6 +833,10 @@ fifth),
 `calibration=` (as `--calibration`), `learning_rate=` and `rank=` (lora),
 `head_only=`, `early_stop=`, `overwrite=` and
 the loader's options (`max_input_tokens=`, H2O-Lightning's `reading=`).
+On a [mix](#mixes-of-datasets), `result.sources` holds the report per
+source (`held_out`, and per question `before` and `after`), and each of
+`evaluate`'s models has `sources` (per source and question, its
+metrics).
 
 ## Not in this version
 

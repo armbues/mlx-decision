@@ -16,6 +16,7 @@ from mlx_decision.memory import ModelTooLargeError
 from mlx_decision.registry import MARKER_FILE
 from mlx_decision.training import Cancelled, Event, fit, plan
 from mlx_decision.training.calibrate import fit_calibration
+from mlx_decision.training.fitting import outside_warnings
 from mlx_decision.training.loss import decision_loss
 from tiny_models import (
     write_baselabs,
@@ -312,3 +313,23 @@ def test_every_family_calibrates_end_to_end(tmp_path, family):
         right = sum(p == e.labels[question_id] for p, e in zip(predicted, holdout, strict=True))
         accuracy = right / len(holdout)
         assert result.metrics[question_id]["after"]["accuracy"] == pytest.approx(accuracy)
+
+
+@pytest.mark.parametrize(
+    ("kinds", "head_only", "part"),
+    [
+        (["finetune", "calibrate"], False, "finetune trains the encoder,"),
+        (["finetune", "calibrate"], True, "finetune trains the marker head,"),
+        (["head", "calibrate"], False, "head trains the decision head,"),
+        (["lora", "calibrate"], False, "change too (less than after a finetune), without"),
+    ],
+)
+def test_a_fit_of_a_shared_part_warns_about_other_questions(kinds, head_only, part):
+    [warning] = outside_warnings(kinds, head_only)
+    assert part in warning and "questions outside this data change too" in warning
+    assert "as a source of a mix" in warning
+
+
+@pytest.mark.parametrize("kinds", [["readout", "calibrate"], ["calibrate"]])
+def test_per_question_fits_do_not_warn_about_other_questions(kinds):
+    assert outside_warnings(kinds) == []
