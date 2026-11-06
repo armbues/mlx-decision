@@ -71,6 +71,8 @@ class Example:
     # value as text), from which ``dataset.json`` maps the labels; None elsewhere.
     values: dict[str, str] | None = None
     targets: dict[str, dict[str, float]] | None = None
+    # The source dataset's name when read from a mix; None elsewhere.
+    source: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         """The line's object, with the labels in the file's form."""

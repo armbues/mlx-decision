@@ -359,14 +359,14 @@ def test_a_save_keeps_keys_it_does_not_know_and_writes_the_format(studio):
 
 def test_a_dataset_from_a_newer_version_is_listed_with_its_error_and_not_saved(studio):
     body = json.loads((studio.folder / DATASET_FILE).read_text())
-    (studio.folder / DATASET_FILE).write_text(json.dumps({**body, "format": 2}))
+    (studio.folder / DATASET_FILE).write_text(json.dumps({**body, "format": 3}))
     before = (studio.folder / DATASET_FILE).read_text()
     [item] = studio.get("/studio/api/data").json()["files"]
-    assert "its format is 2" in item["error"] and "a newer mlx-decision" in item["error"]
+    assert "its format is 3" in item["error"] and "a newer mlx-decision" in item["error"]
     opened = studio.get("/studio/api/data/tweets")
-    assert opened.status_code >= 400 and "its format is 2" in opened.text
+    assert opened.status_code >= 400 and "its format is 3" in opened.text
     saved = questions(studio, {"questions": {"topic": TOPIC}, "answers": ANSWERS})
-    assert saved.status_code >= 400 and "its format is 2" in saved.text
+    assert saved.status_code >= 400 and "its format is 3" in saved.text
     assert (studio.folder / DATASET_FILE).read_text() == before
 
 

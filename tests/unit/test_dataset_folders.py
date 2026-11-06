@@ -541,7 +541,7 @@ def test_keys_it_does_not_know_are_kept_when_written_again(ready, tmp_path):
 
 @pytest.mark.parametrize(
     ("version", "message"),
-    [(2, "its format is 2, .*a newer mlx-decision wrote"), ("1", "format must be a whole")],
+    [(3, "its format is 3, .*a newer mlx-decision wrote"), ("1", "format must be a whole")],
 )
 def test_a_format_it_does_not_read_is_refused(ready, tmp_path, version, message):
     body = described(ready)

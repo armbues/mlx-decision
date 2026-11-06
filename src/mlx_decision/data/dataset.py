@@ -39,10 +39,13 @@ from typing import Any
 
 from ..errors import DecisionError
 from .format import DataError, Example, image_files, parse_example, parse_examples, resolve_image
+from .mix import MIX_FORMAT, Mix, parse_mix
 
 DATASET_FILE = "dataset.json"
-# The version of dataset.json this one writes and reads (missing means 1).
+# The version of dataset.json this one writes (missing means 1); a mix is
+# written as MIX_FORMAT, the newest this one reads.
 DATASET_FORMAT = 1
+READ_FORMAT = MIX_FORMAT
 SPLIT_SUFFIX = ".jsonl"
 # What a split is for: training, the fit's report, Evaluate.
 ROLES = ("train", "report", "evaluate")
@@ -100,6 +103,8 @@ class Dataset:
     created: str | None = None
     # The keys of dataset.json this version does not know, written back as they are.
     extra: dict[str, Any] = field(default_factory=dict)
+    # A mix of other datasets (``mix.py``): its splits are read from theirs.
+    mix: Mix | None = None
 
     @property
     def name(self) -> str:
@@ -156,6 +161,10 @@ class Dataset:
         value of the column that answers them."""
         if not self.folder:
             return []  # a plain file: questions and labels in the lines
+        if self.mix is not None:
+            from . import mix
+
+            return mix.missing(self.path, self.mix)
         line = self.first_line()
         if not self.questions:
             if self.columns or "questions" not in line:
@@ -186,11 +195,16 @@ class Dataset:
     def require_ready(self) -> None:
         missing = self.missing()
         if missing:
+            hint = (
+                ""
+                if self.mix is not None
+                else f" (set questions and answers in its {DATASET_FILE}, or write them in "
+                "the Studio)"
+            )
             raise DecisionError(
                 f"{self.path} cannot be used for training or evaluation yet: "
                 + "; ".join(missing)
-                + f" (set questions and answers in its {DATASET_FILE}, or write them in the "
-                "Studio)"
+                + hint
             )
 
     def parse_line(self, split: str, lenient: bool = False):
@@ -254,6 +268,10 @@ class Dataset:
     def read(self, split: str | None = None, lenient: bool = False) -> list[Example]:
         """The examples of ``split`` (a plain file: its only one), checked as a
         whole; ``lenient`` as ``parse_line`` (a dataset without labels yet)."""
+        if self.mix is not None:
+            from . import mix
+
+            return mix.read(self.path, self.mix, split or "train", lenient)
         if not self.folder:
             root = self.root
 
@@ -282,7 +300,12 @@ class Dataset:
         """The SHA-256 a fit records for its data: a plain file's bytes; a split's
         bytes and the questions and answers its lines take from ``dataset.json``;
         then the bytes of the image files the lines name, in order (data without
-        image files hashes as before they were read)."""
+        image files hashes as before they were read); a mix's covers its
+        sources' (``mix.sha256``)."""
+        if self.mix is not None:
+            from . import mix
+
+            return mix.sha256(self.path, self.mix, split or "train")
         digest = hashlib.sha256()
         path = self.split_path(split or next(iter(self.splits)))
         with open(path, "rb") as file:
@@ -314,10 +337,20 @@ class Dataset:
         """How runs name what they read: the file, or the dataset and its split."""
         if not self.folder:
             return str(self.path)
+        if self.mix is not None:
+            count = len(self.mix.sources)
+            return f"{self.path} (a mix of {count} datasets, {split} split)"
         return f"{self.path} ({split} split)"
 
     def to_json(self) -> dict[str, Any]:
-        body: dict[str, Any] = {"format": DATASET_FORMAT}
+        if self.mix is not None:
+            body: dict[str, Any] = {"format": MIX_FORMAT, "mix": self.mix.to_json()}
+            for key in ("source", "created"):
+                if getattr(self, key) is not None:
+                    body[key] = getattr(self, key)
+            body.update({key: value for key, value in self.extra.items() if key not in body})
+            return body
+        body = {"format": DATASET_FORMAT}
         if self.questions:
             body["questions"] = self.questions
         if self.answers:
@@ -333,7 +366,7 @@ class Dataset:
         return body
 
 
-KNOWN_KEYS = ("format", "questions", "answers", "columns", "splits", "source", "created")
+KNOWN_KEYS = ("format", "questions", "answers", "columns", "splits", "source", "created", "mix")
 
 
 def check_format(path: Path, loaded: dict[str, Any]) -> None:
@@ -343,10 +376,10 @@ def check_format(path: Path, loaded: dict[str, Any]) -> None:
     version = loaded.get("format", DATASET_FORMAT)
     if not isinstance(version, int) or isinstance(version, bool) or version < 1:
         raise DecisionError(f"{path}: format must be a whole number from 1")
-    if version > DATASET_FORMAT:
+    if version > READ_FORMAT:
         raise DecisionError(
             f"{path}: its format is {version}, which mlx-decision {__version__} does not "
-            f"know (it reads format {DATASET_FORMAT}); a newer mlx-decision wrote this "
+            f"know (it reads formats up to {READ_FORMAT}); a newer mlx-decision wrote this "
             "dataset (upgrade to use it)"
         )
 
@@ -410,6 +443,8 @@ def read_description(folder: Path) -> Dataset:
     if not isinstance(loaded, dict):
         raise DecisionError(f"{path} must hold an object")
     check_format(path, loaded)
+    if "mix" in loaded:
+        return _read_mix_description(folder, path, loaded)
     kinds = {"questions": dict, "answers": dict, "columns": dict, "splits": dict, "source": dict}
     for key, kind in kinds.items():
         if loaded.get(key) is not None and not isinstance(loaded[key], kind):
@@ -457,6 +492,28 @@ def read_description(folder: Path) -> Dataset:
         loaded.get("source"),
         loaded.get("created"),
         {key: value for key, value in loaded.items() if key not in KNOWN_KEYS},
+    )
+
+
+def _read_mix_description(folder: Path, path: Path, loaded: dict[str, Any]) -> Dataset:
+    own = [key for key in ("questions", "answers", "columns", "splits") if key in loaded]
+    if own:
+        raise DecisionError(
+            f"{path}: a mix takes its {', '.join(own)} from its sources; leave them out"
+        )
+    source = loaded.get("source")
+    if source is not None and not isinstance(source, dict):
+        raise DecisionError(f"{path}: source must be an object")
+    from .mix import SPLITS
+
+    return Dataset(
+        folder,
+        True,
+        splits={name: {"role": name} for name in SPLITS},
+        source=source,
+        created=loaded.get("created"),
+        extra={key: value for key, value in loaded.items() if key not in KNOWN_KEYS},
+        mix=parse_mix(path, loaded["mix"]),
     )
 
 

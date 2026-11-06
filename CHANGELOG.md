@@ -51,6 +51,15 @@ All notable changes to this project are documented here. The format follows
   keeps standing alone, and Save Answers as a Dataset keeps them; Fit
   and Evaluate take image datasets. Adding a JSON-lines file whose lines
   name image files beside it explains how to make it a dataset folder.
+- Mixes: a dataset folder whose `dataset.json` lists other datasets
+  (`"mix": {"sources": [{"path": "../trec"}, ...], "cap": 2000}`) is
+  read by `training fit` and `training eval` as one dataset. Its train,
+  report and evaluate splits are the sources' together, train rows
+  capped per source and sampled with the mix's seed; a `held_out`
+  source is scored in the report but not trained on. Example ids start
+  with their source's name, and the data hash covers every source. A
+  mix is written as `dataset.json` format 2; plain dataset folders stay
+  at format 1.
 
 ### Changed
 
