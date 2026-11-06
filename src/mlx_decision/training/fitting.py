@@ -45,7 +45,7 @@ from ..types import parse_request
 from . import plan
 from .calibrate import fit_calibration
 from .events import Cancelled, Event
-from .scoring import Clock, Scored, records, rehead, reread, score, summary
+from .scoring import Clock, Scored, records, rehead, reread, score, source_summary, summary
 
 # Disk left free beside the hidden states a head fit stores.
 DISK_MARGIN = 2 * 10**9
@@ -78,6 +78,12 @@ class FitResult:
     def metrics(self) -> dict[str, dict]:
         """Per question id, the holdout's metrics before and after the fit."""
         return self.report["questions"]
+
+    @property
+    def sources(self) -> dict[str, dict]:
+        """For data from a mix, per source dataset: ``held_out`` and per
+        question id its metrics before and after (empty otherwise)."""
+        return self.report.get("sources", {})
 
 
 @dataclass
@@ -774,6 +780,23 @@ class Prepared:
         )
 
 
+def _sources(before: dict, after: dict, training: list[Example]) -> dict[str, dict]:
+    """A mix's report per source: ``held_out`` (no training example came from
+    it) and per question its metrics before and after."""
+    trained = {example.source for example in training}
+    after_by_source = source_summary(after)
+    return {
+        name: {
+            "held_out": name not in trained,
+            "questions": {
+                question_id: {"before": metrics, "after": after_by_source[name][question_id]}
+                for question_id, metrics in questions.items()
+            },
+        }
+        for name, questions in source_summary(before).items()
+    }
+
+
 def report_data(data, validation, holdout: float | None):
     """What scores a fit's report, as ``(validation, holdout)``: either as given;
     with neither, a dataset folder's report split if it has one, else a fifth
@@ -992,7 +1015,8 @@ def fit(
     try:
         holdout_scored = scoring("before", splits.holdout)
         unfitted = FittedBackend(origin.name, model.backend, Fit([]), origin.reference)
-        before = summary(records(holdout_scored, unfitted.adjust))
+        before_records = records(holdout_scored, unfitted.adjust)
+        before = summary(before_records)
         emit(Event("before", metrics=before))
         tensors: dict = {}
         training_report = None
@@ -1094,11 +1118,13 @@ def fit(
     finish_stage("calibrate")
 
     fitted = FittedBackend(output.name, model.backend, fit_, origin.reference)
-    after = summary(records(after_scored, fitted.adjust))
+    after_records = records(after_scored, fitted.adjust)
+    after = summary(after_records)
     questions = {
         question_id: {"before": before[question_id], "after": after[question_id]}
         for question_id in before
     }
+    sources = _sources(before_records, after_records, training)
     emit(Event("after", metrics=questions))
     finish_stage("after")
 
@@ -1147,6 +1173,7 @@ def fit(
         "estimate": estimate.as_json(),
         "warnings": warnings,
         "questions": questions,
+        **({"sources": sources} if sources else {}),
         "training": training_report,
         "calibration": {"choice": calibration, "questions": used},
         "calibrations": [

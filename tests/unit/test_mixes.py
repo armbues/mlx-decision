@@ -14,7 +14,8 @@ from mlx_decision.data.dataset import DATASET_FILE, open_dataset, read_for, repo
 from mlx_decision.data.format import DataError
 from mlx_decision.data.mix import Mix, MixSource, write_mix
 from mlx_decision.errors import DecisionError
-from mlx_decision.training import evaluate
+from mlx_decision.training import evaluate, fit
+from mlx_decision.training.console import format_eval, format_fit
 
 URGENT = {"type": "noul", "instructions": "The message is urgent"}
 MOOD = {"type": "choice", "criteria": {"calm": "Calm", "angry": "Angry"}}
@@ -218,3 +219,50 @@ def test_write_mix_checks_its_sources_and_round_trips(sources):
     with pytest.raises(DecisionError, match="source ../gone is missing"):
         write_mix(sources / "broken", Mix((MixSource("../gone"),)))
     assert not (sources / "broken").exists()
+
+
+# Reports per source
+
+
+def test_a_fit_reports_each_source_with_held_out_ones_marked(sources, tmp_path):
+    folder = mix_folder(sources, THREE)
+    base = write_model(tmp_path / "base")
+    result = fit(base, folder, output=tmp_path / "fitted")
+    assert {name: info["held_out"] for name, info in result.sources.items()} == {
+        "tickets": False, "urgent": False, "moods": True
+    }  # fmt: skip
+    counts = {
+        (name, question_id): entry["before"]["n"]
+        for name, info in result.sources.items()
+        for question_id, entry in info["questions"].items()
+    }
+    assert counts == {("tickets", "team"): 10, ("urgent", "urgent"): 4, ("moods", "mood"): 2}
+    assert set(result.sources["urgent"]["questions"]["urgent"]["after"]) >= {"accuracy", "ece"}
+    written = json.loads((tmp_path / "fitted" / "training.json").read_text())
+    assert written["sources"] == result.sources
+    text = format_fit(result.report, str(result.path))
+    assert "per source (accuracy / ECE on the report examples)" in text
+    assert "moods *" in text and "held out: scored, not trained on" in text
+
+
+def test_an_evaluation_reports_each_source(sources, tmp_path):
+    folder = mix_folder(sources, THREE)
+    base = write_model(tmp_path / "base")
+    result = evaluate(base, folder, compare=base)
+    for model in result.models:
+        assert {s: list(q) for s, q in model.sources.items()} == {
+            "tickets": ["team"], "moods": ["mood"]
+        }  # fmt: skip
+        assert model.sources["tickets"]["team"]["n"] == 8
+        assert model.as_json()["sources"] == model.sources
+    text = format_eval(result)
+    assert "per source (accuracy / ECE)" in text
+
+
+def test_data_without_sources_reports_none(sources, tmp_path):
+    base = write_model(tmp_path / "base")
+    result = fit(base, sources / "tickets", output=tmp_path / "fitted")
+    assert result.sources == {} and "sources" not in result.report
+    assert "per source" not in format_fit(result.report, str(result.path))
+    evaluated = evaluate(base, sources / "tickets")
+    assert evaluated.models[0].sources == {} and "sources" not in evaluated.models[0].as_json()

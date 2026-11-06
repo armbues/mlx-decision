@@ -10,7 +10,7 @@ at a time: the first is released before the second loads.
 import gc
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,27 +21,32 @@ from ..types import parse_request
 from .events import Event
 from .fitting import read_data, refuse_images
 from .plan import request_tokens
-from .scoring import Clock, records, score, summary
+from .scoring import Clock, records, score, source_summary, summary
 
 
 @dataclass(frozen=True)
 class ModelEval:
     """One model's results: per labelled question id, its metrics (rounded),
     ``type``, ``labels`` (the options in order) and ``confusion`` (gold ->
-    predicted -> count)."""
+    predicted -> count); for data from a mix, ``sources``: per source dataset
+    and question id, its metrics."""
 
     name: str
     model: str
     questions: dict[str, dict[str, Any]]
     seconds: float
+    sources: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
 
     def as_json(self) -> dict[str, Any]:
-        return {
+        body = {
             "name": self.name,
             "model": self.model,
             "questions": self.questions,
             "seconds": self.seconds,
         }
+        if self.sources:
+            body["sources"] = self.sources
+        return body
 
 
 @dataclass(frozen=True)
@@ -117,11 +122,13 @@ def _score_model(
                 "labels": labels,
                 "confusion": confusion(rows, labels),
             }
+        sources = source_summary(by_question)
     finally:
         del loaded
         gc.collect()
         _clear_cache()
-    return ModelEval(name, str(model), questions, round(time.perf_counter() - started, 2))
+    seconds = round(time.perf_counter() - started, 2)
+    return ModelEval(name, str(model), questions, seconds, sources)
 
 
 def _clear_cache() -> None:

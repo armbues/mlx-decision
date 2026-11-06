@@ -172,14 +172,57 @@ def _rows(columns: list[dict[str, Any]], names: list[str]) -> list[str]:
     return lines
 
 
+def _cell(metrics: dict[str, Any]) -> str:
+    return f"{_percent(metrics.get('accuracy'))} / {_percent(metrics.get('ece'))}"
+
+
+def source_lines(rows: list[tuple[str, str, int, list[str]]], names: list[str]) -> list[str]:
+    """A table per source dataset and question: ``rows`` of (source, question,
+    examples, cells), a column per name."""
+    head = [("source", "question", "n")]
+    body = [(source, question, f"{n:,}") for source, question, n, _ in rows]
+    widths = [max(len(row[i]) for row in head + body) for i in range(3)]
+    cell_width = max(15, *(len(name) for name in names), *(len(c) for r in rows for c in r[3]))
+    lines = [
+        "  "
+        + f"{'source':<{widths[0]}}  {'question':<{widths[1]}}  {'n':>{widths[2]}}"
+        + "".join(f"  {name:>{cell_width}}" for name in names)
+    ]
+    for (source, question, n), (*_, cells) in zip(body, rows, strict=True):
+        lines.append(
+            "  "
+            + f"{source:<{widths[0]}}  {question:<{widths[1]}}  {n:>{widths[2]}}"
+            + "".join(f"  {cell:>{cell_width}}" for cell in cells)
+        )
+    return lines
+
+
 def format_fit(report: dict[str, Any], path: str) -> str:
     """A fit's report: per question, the metrics before and after on the examples
-    that score the report (the holdout or the validation data)."""
+    that score the report (the holdout or the validation data); for a mix, then
+    per source dataset."""
     lines = []
     for question_id, entry in report["questions"].items():
         n = entry["before"]["n"]
         lines.append(f"{question_id} ({n:,} report examples)")
         lines += _rows([entry["before"], entry["after"]], ["before", "after"])
+        lines.append("")
+    sources = report.get("sources") or {}
+    if sources:
+        rows = [
+            (
+                name + (" *" if info["held_out"] else ""),
+                question_id,
+                entry["before"]["n"],
+                [_cell(entry["before"]), _cell(entry["after"])],
+            )
+            for name, info in sources.items()
+            for question_id, entry in info["questions"].items()
+        ]
+        lines.append("per source (accuracy / ECE on the report examples)")
+        lines += source_lines(rows, ["before", "after"])
+        if any(info["held_out"] for info in sources.values()):
+            lines.append("  * held out: scored, not trained on")
         lines.append("")
     training = report.get("training") or {}
     options = report.get("options") or {}
@@ -245,6 +288,18 @@ def format_eval(result) -> str:
             if entry:
                 lines.append(f"  confusion, {model.name} (rows: gold, columns: predicted)")
                 lines += ["  " + line for line in format_confusion(entry["confusion"])]
+        lines.append("")
+    names_by_source = list(dict.fromkeys(s for model in models for s in model.sources))
+    if names_by_source:
+        rows = []
+        for source in names_by_source:
+            ids = dict.fromkeys(q for model in models for q in model.sources.get(source, {}))
+            for question_id in ids:
+                entries = [model.sources.get(source, {}).get(question_id, {}) for model in models]
+                n = next(entry["n"] for entry in entries if entry)
+                rows.append((source, question_id, n, [_cell(entry) for entry in entries]))
+        lines.append("per source (accuracy / ECE)")
+        lines += source_lines(rows, names)
         lines.append("")
     data = result.data
     source = data["file"] or "examples"

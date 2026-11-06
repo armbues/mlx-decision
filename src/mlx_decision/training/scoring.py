@@ -115,9 +115,10 @@ def records(scored: list[Scored], adjust) -> dict[str, list[dict]]:
         labels = item.example.labels
         if item.raw is None:
             for question_id, gold in labels.items():
-                result.setdefault(question_id, []).append(
-                    {"gold": gold, "predicted": None, "refused": item.refused}
-                )
+                entry = {"gold": gold, "predicted": None, "refused": item.refused}
+                if item.example.source is not None:
+                    entry["source"] = item.example.source
+                result.setdefault(question_id, []).append(entry)
             continue
         probabilities = adjust(item.request.questions, item.raw)
         targets = item.example.targets or {}
@@ -126,6 +127,8 @@ def records(scored: list[Scored], adjust) -> dict[str, list[dict]]:
             answer = build_answer(question, probabilities[question_id]).model_dump()
             entry = record(answer, gold, targets.get(question_id))
             entry["truncated"] = item.truncated
+            if item.example.source is not None:
+                entry["source"] = item.example.source
             result.setdefault(question_id, []).append(entry)
     return result
 
@@ -140,6 +143,17 @@ def summary(by_question: dict[str, list[dict]]) -> dict[str, dict]:
         for question_id, rows in by_question.items()
         if rows
     }
+
+
+def source_summary(by_question: dict[str, list[dict]]) -> dict[str, dict[str, dict]]:
+    """``summary`` per source dataset of a mix, then per question id (empty
+    when no record names a source)."""
+    grouped: dict[str, dict[str, list[dict]]] = {}
+    for question_id, rows in by_question.items():
+        for row in rows:
+            if "source" in row:
+                grouped.setdefault(row["source"], {}).setdefault(question_id, []).append(row)
+    return {source: summary(questions) for source, questions in grouped.items()}
 
 
 class Clock:

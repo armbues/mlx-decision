@@ -59,7 +59,10 @@ All notable changes to this project are documented here. The format follows
   source is scored in the report but not trained on. Example ids start
   with their source's name, and the data hash covers every source. A
   mix is written as `dataset.json` format 2; plain dataset folders stay
-  at format 1.
+  at format 1. A fit on a mix reports each source dataset and question
+  before and after (held-out ones marked) in its output, `training.json`
+  and `FitResult.sources`; `training eval` on a mix adds a table per
+  source (`--json` and Python: each model's `sources`).
 
 ### Changed
 
