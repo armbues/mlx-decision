@@ -139,7 +139,10 @@ an M5 Pro; a LoRA fit takes d3-edge from 30% to 90% on photos of 37 pet
 breeds in 17 minutes. `training label` lets a larger model's answers
 label data for a smaller one. In the Studio, the Datasets and Training
 pages do the same without the command line.
+[Choosing a fit](https://github.com/armbues/mlx-decision/blob/main/docs/TRAINING.md#choosing-a-fit)
+says which kind to pick and how many rows it needs;
 [docs/TRAINING.md](https://github.com/armbues/mlx-decision/blob/main/docs/TRAINING.md)
+has the rest.
 
 ## Models
 

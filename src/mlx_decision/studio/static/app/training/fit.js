@@ -12,7 +12,7 @@ import { html } from "htm/preact";
 import { splitOption } from "../datasets/splits.js";
 import { api } from "../api.js";
 import { useSummary } from "../datasets/summary.js";
-import { plural, size } from "../format.js";
+import { docsLink, plural, size } from "../format.js";
 import { gpuJob } from "../store/jobs.js";
 import { remembered } from "../store/prefs.js";
 import { href, navigate } from "../router.js";
@@ -449,7 +449,9 @@ export function FitForm() {
         </div></section>
 
       ${result &&
-      html`<section class="gsec"><div class="gsec-head"><h2>Method</h2><span class="tag">What ${result.base} can learn</span></div>
+      html`<section class="gsec"><div class="gsec-head"><h2>Method</h2><span class="tag">What ${result.base} can learn</span>
+        <a class="hint-link guide-link" href=${docsLink("TRAINING.md", "choosing-a-fit")} target="_blank" rel="noopener"
+           title="The training guide: which kind for which model and data, and what to expect">Which fit?</a></div>
         <div class="group">
           <div class="methods" role="radiogroup" aria-label="Method">${result.methods.map((m) => html`<${MethodCard} key=${key(m)} method=${m} />`)}</div>
           ${result.lora && html`<${LoraPanel} lora=${result.lora} />`}

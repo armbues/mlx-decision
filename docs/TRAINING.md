@@ -48,6 +48,78 @@ Run in a terminal without flags, `data` and `training fit` ask for what
 they need in menus. When they finish, they print the command line that
 does the same thing without menus.
 
+## Choosing a fit
+
+Start with `--method auto`: it picks the kind your model's family takes
+and ends with a calibration. The numbers below were measured on an
+Apple M5 Pro (20-core GPU, 64 GB); the runs behind them are in
+[What a fit gains](#what-a-fit-gains).
+
+| Your model | `auto` trains | Takes | Try instead |
+|---|---|---|---|
+| pplx, d3, Base Labs, H2O-Lightning, d1 LFM3, d1 | `readout`: each option's readout row | one scoring pass, then seconds | `lora` on d3 and d1 LFM3 when the network has to see something new |
+| Laya, Julia | `finetune`: the whole encoder | minutes | `--head-only` when memory is short |
+| Clef | `head`: the decision head | minutes, and disk for stored states | `calibrate`, often the useful one |
+
+**Only the probabilities are off?** `--method calibrate` works on every
+family. It fits one temperature per question (and a bias per option
+when there are enough rows) in under a second after one scoring pass,
+and leaves accuracy as it is. Clef on ANLI-R3 went from an ECE of 20.9%
+to 2.8% this way. Fit it on rows like the ones it will answer:
+[Calibration needs data like the target](#calibration-needs-data-like-the-target).
+
+**How many rows.** Most of the gain comes by 1,000 rows. A d3-edge
+readout fit, five samples each:
+
+| Rows | 100 | 300 | 1,000 | 3,000 | all |
+|---|---|---|---|---|---|
+| TREC (6 answer types) | 82.6 | 89.9 | 93.6 | 94.5 | 94.8 |
+| SST-5 (5 sentiment levels) | 45.5 | 46.5 | 49.3 | 50.1 | 51.1 |
+
+These runs ended with a bias per option in the calibration
+(`--calibration full`), which below 1,000 rows moved accuracy by up to
+2 points either way; `auto` leaves those biases out after a trained
+kind. A fine-tuned encoder can need far fewer rows: Laya reached 94.8%
+on TREC from 100. Under 50 rows, or under 10 for an option, the fit
+warns.
+
+**When LoRA pays.** `lora` (d3 and d1 LFM3) adapts the network itself
+where a readout fit only retrains the answer step. On images that
+matters: d3-edge on 37 pet breeds went from 86.2% (readout) to 90.2%
+(LoRA). On text, where the network already reads what the answer needs,
+it lands within a point or two of the readout fit (SST-5: 52.5 against
+about 51), at minutes instead of seconds. Its defaults (rank 8, learning
+rate 1e-4, two epochs) came out of a sweep in which only the learning
+rate mattered: above about 3e-4 the fit breaks down. It needs an
+unquantized base. Details: [Kinds](#kinds).
+
+**More rows than you can label.** A larger model's answers can label
+data for a smaller one, with its probabilities as soft labels. That
+helps the students that change weights (Laya, LoRA) by about 2 points
+over its top answers, but not a readout fit, and the student inherits
+the teacher's calibration: fit the teacher first.
+[A teacher's labels](#a-teachers-labels-training-label).
+
+**Several tasks in one model.** A
+[mix of datasets](#mixes-of-datasets) fits all their questions at once.
+Expect a trade, not a lift on every task: the adapters or encoder that
+all tasks share have a fixed size, unlike tasks pull them different
+ways, one learning rate and one kept epoch serve them all, and equal
+caps ignore that some tasks are harder. In the measured mix of five,
+four datasets stayed within one standard error of their own fit and
+OpenBookQA lost 2.6 points; the report per dataset shows such a loss. A question left out of the mix
+gains nothing from it, and after a fine-tune its answers can get worse.
+
+**Thresholds in your code.** A fit ends with a calibration. If a program
+compares the model's probabilities with thresholds tuned on the base,
+`--calibration none` keeps the fitted kind's answers as they are:
+[The closing calibration](#the-closing-calibration).
+
+**Check the result** with `training eval -m FITTED --data TEST --compare
+BASE` on rows the fit has not seen. The fit's own report scores rows it
+held back, but they come from the same split as the training rows, and
+a train split can be easier than the test split (ANLI-R3's is).
+
 ## What a fit gains
 
 Each model was fitted on its dataset's train split with the default

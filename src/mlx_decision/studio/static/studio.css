@@ -1233,6 +1233,10 @@ a.sb-item { color: var(--fg); }
 .file-group dd .btn.sm { margin-top: 6px; }
 .fit-form .hint-link { color: var(--accent); text-decoration: none; font-size: 11.5px; }
 .fit-form .hint-link:hover { text-decoration: underline; }
+/* Links to the training guide: the New Fit header, the Method section's head */
+.guide-link { color: var(--accent); text-decoration: none; font-size: 12px; }
+.guide-link:hover { text-decoration: underline; }
+.gsec-head .guide-link { margin-left: auto; }
 .fit-form #fit-data { max-width: 280px; }
 
 @container (max-width: 640px) {

@@ -83,6 +83,12 @@ All notable changes to this project are documented here. The format follows
   it reports the teacher's accuracy and ECE there, and it notes when the
   teacher's calibration is poor or unknown, which a student inherits.
 
+- [Choosing a fit](docs/TRAINING.md#choosing-a-fit), a guide at the top
+  of the training docs: which kind to pick for each family and for your
+  data, how many rows a fit needs, when LoRA and distillation pay, what
+  a mix of datasets trades, and which calibration to keep. New Fit in
+  the Studio links to it.
+
 ### Changed
 
 - Save Answers as a Dataset writes each answer's probabilities as soft

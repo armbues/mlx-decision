@@ -600,6 +600,10 @@ fit does, and what it gains, is in [TRAINING.md](TRAINING.md).
 
 The form, from top to bottom:
 
+New Fit's header and its Method section link to
+[Choosing a fit](TRAINING.md#choosing-a-fit), which says which kind to
+pick for a model and its data and what to expect.
+
 - **Data**: the dataset (or Fit on It… on the Datasets page); Report on,
   what the report scores: a share of this dataset kept aside, a split
   of it, or another dataset (with the same questions); the split bar

@@ -66,3 +66,7 @@ export function shellWord(word) {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text)) return text;
   return `'${text.replace(/'/g, "'\\''")}'`;
 }
+
+// A page of the docs on GitHub (``anchor``: a section's), opened in a new tab.
+export const docsLink = (page, anchor = null) =>
+  `https://github.com/armbues/mlx-decision/blob/main/docs/${page}${anchor ? `#${anchor}` : ""}`;

@@ -279,3 +279,26 @@ def test_lora_is_offered_beside_the_methods_with_its_own_start(make_studio, page
     form.locator("#fit-base").select_option("tiny-clef")
     expect(form.locator(".method .mt b")).to_have_text(["Head", "Calibrate"])
     expect(form.locator(".lora-panel")).to_have_count(0)
+
+
+def test_the_form_links_to_the_training_guide(studio, page):
+    open_studio(page, studio, "training")
+    guide = "https://github.com/armbues/mlx-decision/blob/main/docs/TRAINING.md#choosing-a-fit"
+    head = page.locator(".pane-head").get_by_role("link", name="Choosing a fit")
+    expect(head).to_have_attribute("href", guide)
+    expect(head).to_have_attribute("target", "_blank")
+    which = page.locator(".fit-form .gsec-head").get_by_role("link", name="Which fit?")
+    expect(which).to_have_attribute("href", guide)
+    shot(page, "fit-form-guide-link")
+
+
+def test_the_empty_form_links_to_the_guide(make_studio, page):
+    studio = make_studio()
+    for item in (studio.workspace / "data").iterdir():
+        if item.is_file():
+            item.unlink()  # the fake Studio's tickets.jsonl: no datasets left
+    open_studio(page, studio, "training")
+    link = page.locator(".empty").get_by_role("link", name="training guide")
+    expect(link).to_have_attribute(
+        "href", "https://github.com/armbues/mlx-decision/blob/main/docs/TRAINING.md#choosing-a-fit"
+    )

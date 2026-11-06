@@ -9,7 +9,7 @@ import { useEffect } from "preact/hooks";
 import * as icons from "../components/icons.js";
 import { uploadData } from "../datasets/files.js";
 import { openGetDataset } from "../datasets/get.js";
-import { plural } from "../format.js";
+import { docsLink, plural } from "../format.js";
 import { onKey, SHORTCUTS } from "../keys.js";
 import { href, navigate, route } from "../router.js";
 import { dataFiles } from "../store/data.js";
@@ -70,13 +70,15 @@ function Form() {
   useEffect(() => onKey("run", () => startFit()), []);
   const list = dataFiles.value;
   return html`
-    <div class="pane-head"><div><h1>New Fit</h1><p>Teach a model your task from labelled rows.</p></div></div>
+    <div class="pane-head"><div><h1>New Fit</h1><p>Teach a model your task from labelled rows.
+      <a class="hint-link guide-link" href=${docsLink("TRAINING.md", "choosing-a-fit")} target="_blank" rel="noopener">Choosing a fit</a></p></div></div>
     ${list?.length
       ? html`<${FitForm} />`
       : list &&
         html`<div class="empty">
           <b>No datasets yet</b>
-          <span>A fit learns from a dataset. Download one or add a file of your own.</span>
+          <span>A fit learns from a dataset. Download one or add a file of your own.
+            The <a href=${docsLink("TRAINING.md", "choosing-a-fit")} target="_blank" rel="noopener">training guide</a> says which fit to pick and how many rows it needs.</span>
           <span class="empty-actions">
             <button class="btn primary" onClick=${openGetDataset}>Download a Dataset…</button>
             <button class="btn" onClick=${uploadData}>Add a Dataset…</button>
