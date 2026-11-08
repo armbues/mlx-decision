@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 [docs/STABILITY.md](docs/STABILITY.md) calls stable does not break before
 2.0 (before 1.0, minor versions could change the interface).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-08
 
 ### Added
 
@@ -82,7 +82,6 @@ All notable changes to this project are documented here. The format follows
   (`--threshold`, `--sample`, `--split`, `--events`). On labelled data
   it reports the teacher's accuracy and ECE there, and it notes when the
   teacher's calibration is poor or unknown, which a student inherits.
-
 - [Choosing a fit](docs/TRAINING.md#choosing-a-fit), a guide at the top
   of the training docs: which kind to pick for each family and for your
   data, how many rows a fit needs, when LoRA and distillation pay, what
